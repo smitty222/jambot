@@ -1,0 +1,54 @@
+{
+  "name": "goodbot-ttl",
+  "version": "4.0.3",
+  "description": "A bot to interact with users in chat on tt.live",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "NODE_ENV=development nodemon -r dotenv/config src/index.js",
+    "lint": "standard",
+    "lint:fix": "standard --fix",
+    "start": "node src/index.js",
+    "test": "npm run lint && nyc --reporter=html --reporter=text mocha"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github-whatagoodbot:whatagoodbot/goodBot-ttl.git"
+  },
+  "keywords": [
+    "bot",
+    "ttlive",
+    "ttl",
+    "tt.live",
+    "turntable"
+  ],
+  "standard": {
+    "env": [
+      "mocha"
+    ]
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "chai": "^4.3.6",
+    "dotenv": "^16.0.2",
+    "mocha": "^10.0.0",
+    "nodemon": "^2.0.19",
+    "nyc": "^15.1.0",
+    "standard": "^17.0.0"
+  },
+  "dependencies": {
+    "bard-ai": "^2.0.3",
+    "fast-json-patch": "^3.1.1",
+    "node-fetch": "^3.2.10",
+    "openai": "^3.3.0",
+    "redis": "^4.6.7",
+    "remove-markdown": "^0.5.0",
+    "repeat": "^2.0.4",
+    "socket.io-client": "^4.5.2",
+    "ttfm-socket": "^0.2.6",
+    "uuid": "^9.0.0",
+    "winston": "^3.8.2",
+    "ws": "^8.14.2"
+  }
+}

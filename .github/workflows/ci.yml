@@ -1,0 +1,19 @@
+name: Test & Deploy if Main
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [16.x]
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Run Tests
+      uses: actions/setup-node@v3
+      with:
+        node-version: 16.x
+        cache: 'npm'
+    - run: npm i
+    - run: npm test
