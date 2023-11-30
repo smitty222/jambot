@@ -1,17 +1,8 @@
+import { postMessage } from '../libs/cometchat.js'
+
 export default async (payload, room) => {
-  console.log('Received payload:', payload);
-
-  if (!payload.userUuid) {
-    console.log('User UUID is falsy. Exiting.');
-    return;
-  }
-
-  if ([process.env.CHAT_USER_ID, process.env.CHAT_REPLY_ID].includes(payload.userUuid)) {
-    console.log('User ID is excluded. Exiting.');
-    return;
-  }
-
-  console.log('Posting welcome message...');
+  if (!payload.userUuid) return
+  if ([process.env.CHAT_USER_ID, process.env.CHAT_REPLY_ID].includes(payload.userUuid)) return
   postMessage({
     room,
     message: `Welcome @${payload.nickname}... feel free to ask me any questions!`,
@@ -20,5 +11,5 @@ export default async (payload, room) => {
       nickname: payload.nickname,
       userId: payload.userUuid
     }]
-  });
+  })
 }
