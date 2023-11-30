@@ -7,7 +7,7 @@ import removeMd from 'remove-markdown'
 
 globalThis.fetch = fetch
 
-const questionPrefix = `Assume you are a big fan of ${process.env.FAVOURITE_ARTIST} and provide a succinct answer to this question.`
+const questionPrefix = `Assume you enjoy listening to all music, but espeically ${process.env.FAVOURITE_ARTIST} and provide a succinct but casual answer to this question.`
 const trackPrefix = 'Succinctly tell me about the song'
 
 const cache = createClient({ url: `redis://${process.env.REDIS_HOST}:6379` })
@@ -26,7 +26,7 @@ const getResponse = async (cacheKey, prefix, query, room) => {
   if (room) {
     postMessage({
       room,
-      message: 'Hmmm... let me think about that.'
+      message: 'thinking...'
     })
   }
   let result
