@@ -44,17 +44,16 @@ export class Bot {
     }
   }
 
-  configureListeners () {
-    const self = this
-    logger.debug('Setting up listeners')
+  configureListeners() {
+    const self = this;
+    logger.debug('Setting up listeners');
     this.socket.on('statefulMessage', payload => {
       self.state = fastJson.applyPatch(
         self.state,
         payload.statePatch
       ).newDocument;
-
-      logger.debug(`State updated for ${payload.name}`)
-      if (handlers[payload.name]) handlers[payload.name](self.state, process.env.ROOM_UUID,self);
-    })
+      logger.debug(`State updated for ${payload.name}`);
+      if (handlers[payload.name]) handlers[payload.name](self.state, process.env.ROOM_UUID);
+    });
   }
-}
+}  

@@ -1,34 +1,21 @@
-// handlers/theme.js
-export default async (payload, room, bot) => {
-  console.log('Theme handler called:', payload.message);
+import { postMessage } from '../libs/cometchat.js';
 
-  try {
-    console.log('Received theme command:', payload.message);
-
-    if (payload.message.startsWith('/settheme')) {
-      // Extract the new theme from the command
-      const newTheme = payload.message.replace('/settheme', '').trim();
-
-      console.log('Setting new theme:', newTheme);
-
-      // Set the new theme
-      bot.currentTheme = newTheme;
-
-      // Respond with a confirmation message
-      await postMessage({
-        room,
-        message: `Theme set to: ${newTheme}`
-      });
-    } else if (payload.message.startsWith('/gettheme')) {
-      // Respond with the current theme
-      console.log('Getting current theme:', bot.currentTheme);
-
-      await postMessage({
-        room,
-        message: `Current Theme: ${bot.currentTheme}`
-      });
-    }
-  } catch (error) {
-    console.error('Error in theme handler:', error);
+export default async (state, room) => {
+  // Access state here
+  console.log('Current state:', state); // Add this line for testing
+  
+  // Command logic here
+  if (state && state.theme) {
+    // Respond with the current theme
+    await postMessage({
+      room,
+      message: `The current theme is: ${state.theme}`,
+    });
+  } else {
+    // If no theme is set, notify the user
+    await postMessage({
+      room,
+      message: 'No theme set. Use /settheme command to set a theme.',
+    });
   }
 };
