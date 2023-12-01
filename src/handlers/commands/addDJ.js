@@ -1,17 +1,26 @@
 // commands/addDJ.js
-const { SocketClient, ActionName } = require('ttfm-socket');
+import { SocketClient, ActionName } from 'ttfm-socket';
 
-async function addDJCommand(authToken, roomId) {
+async function addDJCommand() {
   try {
+    const authToken = process.env.TTL_USER_TOKEN; // Get the auth token from the environment variables
+    const roomId = process.env.ROOM_UUID; // Get the room ID from the environment variables
+
+    // Check if authToken and roomId are defined
+    if (!authToken || !roomId) {
+      throw new Error('Authentication token or room ID not provided.');
+    }
+
+    // Create a new SocketClient instance
     const client = new SocketClient('https://socket.prod.tt.fm');
-    
+
     // Connect to the room
     await client.joinRoom(authToken, {
       roomUuid: roomId,
     });
 
     // Send the addDj action
-    await client.action(ActionName.addDj, { song: { /* song details if needed */ } });
+    await client.action(ActionName.addDj, {});
 
     console.log('Bot added to DJ stage successfully.');
   } catch (error) {
@@ -19,4 +28,4 @@ async function addDJCommand(authToken, roomId) {
   }
 }
 
-module.exports = addDJCommand;
+export { addDJCommand };
