@@ -7,5 +7,5 @@ export const handlers = {
   message,
   playedSong,
   userJoined,
-  theme
+  theme,
 }

@@ -7,25 +7,23 @@ export default async (payload, room) => {
 
   if (payload.message.includes(`@${process.env.CHAT_NAME}`)) {
     const keywords = process.env.MERCH_RESPONSE_KEYWORDS.split(',');
-
-    for (const keyword of keywords) {
-      if (payload.message.includes(keyword.trim())) {
+    for (const keyword in keywords) {
+      if (payload.message.includes(keywords[keyword])) {
         return await postMessage({
           room,
-          message: process.env.MERCH_MESSAGE,
+          message: process.env.MERCH_MESSAGE
         });
       }
     }
 
     const reply = await askQuestion(payload.message.replace(`@${process.env.CHAT_NAME}`, ''), room);
     const responses = reply.split('\n');
-
-    for (const item of responses) {
-      const response = item.trim();
+    for (const item in responses) {
+      const response = responses[item].trim();
       if (response.length > 0) {
         await postMessage({
           room,
-          message: response,
+          message: response
         });
       }
     }

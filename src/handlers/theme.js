@@ -1,29 +1,25 @@
-// theme.js
 import { postMessage } from '../libs/cometchat.js';
-import { logger } from '../utils/logging.js';
 
 export default async (payload, room) => {
-  logger.info({ sender: payload.senderName, message: payload.message });
+  console.log('Received payload:', payload);
 
-  console.log('Entered theme.js');
-
-  if (payload.message.startsWith('/settheme')) {
-    console.log('Received /settheme command');
-
-    const theme = payload.message.replace('/settheme', '').trim();
-
-    console.log('Received theme:', theme);
-
-    try {
-      // Respond to the theme setting command
-      await postMessage({
-        room,
-        message: `Theme set to: ${theme}`,
-      });
-
-      console.log('Sent response message');
-    } catch (error) {
-      console.error('Error posting message:', error.message);
-    }
+  if (!payload.userUuid) {
+    console.log('User UUID not found in payload');
+    return;
   }
+
+  if ([process.env.CHAT_USER_ID, process.env.CHAT_REPLY_ID].includes(payload.userUuid)) {
+    console.log('User is bot or reply, skipping.');
+    return;
+  }
+
+  const theme = payload.message.replace('/settheme', '').trim();
+
+  console.log('Theme set to:', theme);
+
+  // Ensure that room is defined and postMessage is correctly formatted
+  await postMessage({
+    room,
+    message: `Command processed. Theme set to: ${theme}`,
+  });
 };

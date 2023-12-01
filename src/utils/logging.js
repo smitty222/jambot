@@ -1,10 +1,11 @@
-import * as winston from 'winston'
+import winston from 'winston';
 
-const { createLogger, transports } = winston.default
-
-export const logger = createLogger({
-  level: process.env.LOG_LEVEL || 'info',
+export const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.json(),
+  defaultMeta: { service: 'your-service-name' },
   transports: [
-    new transports.Console()
-  ]
-})
+    new winston.transports.Console({ level: 'debug' }),
+    new winston.transports.File({ filename: 'logfile.log' }),
+  ],
+});
