@@ -8,6 +8,7 @@ import { handlers } from '../handlers/index.js'
 export class Bot {
   constructor (slug) {
     this.lastMessageIDs = {}
+    this.currentTheme = '';
   }
 
   async connect () {
@@ -52,7 +53,7 @@ export class Bot {
         payload.statePatch
       ).newDocument
       logger.debug(`State updated for ${payload.name}`)
-      if (handlers[payload.name]) handlers[payload.name](self.state, process.env.ROOM_UUID)
+      if (handlers[payload.name]) handlers[payload.name](self.state, process.env.ROOM_UUID,self);
     })
   }
 }
