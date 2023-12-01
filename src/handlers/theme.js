@@ -1,5 +1,7 @@
 // handlers/theme.js
 export default async (payload, room, bot) => {
+  console.log('Theme handler called:', payload.message);
+
   try {
     console.log('Received theme command:', payload.message);
 

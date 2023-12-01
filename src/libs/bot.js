@@ -51,7 +51,8 @@ export class Bot {
       self.state = fastJson.applyPatch(
         self.state,
         payload.statePatch
-      ).newDocument
+      ).newDocument;
+
       logger.debug(`State updated for ${payload.name}`)
       if (handlers[payload.name]) handlers[payload.name](self.state, process.env.ROOM_UUID,self);
     })
