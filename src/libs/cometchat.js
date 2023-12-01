@@ -1,7 +1,8 @@
-import { v4 as uuidv4 } from 'uuid'
-import { buildUrl, makeRequest } from '../utils/networking.js'
+// cometchat.js
+import { v4 as uuidv4 } from 'uuid';
+import { buildUrl, makeRequest } from '../utils/networking.js';
 
-const startTimeStamp = Math.floor(Date.now() / 1000)
+const startTimeStamp = Math.floor(Date.now() / 1000);
 
 const headers = {
   appid: process.env.CHAT_API_KEY,
@@ -9,29 +10,12 @@ const headers = {
   dnt: 1,
   origin: 'https://tt.live',
   referer: 'https://tt.live/',
-  sdk: 'javascript@3.0.10'
-}
-
-export const joinChat = async (roomId) => {
-  headers.appid = process.env.CHAT_API_KEY
-  const paths = [
-    'v3.0',
-    'groups',
-    roomId,
-    'members'
-  ]
-
-  const url = buildUrl(`${process.env.CHAT_API_KEY}.apiclient-us.cometchat.io`, paths)
-  const response = await makeRequest(url, { headers, method: 'POST' })
-  return response
-}
+  sdk: 'javascript@3.0.10',
+};
 
 export const postMessage = async (options) => {
-  headers.appid = process.env.CHAT_API_KEY
-  const paths = [
-    'v3.0',
-    'messages'
-  ]
+  headers.appid = process.env.CHAT_API_KEY;
+  const paths = ['v3.0', 'messages'];
 
   const customData = {
     message: options.message || '',
@@ -41,18 +25,17 @@ export const postMessage = async (options) => {
     mentions: [],
     userUuid: process.env.CHAT_USER_ID,
     badges: ['VERIFIED', 'STAFF'],
-    id: uuidv4()
-  }
-  if (options.images) customData.imageUrls = options.images
+    id: uuidv4(),
+  };
+
+  if (options.images) customData.imageUrls = options.images;
 
   if (options.mentions) {
-    customData.mentions = options.mentions.map(mention => {
-      return {
-        start: mention.position,
-        userNickname: mention.nickname,
-        userUuid: mention.userId
-      }
-    })
+    customData.mentions = options.mentions.map((mention) => ({
+      start: mention.position,
+      userNickname: mention.nickname,
+      userUuid: mention.userId,
+    }));
   }
 
   const payload = {
@@ -62,32 +45,43 @@ export const postMessage = async (options) => {
     data: {
       customData,
       metadata: {
-        incrementUnreadCount: false
-      }
+        incrementUnreadCount: false,
+      },
     },
     metadata: {
-      incrementUnreadCount: false
+      incrementUnreadCount: false,
     },
-    receiver: options.room
-  }
-  console.log(payload)
-  const url = buildUrl(`${process.env.CHAT_API_KEY}.apiclient-us.cometchat.io`, paths)
-  const messageResponse = await makeRequest(url, { method: 'POST', body: JSON.stringify(payload) }, headers)
+    receiver: options.room,
+  };
+
+  console.log('Before making request');
+  console.log(payload);
+
+  const url = buildUrl(`${process.env.CHAT_API_KEY}.apiclient-us.cometchat.io`, paths);
+  const messageResponse = await makeRequest(url, { method: 'POST', body: JSON.stringify(payload) }, headers);
+
+  console.log('After making request');
+  console.log(messageResponse);
+
   return {
     message: options.message,
-    messageResponse
-  }
-}
+    messageResponse,
+  };
+};
+
+export const joinChat = async (roomId) => {
+  headers.appid = process.env.CHAT_API_KEY;
+  const paths = ['v3.0', 'groups', roomId, 'members'];
+
+  const url = buildUrl(`${process.env.CHAT_API_KEY}.apiclient-us.cometchat.io`, paths);
+  const response = await makeRequest(url, { headers, method: 'POST' });
+  return response;
+};
 
 export const getMessages = async (roomId, fromTimestamp = startTimeStamp) => {
-  headers.appid = process.env.CHAT_API_KEY
-  const messageLimit = 50
-  const paths = [
-    'v3.0',
-    'groups',
-    roomId,
-    'messages'
-  ]
+  headers.appid = process.env.CHAT_API_KEY;
+  const messageLimit = 50;
+  const paths = ['v3.0', 'groups', roomId, 'messages'];
   const searchParams = [
     ['per_page', messageLimit],
     ['hideMessagesFromBlockedUsers', 0],
@@ -96,8 +90,9 @@ export const getMessages = async (roomId, fromTimestamp = startTimeStamp) => {
     ['withTags', 0],
     ['hideDeleted', 0],
     ['sentAt', fromTimestamp],
-    ['affix', 'append']
-  ]
-  const url = buildUrl(`${process.env.CHAT_API_KEY}.apiclient-us.cometchat.io`, paths, searchParams)
-  return await makeRequest(url, { headers })
-}
+    ['affix', 'append'],
+  ];
+
+  const url = buildUrl(`${process.env.CHAT_API_KEY}.apiclient-us.cometchat.io`, paths, searchParams);
+  return await makeRequest(url, { headers });
+};

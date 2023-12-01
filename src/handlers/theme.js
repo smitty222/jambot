@@ -1,21 +1,29 @@
+// theme.js
 import { postMessage } from '../libs/cometchat.js';
+import { logger } from '../utils/logging.js';
 
-export default async (state, room) => {
-  // Access state here
-  console.log('Current state:', state); // Add this line for testing
-  
-  // Command logic here
-  if (state && state.theme) {
-    // Respond with the current theme
-    await postMessage({
-      room,
-      message: `The current theme is: ${state.theme}`,
-    });
-  } else {
-    // If no theme is set, notify the user
-    await postMessage({
-      room,
-      message: 'No theme set. Use /settheme command to set a theme.',
-    });
+export default async (payload, room) => {
+  logger.info({ sender: payload.senderName, message: payload.message });
+
+  console.log('Entered theme.js');
+
+  if (payload.message.startsWith('/settheme')) {
+    console.log('Received /settheme command');
+
+    const theme = payload.message.replace('/settheme', '').trim();
+
+    console.log('Received theme:', theme);
+
+    try {
+      // Respond to the theme setting command
+      await postMessage({
+        room,
+        message: `Theme set to: ${theme}`,
+      });
+
+      console.log('Sent response message');
+    } catch (error) {
+      console.error('Error posting message:', error.message);
+    }
   }
 };
