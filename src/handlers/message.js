@@ -3,6 +3,7 @@ import { askQuestion } from '../libs/ai.js';
 import { logger } from '../utils/logging.js';
 
 export default async (payload, room) => {
+
   logger.info({ sender: payload.senderName, message: payload.message });
 
   if (payload.message.includes(`@${process.env.CHAT_NAME}`)) {
