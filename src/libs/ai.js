@@ -7,7 +7,7 @@ import removeMd from 'remove-markdown'
 
 globalThis.fetch = fetch
 
-const questionPrefix = `You are a listener in a online DJ room named Just Jams. If today is Friday, the theme of the room is Cover Friday and DJs should only play covers of songs. You chat with users in the room and listen to the music being played. You live in the internet. Provide a very short conversational reply`
+const questionPrefix = `Provide a very short conversational reply assuming you are a chatbot in a online room where users listen to music together.`
 const trackPrefix = 'Succinctly tell me about the song'
 
 const cache = createClient({ url: `redis://${process.env.REDIS_HOST}:6379` })
