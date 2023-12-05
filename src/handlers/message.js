@@ -5,8 +5,11 @@ import { logger } from '../utils/logging.js';
 // Store to keep track of themes
 const roomThemes = {};
 
+
+// AI CHAT STUFF
 export default async (payload, room) => {
   logger.info({ sender: payload.senderName, message: payload.message });
+  console.log('Payload:', payload);
 
   if (payload.message.includes(`@${process.env.CHAT_NAME}`)) {
     const keywords = process.env.MERCH_RESPONSE_KEYWORDS.split(',');
@@ -56,18 +59,56 @@ export default async (payload, room) => {
   }
 
   // "/ THEME COMMANDS"
+  
   else if (payload.message.startsWith('/settheme')) {
-    // Extract theme from the command
-    const theme = payload.message.replace('/settheme', '').trim();
-
-    // Store the theme for the room
-    roomThemes[room] = theme;
-
-    await postMessage({
-      room,
-      message: `Theme set to: ${theme}`
-    });
+    try {
+      // Fetch user roles for the room with authorization header
+      const userRolesResponse = await fetch(`https://rooms.prod.tt.fm/roomUserRoles/just-jams`, {
+        headers: {
+          Authorization: `Bearer ${process.env.TTL_USER_TOKEN}`,
+        },
+      });
+  
+      if (!userRolesResponse.ok) {
+        const errorMessage = await userRolesResponse.text();
+        console.error('User Roles Response Error:', errorMessage);
+        throw new Error(`User Roles request failed with status ${userRolesResponse.status}`);
+      }
+  
+      const userRolesData = await userRolesResponse.json();
+      const userRoles = Array.isArray(userRolesData) ? userRolesData : [];
+  
+      // Check if user is a moderator or owner
+      const allowedRoles = ['moderator', 'owner'];
+      const userRole = userRoles.find(role => role.userUuid === payload.sender)?.role;
+  
+      if (allowedRoles.includes(userRole)) {
+        // Extract theme from the command
+        const theme = payload.message.replace('/settheme', '').trim();
+  
+        // Store the theme for the room
+        roomThemes[room] = theme;
+  
+        await postMessage({
+          room,
+          message: `Theme set to: ${theme}`
+        });
+      } else {
+        await postMessage({
+          room,
+          message: 'You need to be a moderator or owner to execute this command.'
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching user roles:', error.message);
+      await postMessage({
+        room,
+        message: 'An error occurred while fetching user roles. Please try again.'
+      });
+    }
+    
   } else if (payload.message.startsWith('/gettheme')) {
+
     // Retrieve and post the theme for the room
     const theme = roomThemes[room];
     if (theme) {
@@ -82,13 +123,50 @@ export default async (payload, room) => {
       });
     }
   } else if (payload.message.startsWith('/removetheme')) {
-    // Remove the theme for the room
-    delete roomThemes[room];
-
-    await postMessage({
-      room,
-      message: 'Theme removed.'
-    });
+    try {
+      // Fetch user roles for the room with authorization header
+      const userRolesResponse = await fetch(`https://rooms.prod.tt.fm/roomUserRoles/just-jams`, {
+        headers: {
+          Authorization: `Bearer ${process.env.TTL_USER_TOKEN}`,
+        },
+      });
+  
+      if (!userRolesResponse.ok) {
+        const errorMessage = await userRolesResponse.text();
+        console.error('User Roles Response Error:', errorMessage);
+        throw new Error(`User Roles request failed with status ${userRolesResponse.status}`);
+      }
+  
+      const userRolesData = await userRolesResponse.json();
+      const userRoles = Array.isArray(userRolesData) ? userRolesData : [];
+  
+      // Check if user is a moderator or owner
+      const allowedRoles = ['moderator', 'owner'];
+      const userRole = userRoles.find(role => role.userUuid === payload.sender)?.role;
+  
+      if (allowedRoles.includes(userRole)) {
+        // Remove the theme for the room
+        delete roomThemes[room];
+  
+        await postMessage({
+          room,
+          message: 'Theme removed.'
+        });
+      } else {
+        await postMessage({
+          room,
+          message: 'You need to be a moderator or owner to execute this command.'
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching user roles:', error.message);
+      await postMessage({
+        room,
+        message: 'An error occurred while fetching user roles. Please try again.'
+      });
+    }
   }
-}
+  
+  }
+
 
