@@ -3,13 +3,12 @@ import { askQuestion } from '../libs/ai.js';
 import { logger } from '../utils/logging.js';
 
 export default async (payload, room) => {
-
   logger.info({ sender: payload.senderName, message: payload.message });
 
   if (payload.message.includes(`@${process.env.CHAT_NAME}`)) {
     const keywords = process.env.MERCH_RESPONSE_KEYWORDS.split(',');
-    for (const keyword in keywords) {
-      if (payload.message.includes(keywords[keyword])) {
+    for (const keyword of keywords) {
+      if (payload.message.includes(keyword)) {
         return await postMessage({
           room,
           message: process.env.MERCH_MESSAGE
@@ -19,14 +18,28 @@ export default async (payload, room) => {
 
     const reply = await askQuestion(payload.message.replace(`@${process.env.CHAT_NAME}`, ''), room);
     const responses = reply.split('\n');
-    for (const item in responses) {
-      const response = responses[item].trim();
-      if (response.length > 0) {
+    for (const response of responses) {
+      const trimmedResponse = response.trim();
+      if (trimmedResponse.length > 0) {
         await postMessage({
           room,
-          message: response
+          message: trimmedResponse
         });
       }
     }
+    // "/ COMMANDS" Start Here. 
+
+  } else if (payload.message.startsWith('/hello')) {
+    // Respond to /hello command
+    await postMessage({
+      room,
+      message: 'Hi!'
+    });
   }
-};
+  else if (payload.message.startsWith('/berad')) {
+    // Respond to /berad command
+    await postMessage({
+      room,
+      message: '@BeRad is the raddest guy in town'
+    });
+}}
