@@ -13,8 +13,6 @@ export default async (payload, room) => {
       console.log(`User ${payload.nickname} is excluded from welcome message`);
       return;
     }
-
-    console.log('Sending welcome message...');
     
     await postMessage({
       room,
