@@ -33,7 +33,7 @@ export default async (payload, room) => {
       }
     }
 
-    // "/ COMMANDS" Start Here.
+    //                    "/ COMMANDS" Start Here.
 
       // "HELLO"
   } else if (payload.message.startsWith('/hello')) {
@@ -57,7 +57,8 @@ export default async (payload, room) => {
     });
   }
 
-  // "/ THEME COMMANDS"
+
+  //                      "/ THEME COMMANDS"
   
   else if (payload.message.startsWith('/settheme')) {
     try {
@@ -166,6 +167,15 @@ export default async (payload, room) => {
     }
   }
   
+//                  Vote On Song Commands
+
+
+
+
+
+
+
+
   }
 
 
