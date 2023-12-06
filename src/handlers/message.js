@@ -9,7 +9,6 @@ const roomThemes = {};
 // AI CHAT STUFF
 export default async (payload, room) => {
   logger.info({ sender: payload.senderName, message: payload.message });
-  console.log('Payload:', payload);
 
   if (payload.message.includes(`@${process.env.CHAT_NAME}`)) {
     const keywords = process.env.MERCH_RESPONSE_KEYWORDS.split(',');
