@@ -1,0 +1,6 @@
+General Commands
+/gettheme - Checks the current theme of the room
+
+Moderator Commands
+/settheme - Sets the theme of the room
+/remove theme - Removes the theme of the room
