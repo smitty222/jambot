@@ -1,10 +1,17 @@
 import { Chain } from 'repeat'
 import { Bot } from './libs/bot.js'
 
-const roomBot = new Bot(process.env.JOIN_ROOM)
-await roomBot.connect()
-roomBot.configureListeners()
+const roomBot = new Bot(process.env.JOIN_ROOM);
+
+// Connect the bot before configuring listeners and repeating tasks
+await roomBot.connect();
+
+// Configure listeners after the bot has connected
+roomBot.configureListeners();
+
+// Add repeated tasks after the bot has connected
 const repeatedTasks = new Chain()
-repeatedTasks
-  .add(() => roomBot.processNewMessages())
-  .every(500)
+  .add(async () => {
+    await roomBot.processNewMessages();
+  })
+  .every(500);

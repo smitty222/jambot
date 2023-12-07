@@ -198,8 +198,11 @@ export default async (payload, room) => {
     }
   }
   
-//                  Vote On Song Commands
+//                  DJ Commands
 
+
+
+// ...
 
 
 
