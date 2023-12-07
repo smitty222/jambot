@@ -1,4 +1,4 @@
-import { postMessage } from '../libs/cometchat.js';
+import { postMessage} from '../libs/cometchat.js';
 import { askQuestion } from '../libs/ai.js';
 import { logger } from '../utils/logging.js';
 
@@ -53,14 +53,45 @@ export default async (payload, room) => {
   } else if (payload.message.startsWith('/cam')) {
     await postMessage({
       room,
-      message: '@Cam i love you'
+      message: '@Cam i love you!'
     });
-  }
 
+  } else if (payload.message.startsWith('/dance')) {
+    try {
+      // Define an array of dance image URLs
+      const danceImageOptions = [
+        'https://media.giphy.com/media/IwAZ6dvvvaTtdI8SD5/giphy.gif',
+        'https://media.giphy.com/media/3o7qDQ4kcSD1PLM3BK/giphy.gif',
+        'https://media.giphy.com/media/oP997KOtJd5ja/giphy.gif',
+        'https://media.giphy.com/media/wAxlCmeX1ri1y/giphy.gif',
+        // Add more dance image URLs as needed
+      ];
+  
+      // Randomly choose a dance image URL
+      const randomDanceImageUrl = danceImageOptions[Math.floor(Math.random() * danceImageOptions.length)];
+  
+      // Send the dance message with the randomly chosen image
+      await postMessage({
+        room,
+        message: '',
+        images: [randomDanceImageUrl],
+      });
+    } catch (error) {
+      console.error('Error processing /dance command:', error.message);
+      await postMessage({
+        room,
+        message: 'An error occurred while processing the dance command. Please try again.',
+      });
+    }
+  
+  
+    
+    
 
+  
   //                      "/ THEME COMMANDS"
   
-  else if (payload.message.startsWith('/settheme')) {
+  } else if (payload.message.startsWith('/settheme')) {
     try {
       // Fetch user roles for the room with authorization header
       const userRolesResponse = await fetch(`https://rooms.prod.tt.fm/roomUserRoles/just-jams`, {
@@ -96,7 +127,7 @@ export default async (payload, room) => {
       } else {
         await postMessage({
           room,
-          message: 'You need to be a moderator or owner to execute this command.'
+          message: 'You need to be a moderator to execute this command.'
         });
       }
     } catch (error) {
@@ -107,14 +138,14 @@ export default async (payload, room) => {
       });
     }
     
-  } else if (payload.message.startsWith('/gettheme')) {
+  } else if (payload.message.startsWith('/Theme')) {
 
     // Retrieve and post the theme for the room
     const theme = roomThemes[room];
     if (theme) {
       await postMessage({
         room,
-        message: `Current theme: ${theme}`
+        message: `The theme is currently set to: ${theme}`
       });
     } else {
       await postMessage({
