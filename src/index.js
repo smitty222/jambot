@@ -1,5 +1,6 @@
 import { Chain } from 'repeat'
 import { Bot } from './libs/bot.js'
+import { addBotAsDj } from './djActions.js';
 
 const roomBot = new Bot(process.env.JOIN_ROOM);
 
@@ -15,3 +16,7 @@ const repeatedTasks = new Chain()
     await roomBot.processNewMessages();
   })
   .every(500);
+
+  await addBotAsDj();
+
+  repeatedTasks.start();

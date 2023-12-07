@@ -56,4 +56,9 @@ export class Bot {
       if (handlers[payload.name]) handlers[payload.name](self.state, process.env.ROOM_UUID);
     });
   }
+
+  getSocketInstance() {
+    return this.socket;
+  }
+
 }  

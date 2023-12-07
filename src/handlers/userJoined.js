@@ -1,3 +1,4 @@
+// userJoined.js
 import { postMessage } from '../libs/cometchat.js';
 
 export default async (payload, room) => {
@@ -18,8 +19,10 @@ export default async (payload, room) => {
 
     const { userProfile: { nickname, uuid } } = joinedUser;
 
-    if ([process.env.CHAT_USER_ID, process.env.CHAT_REPLY_ID].includes(uuid)) {
-      console.log(`User ${nickname} is excluded from the welcome message`);
+    // Exclude the bot's user ID defined in the .env file
+    const botUserId = process.env.BOT_USER_UUID;
+    if (uuid === botUserId) {
+      console.log(`Bot user ${nickname} is excluded from the welcome message`);
       return;
     }
 
@@ -33,7 +36,7 @@ export default async (payload, room) => {
       }],
     });
 
-    console.log('Welcome message sent successfully');
+    console.log(`Welcome message sent successfully to ${nickname}`);
   } catch (error) {
     console.error('Error sending the welcome message:', error.message);
   }

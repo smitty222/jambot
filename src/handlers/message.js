@@ -1,16 +1,18 @@
-import { postMessage} from '../libs/cometchat.js';
+// message.js
+import { postMessage } from '../libs/cometchat.js';
 import { askQuestion } from '../libs/ai.js';
 import { logger } from '../utils/logging.js';
 
+
 // Store to keep track of themes
 const roomThemes = {};
-
 
 // AI CHAT STUFF
 export default async (payload, room) => {
   logger.info({ sender: payload.senderName, message: payload.message });
 
-  if (payload.message.includes(`@${process.env.CHAT_NAME}`)) {
+  // Check if payload.message is a string or an object (e.g., GIF)
+  if (typeof payload.message === 'string' && payload.message.includes(`@${process.env.CHAT_NAME}`)) {
     const keywords = process.env.MERCH_RESPONSE_KEYWORDS.split(',');
     for (const keyword of keywords) {
       if (payload.message.includes(keyword)) {
@@ -33,23 +35,23 @@ export default async (payload, room) => {
       }
     }
 
-    //                    "/ COMMANDS" Start Here.
+    // "/ COMMANDS" Start Here.
 
-      // "HELLO"
+    // "HELLO"
   } else if (payload.message.startsWith('/hello')) {
     await postMessage({
-       room,
+      room,
       message: 'Hi!'
     });
 
-      // "BERAD"
+    // "BERAD"
   } else if (payload.message.startsWith('/berad')) {
     await postMessage({
       room,
       message: '@BeRad is the raddest guy in town'
     });
 
-      // "CAM"
+    // "CAM"
   } else if (payload.message.startsWith('/cam')) {
     await postMessage({
       room,
@@ -66,10 +68,10 @@ export default async (payload, room) => {
         'https://media.giphy.com/media/wAxlCmeX1ri1y/giphy.gif',
         // Add more dance image URLs as needed
       ];
-  
+
       // Randomly choose a dance image URL
       const randomDanceImageUrl = danceImageOptions[Math.floor(Math.random() * danceImageOptions.length)];
-  
+
       // Send the dance message with the randomly chosen image
       await postMessage({
         room,
@@ -83,14 +85,9 @@ export default async (payload, room) => {
         message: 'An error occurred while processing the dance command. Please try again.',
       });
     }
-  
-  
-    
-    
 
-  
-  //                      "/ THEME COMMANDS"
-  
+    // "/ THEME COMMANDS"
+
   } else if (payload.message.startsWith('/settheme')) {
     try {
       // Fetch user roles for the room with authorization header
@@ -99,27 +96,27 @@ export default async (payload, room) => {
           Authorization: `Bearer ${process.env.TTL_USER_TOKEN}`,
         },
       });
-  
+
       if (!userRolesResponse.ok) {
         const errorMessage = await userRolesResponse.text();
         console.error('User Roles Response Error:', errorMessage);
         throw new Error(`User Roles request failed with status ${userRolesResponse.status}`);
       }
-  
+
       const userRolesData = await userRolesResponse.json();
       const userRoles = Array.isArray(userRolesData) ? userRolesData : [];
-  
+
       // Check if user is a moderator or owner
       const allowedRoles = ['moderator', 'owner'];
       const userRole = userRoles.find(role => role.userUuid === payload.sender)?.role;
-  
+
       if (allowedRoles.includes(userRole)) {
         // Extract theme from the command
         const theme = payload.message.replace('/settheme', '').trim();
-  
+
         // Store the theme for the room
         roomThemes[room] = theme;
-  
+
         await postMessage({
           room,
           message: `Theme set to: ${theme}`
@@ -137,7 +134,7 @@ export default async (payload, room) => {
         message: 'An error occurred while fetching user roles. Please try again.'
       });
     }
-    
+
   } else if (payload.message.startsWith('/Theme')) {
 
     // Retrieve and post the theme for the room
@@ -161,24 +158,24 @@ export default async (payload, room) => {
           Authorization: `Bearer ${process.env.TTL_USER_TOKEN}`,
         },
       });
-  
+
       if (!userRolesResponse.ok) {
         const errorMessage = await userRolesResponse.text();
         console.error('User Roles Response Error:', errorMessage);
         throw new Error(`User Roles request failed with status ${userRolesResponse.status}`);
       }
-  
+
       const userRolesData = await userRolesResponse.json();
       const userRoles = Array.isArray(userRolesData) ? userRolesData : [];
-  
+
       // Check if user is a moderator or owner
       const allowedRoles = ['moderator', 'owner'];
       const userRole = userRoles.find(role => role.userUuid === payload.sender)?.role;
-  
+
       if (allowedRoles.includes(userRole)) {
         // Remove the theme for the room
         delete roomThemes[room];
-  
+
         await postMessage({
           room,
           message: 'Theme removed.'
@@ -197,19 +194,7 @@ export default async (payload, room) => {
       });
     }
   }
-  
-//                  DJ Commands
+}
 
-
-
-// ...
-
-
-
-
-
-
-
-  }
-
-
+  // DJ Commands
+ 
