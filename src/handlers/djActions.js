@@ -1,6 +1,6 @@
 // djActions.js
 
-import { Bot } from './libs/bot.js';
+import { Bot } from "../libs/bot.js";
 
 export async function addBotAsDj() {
   const roomBot = new Bot(process.env.JOIN_ROOM);
