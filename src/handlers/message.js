@@ -44,6 +44,13 @@ export default async (payload, room) => {
       message: 'Hi!'
     });
 
+    // "Commands List"
+  } else if (payload.message.startsWith('/commands')) {
+    await postMessage({
+      room,
+      message: 'General commands are /Theme, /Dance, and more to come in the future'
+    });
+
     // "BERAD"
   } else if (payload.message.startsWith('/berad')) {
     await postMessage({
