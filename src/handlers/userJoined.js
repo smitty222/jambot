@@ -32,7 +32,7 @@ export default async (payload, room) => {
 
     await postMessage({
       room,
-      message: `Welcome to Just Jams @${userProfile.nickname} . Feel free to ask me any questions by tagging me or use /commands for a list of commands`,
+      message: `Welcome @${userProfile.nickname} . Feel free to ask me any questions by tagging me, or use /commands for a list of commands`,
       mentions: [{
         position: 8,
         nickname: userProfile.nickname,
