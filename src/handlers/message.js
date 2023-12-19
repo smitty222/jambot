@@ -2,7 +2,7 @@
 import { postMessage } from '../libs/cometchat.js';
 import { askQuestion } from '../libs/ai.js';
 import { logger } from '../utils/logging.js';
-import { addBotAsDj } from './djActions.js';
+import { addBotAsDj} from './djActions.js';
 
 // Store to keep track of themes
 const roomThemes = {};
@@ -203,8 +203,8 @@ export default async (payload, room) => {
   }
 
 
-  // DJ Commands
- // "/ ADDDJ" Command
+ // DJ Commands
+// "/ ADDDJ" Command
 else if (payload.message.startsWith('/adddj')) {
   try {
     // Call the function to add the bot as a DJ
