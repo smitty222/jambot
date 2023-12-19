@@ -2,7 +2,6 @@
 import { postMessage } from '../libs/cometchat.js';
 import { askQuestion } from '../libs/ai.js';
 import { logger } from '../utils/logging.js';
-import { addBotAsDj} from './djActions.js';
 
 // Store to keep track of themes
 const roomThemes = {};
@@ -201,26 +200,4 @@ export default async (payload, room) => {
       });
     }
   }
-
-
- // DJ Commands
-// "/ ADDDJ" Command
-else if (payload.message.startsWith('/adddj')) {
-  try {
-    // Call the function to add the bot as a DJ
-    await addBotAsDj();
-
-    // Respond to the chat indicating the result
-    await postMessage({
-      room,
-      message: 'Bot added to the DJ stand!',
-    });
-  } catch (error) {
-    console.error('Error adding bot as DJ:', error.message);
-    await postMessage({
-      room,
-      message: 'An error occurred while adding the bot to the DJ stand. Please try again.',
-    });
-  }
-}
 }
