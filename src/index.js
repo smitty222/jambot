@@ -1,6 +1,5 @@
 import { Chain } from 'repeat'
 import { Bot } from './libs/bot.js'
-import { addBotAsDj } from './handlers/djActions.js';
 
 const roomBot = new Bot(process.env.JOIN_ROOM);
 
