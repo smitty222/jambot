@@ -2,7 +2,6 @@
 import { postMessage } from '../libs/cometchat.js';
 import { askQuestion } from '../libs/ai.js';
 import { logger } from '../utils/logging.js';
-import { getCurrentUsers } from './userStatus.js'; // Import the getCurrentUsers function
 
 // Store to keep track of themes
 const roomThemes = {};
