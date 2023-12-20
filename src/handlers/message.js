@@ -2,6 +2,7 @@
 import { postMessage } from '../libs/cometchat.js';
 import { askQuestion } from '../libs/ai.js';
 import { logger } from '../utils/logging.js';
+import { getCurrentUsers } from './userStatus.js'; // Import the getCurrentUsers function
 
 // Store to keep track of themes
 const roomThemes = {};
@@ -200,6 +201,15 @@ export default async (payload, room) => {
       });
     }
   }
+ // "/getUsers COMMAND"
+  else if (payload.message.startsWith('/getUsers')) {
+  const userList = getCurrentUsers();
+  const userListString = userList.join(', ');
 
-  
+  // Respond with the user list
+  await postMessage({
+    room,
+    message: `Current users: ${userListString}`
+  });
+  }
 }

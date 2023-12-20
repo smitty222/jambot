@@ -1,12 +1,8 @@
 // userJoined.js
 import { postMessage } from '../libs/cometchat.js';
 
-// Define custom welcome messages for specific users
-const customWelcomeMessages = {
-  '210141ad-6b01-4665-84dc-e47ea7c27dcb': 'Test Test Test Rsmitty has joined', // Rsmitty
-  'user_uuid_2': 'Hello, User2! Enjoy your time in the room and feel free to chat with me.',
-  // Add more user UUIDs and their custom welcome messages as needed
-};
+// Array to keep track of joined user IDs
+const joinedUserIds = [];
 
 export const handleUserJoined = async (payload, room) => {
   try {
@@ -37,24 +33,30 @@ export const handleUserJoined = async (payload, room) => {
 
     // Check if the current joined user is not in the list
     if (!joinedUserIds.includes(joinedUser.uuid)) {
-      const customWelcomeMessage = customWelcomeMessages[joinedUser.uuid];
-
-      // Send custom welcome message if available, else send a generic welcome message
-      const welcomeMessage = customWelcomeMessage || `Welcome to the room, ${userProfile.nickname}!`;
-
-      // Send welcome message
-      await postMessage({
-        room,
-        message: welcomeMessage,
-        mentions: customWelcomeMessage ? [] : undefined,
-      });
-
-      console.log(`Welcome message sent successfully to ${userProfile.nickname}`);
-
       // Update the list of joined users
       joinedUserIds.push(joinedUser.uuid);
     }
   } catch (error) {
-    console.error('Error sending the welcome message:', error.message);
+    console.error('Error handling user joined:', error.message);
+  }
+};
+
+// Function to get the list of joined users by UUID
+export const getUsersList = async (payload, room) => {
+  try {
+    console.log('Get Users List handler called:');
+    console.log('Joined User IDs:', joinedUserIds);
+
+    const usersListMessage = `Current users: ${joinedUserIds.join(', ')}`;
+
+    // Send the list of joined users as a response
+    await postMessage({
+      room,
+      message: usersListMessage,
+    });
+
+    console.log(`Users list sent successfully: ${usersListMessage}`);
+  } catch (error) {
+    console.error('Error handling /getUsers command:', error.message);
   }
 };
