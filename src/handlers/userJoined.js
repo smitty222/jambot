@@ -43,7 +43,7 @@ export default async (payload, room) => {
       const customWelcomeMessage = customWelcomeMessages[joinedUser.uuid]
 
       // Send custom welcome message if available, else send a generic welcome message
-      const welcomeMessage = customWelcomeMessage || `Welcome to the room, @${userProfile.nickname}! The current theme is: ${roomThemes[room]}`
+      const welcomeMessage = customWelcomeMessage || `Welcome to the room, @${userProfile.nickname}!`
 
       // Send welcome message
       await postMessage({
