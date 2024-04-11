@@ -7,10 +7,14 @@ await roomBot.connect()
 
 roomBot.configureListeners()
 
-const repeatedTasks = new Chain()
-  .add(async () => {
-    await roomBot.processNewMessages()
-  })
-  .every(500)
+let repeatedTasks = null
 
-export { roomBot }
+if (process.env.ENABLE_REPEATED_TASKS === 'true') {
+  repeatedTasks = new Chain()
+    .add(async () => {
+      await roomBot.processNewMessages()
+    })
+    .every(500)
+}
+
+export { roomBot, repeatedTasks }
