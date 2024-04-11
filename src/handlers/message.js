@@ -4,7 +4,6 @@ import { askQuestion } from '../libs/ai.js';
 import { logger } from '../utils/logging.js';
 import { roomBot } from '/Users/RyanSmith/Desktop/jamflowbot/src/index.js'
 
-
 // Store to keep track of themes
 const roomThemes = {};
 
@@ -452,15 +451,6 @@ export default async (payload, room) => {
       });
     }
   }
- // "/getUsers COMMAND"
-  else if (payload.message.startsWith('/getusers')) {
-  const userList = getCurrentUsers();
-  const userListString = userList.join(', ');
+ 
 
-  // Respond with the user list
-  await postMessage({
-    room,
-    message: `Current users: ${userListString}`
-  });
-  }
 }
