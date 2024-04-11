@@ -1,6 +1,7 @@
 import { Chain } from 'repeat'
 import { Bot } from './libs/bot.js'
 
+
 const roomBot = new Bot(process.env.JOIN_ROOM);
 
 // Connect the bot before configuring listeners and repeating tasks

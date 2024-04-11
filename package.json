@@ -4,6 +4,9 @@
   "description": "A bot to interact with users in chat on tt.live",
   "main": "src/index.js",
   "type": "module",
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "dev": "NODE_ENV=development nodemon -r dotenv/config src/index.js",
     "lint": "standard",
