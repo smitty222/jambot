@@ -16,4 +16,6 @@ const repeatedTasks = new Chain()
   })
   .every(500);
 
+  export {roomBot};
+
   

@@ -2,6 +2,8 @@
 import { postMessage } from '../libs/cometchat.js';
 import { askQuestion } from '../libs/ai.js';
 import { logger } from '../utils/logging.js';
+import { roomBot } from '/Users/RyanSmith/Desktop/jamflowbot/src/index.js'
+
 
 // Store to keep track of themes
 const roomThemes = {};
@@ -10,9 +12,8 @@ const roomThemes = {};
 export default async (payload, room) => {
   logger.info({ sender: payload.senderName, message: payload.message });
 
-  // Check if payload.message is a string or an object (e.g., GIF)
   if (typeof payload.message === 'string' && payload.message.includes(`@${process.env.CHAT_NAME}`)) {
-    // Code for handling AI responses
+    
     const reply = await askQuestion(payload.message.replace(`@${process.env.CHAT_NAME}`, ''), room);
     if (reply) {
       const responseText = reply.text;
@@ -37,16 +38,80 @@ export default async (payload, room) => {
 
   // "/ COMMANDS" Start Here.
 
+
   } else if (payload.message.startsWith('/hello')) {
     await postMessage({
       room,
       message: 'Hi!'
     });
 
+  } else if (payload.message.startsWith('/jump')) {
+    try {
+
+      await roomBot.playOneTimeAnimation('jump', process.env.ROOM_UUID, process.env.BOT_USER_UUID);
+    
+    } catch (error) {
+      console.error('Error Jumping', error);
+    }
+
+  } else if (payload.message.startsWith('/like')) {
+    try {
+
+      await roomBot.voteOnSong(process.env.ROOM_UUID, { like: true }, process.env.BOT_USER_UUID);
+    
+    } catch (error) {
+      console.error('Error Voting on Song', error);
+    }
+    
+  } else if (payload.message.startsWith('/dislike')) {
+    try {
+
+      await roomBot.voteOnSong(process.env.ROOM_UUID, { like: false }, process.env.BOT_USER_UUID);
+    
+    } catch (error) {
+      console.error('Error Voting on Song', error);
+    }
+
+  } else if (payload.message.startsWith('/star')) {
+    try {
+
+      await roomBot.voteOnSong(process.env.ROOM_UUID, { star: true }, process.env.BOT_USER_UUID);
+    
+    } catch (error) {
+      console.error('Error Voting on Song', error);
+    }
+
+  } else if (payload.message.startsWith('/unstar')) {
+    try {
+
+      await roomBot.voteOnSong(process.env.ROOM_UUID, { star: false }, process.env.BOT_USER_UUID);
+    
+    } catch (error) {
+      console.error('Error Voting on Song', error);
+    }
+
+  } else if (payload.message.startsWith('/addDJ')) {
+  try {
+ 
+    await roomBot.addDJ();
+
+  } catch (error) {
+    console.error('Error adding DJ:', error);
+  }
+
+} else if (payload.message.startsWith('/removeDJ')) {
+  try {
+ 
+    await roomBot.removeDJ();
+
+  } catch (error) {
+    console.error('Error adding DJ:', error);
+  }
+
   } else if (payload.message.startsWith('/commands')) {
     await postMessage({
       room,
-      message: 'General commands are /theme, /dance, /drink, /cheers, /tomatoes and more to come in the future'
+      message: 'General commands are /theme, /dance, /drink, /cheers, /tomatoes, /jump'
     });
 
   } else if (payload.message.startsWith('/berad')) {

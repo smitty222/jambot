@@ -3,9 +3,9 @@ import { postMessage } from '../libs/cometchat.js';
 
 // Define custom welcome messages for specific users
 const customWelcomeMessages = {
-  '210141ad-6b01-4665-84dc-e47ea7c27dcb': 'Rsmitty has arrived!', // Rsmitty
-  '072b0bb3-518e-4422-97fd-13dc53e8ae7e': 'DJ Shirley! Welcome back! I missed you so much!', //Shirley
-  '92302b7d-ae5e-466f-975b-d3fee461f13f': 'hi Cam. Welcome back', //Cam
+  '210141ad-6b01-4665-84dc-e47ea7c27dcb': '@Rsmitty has arrived!', // Rsmitty
+  '072b0bb3-518e-4422-97fd-13dc53e8ae7e': '@DJ Shirley! Welcome back! I missed you so much!', //Shirley
+  '92302b7d-ae5e-466f-975b-d3fee461f13f': 'hi @Cam. Welcome back', //Cam
   // Add more user UUIDs and their custom welcome messages as needed
 };
 
