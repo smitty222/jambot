@@ -1,10 +1,6 @@
 import { Chain } from 'repeat'
 import { Bot } from './libs/bot.js'
 
-const express = require('express');
-const app = express();
-const port = process.env.PORT || 3000; // Use the port provided by Heroku or default to 3000 for local development
-
 console.log('Initializing roomBot...')
 const roomBot = new Bot(process.env.JOIN_ROOM)
 
@@ -32,9 +28,4 @@ if (process.env.ENABLE_REPEATED_TASKS === 'true') {
 
 console.log('Initialization complete.')
 
-// Add this section to start the server listening on the specified port
-const server = app.listen(port, () => {
-    console.log(`Server is running on port ${port}`);
-});
-
-export { roomBot, repeatedTasks, server }
+export { roomBot, repeatedTasks }
