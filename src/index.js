@@ -33,8 +33,8 @@ if (process.env.ENABLE_REPEATED_TASKS === 'true') {
 console.log('Initialization complete.')
 
 // Add this section to start the server listening on the specified port
-app.listen(port, () => {
+const server = app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
 });
 
-export { roomBot, repeatedTasks }
+export { roomBot, repeatedTasks, server }
