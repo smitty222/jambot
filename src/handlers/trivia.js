@@ -123,7 +123,7 @@ const triviaData = [
     {
       "question": "Who holds the record for the most career home runs in Major League Baseball?",
       "answers": ["A. Barry Bonds", "B. Babe Ruth", "C. Hank Aaron", "D. Alex Rodriguez"],
-      "correctAnswer": "D"
+      "correctAnswer": "A"
     },
     {
       "question": "What is the official national sport of Canada?",
