@@ -54,7 +54,7 @@ export default async (payload, room) => {
 
       console.log(`Welcome message sent successfully to ${userProfile.nickname}`)
 
-      // Update the last greeted user
+      // Update the last greeted user only if a new user is greeted
       lastGreetedUser = joinedUser
     }
   } catch (error) {

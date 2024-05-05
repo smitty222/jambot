@@ -66,8 +66,14 @@ export class Bot {
       self.state = fastJson.applyPatch(self.state, payload.statePatch).newDocument
       logger.debug(`State updated for ${payload.name}`)
       if (handlers[payload.name]) handlers[payload.name](self.state, process.env.ROOM_UUID)
-    })
-  }
+    
+      // Check if the playedSong state has been updated
+    if (payload.name === 'playedSong') {
+      // Call the scheduleJumpAction method when playedSong state is updated
+      self.scheduleLikeSong(process.env.ROOM_UUID, process.env.BOT_USER_UUID);
+    }
+  });
+}
 
   getSocketInstance () {
     return this.socket
@@ -161,6 +167,24 @@ export class Bot {
       await this.socket.action('voteOnSong', actionPayload)
     } catch (error) {
       logger.error('Error voting on song:', error)
+    }
+  }
+  async scheduleLikeSong(roomUuid, userUuid) {
+    try {
+      if (!this.socket) {
+        throw new Error('SocketClient not initialized. Please call connect() first.');
+      }
+  
+      // Set a timeout to trigger the "/like" action after 5 seconds
+      setTimeout(async () => {
+        try {
+          await this.voteOnSong(process.env.ROOM_UUID, { like: true }, process.env.BOT_USER_UUID);
+        } catch (error) {
+          logger.error('Error voting on song', error);
+        }
+      }, 5000); // 5 seconds delay
+    } catch (error) {
+      logger.error('Error scheduling song vote', error);
     }
   }
 }

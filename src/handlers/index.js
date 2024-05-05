@@ -4,7 +4,6 @@ import userLeft from './userLeft.js'
 
 export const handlers = {
   message,
-  userJoined,
-  userLeft
+  userJoined
 
 }

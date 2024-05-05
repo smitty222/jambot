@@ -1,15 +1,51 @@
 // message.js
 import { postMessage } from '../libs/cometchat.js'
 import { askQuestion } from '../libs/ai.js'
+import { selectRandomQuestion, checkAnswer } from './trivia.js'
 import { logger } from '../utils/logging.js'
 import { roomBot } from '../index.js'
 
 // Store to keep track of themes
 const roomThemes = {}
 
+// Store to keep track of the current trivia question
+let currentQuestion = null;
+
+// Store to keep track of the submitted answer
+let submittedAnswer = null;
+
+// Variable to store the total points
+let totalPoints = 0;
+
+// Set to store the questions that have already been asked
+const askedQuestions = new Set();
+
+// Function to reset the submitted answer and current question
+const resetTriviaState = () => {
+  currentQuestion = null;
+  submittedAnswer = null;
+};
+
+// Function to get a new random question that has not been asked before
+const getNewQuestion = () => {
+  let question = selectRandomQuestion();
+  while (askedQuestions.has(question)) {
+    question = selectRandomQuestion();
+  }
+  askedQuestions.add(question);
+  return question;
+};
+
 // AI CHAT STUFF
 export default async (payload, room) => {
   logger.info({ sender: payload.senderName, message: payload.message })
+
+  // Handle GIF messages
+  if (payload.message.type === 'ChatGif') {
+    // Ignore GIF messages
+    logger.info('Received a GIF message:', payload.message);
+    return; // Exit early without performing any further action
+  }
 
   if (typeof payload.message === 'string' && payload.message.includes(`@${process.env.CHAT_NAME}`)) {
     const reply = await askQuestion(payload.message.replace(`@${process.env.CHAT_NAME}`, ''), room)
@@ -33,12 +69,128 @@ export default async (payload, room) => {
       })
     }
 
+    //  TRIVIA STARTS HERE
+
+  } else if (payload.message.startsWith('/triviastart')) {
+    if (currentQuestion) {
+      await postMessage({
+        room,
+        message: "A trivia question is already active. Wait for it to end."
+      });
+    } else {
+      currentQuestion = getNewQuestion();
+      const triviaMessage = `Question: ${currentQuestion.question}\nOptions: ${currentQuestion.answers.join(', ')}`;
+      await postMessage({
+        room,
+        message: triviaMessage
+      });
+    }
+  } else if (payload.message.startsWith('/submit')) {
+    if (!currentQuestion) {
+      await postMessage({
+        room,
+        message: "There is no active trivia question."
+      });
+      return;
+    }
+
+    if (submittedAnswer) {
+      await postMessage({
+        room,
+        message: "An answer has already been submitted."
+      });
+      return;
+    }
+
+    const answer = payload.message.split(' ')[1].toUpperCase();
+    if (!['A', 'B', 'C', 'D'].includes(answer)) {
+      await postMessage({
+        room,
+        message: "Invalid answer format. Please submit your answer as A/B/C/D."
+      });
+      return;
+    }
+
+    // Store the submitted answer
+    submittedAnswer = answer;
+
+    // Check if the submitted answer is correct
+if (checkAnswer(currentQuestion, submittedAnswer)) {
+  totalPoints++; // Increment total points for correct answer
+  await postMessage({
+    room,
+    message: `Congratulations! Your answer is correct. Total points: ${totalPoints}`
+  });
+
+  // Check if total points reach 5 to trigger jump command
+  if (totalPoints === 5) {
+    try {
+      await roomBot.playOneTimeAnimation('jump', process.env.ROOM_UUID, process.env.BOT_USER_UUID);
+    } catch (error) {
+      console.error('Error Jumping', error);
+    }
+  }
+  
+} else {
+  // If the answer is incorrect, provide the correct answer
+  await postMessage({
+    room,
+    message: `Sorry, your answer is incorrect. The correct answer was ${currentQuestion.correctAnswer}.`
+  });
+}
+    // Reset trivia state after handling the answer
+    resetTriviaState();
+
+    // Move to the next question
+    currentQuestion = getNewQuestion();
+    const triviaMessage = `Question: ${currentQuestion.question}\nOptions: ${currentQuestion.answers.join(', ')}`;
+    await postMessage({
+      room,
+      message: triviaMessage
+    });
+  } else if (payload.message.startsWith('/triviaend')) {
+    resetTriviaState();
+    // Clear the set of asked questions
+    askedQuestions.clear();
+    await postMessage({
+      room,
+      message: `The trivia game has been ended. Total points: ${totalPoints}`
+    });
+
+  } else if (payload.message.startsWith('/trivia')) {
+    if (!currentQuestion) {
+      await postMessage({
+        room,
+        message: "To start a trivia game you can use /triviastart. To submit your answer you can use /submit followed by the letter option you choose. The points will tally up and the game will continue on until you use /triviaend"
+      });
+      return;
+    }
+    
     // "/ COMMANDS" Start Here.
   } else if (payload.message.startsWith('/hello')) {
     await postMessage({
       room,
       message: 'Hi!'
     })
+
+  } else if (payload.message.startsWith('/barkbark')) {
+    await postMessage({
+      room,
+      message: 'WOOF WOOF'
+    })
+
+  } else if (payload.message.startsWith('/bark')) {
+    await postMessage({
+      room,
+      message: 'WOOF'
+    })
+
+  } else if (payload.message.startsWith('/commands')) {
+    await postMessage({
+      room,
+      message: 'General commands are /theme, /dance, /drink, /cheers, /tomatoes, /jump, /burp, /fart, /party, /trivia'
+    })
+
   } else if (payload.message.startsWith('/jump')) {
     try {
       await roomBot.playOneTimeAnimation('jump', process.env.ROOM_UUID, process.env.BOT_USER_UUID)
@@ -81,11 +233,7 @@ export default async (payload, room) => {
     } catch (error) {
       console.error('Error adding DJ:', error)
     }
-  } else if (payload.message.startsWith('/commands')) {
-    await postMessage({
-      room,
-      message: 'General commands are /theme, /dance, /drink, /cheers, /tomatoes, /jump'
-    })
+  
   } else if (payload.message.startsWith('/berad')) {
     await postMessage({
       room,
@@ -108,9 +256,9 @@ export default async (payload, room) => {
     })
 
     //  GIF's
-  } else if (payload.message.startsWith('/legend')) {
+  } else if (payload.message.startsWith('/burp')) {
     try {
-      const tomatoGifUrl = 'https://media.giphy.com/media/fcDNkoEy1aXOFwbv7q/giphy.gif?cid=ecf05e47fvbfd2n1xikifbbtuje37cga98d9rmx7sjo2olzu&ep=v1_gifs_search&rid=giphy.gif&ct=g'
+      const tomatoGifUrl = 'https://media.giphy.com/media/3orieOieQrTkLXl2SY/giphy.gif?cid=790b7611gofgmq0d396jww26sbt1bhc9ljg9am4nb8m6f6lo&ep=v1_gifs_search&rid=giphy.gif&ct=g'
 
       // Send the GIF as a message
       await postMessage({
@@ -135,6 +283,59 @@ export default async (payload, room) => {
         'https://media.giphy.com/media/3o7qDQ4kcSD1PLM3BK/giphy.gif',
         'https://media.giphy.com/media/oP997KOtJd5ja/giphy.gif',
         'https://media.giphy.com/media/wAxlCmeX1ri1y/giphy.gif'
+        // Add more dance image URLs as needed
+      ]
+
+      // Randomly choose a dance image URL
+      const randomDanceImageUrl = danceImageOptions[Math.floor(Math.random() * danceImageOptions.length)]
+
+      // Send the dance message with the randomly chosen image
+      await postMessage({
+        room,
+        message: '',
+        images: [randomDanceImageUrl]
+      })
+    } catch (error) {
+      console.error('Error processing /dance command:', error.message)
+      await postMessage({
+        room,
+        message: 'An error occurred while processing the dance command. Please try again.'
+      })
+    }
+
+  } else if (payload.message.startsWith('/fart')) {
+    try {
+      // Define an array of dance image URLs
+      const danceImageOptions = [
+        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ21qYmtndjNqYWRqaTFrd2NqaDNkejRqY3RrMTV5Mzlvb3gydDk0ZyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/dWxYMTXIJtT9wGLkOw/giphy.gif',
+        'https://media.giphy.com/media/LFvQBWwKk7Qc0/giphy.gif?cid=790b7611gmjbkgv3jadji1kwcjh3dz4jctk15y39oox2t94g&ep=v1_gifs_search&rid=giphy.gif&ct=g',
+        // Add more dance image URLs as needed
+      ]
+
+      // Randomly choose a dance image URL
+      const randomDanceImageUrl = danceImageOptions[Math.floor(Math.random() * danceImageOptions.length)]
+
+      // Send the dance message with the randomly chosen image
+      await postMessage({
+        room,
+        message: '',
+        images: [randomDanceImageUrl]
+      })
+    } catch (error) {
+      console.error('Error processing /dance command:', error.message)
+      await postMessage({
+        room,
+        message: 'An error occurred while processing the dance command. Please try again.'
+      })
+    }
+
+  } else if (payload.message.startsWith('/party')) {
+    try {
+      // Define an array of dance image URLs
+      const danceImageOptions = [
+        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExZHF6aTAzeXNubW84aHJrZzd1OGM1ZjM0MGp5aTZrYTRrZmdscnYwbyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/IwAZ6dvvvaTtdI8SD5/giphy.gif',
+        'https://media.giphy.com/media/xUA7aT1vNqVWHPY1cA/giphy.gif?cid=790b7611ov12e8uoq7xedaifcwz9gj28xb43wtxtnuj0rnod&ep=v1_gifs_search&rid=giphy.gif&ct=g',
+        'https://media.giphy.com/media/iJ2cZjydqg9wFkzbGD/giphy.gif?cid=790b7611ov12e8uoq7xedaifcwz9gj28xb43wtxtnuj0rnod&ep=v1_gifs_search&rid=giphy.gif&ct=g',
         // Add more dance image URLs as needed
       ]
 
@@ -273,27 +474,21 @@ export default async (payload, room) => {
     }
   } else if (payload.message.startsWith('/tomatoes')) {
     try {
-      // Define an array of cheers options (GIF URLs and emojis)
+     
       const cheersOptions = [
         { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExb296MmJyeHBpYm9yMGQwbG81cnhlcGd4MWF4N3A1dWhhN3FxNmJvdCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/Her9TInMPQYrS/giphy.gif' }, // Taz tomatoes GIF
         { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExbGY4YmQwZTA5aHk3ejhrbTI1Mmk1NDl6ZTkzM2h6cm53djZsYnB5diZlcD12MV9naWZzX3NlYXJjaCZjdD1n/26nfoIrm8lHXqmm7C/giphy.gif' }, // Spongebob tomatoes GIF
-        { type: 'emoji', value: '🍅🍅🍅🍅' } // Beer clinking emoji
-        // Add more cheers options as needed
+        { type: 'emoji', value: '🍅🍅🍅🍅' }
+    
       ]
-
-      // Randomly choose a cheers option
       const randomCheersOption = cheersOptions[Math.floor(Math.random() * cheersOptions.length)]
-
-      // Check the type of cheers option and send the appropriate message
       if (randomCheersOption.type === 'gif') {
-        // Send the cheers message with the randomly chosen GIF
         await postMessage({
           room,
           message: '',
           images: [randomCheersOption.value]
         })
       } else if (randomCheersOption.type === 'emoji') {
-        // Send the cheers message with the randomly chosen emoji
         await postMessage({
           room,
           message: randomCheersOption.value
@@ -306,7 +501,6 @@ export default async (payload, room) => {
         message: 'An error occurred while processing the cheers command. Please try again.'
       })
     }
-
     // "/ THEME COMMANDS"
   } else if (payload.message.startsWith('/settheme')) {
     try {
@@ -365,7 +559,7 @@ export default async (payload, room) => {
     } else {
       await postMessage({
         room,
-        message: 'No theme set.'
+        message: 'No theme set. Play whatever you like!'
       })
     }
   } else if (payload.message.startsWith('/removetheme')) {
