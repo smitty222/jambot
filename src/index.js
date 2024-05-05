@@ -1,16 +1,27 @@
-import { Chain } from 'repeat'
-import { Bot } from './libs/bot.js'
+import express from 'express';
+import { Chain } from 'repeat';
+import { Bot } from './libs/bot.js';
 
-const roomBot = new Bot(process.env.JOIN_ROOM)
+const app = express(); // Create an instance of Express application
 
-await roomBot.connect()
+const roomBot = new Bot(process.env.JOIN_ROOM);
 
-roomBot.configureListeners()
+await roomBot.connect();
+
+roomBot.configureListeners();
 
 const repeatedTasks = new Chain()
   .add(async () => {
-    await roomBot.processNewMessages()
+    await roomBot.processNewMessages();
   })
-  .every(500)
+  .every(500);
 
-export { roomBot }
+// Get the port from the environment variable or default to 3000
+const PORT = process.env.PORT || 3000;
+
+// Start listening on the specified port
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
+
+export { roomBot };
