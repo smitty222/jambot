@@ -5,28 +5,16 @@ import { selectRandomQuestion, checkAnswer } from './trivia.js'
 import { logger } from '../utils/logging.js'
 import { roomBot } from '../index.js'
 
-// Store to keep track of themes
+// Themes Stuff
 const roomThemes = {}
-
-// Store to keep track of the current trivia question
 let currentQuestion = null;
-
-// Store to keep track of the submitted answer
 let submittedAnswer = null;
-
-// Variable to store the total points
 let totalPoints = 0;
-
-// Set to store the questions that have already been asked
 const askedQuestions = new Set();
-
-// Function to reset the submitted answer and current question
 const resetTriviaState = () => {
   currentQuestion = null;
   submittedAnswer = null;
 };
-
-// Function to get a new random question that has not been asked before
 const getNewQuestion = () => {
   let question = selectRandomQuestion();
   while (askedQuestions.has(question)) {
@@ -35,18 +23,15 @@ const getNewQuestion = () => {
   askedQuestions.add(question);
   return question;
 };
-
-// AI CHAT STUFF
+// Messages
 export default async (payload, room) => {
   logger.info({ sender: payload.senderName, message: payload.message })
-
-  // Handle GIF messages
+  // Handle Gifs Sent in Chat
   if (payload.message.type === 'ChatGif') {
-    // Ignore GIF messages
     logger.info('Received a GIF message:', payload.message);
-    return; // Exit early without performing any further action
+    return; 
   }
-
+  // AI Chat Stuff
   if (typeof payload.message === 'string' && payload.message.includes(`@${process.env.CHAT_NAME}`)) {
     const reply = await askQuestion(payload.message.replace(`@${process.env.CHAT_NAME}`, ''), room)
     if (reply) {
@@ -68,9 +53,7 @@ export default async (payload, room) => {
         message: 'Sorry, I could not generate a response at the moment.'
       })
     }
-
-    //  TRIVIA STARTS HERE
-
+    //  Trivia Stuff
   } else if (payload.message.startsWith('/triviastart')) {
     if (currentQuestion) {
       await postMessage({
@@ -93,7 +76,6 @@ export default async (payload, room) => {
       });
       return;
     }
-
     if (submittedAnswer) {
       await postMessage({
         room,
@@ -101,7 +83,6 @@ export default async (payload, room) => {
       });
       return;
     }
-
     const answer = payload.message.split(' ')[1].toUpperCase();
     if (!['A', 'B', 'C', 'D'].includes(answer)) {
       await postMessage({
@@ -110,19 +91,13 @@ export default async (payload, room) => {
       });
       return;
     }
-
-    // Store the submitted answer
     submittedAnswer = answer;
-
-    // Check if the submitted answer is correct
 if (checkAnswer(currentQuestion, submittedAnswer)) {
-  totalPoints++; // Increment total points for correct answer
+  totalPoints++;
   await postMessage({
     room,
     message: `Congratulations! Your answer is correct. Total points: ${totalPoints}`
   });
-
-  // Check if total points reach 5 to trigger jump command
   if (totalPoints === 5) {
     try {
       await roomBot.playOneTimeAnimation('jump', process.env.ROOM_UUID, process.env.BOT_USER_UUID);
@@ -130,18 +105,13 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
       console.error('Error Jumping', error);
     }
   }
-  
 } else {
-  // If the answer is incorrect, provide the correct answer
   await postMessage({
     room,
     message: `Sorry, your answer is incorrect. The correct answer was ${currentQuestion.correctAnswer}.`
   });
 }
-    // Reset trivia state after handling the answer
     resetTriviaState();
-
-    // Move to the next question
     currentQuestion = getNewQuestion();
     const triviaMessage = `Question: ${currentQuestion.question}\nOptions: ${currentQuestion.answers.join(', ')}`;
     await postMessage({
@@ -150,13 +120,11 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
     });
   } else if (payload.message.startsWith('/triviaend')) {
     resetTriviaState();
-    // Clear the set of asked questions
     askedQuestions.clear();
     await postMessage({
       room,
       message: `The trivia game has been ended. Total points: ${totalPoints}`
     });
-
   } else if (payload.message.startsWith('/trivia')) {
     if (!currentQuestion) {
       await postMessage({
@@ -165,7 +133,6 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
       });
       return;
     }
-    
     // "/ COMMANDS" Start Here.
   } else if (payload.message.startsWith('/hello')) {
     await postMessage({
@@ -188,7 +155,7 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
   } else if (payload.message.startsWith('/commands')) {
     await postMessage({
       room,
-      message: 'General commands are /theme, /dance, /drink, /cheers, /tomatoes, /jump, /burp, /fart, /party, /trivia'
+      message: 'General commands are /theme, /dance, /cheers, /tomatoes, /party, /trivia'
     })
 
   } else if (payload.message.startsWith('/jump')) {
@@ -233,15 +200,12 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
     } catch (error) {
       console.error('Error adding DJ:', error)
     }
-    
   } else if (payload.message.startsWith('/updatesong')) {
     try {
       await roomBot.updateNextSong()
     } catch (error) {
       console.error('Error updating next song:', error)
     }
-  
-
   } else if (payload.message.startsWith('/berad')) {
     await postMessage({
       room,
@@ -255,15 +219,13 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
   } else if (payload.message.startsWith('/drink')) {
     await postMessage({
       room,
-      message: 'drink up, bitches'
+      message: 'Im drunk already. Catch me if you can'
     })
 
     //  GIF's
   } else if (payload.message.startsWith('/burp')) {
     try {
       const GifUrl = 'https://media.giphy.com/media/3orieOieQrTkLXl2SY/giphy.gif?cid=790b7611gofgmq0d396jww26sbt1bhc9ljg9am4nb8m6f6lo&ep=v1_gifs_search&rid=giphy.gif&ct=g';
-  
-      // Send the GIF as a message
       await postMessage({
         room,
         message: '',
@@ -276,12 +238,9 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
         message: 'An error occurred while processing the burp command. Please try again.'
       });
     }
-
   } else if (payload.message.startsWith('/shirley')) {
     try {
       const GifUrl = 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdzdyamVybTVwa256NnVrdWQzcXMwcWd6YXlseTQ0dmY3OWloejQyYyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/3oEjHLzm4BCF8zfPy0/giphy.gif';
-  
-      // Send the GIF as a message
       await postMessage({
         room,
         message: '',
@@ -294,23 +253,16 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
         message: 'An error occurred while processing the burp command. Please try again.'
       });
     }
-
-    // RANDOM GIF's *****
+    // RANDOM GIF's 
   } else if (payload.message.startsWith('/dance')) {
     try {
-      // Define an array of dance image URLs
       const danceImageOptions = [
         'https://media.giphy.com/media/IwAZ6dvvvaTtdI8SD5/giphy.gif',
         'https://media.giphy.com/media/3o7qDQ4kcSD1PLM3BK/giphy.gif',
         'https://media.giphy.com/media/oP997KOtJd5ja/giphy.gif',
         'https://media.giphy.com/media/wAxlCmeX1ri1y/giphy.gif'
-        // Add more dance image URLs as needed
       ]
-
-      // Randomly choose a dance image URL
       const randomDanceImageUrl = danceImageOptions[Math.floor(Math.random() * danceImageOptions.length)]
-
-      // Send the dance message with the randomly chosen image
       await postMessage({
         room,
         message: '',
@@ -323,24 +275,17 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
         message: 'An error occurred while processing the dance command. Please try again.'
       })
     }
-
   } else if (payload.message.startsWith('/fart')) {
     try {
-      // Define an array of dance image URLs
-      const danceImageOptions = [
+      const FartImageOptions = [
         'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ21qYmtndjNqYWRqaTFrd2NqaDNkejRqY3RrMTV5Mzlvb3gydDk0ZyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/dWxYMTXIJtT9wGLkOw/giphy.gif',
         'https://media.giphy.com/media/LFvQBWwKk7Qc0/giphy.gif?cid=790b7611gmjbkgv3jadji1kwcjh3dz4jctk15y39oox2t94g&ep=v1_gifs_search&rid=giphy.gif&ct=g',
-        // Add more dance image URLs as needed
       ]
-
-      // Randomly choose a dance image URL
-      const randomDanceImageUrl = danceImageOptions[Math.floor(Math.random() * danceImageOptions.length)]
-
-      // Send the dance message with the randomly chosen image
+      const randomfartImageUrl = FartImageOptions[Math.floor(Math.random() * FartImageOptions.length)]
       await postMessage({
         room,
         message: '',
-        images: [randomDanceImageUrl]
+        images: [randomfartImageUrl]
       })
     } catch (error) {
       console.error('Error processing /dance command:', error.message)
@@ -349,10 +294,8 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
         message: 'An error occurred while processing the dance command. Please try again.'
       })
     }
-
   } else if (payload.message.startsWith('/party')) {
     try {
-      // Define an array of dance image URLs
       const danceImageOptions = [
         'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExZHF6aTAzeXNubW84aHJrZzd1OGM1ZjM0MGp5aTZrYTRrZmdscnYwbyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/IwAZ6dvvvaTtdI8SD5/giphy.gif',
         'https://media.giphy.com/media/xUA7aT1vNqVWHPY1cA/giphy.gif?cid=790b7611ov12e8uoq7xedaifcwz9gj28xb43wtxtnuj0rnod&ep=v1_gifs_search&rid=giphy.gif&ct=g',

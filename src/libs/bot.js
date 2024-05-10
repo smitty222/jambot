@@ -4,6 +4,8 @@ import { joinChat, getMessages } from './cometchat.js';
 import { logger } from '../utils/logging.js';
 import { handlers } from '../handlers/index.js';
 import { fetchSpotifyPlaylistTracks } from '../utils/spotifyAPI.js';
+import { song } from '../utils/song.js';
+
 
 export class Bot {
   constructor(clientId, clientSecret, redirectUri) {
@@ -22,40 +24,6 @@ export class Bot {
     this.spotifyCredentials = process.env.SPOTIFY_CREDENTIALS; // Add Spotify credentials
   }
 
-  async updateNextSong() {
-    try {
-      if (!this.socket) {
-        throw new Error('SocketClient not initialized. Please call connect() first.');
-      }
-  
-      // Create a basic song object with mandatory attributes
-      const song = {
-        artistName: 'Jack Johnson & Stick Figure',
-        trackName: 'Home',
-        genre: 'null',
-        duration: 210, // Example duration in seconds
-        isrc: 'null',
-        musicProviders: 'OFdtFyUIQPM',
-        playbackToken: 'null',
-        thumbnails: 'https://i.ytimg.com/vi/OFdtFyUIQPM/hqdefault.jpg',
-        songShortId: '',
-        crateSongUuid: '',
-        status: '',
-        position: ''
-      };
-  
-      const actionPayload = {
-        roomUuid: process.env.ROOM_UUID,
-        userUuid: process.env.BOT_USER_UUID,
-        song: song // Pass the prepared song object
-      };
-  
-      // Call the updateNextSong action with the prepared payload
-      await this.socket.action('updateNextSong', actionPayload);
-    } catch (error) {
-      logger.error('Error updating next song:', error);
-    }
-  }
   
   async connect() {
     logger.debug('Connecting to room');
@@ -110,12 +78,7 @@ export class Bot {
       if (handlers[payload.name]) handlers[payload.name](self.state, process.env.ROOM_UUID);
   
       if (payload.name === 'playedSong') {
-        logger.debug('Received playedSong message');
-        if (payload.data?.song) {
-            logger.debug('Song info:', payload.data.song);
-        } else {
-            logger.warn('PlayedSong message received but song info is missing.');
-        }
+        self.updateNextSong(process.env.ROOM_UUID,process.env.BOT_USER_UUID,song)
         self.scheduleLikeSong(process.env.roomUUID,process.env.BOT_USER_UUID);
       }
     });
@@ -142,6 +105,7 @@ export class Bot {
   
       await this.socket.action('addDj', {
         roomUuid: process.env.ROOM_UUID,
+        song: song,
         tokenRole: 'bot',
         userUuid: process.env.BOT_USER_UUID
       });
@@ -151,6 +115,25 @@ export class Bot {
       logger.error('Error adding DJ:', error);
     }
   }
+  async updateNextSong() {
+    try {
+      if (!this.socket) {
+        throw new Error('SocketClient not initialized. Please call connect() first.');
+      }
+  
+      const actionPayload = {
+        roomUuid: process.env.ROOM_UUID,
+        userUuid: process.env.BOT_USER_UUID,
+        song: song // Pass the prepared song object
+      };
+  
+      // Call the updateNextSong action with the prepared payload
+      await this.socket.action('updateNextSong', actionPayload);
+    } catch (error) {
+      logger.error('Error updating next song:', error);
+    }
+  }
+  
 
   async removeDJ() {
     try {
