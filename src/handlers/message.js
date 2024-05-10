@@ -233,7 +233,15 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
     } catch (error) {
       console.error('Error adding DJ:', error)
     }
+    
+  } else if (payload.message.startsWith('/updatesong')) {
+    try {
+      await roomBot.updateNextSong()
+    } catch (error) {
+      console.error('Error updating next song:', error)
+    }
   
+
   } else if (payload.message.startsWith('/berad')) {
     await postMessage({
       room,
@@ -244,11 +252,6 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
       room,
       message: '@Cam i love you!'
     })
-  } else if (payload.message.startsWith('/shirley')) {
-    await postMessage({
-      room,
-      message: '@DJ Shirley in da house!'
-    })
   } else if (payload.message.startsWith('/drink')) {
     await postMessage({
       room,
@@ -258,20 +261,38 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
     //  GIF's
   } else if (payload.message.startsWith('/burp')) {
     try {
-      const tomatoGifUrl = 'https://media.giphy.com/media/3orieOieQrTkLXl2SY/giphy.gif?cid=790b7611gofgmq0d396jww26sbt1bhc9ljg9am4nb8m6f6lo&ep=v1_gifs_search&rid=giphy.gif&ct=g'
-
+      const GifUrl = 'https://media.giphy.com/media/3orieOieQrTkLXl2SY/giphy.gif?cid=790b7611gofgmq0d396jww26sbt1bhc9ljg9am4nb8m6f6lo&ep=v1_gifs_search&rid=giphy.gif&ct=g';
+  
       // Send the GIF as a message
       await postMessage({
         room,
         message: '',
-        images: [tomatoGifUrl]
-      })
+        images: [GifUrl]
+      });
     } catch (error) {
-      console.error('Error processing /tomatoes command:', error.message)
+      console.error('Error processing /burp command:', error.message);
       await postMessage({
         room,
-        message: 'An error occurred while processing the /tomatoes command. Please try again.'
-      })
+        message: 'An error occurred while processing the burp command. Please try again.'
+      });
+    }
+
+  } else if (payload.message.startsWith('/shirley')) {
+    try {
+      const GifUrl = 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdzdyamVybTVwa256NnVrdWQzcXMwcWd6YXlseTQ0dmY3OWloejQyYyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/3oEjHLzm4BCF8zfPy0/giphy.gif';
+  
+      // Send the GIF as a message
+      await postMessage({
+        room,
+        message: '',
+        images: [GifUrl]
+      });
+    } catch (error) {
+      console.error('Error processing /burp command:', error.message);
+      await postMessage({
+        room,
+        message: 'An error occurred while processing the burp command. Please try again.'
+      });
     }
 
     // RANDOM GIF's *****

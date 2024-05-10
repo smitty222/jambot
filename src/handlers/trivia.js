@@ -18,27 +18,22 @@ const triviaData = [
     {
       "question": "Who is the lead vocalist of the rock band Queen?",
       "answers": ["A. Freddie Mercury", "B. John Deacon", "C. Brian May", "D. Roger Taylor"],
-      "correctAnswer": "D"
+      "correctAnswer": "A"
     },
     {
       "question": "In Greek mythology, who was the king of the gods?",
       "answers": ["A. Zeus", "B. Poseidon", "C. Hades", "D. Apollo"],
-      "correctAnswer": "C"
+      "correctAnswer": "A"
     },
     {
       "question": "What is the chemical symbol for iron?",
       "answers": ["A. Ir", "B. Fe", "C. In", "D. I"],
-      "correctAnswer": "A"
+      "correctAnswer": "B"
     },
     {
       "question": "What is the largest ocean on Earth?",
       "answers": ["A. Atlantic Ocean", "B. Indian Ocean", "C. Arctic Ocean", "D. Pacific Ocean"],
       "correctAnswer": "D"
-    },
-    {
-      "question": "Which Shakespearean play features the character Hamlet?",
-      "answers": ["A. Macbeth", "B. Othello", "C. Hamlet", "D. King Lear"],
-      "correctAnswer": "C"
     },
     {
       "question": "Who painted the famous artwork 'The Starry Night'?",
@@ -58,7 +53,7 @@ const triviaData = [
     {
       "question": "Who is known as the 'Father of Modern Physics'?",
       "answers": ["A. Isaac Newton", "B. Albert Einstein", "C. Galileo Galilei", "D. Nikola Tesla"],
-      "correctAnswer": "C"
+      "correctAnswer": "A"
     },
     {
       "question": "What is the main ingredient in hummus?",
@@ -118,7 +113,7 @@ const triviaData = [
     {
       "question": "Which country has won the most Rugby World Cup titles?",
       "answers": ["A. New Zealand", "B. Australia", "C. South Africa", "D. England"],
-      "correctAnswer": "B"
+      "correctAnswer": "C"
     },
     {
       "question": "Who holds the record for the most career home runs in Major League Baseball?",
@@ -133,17 +128,17 @@ const triviaData = [
     {
       "question": "Who is the only boxer to have won world titles in eight different weight divisions?",
       "answers": ["A. Manny Pacquiao", "B. Floyd Mayweather Jr.", "C. Sugar Ray Leonard", "D. Muhammad Ali"],
-      "correctAnswer": "C"
+      "correctAnswer": "A"
     },
     {
       "question": "Which Formula One driver holds the record for the most World Championships?",
-      "answers": ["A. Lewis Hamilton", "B. Michael Schumacher", "C. Ayrton Senna", "D. Sebastian Vettel"],
-      "correctAnswer": "D"
+      "answers": ["A. Lewis Hamilton", "B. Max Verstappen", "C. Ayrton Senna", "D. Sebastian Vettel"],
+      "correctAnswer": "A"
     },
     {
       "question": "What is the only country to have played in every single FIFA World Cup tournament?",
       "answers": ["A. Brazil", "B. Germany", "C. Argentina", "D. Italy"],
-      "correctAnswer": "C"
+      "correctAnswer": "A"
     },
     {
       "question": "What is the term for scoring three goals in a single game in ice hockey?",
@@ -153,12 +148,12 @@ const triviaData = [
     {
       "question": "Which city hosted the Summer Olympics in 2016?",
       "answers": ["A. Rio de Janeiro", "B. London", "C. Beijing", "D. Sydney"],
-      "correctAnswer": "C"
+      "correctAnswer": "A"
     },
     {
       "question": "What is the name of the trophy awarded to the winner of the NHL playoffs?",
       "answers": ["A. Stanley Cup", "B. Lombardi Trophy", "C. Commissioner's Trophy", "D. Conn Smythe Trophy"],
-      "correctAnswer": "B"
+      "correctAnswer": "A"
     },
     {
       "question": "Who won the FIFA Women's World Cup in 2019?",
@@ -168,7 +163,7 @@ const triviaData = [
     {
       "question": "Which tennis player is known as the 'King of Clay'?",
       "answers": ["A. Rafael Nadal", "B. Roger Federer", "C. Novak Djokovic", "D. Andy Murray"],
-      "correctAnswer": "B"
+      "correctAnswer": "A"
     },
     {
       "question": "Who is the only athlete to win Olympic gold medals in both the 100m and 200m sprints in three consecutive Olympic Games?",
@@ -420,11 +415,6 @@ const triviaData = [
       "correctAnswer": "D"
     },
     {
-      "question": "What is the official name of the French civil code, established under the French Consulate in 1804 and still in force today?",
-      "answers": ["A. Constitution des empereurs", "B. Oeil pour Dent", "C. Code de la route", "D. Code civil des Français"],
-      "correctAnswer": "D"
-    },
-    {
       "question": "Which war was fought in South Africa between 1899 and 1902?",
       "answers": ["A. Boer War", "B. Second Boer War (Allow Boer War)", "C. War of South Africa", "D. Anglo-Zulu War"],
       "correctAnswer": "B"
@@ -543,7 +533,7 @@ const triviaData = [
     {
       "question": "In 1989, NHL player Pelle Eklund scored the fastest goal in NHL playoff history. How long did it take?",
       "answers": ["A. 22 Seconds", "B. 11 Seconds", "C. 31 Seconds", "D. 5 Seconds"],
-      "correctAnswer": "B"
+      "correctAnswer": "D"
     },
     {
       "question": "First released in 1982, what actor’s workout videos gained worldwide popularity?",
