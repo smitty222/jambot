@@ -4,8 +4,7 @@ import { askQuestion } from '../libs/ai.js'
 import { selectRandomQuestion, checkAnswer } from './trivia.js'
 import { logger } from '../utils/logging.js'
 import { roomBot } from '../index.js'
-import { addTrackToPlaylist } from '../utils/spotifyAPI.js'
-import {fetchRecentSongs} from '../utils/recentSongs.js'
+import { handleAddSongCommand } from './addSong.js'
 
 
 // Themes Stuff
@@ -146,6 +145,9 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
       message: 'Hi!'
     })
 
+  } else if (payload.message.startsWith('/addsong')) {
+    await handleAddSongCommand(payload);
+
   } else if (payload.message.startsWith('/barkbark')) {
     await postMessage({
       room,
@@ -212,30 +214,7 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
     } catch (error) {
       console.error('Error updating next song:', error)
     }
-  } else if (payload.message.startsWith('/addsong')) {
-    try {
-      const recentSong = await fetchRecentSongs();
-      const trackURI = recentSong.musicProviders.spotify;
-      if (!trackURI) {
-        throw new Error('Track URI not found for the recent song');
-      }
-      // Add the track to the playlist
-      await addTrackToPlaylist(trackURI);
-      
-      // Send a success message
-      await postMessage({
-        room,
-        message: 'The recent song has been added to the playlist successfully.'
-      });
-    } catch (error) {
-      // Handle errors
-      console.error('Error adding song to playlist:', error);
-      await postMessage({
-        room,
-        message: 'Sorry, an error occurred while adding the song to the playlist.'
-      });
-    }
-    
+
   } else if (payload.message.startsWith('/berad')) {
     await postMessage({
       room,

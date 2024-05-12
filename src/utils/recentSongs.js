@@ -22,4 +22,4 @@ async function fetchRecentSongs(token) {
   }
 }
 
-export default fetchRecentSongs;
+export { fetchRecentSongs };
