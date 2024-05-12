@@ -46,7 +46,8 @@ async function exchangeAuthorizationCodeForAccessToken() {
   }
 }
 
-async function fetchSpotifyPlaylistTracks(playlistId) {
+async function fetchSpotifyPlaylistTracks() {
+  const playlistId = process.env.DEFAULT_PLAYLIST_ID; // Use the default playlist ID from environment variables
   const tracks = [];
   let url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks`;
 
@@ -63,7 +64,10 @@ async function fetchSpotifyPlaylistTracks(playlistId) {
       };
 
       const response = await fetch(url, options);
+      console.log('Playlist tracks response:', response); // Log the response
+
       const playlist = await response.json();
+      console.log('Playlist tracks data:', playlist); // Log the playlist data
 
       if (!response.ok) {
         // Handle non-OK responses (e.g., 4xx or 5xx status codes)
@@ -84,6 +88,36 @@ async function fetchSpotifyPlaylistTracks(playlistId) {
 
   return tracks;
 }
+async function addTrackToPlaylist(trackUri) {
+  const playlistId = process.env.DEFAULT_PLAYLIST_ID;
+  
+  if (!accessToken) {
+    accessToken = await exchangeAuthorizationCodeForAccessToken();
+  }
 
+  const url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks`;
+  const options = {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ uris: [trackUri] }),
+  };
 
-export { exchangeAuthorizationCodeForAccessToken, fetchSpotifyPlaylistTracks };
+  try {
+    const response = await fetch(url, options);
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(`Failed to add track to playlist: ${data.error.message}`);
+    }
+    
+    console.log('Track added to playlist successfully!');
+  } catch (error) {
+    console.error('Error adding track to playlist:', error);
+    throw error;
+  }
+}
+
+export { exchangeAuthorizationCodeForAccessToken, fetchSpotifyPlaylistTracks, addTrackToPlaylist};
