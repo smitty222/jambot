@@ -4,7 +4,8 @@ import { askQuestion } from '../libs/ai.js'
 import { selectRandomQuestion, checkAnswer } from './trivia.js'
 import { logger } from '../utils/logging.js'
 import { roomBot } from '../index.js'
-import { handleAddSongCommand } from './addSong.js'
+import { fetchCurrentlyPlayingSong } from '../utils/API.js'
+import { addSongToPlaylist } from '../utils/API.js'
 
 
 // Themes Stuff
@@ -145,8 +146,61 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
       message: 'Hi!'
     })
 
+  } else if (payload.message.startsWith('/fetchsong')) {
+    try {
+      // Call fetchCurrentlyPlayingSong to get the track URI
+      const trackURI = await fetchCurrentlyPlayingSong(process.env.TTL_USER_TOKEN);
+
+      // Send the track URI to the chat
+      await postMessage({
+        room,
+        message: `Currently playing song: ${trackURI}`
+      });
+    } catch (error) {
+      // Handle errors
+      console.error('Error fetching song:', error);
+      await postMessage({
+        room,
+        message: `Error: ${error.message}`
+      });
+    }
+
   } else if (payload.message.startsWith('/addsong')) {
-    await handleAddSongCommand(payload);
+    try {
+      console.log('Received /addsong command.');
+
+      // Fetch the currently playing song URI using the obtained access token
+      console.log('Fetching currently playing song URI...');
+      const trackURI = await fetchCurrentlyPlayingSong();
+      console.log('Current song URI:', trackURI);
+
+      // Get the playlistId from environment variables
+      const playlistId = process.env.DEFAULT_PLAYLIST_ID;
+      if (!playlistId) {
+        throw new Error("Playlist ID not provided in the environment variables.");
+      }
+      
+      // Add the track to the Spotify playlist
+      console.log('Adding song to playlist...');
+      const snapshotId = await addSongToPlaylist(playlistId, trackURI);
+      console.log('Song added to playlist. Snapshot ID:', snapshotId);
+
+      // Log success message
+      console.log('Song added to playlist successfully. Snapshot ID:', snapshotId);
+
+      // Post message in the chat
+      await postMessage({
+        room,
+        message: `Song added to playlist successfully! Snapshot ID: ${snapshotId}`
+      });
+
+    } catch (error) {
+      console.error('Error adding song to playlist:', error.message);
+      await postMessage({
+        room,
+        message: `Error adding song to playlist: ${error.message}`
+      });
+    }
 
   } else if (payload.message.startsWith('/barkbark')) {
     await postMessage({

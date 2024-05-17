@@ -3,7 +3,8 @@ import { SocketClient} from 'ttfm-socket';
 import { joinChat, getMessages } from './cometchat.js';
 import { logger } from '../utils/logging.js';
 import { handlers } from '../handlers/index.js';
-import { fetchSpotifyPlaylistTracks } from '../utils/spotifyAPI.js';
+import { fetchSpotifyPlaylistTracks } from '../utils/API.js';
+
 
 export class Bot {
   constructor(clientId, clientSecret, redirectUri) {
@@ -85,6 +86,7 @@ export class Bot {
       if (handlers[payload.name]) handlers[payload.name](self.state, process.env.ROOM_UUID);
   
       if (payload.name === 'playedSong') {
+        self.scheduleLikeSong(process.env.ROOM_UUID, process.env.BOT_USER_UUID);
         self.updateNextSong();
       }
     });
@@ -173,8 +175,6 @@ export class Bot {
     }
   }
   
-
-
 async updateNextSong() {
   try {
     if (!this.socket) {
