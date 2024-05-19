@@ -4,8 +4,9 @@ import { askQuestion } from '../libs/ai.js'
 import { selectRandomQuestion, checkAnswer } from './trivia.js'
 import { logger } from '../utils/logging.js'
 import { roomBot } from '../index.js'
-import { fetchCurrentlyPlayingSong } from '../utils/API.js'
-import { addSongToPlaylist } from '../utils/API.js'
+import {fetchCurrentlyPlayingSong, addSongToPlaylist} from '../utils/API.js'
+
+
 
 
 // Themes Stuff
@@ -146,6 +147,43 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
       message: 'Hi!'
     })
 
+  } else if (payload.message.startsWith('/addsong')) {
+    try {
+      // Provided access token
+      const accessToken = 'BQCi_v1J76Nzo8Lhh8gGCY2FwFXqkzE28EAYHKdIuOiAYsHX6yBo4wbZQpjA9LN5Nh0JdHkt8gUwdAmKXPxS7VuQs-Dwwu1KQNHt4UzaGfQfQJP6cXYJYZTIEHK-kjPQW8Lgax51XnAySmK1FJzyVixvy1ZOfnEUT_hnLdonmmp7g0ZEyliqxL0fCaFtf2BoRIDlOu91G_yLS9zvyt1vt6mlQdvvkWQ22OfrlkT9XBPQy1M';
+
+      // Fetch the currently playing song and add it to the playlist
+      await addSongToPlaylist(accessToken);
+
+      // Notify the room that the song has been added
+      await postMessage({
+        room,
+        message: 'Song added to playlist successfully!'
+      });
+    } catch (error) {
+      console.error('Error adding song', error);
+      await postMessage({
+        room,
+        message: `Error adding song to playlist: ${error.message}`
+      });
+    }
+
+  } else if (payload.message.startsWith("/token")) {
+      try {
+        // Generate and display the authorization URL
+        const authUrl = getAuthUrl();
+        await postMessage({
+          room,
+          message: `Go to the following URL to authorize the application:\n${authUrl}`
+        });
+      } catch (error) {
+        console.error('Error generating authorization URL:', error);
+        await postMessage({
+          room,
+          message: 'Error generating authorization URL. Please try again later.'
+        });
+      }
+
   } else if (payload.message.startsWith('/fetchsong')) {
     try {
       // Call fetchCurrentlyPlayingSong to get the track URI
@@ -162,43 +200,6 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
       await postMessage({
         room,
         message: `Error: ${error.message}`
-      });
-    }
-
-  } else if (payload.message.startsWith('/addsong')) {
-    try {
-      console.log('Received /addsong command.');
-
-      // Fetch the currently playing song URI using the obtained access token
-      console.log('Fetching currently playing song URI...');
-      const trackURI = await fetchCurrentlyPlayingSong();
-      console.log('Current song URI:', trackURI);
-
-      // Get the playlistId from environment variables
-      const playlistId = process.env.DEFAULT_PLAYLIST_ID;
-      if (!playlistId) {
-        throw new Error("Playlist ID not provided in the environment variables.");
-      }
-      
-      // Add the track to the Spotify playlist
-      console.log('Adding song to playlist...');
-      const snapshotId = await addSongToPlaylist(playlistId, trackURI);
-      console.log('Song added to playlist. Snapshot ID:', snapshotId);
-
-      // Log success message
-      console.log('Song added to playlist successfully. Snapshot ID:', snapshotId);
-
-      // Post message in the chat
-      await postMessage({
-        room,
-        message: `Song added to playlist successfully! Snapshot ID: ${snapshotId}`
-      });
-
-    } catch (error) {
-      console.error('Error adding song to playlist:', error.message);
-      await postMessage({
-        room,
-        message: `Error adding song to playlist: ${error.message}`
       });
     }
 
