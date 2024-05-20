@@ -38,95 +38,6 @@ async function getAccessToken(clientId, clientSecret) {
   }
 }
 
-async function addSongToPlaylist(playlistId, trackURI) {
-  try {
-    if (!accessToken) {
-      accessToken = await getAccessToken(config.clientId, config.clientSecret);
-    }
-
-    console.log('Access Token:', accessToken); // Log access token
-
-    const url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks`;
-    const requestBody = {
-      uris: [trackURI],
-      position: 0
-    };
-
-    const options = {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(requestBody)
-    };
-
-    console.log('Adding song to playlist:', trackURI);
-
-    const response = await fetch(url, options);
-
-    if (!response.ok) {
-      if (response.status === 401) {
-        // Access token expired, refresh it
-        accessToken = await getAccessToken(config.clientId, config.clientSecret);
-        console.log('Access token refreshed:', accessToken);
-        // Return here instead of retrying immediately
-        return;
-      } else {
-        const errorMessage = `Failed to add song to playlist: ${response.statusText}`;
-        console.error(errorMessage);
-        const responseBody = await response.text(); // Log response body for further investigation
-        console.error('Response body:', responseBody);
-        throw new Error(errorMessage);
-      }
-    }
-
-    const data = await response.json();
-
-    if (data && data.snapshot_id) {
-      console.log('Song added to playlist successfully. Snapshot ID:', data.snapshot_id);
-      return data.snapshot_id; // Return the snapshot ID for the playlist
-    } else {
-      console.error('Failed to retrieve snapshot ID from response:', data);
-      // Log response status as well for further debugging
-      console.error('Response status:', response.status);
-      throw new Error('Snapshot ID is undefined in the response');
-    }
-  } catch (error) {
-    console.error('Error adding song to playlist:', error);
-    throw error;
-  }
-}
-
-async function fetchCurrentlyPlayingSong() {
-  const token = process.env.TTL_USER_TOKEN;
-
-  try {
-    const response = await fetch('https://rooms.prod.tt.fm/rooms/uuid/b868900c-fea2-4629-b316-9f9213a72507', {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'accept': 'application/json'
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch currently playing song: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    if (data?.song?.musicProviders?.spotify) {
-      // Assuming the Spotify track ID is in the 'spotify' property of the 'musicProviders' object
-      const spotifyTrackId = data.song.musicProviders.spotify;
-      const spotifyTrackURI = spotifyTrackId.startsWith('spotify:track:') ? spotifyTrackId : `spotify:track:${spotifyTrackId}`;
-      return spotifyTrackURI;
-    } else {
-      throw new Error("No Spotify track is currently playing.");
-    }
-  } catch (error) {
-    throw new Error(`Error fetching currently playing song: ${error.message}`);
-  }
-}
-
 async function fetchSpotifyPlaylistTracks() {
   const playlistId = process.env.DEFAULT_PLAYLIST_ID;
   const tracks = [];
@@ -164,12 +75,60 @@ async function fetchSpotifyPlaylistTracks() {
   return tracks;
 }
 
-function decodeAccessToken(accessToken) {
-  // Split the token into its three parts: header, payload, and signature
-  const tokenParts = accessToken.split('.');
-  // Decode the payload (the second part)
-  const payload = JSON.parse(atob(tokenParts[1]));
-  return payload;
+// TURNTABLE API
+async function fetchCurrentlyPlayingSong() {
+  const token = process.env.TTL_USER_TOKEN;
+
+  try {
+    const response = await fetch('https://rooms.prod.tt.fm/rooms/uuid/b868900c-fea2-4629-b316-9f9213a72507', {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'accept': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch currently playing song: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    if (data?.song?.musicProviders?.spotify) {
+      // Assuming the Spotify track ID is in the 'spotify' property of the 'musicProviders' object
+      const spotifyTrackId = data.song.musicProviders.spotify;
+      const spotifyTrackURI = spotifyTrackId.startsWith('spotify:track:') ? spotifyTrackId : `spotify:track:${spotifyTrackId}`;
+      return spotifyTrackURI;
+    } else {
+      throw new Error("No Spotify track is currently playing.");
+    }
+  } catch (error) {
+    throw new Error(`Error fetching currently playing song: ${error.message}`);
+  }
 }
 
-export { getAccessToken, decodeAccessToken, fetchSpotifyPlaylistTracks, addSongToPlaylist, fetchCurrentlyPlayingSong};
+async function fetchCurrentUsers() {
+  const token = process.env.TTL_USER_TOKEN;
+
+  try {
+    const response = await fetch('https://rooms.prod.tt.fm/rooms/just-jams', {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'accept': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch current users: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    if (!data || !data.usersInRoomUuids) {
+      throw new Error("Failed to fetch current users: Invalid response format");
+    }
+
+    return data.usersInRoomUuids;
+  } catch (error) {
+    throw new Error(`Error fetching current users: ${error.message}`);
+  }
+}
+
+export { getAccessToken, fetchCurrentUsers, fetchSpotifyPlaylistTracks,fetchCurrentlyPlayingSong};

@@ -3,7 +3,7 @@ import { SocketClient} from 'ttfm-socket';
 import { joinChat, getMessages } from './cometchat.js';
 import { logger } from '../utils/logging.js';
 import { handlers } from '../handlers/index.js';
-import { fetchSpotifyPlaylistTracks } from '../utils/API.js';
+import { fetchSpotifyPlaylistTracks, fetchCurrentUsers } from '../utils/API.js';
 
 
 export class Bot {
@@ -99,6 +99,16 @@ export class Bot {
 
   setSocketClient(socketClient) {
     this.socket = socketClient;
+  }
+
+  async storeCurrentRoomUsers() {
+    try {
+      const currentUsers = await fetchCurrentUsers(); // Fetch current room users
+      this.currentRoomUsers = currentUsers; // Store the current room users in the bot instance
+      console.log('Current room users stored successfully:', currentUsers);
+    } catch (error) {
+      console.error('Error fetching and storing current room users:', error.message);
+    }
   }
 
   async getRandomSong() {
@@ -310,5 +320,31 @@ async updateNextSong() {
     }
   }
 
+  async handleAuthorizationCallback(authorizationCode) {
+    try {
+      const userAccessToken = await getUserAccessToken(authorizationCode);
+      this.accessToken = userAccessToken; // Save the access token for future use
+      console.log('Authorization successful! Access token:', userAccessToken);
+    } catch (error) {
+      console.error('Error handling authorization callback:', error);
+    }
+  }
+
+  async addSongToPlaylist() {
+    try {
+      // Check if the access token is available
+      if (!this.accessToken) {
+        throw new Error('User access token is not available. Please authorize the app first.');
+      }
+
+      // Now you can use the access token to add songs to the playlist
+      const playlistId = 'your_playlist_id';
+      const snapshotId = await addSongToPlaylist(playlistId, this.accessToken);
+      console.log('Song added to playlist! Snapshot ID:', snapshotId);
+    } catch (error) {
+      console.error('Error adding song to playlist:', error);
+    }
+  }
 }
+
 

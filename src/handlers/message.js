@@ -4,8 +4,8 @@ import { askQuestion } from '../libs/ai.js'
 import { selectRandomQuestion, checkAnswer } from './trivia.js'
 import { logger } from '../utils/logging.js'
 import { roomBot } from '../index.js'
-import {fetchCurrentlyPlayingSong, addSongToPlaylist} from '../utils/API.js'
-
+import {fetchCurrentlyPlayingSong} from '../utils/API.js'
+import { getUserAccessToken } from '../utils/authCode.js'
 
 
 
@@ -42,22 +42,31 @@ if (
   payload.message.includes(`@${process.env.CHAT_NAME}`) &&
   payload.senderName &&
   !payload.senderName.startsWith(`@${process.env.BOT_USER_UUID}`) &&
-  !payload.message.includes("played")
+  !payload.message.includes('played')
 ) {
-  const reply = await askQuestion(payload.message.replace(`@${process.env.CHAT_NAME}`, ''), room)
-  if (reply) {
-    const responseText = reply.text
-    if (responseText) {
-      await postMessage({
-        room,
-        message: responseText
-      })
-    } else {
-      await postMessage({
-        room,
-        message: 'Sorry, I could not generate a response at the moment.'
-      })
+  try {
+    const question = payload.message.replace(`@${process.env.CHAT_NAME}`, '').trim()
+    const reply = await askQuestion(question)
+    if (reply) {
+      const responseText = typeof reply === 'string' ? reply : reply.text
+      if (responseText) {
+        await postMessage({
+          room,
+          message: responseText
+        })
+      } else {
+        await postMessage({
+          room,
+          message: 'Sorry, I could not generate a response at the moment.'
+        })
+      }
     }
+  } catch (error) {
+    logger.error('Error handling AI response:', error)
+    await postMessage({
+      room,
+      message: 'Sorry, something went wrong trying to process your message.'
+    })
   }
 
     //  Trivia Stuff
@@ -149,40 +158,22 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
 
   } else if (payload.message.startsWith('/addsong')) {
     try {
-      // Provided access token
-      const accessToken = 'BQCi_v1J76Nzo8Lhh8gGCY2FwFXqkzE28EAYHKdIuOiAYsHX6yBo4wbZQpjA9LN5Nh0JdHkt8gUwdAmKXPxS7VuQs-Dwwu1KQNHt4UzaGfQfQJP6cXYJYZTIEHK-kjPQW8Lgax51XnAySmK1FJzyVixvy1ZOfnEUT_hnLdonmmp7g0ZEyliqxL0fCaFtf2BoRIDlOu91G_yLS9zvyt1vt6mlQdvvkWQ22OfrlkT9XBPQy1M';
+      // Call fetchCurrentlyPlayingSong to get the track URI
+      const trackURI = await fetchCurrentlyPlayingSong(process.env.TTL_USER_TOKEN);
 
-      // Fetch the currently playing song and add it to the playlist
-      await addSongToPlaylist(accessToken);
-
-      // Notify the room that the song has been added
+      // Send the track URI to the chat
       await postMessage({
         room,
-        message: 'Song added to playlist successfully!'
+        message: `Currently playing song: ${trackURI}`
       });
     } catch (error) {
-      console.error('Error adding song', error);
+      // Handle errors
+      console.error('Error fetching song:', error);
       await postMessage({
         room,
-        message: `Error adding song to playlist: ${error.message}`
+        message: `Error: ${error.message}`
       });
     }
-
-  } else if (payload.message.startsWith("/token")) {
-      try {
-        // Generate and display the authorization URL
-        const authUrl = getAuthUrl();
-        await postMessage({
-          room,
-          message: `Go to the following URL to authorize the application:\n${authUrl}`
-        });
-      } catch (error) {
-        console.error('Error generating authorization URL:', error);
-        await postMessage({
-          room,
-          message: 'Error generating authorization URL. Please try again later.'
-        });
-      }
 
   } else if (payload.message.startsWith('/fetchsong')) {
     try {
@@ -582,12 +573,12 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
     if (theme) {
       await postMessage({
         room,
-        message: `The theme is currently set to: ${theme}`
+        message: `The room theme is currently set to: ${theme}`
       })
     } else {
       await postMessage({
         room,
-        message: 'No theme set. Play whatever you like!'
+        message: 'There is currently no room theme. Play whatever you like!'
       })
     }
   } else if (payload.message.startsWith('/removetheme')) {
@@ -635,3 +626,5 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
     }
   }
 }
+
+export {roomThemes}
