@@ -6,6 +6,8 @@ import { logger } from '../utils/logging.js'
 import { roomBot } from '../index.js'
 import {fetchCurrentlyPlayingSong} from '../utils/API.js'
 import { getUserAccessToken } from '../utils/authCode.js'
+import { handleLotteryCommand } from '../utils/lotteryGame.js'
+
 
 
 
@@ -149,6 +151,11 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
       });
       return;
     }
+
+    /////////////// LOTTERY GAME ////////////////////////////////////////////
+  } else if (payload.message.startsWith('/lottery')) {
+      await handleLotteryCommand(payload, room);
+        
     // "/ COMMANDS" Start Here.
   } else if (payload.message.startsWith('/hello')) {
     await postMessage({

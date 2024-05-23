@@ -22,6 +22,7 @@ export class Bot {
     this.playlistId = process.env.DEFAULT_PLAYLIST_ID; // Add default playlist ID
     this.spotifyCredentials = process.env.SPOTIFY_CREDENTIALS; 
     this.lastPlayedTrackURI = null;
+    this.currentRoomUsers = [];
   }
 
   
@@ -91,7 +92,6 @@ export class Bot {
       }
     });
   }
-  
   
   getSocketInstance() {
     return this.socket;

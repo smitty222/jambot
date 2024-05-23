@@ -1,8 +1,10 @@
 import express from 'express';
 import { Chain } from 'repeat';
 import { Bot } from './libs/bot.js';
+import { updateCurrentUsers } from './utils/currentUsers.js'; // Import the updateCurrentUsers function
+import { fetchCurrentUsers } from './utils/API.js';
 
-const app = express(); 
+const app = express();
 
 const roomBot = new Bot(process.env.JOIN_ROOM);
 
@@ -10,7 +12,8 @@ const startupTasks = async () => {
   try {
     await roomBot.connect();
     roomBot.configureListeners();
-    await roomBot.storeCurrentRoomUsers(); // Fetch and store current room users on bot startup
+    const currentUsers = await fetchCurrentUsers(); // Fetch current room users on bot startup
+    updateCurrentUsers(currentUsers); // Update current users
   } catch (error) {
     console.error('Error during bot startup:', error.message);
   }

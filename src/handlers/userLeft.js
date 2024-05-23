@@ -1,16 +1,18 @@
-// userLeft.js
+import { fetchCurrentUsers } from "../utils/API.js";
+import { updateCurrentUsers } from "../utils/currentUsers.js";
 
 export default async (payload) => {
   try {
-    console.log('User left:', payload) // Log the user who left
+    console.log('User left:'); // Log the user who left
 
-    // Check if allUserData is available in the payload
-    if (payload.allUserData) {
-      // Send the list of allUserData to clients
-      // You may need to implement the logic to send this data to clients
-      console.log('All users data:', payload.allUserData)
-    }
+    // Fetch current users
+    const updatedUsers = await fetchCurrentUsers();
+
+    // Update currentUsers
+    updateCurrentUsers(updatedUsers);
+
+    console.log('Updated current room users:', updatedUsers);
   } catch (error) {
-    console.error('Error handling userLeft event:', error.message)
+    console.error('Error handling userLeft event:', error.message);
   }
-}
+};
