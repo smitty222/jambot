@@ -4,6 +4,7 @@ import { joinChat, getMessages } from './cometchat.js';
 import { logger } from '../utils/logging.js';
 import { handlers } from '../handlers/index.js';
 import { fetchSpotifyPlaylistTracks, fetchCurrentUsers } from '../utils/API.js';
+import { postVoteCountsForLastSong} from '../utils/voteCounts.js';
 
 
 export class Bot {
@@ -81,14 +82,17 @@ export class Bot {
   configureListeners() {
     const self = this;
     logger.debug('Setting up listeners');
-    this.socket.on('statefulMessage', (payload) => {
+    this.socket.on('statefulMessage', async (payload) => {
       self.state = fastJson.applyPatch(self.state, payload.statePatch).newDocument;
       logger.debug(`State updated for ${payload.name}`);
       if (handlers[payload.name]) handlers[payload.name](self.state, process.env.ROOM_UUID);
-  
+
       if (payload.name === 'playedSong') {
         self.scheduleLikeSong(process.env.ROOM_UUID, process.env.BOT_USER_UUID);
         self.updateNextSong();
+        setTimeout(() => {
+          postVoteCountsForLastSong(process.env.ROOM_UUID);
+        }, 6500);
       }
     });
   }

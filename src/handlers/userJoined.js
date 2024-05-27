@@ -21,6 +21,12 @@ export default async (payload) => {
     const nickname = newUserProfile ? newUserProfile.nickname : 'Unknown';
     const uuid = newUserProfile ? newUserProfile.uuid : null;
 
+    // If the nickname is "Unknown", skip sending the welcome message
+    if (nickname === 'Unknown') {
+      console.log('No New User. Probably a user refreshed');
+      return;
+    }
+
     console.log('New user who joined:', nickname);
 
     let welcomeMessage = null;

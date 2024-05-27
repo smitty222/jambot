@@ -105,6 +105,28 @@ async function fetchCurrentlyPlayingSong() {
   }
 }
 
+async function fetchRecentSongs() {
+  const token = process.env.TTL_USER_TOKEN;
+
+  try {
+    const response = await fetch('https://playlists.prod.tt.fm/rooms/just-jams/recent-songs', {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'accept': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch recent songs: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.songPlays;
+  } catch (error) {
+    throw new Error(`Error fetching recent songs: ${error.message}`);
+  }
+}
+
 async function fetchCurrentUsers() {
   const token = process.env.TTL_USER_TOKEN;
 
@@ -131,4 +153,4 @@ async function fetchCurrentUsers() {
   }
 }
 
-export { getAccessToken, fetchCurrentUsers, fetchSpotifyPlaylistTracks,fetchCurrentlyPlayingSong};
+export { getAccessToken, fetchRecentSongs,fetchCurrentUsers, fetchSpotifyPlaylistTracks,fetchCurrentlyPlayingSong};
