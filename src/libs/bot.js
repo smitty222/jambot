@@ -92,7 +92,7 @@ export class Bot {
         self.updateNextSong();
         setTimeout(() => {
           postVoteCountsForLastSong(process.env.ROOM_UUID);
-        }, 7000);
+        }, 10000);
       }
     });
   }
