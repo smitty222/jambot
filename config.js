@@ -1,0 +1,30 @@
+module.exports = {
+    apps: [{
+      name: "jambot",
+      script: "src/index.js",
+      env: {
+        NODE_ENV: "production",
+        LOG_LEVEL: "info",
+        CHAT_TOKEN: "887b6c25-6eb6-42ae-a68f-cd84e60d4d5a_1699586609c4ae5a9f0f9cdd98859e417d1f4835",
+        CHAT_USER_ID: "JamFlowBot",
+        CHAT_REPLY_ID: "JamFlowBot",
+        CHAT_API_KEY: "193427bb5702bab7",
+        CHAT_AVATAR_ID: "bot-2",
+        CHAT_NAME: "JamFlowBot",
+        CHAT_COLOUR: "FF5F1F",
+        SET_THEME: "settheme",
+        ROOM_UUID: "b868900c-fea2-4629-b316-9f9213a72507",
+        TTL_USER_TOKEN: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTE5NDE4MCwic3ViIjoiODg3YjZjMjUtNmViNi00MmFlLWE2OGYtY2Q4NGU2MGQ0ZDVhIiwicm9sZSI6ImJvdCIsInN1YnNjcmlwdGlvbklkIjoiIiwiY2FwYWJpbGl0aWVzIjpbXSwidHlwZSI6InVzZXIiLCJpYXQiOjE3MDEyOTA1MDcsImV4cCI6MjAxNjY1MDUwNywiaXNzIjoidHVybnRhYmxlLXVzZXItc2VydmljZSJ9.iqrVkgqWlWsHlTETuA6A6vV5jG4KTtjtCPOcLVK_Zg1TD75HRm4AXIX_FMUG43_JWM_6Bo65WxS9j7Pq4yB0EQ1Y0PwdqNaIKDWxA68ADqhfeBtGxsdHF-ZIK-u8W5QASw1g06GoNIKWP6_DtirexyDFQiYo0QKjRDo4SopmWB4-F5K_5JECePQDvicg4oqRtIdw4iiQWBqY-uQlKOzK21Rwjb3lBf04r44m7Rj4kwH5omsJ2H6Vst4MvYV9wv3QXxKF34scNOVtX3cNJCW8HGZxC2r3_qrPsTTo52kMv_rlpmgEzyEN4spFecCXC_o023h5PRukbNedj-UyITTDXz1xJp5GdIVHnn5KYZZiatFvMimA-rDI5zkUX7Fya6dRzHhCEyC0YKCVc9PpKZIPfRkpDXFs-5UlLlzJyfDG2gPDSG6o4TD_d2smL2uZW36q2gZ-V3w6gUmLd16p7M9RlQU-zpTFSTxFXXLxsJNjucekQn6Wvxlw4ZL2W_O0JZeAwU7okQvWnrRwVg6ILAai-I8X4VwK-dUIpQGqNxW9_4NF_YvnFfqLZCCX3Dfd32np3FnRr8yIkT_zFQtyakooIL_JK3BVplmlz5QBXx98RBs4NPA82znCmCyDt2Zzm5yrper3ASnwSqtDdEyIJsgeXpGtrp3Yx0oq0a8u4ii_HMg",
+        BARD_API_KEY: "AIzaSyBzFqUrLu37tmisjvxRPouszxJIofUePKA",
+        OPENAI_API_KEY: "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",
+        BOT_USER_UUID: "887b6c25-6eb6-42ae-a68f-cd84e60d4d5a",
+        SPOTIFY_CLIENT_ID: "d6b3c45094204e8c9e6ae91e05e0704c",
+        SPOTIFY_CLIENT_SECRET: "044915905eb943b197ea59c6bedbbedc",
+        SPOTIFY_ACCESS_TOKEN: "BQAfSE4DaQBRhH84fy1UP731m1ORRjB2tLr-5cxIkTRaCus4mGYiOoB7NwdKKDtgmDXQKa5PW7ZjREDj6vXBGkpLNjsjbFOWwapoAO0EonNQIMBdECCajqtZWpxAnGkJNJ088Il-zmDU3-3K6bo",
+        REDIRECT_URI: "http://localhost:8888/callback",
+        DEFAULT_PLAYLIST_ID: "61vNvZ72Ay7rQgFZYmDixU",
+        POSTMAN_API_KEY: "PMAK-66477ae9c35f140001ea0013-e43309cf79ad0fe9aeec6813e9ee4a6616"
+      }
+    }]
+  }
+  
