@@ -6,11 +6,7 @@ import { logger } from '../utils/logging.js'
 import { roomBot } from '../index.js'
 import {fetchCurrentlyPlayingSong} from '../utils/API.js'
 import { getUserAccessToken } from '../utils/authCode.js'
-import { handleLotteryCommand } from '../utils/lotteryGame.js'
-
-
-
-
+import {handleLotteryCommand, handleLotteryNumber, LotteryGameActive} from '../utils/lotteryGame.js'
 
 // Themes Stuff
 const roomThemes = {}
@@ -155,14 +151,33 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
 
     /////////////// LOTTERY GAME ////////////////////////////////////////////
   } else if (payload.message.startsWith('/lottery')) {
-      await handleLotteryCommand(payload, room);
-        
+    try {
+      const GifUrl = 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExMm11bGZ0M3RraXg5Z3Z4ZzZpNjU4ZDR4Y2QwMzc0NWwyaWFlNWU4byZlcD12MV9naWZzX3NlYXJjaCZjdD1n/Ps8XflhsT5EVa/giphy.gif';
+      await postMessage({
+        room,
+        message: '',
+        images: [GifUrl]
+      });
+    } catch (error) {
+      console.error('Error processing command', error.message);
+      await postMessage({
+        room,
+        message: 'An error occurred while processing the command. Please try again.'
+      });
+    }
+    await handleLotteryCommand(payload);
+  } else if (LotteryGameActive) {
+    // Handle lottery number entry only if the game is active
+    await handleLotteryNumber(payload);
+  
+    
     // "/ COMMANDS" Start Here.
   } else if (payload.message.startsWith('/hello')) {
     await postMessage({
       room,
       message: 'Hi!'
     })
+
 
   } else if (payload.message.startsWith('/addsong')) {
     try {

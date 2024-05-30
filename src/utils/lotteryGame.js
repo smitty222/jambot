@@ -1,61 +1,92 @@
 import { postMessage } from "../libs/cometchat.js";
+import { fetchUserData } from "./API.js";
 
-let winningNumber = null;
-let gameInProgress = false;
+// Global variables
+const MAX_NUMBER = 100;
+const MIN_NUMBER = 1;
+const TIMEOUT_DURATION = 30000; // 30 seconds timeout
+const DRAWING_DELAY = 5000; // 5 seconds delay before drawing
+let lotteryEntries = {};
+let LotteryGameActive = false;
 
-function getRandomNumber(min, max) {
+// Function to generate a random number within a given range
+function generateRandomNumber(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-export async function handleLotteryCommand(payload, room) {
-  try {
-    const { message, senderName } = payload;
+async function handleLotteryCommand(payload) {
+  LotteryGameActive = true; 
+  console.log('Lottery Game Active');
 
-    if (message.startsWith('/lottery')) {
-      if (gameInProgress) {
-        await postMessage({
-          room,
-          message: "A lottery game is already active. Wait for it to end."
-        });
-      } else {
-        winningNumber = getRandomNumber(1, 2);
-        gameInProgress = true;
+  await postMessage({
+    room: process.env.ROOM_UUID, 
+    message: "LOTTERY BALL TIME!",
+  });
 
-        await postMessage({
-          room,
-          message: "🎉 The lottery game has started! Guess a number between 1 and 2 by typing the number in the chat."
-        });
+  await postMessage({
+    room: process.env.ROOM_UUID, 
+    message: "Send a number 1-100 in the chat to play!",
+  });
 
-        setTimeout(async () => {
-          // Check if the winning number has been guessed
-          if (winningNumber !== null) {
-            // No winner, announce the winning number
-            await postMessage({
-              room,
-              message: `⏰ Time's up! The winning number is: ${winningNumber}.`
-            });
+  // Set a timeout to remind users after 15 seconds
+  setTimeout(() => {
+    postMessage({
+      room: process.env.ROOM_UUID,
+      message: "Lottery Ball Drawing will be in 15 seconds! Get your picks in!",
+    });
+  }, 15000);
 
-            // Reset the game state
-            winningNumber = null;
-            gameInProgress = false;
-          }
-        }, 10000);
-      }
+  // Set a timeout to end the lottery game after TIMEOUT_DURATION
+  setTimeout(() => {
+    LotteryGameActive = false;
+    console.log('Lottery Game Inactive');
+    postMessage({
+      room: process.env.ROOM_UUID,
+      message: "Lottery entries are now closed. Drawing numbers...",
+    });
+    // Set a delay before drawing the winning number
+    setTimeout(drawWinningNumber, DRAWING_DELAY);
+  }, TIMEOUT_DURATION);
+}
+
+async function handleLotteryNumber(payload) {
+  if (LotteryGameActive) {
+    if (!isNaN(payload.message) && parseInt(payload.message) >= MIN_NUMBER && parseInt(payload.message) <= MAX_NUMBER) {
+      const number = parseInt(payload.message);
+      lotteryEntries[payload.sender] = number;
     }
-
-    // Check if the message contains a guess
-    if (gameInProgress && payload.message === winningNumber) {
-      await postMessage({
-        room,
-        message: `🎉 Congratulations, ${senderName}! You guessed the correct number and won the lottery!`
-      });
-
-      // Reset the game state
-      winningNumber = null;
-      gameInProgress = false;
-    }
-  } catch (error) {
-    console.error('Error handling lottery command:', error.message);
-    // Handle errors appropriately
   }
 }
+
+async function drawWinningNumber() {
+  const winningNumber = generateRandomNumber(MIN_NUMBER, MAX_NUMBER);
+  let winners = [];
+  for (const sender in lotteryEntries) {
+    if (lotteryEntries[sender] === winningNumber) {
+      winners.push(sender);
+    }
+  }
+  
+  const nicknames = await fetchUserData(winners);
+  
+  let message = `The winning number is: ${winningNumber}.`;
+  postMessage({
+    room: process.env.ROOM_UUID,
+    message: message,
+  });
+
+  if (nicknames.length > 0) {
+    const winnersMessage = `WE HAVE A WINNER!! Congrats ${nicknames.map(nickname => `@${nickname}`).join(", ")}!!`;
+    postMessage({
+      room: process.env.ROOM_UUID,
+      message: winnersMessage,
+    });
+  } else {
+    postMessage({
+      room: process.env.ROOM_UUID,
+      message: "There are no winners this time.",
+    });
+  }
+}
+
+export { handleLotteryCommand, handleLotteryNumber, LotteryGameActive };

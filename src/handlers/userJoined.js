@@ -12,7 +12,6 @@ const customWelcomeMessages = {
 
 export default async (payload) => {
   try {
-    console.log('User Joined:', payload);
     const previousUsers = getCurrentUsers();
     const currentUsers = await fetchCurrentUsers();
     const newUser = currentUsers.find(user => !previousUsers.includes(user));

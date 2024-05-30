@@ -153,4 +153,31 @@ async function fetchCurrentUsers() {
   }
 }
 
-export { getAccessToken, fetchRecentSongs,fetchCurrentUsers, fetchSpotifyPlaylistTracks,fetchCurrentlyPlayingSong};
+async function fetchUserData(userUUIDs) {
+  const token = process.env.TTL_USER_TOKEN;
+  const endpoint = `https://api.prod.tt.fm/users/profiles?users=${userUUIDs}`;
+
+  try {
+    const response = await fetch(endpoint, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'accept': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch user data: ${response.statusText}`);
+    }
+
+    const userData = await response.json();
+    
+    // Extract nicknames from user profiles
+    const nicknames = userData.map(user => user.userProfile.nickname);
+
+    return nicknames;
+  } catch (error) {
+    throw new Error(`Error fetching user data: ${error.message}`);
+  }
+}
+
+export { getAccessToken, fetchUserData, fetchRecentSongs,fetchCurrentUsers, fetchSpotifyPlaylistTracks,fetchCurrentlyPlayingSong};

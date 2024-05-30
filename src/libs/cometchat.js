@@ -54,14 +54,8 @@ export const postMessage = async (options) => {
     receiver: options.room
   }
 
-  console.log('Before making request')
-  console.log(payload)
-
   const url = buildUrl(`${process.env.CHAT_API_KEY}.apiclient-us.cometchat.io`, paths)
   const messageResponse = await makeRequest(url, { method: 'POST', body: JSON.stringify(payload) }, headers)
-
-  console.log('After making request')
-  console.log(messageResponse)
 
   return {
     message: options.message,
