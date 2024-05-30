@@ -1,7 +1,7 @@
-let currentUsers = [];
+let currentUsers = []
 
-export const getCurrentUsers = () => currentUsers;
+export const getCurrentUsers = () => currentUsers
 
 export const updateCurrentUsers = (newUsers) => {
-  currentUsers = newUsers;
-};
+  currentUsers = newUsers
+}

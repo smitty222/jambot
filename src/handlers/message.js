@@ -4,237 +4,227 @@ import { askQuestion } from '../libs/ai.js'
 import { selectRandomQuestion, checkAnswer } from './trivia.js'
 import { logger } from '../utils/logging.js'
 import { roomBot } from '../index.js'
-import {fetchCurrentlyPlayingSong} from '../utils/API.js'
-import { getUserAccessToken } from '../utils/authCode.js'
-import {handleLotteryCommand, handleLotteryNumber, LotteryGameActive} from '../utils/lotteryGame.js'
+import { fetchCurrentlyPlayingSong } from '../utils/API.js'
+import { handleLotteryCommand, handleLotteryNumber, LotteryGameActive } from '../utils/lotteryGame.js'
 
 // Themes Stuff
 const roomThemes = {}
-let currentQuestion = null;
-let submittedAnswer = null;
-let totalPoints = 0;
-const askedQuestions = new Set();
+let currentQuestion = null
+let submittedAnswer = null
+let totalPoints = 0
+const askedQuestions = new Set()
 const resetTriviaState = () => {
-  currentQuestion = null;
-  submittedAnswer = null;
-};
+  currentQuestion = null
+  submittedAnswer = null
+}
 const getNewQuestion = () => {
-  let question = selectRandomQuestion();
+  let question = selectRandomQuestion()
   while (askedQuestions.has(question)) {
-    question = selectRandomQuestion();
+    question = selectRandomQuestion()
   }
-  askedQuestions.add(question);
-  return question;
-};
+  askedQuestions.add(question)
+  return question
+}
 // Messages
 export default async (payload, room) => {
   logger.info({ sender: payload.senderName, message: payload.message })
   // Handle Gifs Sent in Chat
   if (payload.message.type === 'ChatGif') {
-    logger.info('Received a GIF message:', payload.message);
-    return; 
+    logger.info('Received a GIF message:', payload.message)
+    return
   }
-  
-// AI Chat Stuff
-if (
-  typeof payload.message === 'string' &&
+
+  // AI Chat Stuff
+  if (
+    typeof payload.message === 'string' &&
   payload.message.includes(`@${process.env.CHAT_NAME}`) &&
   payload.senderName &&
   !payload.senderName.startsWith(`@${process.env.BOT_USER_UUID}`) &&
   !payload.message.includes('played')
-) {
-  try {
-    const question = payload.message.replace(`@${process.env.CHAT_NAME}`, '').trim()
-    const reply = await askQuestion(question)
-    if (reply) {
-      const responseText = typeof reply === 'string' ? reply : reply.text
-      if (responseText) {
-        await postMessage({
-          room,
-          message: responseText
-        })
-      } else {
-        await postMessage({
-          room,
-          message: 'Sorry, I could not generate a response at the moment.'
-        })
+  ) {
+    try {
+      const question = payload.message.replace(`@${process.env.CHAT_NAME}`, '').trim()
+      const reply = await askQuestion(question)
+      if (reply) {
+        const responseText = typeof reply === 'string' ? reply : reply.text
+        if (responseText) {
+          await postMessage({
+            room,
+            message: responseText
+          })
+        } else {
+          await postMessage({
+            room,
+            message: 'Sorry, I could not generate a response at the moment.'
+          })
+        }
       }
+    } catch (error) {
+      logger.error('Error handling AI response:', error)
+      await postMessage({
+        room,
+        message: 'Sorry, something went wrong trying to process your message.'
+      })
     }
-  } catch (error) {
-    logger.error('Error handling AI response:', error)
-    await postMessage({
-      room,
-      message: 'Sorry, something went wrong trying to process your message.'
-    })
-  }
 
     //  Trivia Stuff
   } else if (payload.message.startsWith('/triviastart')) {
     if (currentQuestion) {
       await postMessage({
         room,
-        message: "A trivia question is already active. Wait for it to end."
-      });
+        message: 'A trivia question is already active. Wait for it to end.'
+      })
     } else {
-      currentQuestion = getNewQuestion();
-      const triviaMessage = `Question: ${currentQuestion.question}\nOptions: ${currentQuestion.answers.join(', ')}`;
+      currentQuestion = getNewQuestion()
+      const triviaMessage = `Question: ${currentQuestion.question}\nOptions: ${currentQuestion.answers.join(', ')}`
       await postMessage({
         room,
         message: triviaMessage
-      });
+      })
     }
   } else if (payload.message.startsWith('/submit')) {
     if (!currentQuestion) {
       await postMessage({
         room,
-        message: "There is no active trivia question."
-      });
-      return;
+        message: 'There is no active trivia question.'
+      })
+      return
     }
     if (submittedAnswer) {
       await postMessage({
         room,
-        message: "An answer has already been submitted."
-      });
-      return;
+        message: 'An answer has already been submitted.'
+      })
+      return
     }
-    const answer = payload.message.split(' ')[1].toUpperCase();
+    const answer = payload.message.split(' ')[1].toUpperCase()
     if (!['A', 'B', 'C', 'D'].includes(answer)) {
       await postMessage({
         room,
-        message: "Invalid answer format. Please submit your answer as A/B/C/D."
-      });
-      return;
+        message: 'Invalid answer format. Please submit your answer as A/B/C/D.'
+      })
+      return
     }
-    submittedAnswer = answer;
-if (checkAnswer(currentQuestion, submittedAnswer)) {
-  totalPoints++;
-  await postMessage({
-    room,
-    message: `Congratulations! Your answer is correct. Total points: ${totalPoints}`
-  });
-  if (totalPoints === 5) {
-    try {
-      await roomBot.playOneTimeAnimation('jump', process.env.ROOM_UUID, process.env.BOT_USER_UUID);
-    } catch (error) {
-      console.error('Error Jumping', error);
+    submittedAnswer = answer
+    if (checkAnswer(currentQuestion, submittedAnswer)) {
+      totalPoints++
+      await postMessage({
+        room,
+        message: `Congratulations! Your answer is correct. Total points: ${totalPoints}`
+      })
+      if (totalPoints === 5) {
+        try {
+          await roomBot.playOneTimeAnimation('jump', process.env.ROOM_UUID, process.env.BOT_USER_UUID)
+        } catch (error) {
+          console.error('Error Jumping', error)
+        }
+      }
+    } else {
+      await postMessage({
+        room,
+        message: `Sorry, your answer is incorrect. The correct answer was ${currentQuestion.correctAnswer}.`
+      })
     }
-  }
-} else {
-  await postMessage({
-    room,
-    message: `Sorry, your answer is incorrect. The correct answer was ${currentQuestion.correctAnswer}.`
-  });
-}
-    resetTriviaState();
-    currentQuestion = getNewQuestion();
-    const triviaMessage = `Question: ${currentQuestion.question}\nOptions: ${currentQuestion.answers.join(', ')}`;
+    resetTriviaState()
+    currentQuestion = getNewQuestion()
+    const triviaMessage = `Question: ${currentQuestion.question}\nOptions: ${currentQuestion.answers.join(', ')}`
     await postMessage({
       room,
       message: triviaMessage
-    });
+    })
   } else if (payload.message.startsWith('/triviaend')) {
-    resetTriviaState();
-    askedQuestions.clear();
+    resetTriviaState()
+    askedQuestions.clear()
     await postMessage({
       room,
       message: `The trivia game has been ended. Total points: ${totalPoints}`
-    });
+    })
   } else if (payload.message.startsWith('/trivia')) {
     if (!currentQuestion) {
       await postMessage({
         room,
-        message: "To start a trivia game you can use /triviastart. To submit your answer you can use /submit followed by the letter option you choose. The points will tally up and the game will continue on until you use /triviaend"
-      });
-      return;
+        message: 'To start a trivia game you can use /triviastart. To submit your answer you can use /submit followed by the letter option you choose. The points will tally up and the game will continue on until you use /triviaend'
+      })
     }
 
-    /////////////// LOTTERY GAME ////////////////////////////////////////////
+    /// //////////// LOTTERY GAME ////////////////////////////////////////////
   } else if (payload.message.startsWith('/lottery')) {
     try {
-      const GifUrl = 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExMm11bGZ0M3RraXg5Z3Z4ZzZpNjU4ZDR4Y2QwMzc0NWwyaWFlNWU4byZlcD12MV9naWZzX3NlYXJjaCZjdD1n/Ps8XflhsT5EVa/giphy.gif';
+      const GifUrl = 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExMm11bGZ0M3RraXg5Z3Z4ZzZpNjU4ZDR4Y2QwMzc0NWwyaWFlNWU4byZlcD12MV9naWZzX3NlYXJjaCZjdD1n/Ps8XflhsT5EVa/giphy.gif'
       await postMessage({
         room,
         message: '',
         images: [GifUrl]
-      });
+      })
     } catch (error) {
-      console.error('Error processing command', error.message);
+      console.error('Error processing command', error.message)
       await postMessage({
         room,
         message: 'An error occurred while processing the command. Please try again.'
-      });
+      })
     }
-    await handleLotteryCommand(payload);
+    await handleLotteryCommand(payload)
   } else if (LotteryGameActive) {
     // Handle lottery number entry only if the game is active
-    await handleLotteryNumber(payload);
-  
-    
+    await handleLotteryNumber(payload)
+
     // "/ COMMANDS" Start Here.
   } else if (payload.message.startsWith('/hello')) {
     await postMessage({
       room,
       message: 'Hi!'
     })
-
-
   } else if (payload.message.startsWith('/addsong')) {
     try {
       // Call fetchCurrentlyPlayingSong to get the track URI
-      const trackURI = await fetchCurrentlyPlayingSong(process.env.TTL_USER_TOKEN);
+      const trackURI = await fetchCurrentlyPlayingSong(process.env.TTL_USER_TOKEN)
 
       // Send the track URI to the chat
       await postMessage({
         room,
         message: `Currently playing song: ${trackURI}`
-      });
+      })
     } catch (error) {
       // Handle errors
-      console.error('Error fetching song:', error);
+      console.error('Error fetching song:', error)
       await postMessage({
         room,
         message: `Error: ${error.message}`
-      });
+      })
     }
-
   } else if (payload.message.startsWith('/fetchsong')) {
     try {
       // Call fetchCurrentlyPlayingSong to get the track URI
-      const trackURI = await fetchCurrentlyPlayingSong(process.env.TTL_USER_TOKEN);
+      const trackURI = await fetchCurrentlyPlayingSong(process.env.TTL_USER_TOKEN)
 
       // Send the track URI to the chat
       await postMessage({
         room,
         message: `Currently playing song: ${trackURI}`
-      });
+      })
     } catch (error) {
       // Handle errors
-      console.error('Error fetching song:', error);
+      console.error('Error fetching song:', error)
       await postMessage({
         room,
         message: `Error: ${error.message}`
-      });
+      })
     }
-
   } else if (payload.message.startsWith('/barkbark')) {
     await postMessage({
       room,
       message: 'WOOF WOOF'
     })
-
   } else if (payload.message.startsWith('/bark')) {
     await postMessage({
       room,
       message: 'WOOF'
     })
-
   } else if (payload.message.startsWith('/commands')) {
     await postMessage({
       room,
       message: 'General commands are /theme, /dance, /cheers, /tomatoes, /party, /trivia'
     })
-
   } else if (payload.message.startsWith('/jump')) {
     try {
       await roomBot.playOneTimeAnimation('jump', process.env.ROOM_UUID, process.env.BOT_USER_UUID)
@@ -283,7 +273,6 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
     } catch (error) {
       console.error('Error updating next song:', error)
     }
-
   } else if (payload.message.startsWith('/berad')) {
     await postMessage({
       room,
@@ -303,35 +292,35 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
     //  GIF's
   } else if (payload.message.startsWith('/burp')) {
     try {
-      const GifUrl = 'https://media.giphy.com/media/3orieOieQrTkLXl2SY/giphy.gif?cid=790b7611gofgmq0d396jww26sbt1bhc9ljg9am4nb8m6f6lo&ep=v1_gifs_search&rid=giphy.gif&ct=g';
+      const GifUrl = 'https://media.giphy.com/media/3orieOieQrTkLXl2SY/giphy.gif?cid=790b7611gofgmq0d396jww26sbt1bhc9ljg9am4nb8m6f6lo&ep=v1_gifs_search&rid=giphy.gif&ct=g'
       await postMessage({
         room,
         message: '',
         images: [GifUrl]
-      });
+      })
     } catch (error) {
-      console.error('Error processing /burp command:', error.message);
+      console.error('Error processing /burp command:', error.message)
       await postMessage({
         room,
         message: 'An error occurred while processing the burp command. Please try again.'
-      });
+      })
     }
   } else if (payload.message.startsWith('/shirley')) {
     try {
-      const GifUrl = 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdzdyamVybTVwa256NnVrdWQzcXMwcWd6YXlseTQ0dmY3OWloejQyYyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/3oEjHLzm4BCF8zfPy0/giphy.gif';
+      const GifUrl = 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdzdyamVybTVwa256NnVrdWQzcXMwcWd6YXlseTQ0dmY3OWloejQyYyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/3oEjHLzm4BCF8zfPy0/giphy.gif'
       await postMessage({
         room,
         message: '',
         images: [GifUrl]
-      });
+      })
     } catch (error) {
-      console.error('Error processing /burp command:', error.message);
+      console.error('Error processing /burp command:', error.message)
       await postMessage({
         room,
         message: 'An error occurred while processing the burp command. Please try again.'
-      });
+      })
     }
-    // RANDOM GIF's 
+    // RANDOM GIF's
   } else if (payload.message.startsWith('/dance')) {
     try {
       const danceImageOptions = [
@@ -357,7 +346,7 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
     try {
       const FartImageOptions = [
         'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ21qYmtndjNqYWRqaTFrd2NqaDNkejRqY3RrMTV5Mzlvb3gydDk0ZyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/dWxYMTXIJtT9wGLkOw/giphy.gif',
-        'https://media.giphy.com/media/LFvQBWwKk7Qc0/giphy.gif?cid=790b7611gmjbkgv3jadji1kwcjh3dz4jctk15y39oox2t94g&ep=v1_gifs_search&rid=giphy.gif&ct=g',
+        'https://media.giphy.com/media/LFvQBWwKk7Qc0/giphy.gif?cid=790b7611gmjbkgv3jadji1kwcjh3dz4jctk15y39oox2t94g&ep=v1_gifs_search&rid=giphy.gif&ct=g'
       ]
       const randomfartImageUrl = FartImageOptions[Math.floor(Math.random() * FartImageOptions.length)]
       await postMessage({
@@ -377,7 +366,7 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
       const danceImageOptions = [
         'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExZHF6aTAzeXNubW84aHJrZzd1OGM1ZjM0MGp5aTZrYTRrZmdscnYwbyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/IwAZ6dvvvaTtdI8SD5/giphy.gif',
         'https://media.giphy.com/media/xUA7aT1vNqVWHPY1cA/giphy.gif?cid=790b7611ov12e8uoq7xedaifcwz9gj28xb43wtxtnuj0rnod&ep=v1_gifs_search&rid=giphy.gif&ct=g',
-        'https://media.giphy.com/media/iJ2cZjydqg9wFkzbGD/giphy.gif?cid=790b7611ov12e8uoq7xedaifcwz9gj28xb43wtxtnuj0rnod&ep=v1_gifs_search&rid=giphy.gif&ct=g',
+        'https://media.giphy.com/media/iJ2cZjydqg9wFkzbGD/giphy.gif?cid=790b7611ov12e8uoq7xedaifcwz9gj28xb43wtxtnuj0rnod&ep=v1_gifs_search&rid=giphy.gif&ct=g'
         // Add more dance image URLs as needed
       ]
 
@@ -516,12 +505,11 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
     }
   } else if (payload.message.startsWith('/tomatoes')) {
     try {
-     
       const cheersOptions = [
         { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExb296MmJyeHBpYm9yMGQwbG81cnhlcGd4MWF4N3A1dWhhN3FxNmJvdCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/Her9TInMPQYrS/giphy.gif' }, // Taz tomatoes GIF
         { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExbGY4YmQwZTA5aHk3ejhrbTI1Mmk1NDl6ZTkzM2h6cm53djZsYnB5diZlcD12MV9naWZzX3NlYXJjaCZjdD1n/26nfoIrm8lHXqmm7C/giphy.gif' }, // Spongebob tomatoes GIF
         { type: 'emoji', value: '🍅🍅🍅🍅' }
-    
+
       ]
       const randomCheersOption = cheersOptions[Math.floor(Math.random() * cheersOptions.length)]
       if (randomCheersOption.type === 'gif') {
@@ -650,4 +638,4 @@ if (checkAnswer(currentQuestion, submittedAnswer)) {
   }
 }
 
-export {roomThemes}
+export { roomThemes }

@@ -1,36 +1,36 @@
-import express from 'express';
-import { Chain } from 'repeat';
-import { Bot } from './libs/bot.js';
-import { updateCurrentUsers } from './utils/currentUsers.js'; // Import the updateCurrentUsers function
-import { fetchCurrentUsers } from './utils/API.js';
+import express from 'express'
+import { Chain } from 'repeat'
+import { Bot } from './libs/bot.js'
+import { updateCurrentUsers } from './utils/currentUsers.js' // Import the updateCurrentUsers function
+import { fetchCurrentUsers } from './utils/API.js'
 
-const app = express();
+const app = express()
 
-const roomBot = new Bot(process.env.JOIN_ROOM);
+const roomBot = new Bot(process.env.JOIN_ROOM)
 
 const startupTasks = async () => {
   try {
-    await roomBot.connect();
-    roomBot.configureListeners();
-    const currentUsers = await fetchCurrentUsers(); // Fetch current room users on bot startup
-    updateCurrentUsers(currentUsers); // Update current users
+    await roomBot.connect()
+    roomBot.configureListeners()
+    const currentUsers = await fetchCurrentUsers() // Fetch current room users on bot startup
+    updateCurrentUsers(currentUsers) // Update current users
   } catch (error) {
-    console.error('Error during bot startup:', error.message);
+    console.error('Error during bot startup:', error.message)
   }
-};
+}
 
-startupTasks();
+startupTasks()
 
 const repeatedTasks = new Chain()
   .add(async () => {
-    await roomBot.processNewMessages();
+    await roomBot.processNewMessages()
   })
-  .every(500);
+  .every(500)
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+  console.log(`Server is running on port ${PORT}`)
+})
 
-export { roomBot };
+export { roomBot }

@@ -1,211 +1,210 @@
-import fetch from 'node-fetch';
+import fetch from 'node-fetch'
 
 const config = {
   clientId: process.env.SPOTIFY_CLIENT_ID,
   clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
   defaultPlaylistId: process.env.DEFAULT_PLAYLIST_ID,
   ttlUserToken: process.env.TTL_USER_TOKEN
-};
+}
 
-let accessToken = null;
+let accessToken = null
 
-async function getAccessToken(clientId, clientSecret) {
-  const encodedAuthString = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-  const authorizationHeader = `Basic ${encodedAuthString}`;
-  const scope = 'playlist-modify-public'; // Specify the required scope
+async function getAccessToken (clientId, clientSecret) {
+  const encodedAuthString = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
+  const authorizationHeader = `Basic ${encodedAuthString}`
+  const scope = 'playlist-modify-public' // Specify the required scope
 
   const authOptions = {
     method: 'POST',
     headers: {
-      'Authorization': authorizationHeader,
+      Authorization: authorizationHeader,
       'Content-Type': 'application/x-www-form-urlencoded'
     },
     body: `grant_type=client_credentials&scope=${encodeURIComponent(scope)}`
-  };
+  }
 
   try {
-    const response = await fetch('https://accounts.spotify.com/api/token', authOptions);
+    const response = await fetch('https://accounts.spotify.com/api/token', authOptions)
 
     if (!response.ok) {
-      throw new Error(`Failed to retrieve access token: ${response.statusText}`);
+      throw new Error(`Failed to retrieve access token: ${response.statusText}`)
     }
 
-    const data = await response.json();
-    return data.access_token;
+    const data = await response.json()
+    return data.access_token
   } catch (error) {
-    console.error('Error getting access token:', error);
-    throw error;
+    console.error('Error getting access token:', error)
+    throw error
   }
 }
 
-async function fetchSpotifyPlaylistTracks() {
-  const playlistId = process.env.DEFAULT_PLAYLIST_ID;
-  const tracks = [];
-  let url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks`;
+async function fetchSpotifyPlaylistTracks () {
+  const playlistId = process.env.DEFAULT_PLAYLIST_ID
+  const tracks = []
+  let url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks`
 
   try {
     if (!accessToken) {
-      accessToken = await getAccessToken(config.clientId, config.clientSecret);
+      accessToken = await getAccessToken(config.clientId, config.clientSecret)
     }
 
     while (url) {
       const options = {
         method: 'GET',
-        headers: { Authorization: `Bearer ${accessToken}` },
-      };
+        headers: { Authorization: `Bearer ${accessToken}` }
+      }
 
-      const response = await fetch(url, options);
-      const playlist = await response.json();
+      const response = await fetch(url, options)
+      const playlist = await response.json()
 
       if (!response.ok) {
-        console.error('Error fetching playlist tracks:', playlist);
-        return [];
+        console.error('Error fetching playlist tracks:', playlist)
+        return []
       }
 
       if (playlist.items?.length) {
-        tracks.push(...playlist.items);
+        tracks.push(...playlist.items)
       }
-      url = playlist.next;
+      url = playlist.next
     }
   } catch (error) {
-    console.error('Error fetching playlist tracks:', error);
-    return [];
+    console.error('Error fetching playlist tracks:', error)
+    return []
   }
 
-  return tracks;
+  return tracks
 }
 
 // TURNTABLE API
-async function fetchCurrentlyPlayingSong() {
-  const token = process.env.TTL_USER_TOKEN;
+async function fetchCurrentlyPlayingSong () {
+  const token = process.env.TTL_USER_TOKEN
 
   try {
     const response = await fetch('https://rooms.prod.tt.fm/rooms/uuid/b868900c-fea2-4629-b316-9f9213a72507', {
       headers: {
-        'Authorization': `Bearer ${token}`,
-        'accept': 'application/json'
+        Authorization: `Bearer ${token}`,
+        accept: 'application/json'
       }
-    });
+    })
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch currently playing song: ${response.statusText}`);
+      throw new Error(`Failed to fetch currently playing song: ${response.statusText}`)
     }
 
-    const data = await response.json();
+    const data = await response.json()
     if (data?.song?.musicProviders?.spotify) {
       // Assuming the Spotify track ID is in the 'spotify' property of the 'musicProviders' object
-      const spotifyTrackId = data.song.musicProviders.spotify;
-      const spotifyTrackURI = spotifyTrackId.startsWith('spotify:track:') ? spotifyTrackId : `spotify:track:${spotifyTrackId}`;
-      return spotifyTrackURI;
+      const spotifyTrackId = data.song.musicProviders.spotify
+      const spotifyTrackURI = spotifyTrackId.startsWith('spotify:track:') ? spotifyTrackId : `spotify:track:${spotifyTrackId}`
+      return spotifyTrackURI
     } else {
-      throw new Error("No Spotify track is currently playing.");
+      throw new Error('No Spotify track is currently playing.')
     }
   } catch (error) {
-    throw new Error(`Error fetching currently playing song: ${error.message}`);
+    throw new Error(`Error fetching currently playing song: ${error.message}`)
   }
 }
 
-async function fetchRecentSongs() {
-  const token = process.env.TTL_USER_TOKEN;
+async function fetchRecentSongs () {
+  const token = process.env.TTL_USER_TOKEN
 
   try {
     const response = await fetch('https://playlists.prod.tt.fm/rooms/just-jams/recent-songs', {
       headers: {
-        'Authorization': `Bearer ${token}`,
-        'accept': 'application/json'
+        Authorization: `Bearer ${token}`,
+        accept: 'application/json'
       }
-    });
+    })
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch recent songs: ${response.statusText}`);
+      throw new Error(`Failed to fetch recent songs: ${response.statusText}`)
     }
 
-    const data = await response.json();
-    return data.songPlays;
+    const data = await response.json()
+    return data.songPlays
   } catch (error) {
-    throw new Error(`Error fetching recent songs: ${error.message}`);
+    throw new Error(`Error fetching recent songs: ${error.message}`)
   }
 }
 
-async function fetchCurrentUsers() {
-  const token = process.env.TTL_USER_TOKEN;
+async function fetchCurrentUsers () {
+  const token = process.env.TTL_USER_TOKEN
 
   try {
     const response = await fetch('https://rooms.prod.tt.fm/rooms/just-jams', {
       headers: {
-        'Authorization': `Bearer ${token}`,
-        'accept': 'application/json'
+        Authorization: `Bearer ${token}`,
+        accept: 'application/json'
       }
-    });
+    })
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch current users: ${response.statusText}`);
+      throw new Error(`Failed to fetch current users: ${response.statusText}`)
     }
 
-    const data = await response.json();
+    const data = await response.json()
     if (!data || !data.usersInRoomUuids) {
-      throw new Error("Failed to fetch current users: Invalid response format");
+      throw new Error('Failed to fetch current users: Invalid response format')
     }
 
-    return data.usersInRoomUuids;
+    return data.usersInRoomUuids
   } catch (error) {
-    throw new Error(`Error fetching current users: ${error.message}`);
+    throw new Error(`Error fetching current users: ${error.message}`)
   }
 }
 
-async function fetchUserData(userUUIDs) {
-  const token = process.env.TTL_USER_TOKEN;
+async function fetchUserData (userUUIDs) {
+  const token = process.env.TTL_USER_TOKEN
   if (!userUUIDs || userUUIDs.length === 0) {
-    console.error("No user UUIDs provided");
-    throw new Error("No user UUIDs provided");
+    console.error('No user UUIDs provided')
+    throw new Error('No user UUIDs provided')
   }
-  
-  const endpoint = `https://api.prod.tt.fm/users/profiles?users=${userUUIDs.join(",")}`;
+
+  const endpoint = `https://api.prod.tt.fm/users/profiles?users=${userUUIDs.join(',')}`
 
   if (!token) {
-    console.error("TTL_USER_TOKEN is not set");
-    throw new Error("TTL_USER_TOKEN is not set");
+    console.error('TTL_USER_TOKEN is not set')
+    throw new Error('TTL_USER_TOKEN is not set')
   }
 
-  console.log(`Fetching user data from: ${endpoint}`);
-  console.log(`Using token: ${token}`);
+  console.log(`Fetching user data from: ${endpoint}`)
+  console.log(`Using token: ${token}`)
 
-  const maxRetries = 3;
-  const retryDelay = 2000; // 2 seconds delay between retries
+  const maxRetries = 3
+  const retryDelay = 2000 // 2 seconds delay between retries
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const response = await fetch(endpoint, {
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'accept': 'application/json'
+          Authorization: `Bearer ${token}`,
+          accept: 'application/json'
         }
-      });
+      })
 
       if (!response.ok) {
-        const errorText = await response.text(); // Get the error response text
-        console.error(`Failed to fetch user data: ${response.statusText} - ${errorText}`);
-        throw new Error(`Failed to fetch user data: ${response.statusText} - ${errorText}`);
+        const errorText = await response.text() // Get the error response text
+        console.error(`Failed to fetch user data: ${response.statusText} - ${errorText}`)
+        throw new Error(`Failed to fetch user data: ${response.statusText} - ${errorText}`)
       }
 
-      const userData = await response.json();
-      console.log('User data fetched successfully:', userData);
+      const userData = await response.json()
+      console.log('User data fetched successfully:', userData)
 
       // Extract nicknames from user profiles
-      const nicknames = userData.map(user => user.userProfile.nickname);
+      const nicknames = userData.map(user => user.userProfile.nickname)
 
-      return nicknames;
+      return nicknames
     } catch (error) {
-      console.error(`Attempt ${attempt} failed: ${error.message}`);
+      console.error(`Attempt ${attempt} failed: ${error.message}`)
       if (attempt < maxRetries) {
-        console.log(`Retrying in ${retryDelay / 1000} seconds...`);
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
+        console.log(`Retrying in ${retryDelay / 1000} seconds...`)
+        await new Promise(resolve => setTimeout(resolve, retryDelay))
       } else {
-        throw new Error(`Error fetching user data after ${maxRetries} attempts: ${error.message}`);
+        throw new Error(`Error fetching user data after ${maxRetries} attempts: ${error.message}`)
       }
     }
   }
 }
 
-
-export { getAccessToken, fetchUserData, fetchRecentSongs,fetchCurrentUsers, fetchSpotifyPlaylistTracks,fetchCurrentlyPlayingSong};
+export { getAccessToken, fetchUserData, fetchRecentSongs, fetchCurrentUsers, fetchSpotifyPlaylistTracks, fetchCurrentlyPlayingSong }
