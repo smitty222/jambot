@@ -2,7 +2,7 @@ import { postMessage } from "../libs/cometchat.js";
 import { fetchUserData } from "./API.js";
 
 // Global variables
-const MAX_NUMBER = 100;
+const MAX_NUMBER = 1;
 const MIN_NUMBER = 1;
 const TIMEOUT_DURATION = 30000; // 30 seconds timeout
 const DRAWING_DELAY = 5000; // 5 seconds delay before drawing
@@ -67,24 +67,33 @@ async function drawWinningNumber() {
     }
   }
   
-  const nicknames = await fetchUserData(winners);
-  
   let message = `The winning number is: ${winningNumber}.`;
-  postMessage({
-    room: process.env.ROOM_UUID,
-    message: message,
-  });
 
-  if (nicknames.length > 0) {
-    const winnersMessage = `WE HAVE A WINNER!! Congrats ${nicknames.map(nickname => `@${nickname}`).join(", ")}!!`;
-    postMessage({
-      room: process.env.ROOM_UUID,
-      message: winnersMessage,
-    });
+  if (winners.length > 0) {
+    try {
+      const nicknames = await fetchUserData(winners);
+      if (nicknames.length > 0) {
+        await postMessage({
+          room: process.env.ROOM_UUID,
+          message: message,
+        });
+        await postMessage({
+          room: process.env.ROOM_UUID,
+          message: `WE HAVE A WINNER!! Congrats @${nicknames.join(", ")}!!`,
+        });
+      }
+    } catch (error) {
+      console.error(`Error during user data fetch: ${error.message}`);
+      await postMessage({
+        room: process.env.ROOM_UUID,
+        message: "An error occurred while fetching winner information. Please try again later.",
+      });
+    }
   } else {
+    message += " There are no winners this time.";
     postMessage({
       room: process.env.ROOM_UUID,
-      message: "There are no winners this time.",
+      message: message,
     });
   }
 }

@@ -157,6 +157,14 @@ async function fetchUserData(userUUIDs) {
   const token = process.env.TTL_USER_TOKEN;
   const endpoint = `https://api.prod.tt.fm/users/profiles?users=${userUUIDs}`;
 
+  if (!token) {
+    console.error("TTL_USER_TOKEN is not set");
+    throw new Error("TTL_USER_TOKEN is not set");
+  }
+
+  console.log(`Fetching user data from: ${endpoint}`);
+  console.log(`Using token: ${token}`);
+
   try {
     const response = await fetch(endpoint, {
       headers: {
@@ -166,16 +174,20 @@ async function fetchUserData(userUUIDs) {
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch user data: ${response.statusText}`);
+      const errorText = await response.text(); // Get the error response text
+      console.error(`Failed to fetch user data: ${response.statusText} - ${errorText}`);
+      throw new Error(`Failed to fetch user data: ${response.statusText} - ${errorText}`);
     }
 
     const userData = await response.json();
-    
+    console.log('User data fetched successfully:', userData);
+
     // Extract nicknames from user profiles
     const nicknames = userData.map(user => user.userProfile.nickname);
 
     return nicknames;
   } catch (error) {
+    console.error(`Error fetching user data: ${error.message}`);
     throw new Error(`Error fetching user data: ${error.message}`);
   }
 }
