@@ -155,7 +155,12 @@ async function fetchCurrentUsers() {
 
 async function fetchUserData(userUUIDs) {
   const token = process.env.TTL_USER_TOKEN;
-  const endpoint = `https://api.prod.tt.fm/users/profiles?users=${userUUIDs}`;
+  if (!userUUIDs || userUUIDs.length === 0) {
+    console.error("No user UUIDs provided");
+    throw new Error("No user UUIDs provided");
+  }
+  
+  const endpoint = `https://api.prod.tt.fm/users/profiles?users=${userUUIDs.join(",")}`;
 
   if (!token) {
     console.error("TTL_USER_TOKEN is not set");
@@ -165,31 +170,42 @@ async function fetchUserData(userUUIDs) {
   console.log(`Fetching user data from: ${endpoint}`);
   console.log(`Using token: ${token}`);
 
-  try {
-    const response = await fetch(endpoint, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'accept': 'application/json'
+  const maxRetries = 3;
+  const retryDelay = 2000; // 2 seconds delay between retries
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch(endpoint, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'accept': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text(); // Get the error response text
+        console.error(`Failed to fetch user data: ${response.statusText} - ${errorText}`);
+        throw new Error(`Failed to fetch user data: ${response.statusText} - ${errorText}`);
       }
-    });
 
-    if (!response.ok) {
-      const errorText = await response.text(); // Get the error response text
-      console.error(`Failed to fetch user data: ${response.statusText} - ${errorText}`);
-      throw new Error(`Failed to fetch user data: ${response.statusText} - ${errorText}`);
+      const userData = await response.json();
+      console.log('User data fetched successfully:', userData);
+
+      // Extract nicknames from user profiles
+      const nicknames = userData.map(user => user.userProfile.nickname);
+
+      return nicknames;
+    } catch (error) {
+      console.error(`Attempt ${attempt} failed: ${error.message}`);
+      if (attempt < maxRetries) {
+        console.log(`Retrying in ${retryDelay / 1000} seconds...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      } else {
+        throw new Error(`Error fetching user data after ${maxRetries} attempts: ${error.message}`);
+      }
     }
-
-    const userData = await response.json();
-    console.log('User data fetched successfully:', userData);
-
-    // Extract nicknames from user profiles
-    const nicknames = userData.map(user => user.userProfile.nickname);
-
-    return nicknames;
-  } catch (error) {
-    console.error(`Error fetching user data: ${error.message}`);
-    throw new Error(`Error fetching user data: ${error.message}`);
   }
 }
+
 
 export { getAccessToken, fetchUserData, fetchRecentSongs,fetchCurrentUsers, fetchSpotifyPlaylistTracks,fetchCurrentlyPlayingSong};
