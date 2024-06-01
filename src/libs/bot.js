@@ -317,30 +317,4 @@ export class Bot {
       logger.error('Error scheduling song vote', error)
     }
   }
-
-  async handleAuthorizationCallback (authorizationCode) {
-    try {
-      const userAccessToken = await getUserAccessToken(authorizationCode)
-      this.accessToken = userAccessToken // Save the access token for future use
-      console.log('Authorization successful! Access token:', userAccessToken)
-    } catch (error) {
-      console.error('Error handling authorization callback:', error)
-    }
-  }
-
-  async addSongToPlaylist () {
-    try {
-      // Check if the access token is available
-      if (!this.accessToken) {
-        throw new Error('User access token is not available. Please authorize the app first.')
-      }
-
-      // Now you can use the access token to add songs to the playlist
-      const playlistId = 'your_playlist_id'
-      const snapshotId = await addSongToPlaylist(playlistId, this.accessToken)
-      console.log('Song added to playlist! Snapshot ID:', snapshotId)
-    } catch (error) {
-      console.error('Error adding song to playlist:', error)
-    }
-  }
 }

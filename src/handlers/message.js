@@ -4,8 +4,10 @@ import { askQuestion } from '../libs/ai.js'
 import { selectRandomQuestion, checkAnswer } from './trivia.js'
 import { logger } from '../utils/logging.js'
 import { roomBot } from '../index.js'
-import { fetchCurrentlyPlayingSong } from '../utils/API.js'
+import { fetchCurrentlyPlayingSong} from '../utils/API.js'
 import { handleLotteryCommand, handleLotteryNumber, LotteryGameActive } from '../utils/lotteryGame.js'
+import {addTracksToPlaylist, removeTrackFromPlaylist} from '../utils/playlistUpdate.js'
+import dotenv from 'dotenv'
 
 // Themes Stuff
 const roomThemes = {}
@@ -174,24 +176,55 @@ export default async (payload, room) => {
       room,
       message: 'Hi!'
     })
+
   } else if (payload.message.startsWith('/addsong')) {
     try {
-      // Call fetchCurrentlyPlayingSong to get the track URI
-      const trackURI = await fetchCurrentlyPlayingSong(process.env.TTL_USER_TOKEN)
+       
+      const trackURI = await fetchCurrentlyPlayingSong(); // Fetch the currently playing song's URI
+    const snapshotId = await addTracksToPlaylist([trackURI]);
 
-      // Send the track URI to the chat
+    if (snapshotId) {
       await postMessage({
         room,
-        message: `Currently playing song: ${trackURI}`
-      })
-    } catch (error) {
-      // Handle errors
-      console.error('Error fetching song:', error)
+        message: 'Track added successfully!'
+      });
+    } else {
       await postMessage({
         room,
-        message: `Error: ${error.message}`
-      })
+        message: 'Failed to add the track to the playlist.'
+      });
     }
+  } catch (error) {
+    await postMessage({
+      room,
+      message: `Error adding track to playlist: ${error.message}`
+    });
+  }
+  
+} else if (payload.message.startsWith('/removesong')) {
+    try {
+      const playlistId = process.env.DEFAULT_PLAYLIST_ID
+      const trackURI = await fetchCurrentlyPlayingSong();
+      const snapshotId = await removeTrackFromPlaylist(playlistId, trackURI);
+  
+      if (snapshotId) {
+        await postMessage({
+          room,
+          message: 'Track removed successfully!'
+        });
+      } else {
+        await postMessage({
+          room,
+          message: 'Failed to remove the track from the playlist.'
+        });
+      }
+    } catch (error) {
+      await postMessage({
+        room,
+        message: `Error removing track from playlist: ${error.message}`
+      });
+    }
+  
   } else if (payload.message.startsWith('/fetchsong')) {
     try {
       // Call fetchCurrentlyPlayingSong to get the track URI

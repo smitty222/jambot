@@ -4,7 +4,8 @@ const config = {
   clientId: process.env.SPOTIFY_CLIENT_ID,
   clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
   defaultPlaylistId: process.env.DEFAULT_PLAYLIST_ID,
-  ttlUserToken: process.env.TTL_USER_TOKEN
+  ttlUserToken: process.env.TTL_USER_TOKEN,
+  redirectUri: process.env.REDIRECT_URI
 }
 
 let accessToken = null
@@ -77,31 +78,33 @@ async function fetchSpotifyPlaylistTracks () {
 
 // TURNTABLE API
 async function fetchCurrentlyPlayingSong () {
-  const token = process.env.TTL_USER_TOKEN
+  const token = process.env.TTL_USER_TOKEN;
+  const roomUUID = process.env.ROOM_UUID; // Replace with your room UUID
 
   try {
-    const response = await fetch('https://rooms.prod.tt.fm/rooms/uuid/b868900c-fea2-4629-b316-9f9213a72507', {
+    const response = await fetch(`https://rooms.prod.tt.fm/rooms/uuid/${roomUUID}`, {
       headers: {
         Authorization: `Bearer ${token}`,
         accept: 'application/json'
       }
-    })
+    });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch currently playing song: ${response.statusText}`)
+      throw new Error(`Failed to fetch current song: ${response.statusText}`);
     }
 
-    const data = await response.json()
-    if (data?.song?.musicProviders?.spotify) {
-      // Assuming the Spotify track ID is in the 'spotify' property of the 'musicProviders' object
-      const spotifyTrackId = data.song.musicProviders.spotify
-      const spotifyTrackURI = spotifyTrackId.startsWith('spotify:track:') ? spotifyTrackId : `spotify:track:${spotifyTrackId}`
-      return spotifyTrackURI
+    const data = await response.json();
+    const song = data.song;
+
+    if (song && song.musicProviders && song.musicProviders.spotify) {
+      const spotifyTrackId = song.musicProviders.spotify.split(':').pop();
+      const spotifyTrackURI = `spotify:track:${spotifyTrackId}`; // Construct Spotify track URI
+      return spotifyTrackURI;
     } else {
-      throw new Error('No Spotify track is currently playing.')
+      throw new Error('Spotify track info not found in the current song');
     }
   } catch (error) {
-    throw new Error(`Error fetching currently playing song: ${error.message}`)
+    throw new Error(`Error fetching current song: ${error.message}`);
   }
 }
 
@@ -207,4 +210,7 @@ async function fetchUserData (userUUIDs) {
   }
 }
 
-export { getAccessToken, fetchUserData, fetchRecentSongs, fetchCurrentUsers, fetchSpotifyPlaylistTracks, fetchCurrentlyPlayingSong }
+
+
+
+export { getAccessToken, fetchUserData, fetchRecentSongs, fetchCurrentUsers, fetchSpotifyPlaylistTracks, fetchCurrentlyPlayingSong}
