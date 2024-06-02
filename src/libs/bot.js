@@ -23,6 +23,17 @@ export class Bot {
     this.spotifyCredentials = process.env.SPOTIFY_CREDENTIALS
     this.lastPlayedTrackURI = null
     this.currentRoomUsers = []
+    this.autobop = true; // Initialize autobop flag to true
+  }
+
+  // Method to enable autobop
+  async enableAutoBop() {
+    this.autobop = true;
+  }
+
+  // Method to disable autobop
+  async disableAutoBop() {
+    this.autobop = false;
   }
 
   async connect () {
@@ -300,12 +311,15 @@ export class Bot {
     }
   }
 
+ 
   async scheduleLikeSong (roomUuid, userUuid) {
     try {
       if (!this.socket) {
         throw new Error('SocketClient not initialized. Please call connect() first.')
       }
-
+      if (!this.autobop) { // Check if autobop is enabled
+        return;
+      }
       // Set a timeout to trigger the "/like" action after 5 seconds
       setTimeout(async () => {
         try {
@@ -319,3 +333,4 @@ export class Bot {
     }
   }
 }
+

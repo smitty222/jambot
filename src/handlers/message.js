@@ -4,10 +4,11 @@ import { askQuestion } from '../libs/ai.js'
 import { selectRandomQuestion, checkAnswer } from './trivia.js'
 import { logger } from '../utils/logging.js'
 import { roomBot } from '../index.js'
-import { fetchCurrentlyPlayingSong,isUserAuthorized} from '../utils/API.js'
+import { fetchCurrentlyPlayingSong,isUserAuthorized, fetchSpotifyPlaylistTracks} from '../utils/API.js'
 import { handleLotteryCommand, handleLotteryNumber, LotteryGameActive } from '../utils/lotteryGame.js'
 import {addTracksToPlaylist, removeTrackFromPlaylist} from '../utils/playlistUpdate.js'
 import { enableSongStats, disableSongStats } from '../utils/voteCounts.js'
+import { Bot } from '../libs/bot.js'
 
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
@@ -169,10 +170,9 @@ export default async (payload, room) => {
     }
     await handleLotteryCommand(payload)
   } else if (LotteryGameActive) {
-    // Handle lottery number entry only if the game is active
     await handleLotteryNumber(payload)
 
-    // "/ COMMANDS" Start Here.
+    //////////////// "/ COMMANDS" Start Here. ////////////////////////
   } else if (payload.message.startsWith('/hello')) {
     await postMessage({
       room,
@@ -181,29 +181,29 @@ export default async (payload, room) => {
 
   } else if (payload.message.startsWith('/addsong')) {
     try {
-      const senderUuid = payload.sender; // Assuming payload.sender contains the user UUID
-      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken); // Call isUserAuthorized with senderUuid
-      if (!isAuthorized) {
+      const trackURI = await fetchCurrentlyPlayingSong();
+      const playlistTracks = await fetchSpotifyPlaylistTracks();
+      const playlistTrackURIs = playlistTracks.map(track => track.track.uri);
+
+      if (playlistTrackURIs.includes(trackURI)) {
         await postMessage({
           room,
-          message: 'You need to be a moderator to execute this command.'
-        });
-        return;
-      }
-  
-      const trackURI = await fetchCurrentlyPlayingSong(); // Fetch the currently playing song's URI
-      const snapshotId = await addTracksToPlaylist([trackURI]);
-  
-      if (snapshotId) {
-        await postMessage({
-          room,
-          message: 'Track added successfully!'
+          message: 'Track is already in the playlist!'
         });
       } else {
-        await postMessage({
-          room,
-          message: 'Failed to add the track to the playlist.'
-        });
+        const snapshotId = await addTracksToPlaylist([trackURI]);
+
+        if (snapshotId) {
+          await postMessage({
+            room,
+            message: 'Track added successfully!'
+          });
+        } else {
+          await postMessage({
+            room,
+            message: 'Failed to add the track to the playlist.'
+          });
+        }
       }
     } catch (error) {
       await postMessage({
@@ -213,8 +213,8 @@ export default async (payload, room) => {
     }
   } else if (payload.message.startsWith('/removesong')) {
     try {
-      const senderUuid = payload.sender; // Assuming payload.sender contains the user UUID
-      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken); // Call isUserAuthorized with senderUuid
+      const senderUuid = payload.sender; 
+      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken); 
       if (!isAuthorized) {
         await postMessage({
           room,
@@ -266,8 +266,8 @@ export default async (payload, room) => {
 
   } else if (payload.message.startsWith('/statson')) {
     try {
-      const senderUuid = payload.sender; // Assuming payload.sender contains the user UUID
-      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken); // Call isUserAuthorized with senderUuid
+      const senderUuid = payload.sender; 
+      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken); 
       if (!isAuthorized) {
         await postMessage({
           room,
@@ -275,16 +275,12 @@ export default async (payload, room) => {
         });
         return;
       }
-  
-      // Call fetchCurrentlyPlayingSong to get the track URI
       await enableSongStats();
-      // Send the track URI to the chat
       await postMessage({
         room,
         message: `Song stats enabled`
       });
     } catch (error) {
-      // Handle errors
       console.error('Error enabling song stats:', error);
       await postMessage({
         room,
@@ -315,6 +311,35 @@ export default async (payload, room) => {
         message: `Error: ${error.message}`
       });
     }  
+  } else if (payload.message.startsWith('/bopon')) {
+    try {
+      await roomBot.enableAutoBop();
+      await postMessage({
+        room,
+        message: 'Autobop enabled.'
+      });
+    } catch (error) {
+      console.error('Error enabling autobop:', error);
+      await postMessage({
+        room,
+        message: 'An error occurred while enabling autobop. Please try again.'
+      });
+    }
+  } else if (payload.message.startsWith('/bopoff')) {
+    try {
+      await roomBot.disableAutoBop();
+      await postMessage({
+        room,
+        message: 'Autobop disabled.'
+      });
+    } catch (error) {
+      console.error('Error disabling autobop:', error);
+      await postMessage({
+        room,
+        message: 'An error occurred while disabling autobop. Please try again.'
+      });
+    }
+
   } else if (payload.message.startsWith('/barkbark')) {
     await postMessage({
       room,
@@ -340,7 +365,7 @@ export default async (payload, room) => {
   } else if (payload.message.startsWith('/mod')) {
     await postMessage({
       room,
-      message: 'Moderator commands are:\n- /settheme : Set room theme\n- /removetheme : Remove room theme\n- /addsong : Add current song to bot playlist\n- /removesong : Remove current song from bot playlist\n- /statsoff : Turns song stats off\n- /statson : Turns song stats back on  '
+      message: 'Moderator commands are:\n- /settheme : Set room theme\n- /removetheme : Remove room theme\n- /addsong : Add current song to bot playlist\n- /removesong : Remove current song from bot playlist\n- /statsoff : Turns song stats off\n- /statson : Turns song stats back on\n- /bopoff : Turns bot auto like off\n- /bopon : Turns bot auto like back on'
     });
 
   } else if (payload.message.startsWith('/jump')) {
