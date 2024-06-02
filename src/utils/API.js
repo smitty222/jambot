@@ -236,7 +236,7 @@ async function isUserAuthorized(userUuid, token) {
     const userRoles = await fetchUserRoles(userUuid, token);
     console.log('User Roles:', userRoles); // Log user roles fetched from the endpoint
     const userRole = userRoles.length > 0 ? userRoles[0].role : null;
-    return userRole === 'moderator' || userRole === 'owner' || userRole === 'co-owner';
+    return userRole === 'moderator' || userRole === 'owner' || userRole === 'coOwner';
   } catch (error) {
     console.error('Error checking user authorization:', error);
     return false;
