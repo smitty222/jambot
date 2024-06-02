@@ -4,13 +4,15 @@ import { askQuestion } from '../libs/ai.js'
 import { selectRandomQuestion, checkAnswer } from './trivia.js'
 import { logger } from '../utils/logging.js'
 import { roomBot } from '../index.js'
-import { fetchCurrentlyPlayingSong} from '../utils/API.js'
+import { fetchCurrentlyPlayingSong,isUserAuthorized} from '../utils/API.js'
 import { handleLotteryCommand, handleLotteryNumber, LotteryGameActive } from '../utils/lotteryGame.js'
 import {addTracksToPlaylist, removeTrackFromPlaylist} from '../utils/playlistUpdate.js'
-import dotenv from 'dotenv'
+import { enableSongStats, disableSongStats } from '../utils/voteCounts.js'
 
-// Themes Stuff
-const roomThemes = {}
+
+const ttlUserToken = process.env.TTL_USER_TOKEN
+const roomThemes ={}
+
 let currentQuestion = null
 let submittedAnswer = null
 let totalPoints = 0
@@ -179,31 +181,49 @@ export default async (payload, room) => {
 
   } else if (payload.message.startsWith('/addsong')) {
     try {
-       
+      const senderUuid = payload.sender; // Assuming payload.sender contains the user UUID
+      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken); // Call isUserAuthorized with senderUuid
+      if (!isAuthorized) {
+        await postMessage({
+          room,
+          message: 'You need to be a moderator to execute this command.'
+        });
+        return;
+      }
+  
       const trackURI = await fetchCurrentlyPlayingSong(); // Fetch the currently playing song's URI
-    const snapshotId = await addTracksToPlaylist([trackURI]);
-
-    if (snapshotId) {
+      const snapshotId = await addTracksToPlaylist([trackURI]);
+  
+      if (snapshotId) {
+        await postMessage({
+          room,
+          message: 'Track added successfully!'
+        });
+      } else {
+        await postMessage({
+          room,
+          message: 'Failed to add the track to the playlist.'
+        });
+      }
+    } catch (error) {
       await postMessage({
         room,
-        message: 'Track added successfully!'
-      });
-    } else {
-      await postMessage({
-        room,
-        message: 'Failed to add the track to the playlist.'
+        message: `Error adding track to playlist: ${error.message}`
       });
     }
-  } catch (error) {
-    await postMessage({
-      room,
-      message: `Error adding track to playlist: ${error.message}`
-    });
-  }
-  
-} else if (payload.message.startsWith('/removesong')) {
+  } else if (payload.message.startsWith('/removesong')) {
     try {
-      const playlistId = process.env.DEFAULT_PLAYLIST_ID
+      const senderUuid = payload.sender; // Assuming payload.sender contains the user UUID
+      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken); // Call isUserAuthorized with senderUuid
+      if (!isAuthorized) {
+        await postMessage({
+          room,
+          message: 'You need to be a moderator to execute this command.'
+        });
+        return;
+      }
+  
+      const playlistId = process.env.DEFAULT_PLAYLIST_ID;
       const trackURI = await fetchCurrentlyPlayingSong();
       const snapshotId = await removeTrackFromPlaylist(playlistId, trackURI);
   
@@ -223,7 +243,7 @@ export default async (payload, room) => {
         room,
         message: `Error removing track from playlist: ${error.message}`
       });
-    }
+    }  
   
   } else if (payload.message.startsWith('/fetchsong')) {
     try {
@@ -243,6 +263,58 @@ export default async (payload, room) => {
         message: `Error: ${error.message}`
       })
     }
+
+  } else if (payload.message.startsWith('/statson')) {
+    try {
+      const senderUuid = payload.sender; // Assuming payload.sender contains the user UUID
+      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken); // Call isUserAuthorized with senderUuid
+      if (!isAuthorized) {
+        await postMessage({
+          room,
+          message: 'You need to be a moderator to execute this command.'
+        });
+        return;
+      }
+  
+      // Call fetchCurrentlyPlayingSong to get the track URI
+      await enableSongStats();
+      // Send the track URI to the chat
+      await postMessage({
+        room,
+        message: `Song stats enabled`
+      });
+    } catch (error) {
+      // Handle errors
+      console.error('Error enabling song stats:', error);
+      await postMessage({
+        room,
+        message: `Error: ${error.message}`
+      });
+    }
+  } else if (payload.message.startsWith('/statsoff')) {
+    try {
+      const senderUuid = payload.sender; // Assuming payload.sender contains the user UUID
+      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken); // Call isUserAuthorized with senderUuid
+      if (!isAuthorized) {
+        await postMessage({
+          room,
+          message: 'You need to be a moderator to execute this command.'
+        });
+        return;
+      }
+  
+      await disableSongStats();
+      await postMessage({
+        room,
+        message: `Song stats disabled`
+      });
+    } catch (error) {
+      console.error('Error disabling song stats:', error);
+      await postMessage({
+        room,
+        message: `Error: ${error.message}`
+      });
+    }  
   } else if (payload.message.startsWith('/barkbark')) {
     await postMessage({
       room,
@@ -256,8 +328,21 @@ export default async (payload, room) => {
   } else if (payload.message.startsWith('/commands')) {
     await postMessage({
       room,
-      message: 'General commands are /theme, /dance, /cheers, /tomatoes, /party, /trivia'
-    })
+      message: 'General commands are:\n- /theme : Checks the current room theme\n- /trivia : Trivia Game\n- /lottery: Numbers!\n- /jump : Makes the bot jump\n- /dislike : Makes the bot downvote\n- /addDJ : Adds the bot as DJ\n- /removeDJ : Removes the bot as DJ\n- /gifs : Bot will list all GIF commands\n- /mod : Bot will list all Mod commands'
+    });
+
+  } else if (payload.message.startsWith('/gifs')) {
+    await postMessage({
+      room,
+      message: 'Randomly selected GIFs:\n- /burp\n- /dance\n- /party\n- /beer\n- /fart\n- /ass\n- /tomatoes\n- /cheers'
+    });
+
+  } else if (payload.message.startsWith('/mod')) {
+    await postMessage({
+      room,
+      message: 'Moderator commands are:\n- /settheme : Set room theme\n- /removetheme : Remove room theme\n- /addsong : Add current song to bot playlist\n- /removesong : Remove current song from bot playlist\n- /statsoff : Turns song stats off\n- /statson : Turns song stats back on  '
+    });
+
   } else if (payload.message.startsWith('/jump')) {
     try {
       await roomBot.playOneTimeAnimation('jump', process.env.ROOM_UUID, process.env.BOT_USER_UUID)
@@ -567,108 +652,84 @@ export default async (payload, room) => {
     // "/ THEME COMMANDS"
   } else if (payload.message.startsWith('/settheme')) {
     try {
-      // Fetch user roles for the room with authorization header
-      const userRolesResponse = await fetch('https://rooms.prod.tt.fm/roomUserRoles/just-jams', {
-        headers: {
-          Authorization: `Bearer ${process.env.TTL_USER_TOKEN}`
-        }
-      })
-
-      if (!userRolesResponse.ok) {
-        const errorMessage = await userRolesResponse.text()
-        console.error('User Roles Response Error:', errorMessage)
-        throw new Error(`User Roles request failed with status ${userRolesResponse.status}`)
-      }
-
-      const userRolesData = await userRolesResponse.json()
-      const userRoles = Array.isArray(userRolesData) ? userRolesData : []
-
-      // Check if user is a moderator or owner
-      const allowedRoles = ['moderator', 'owner']
-      const userRole = userRoles.find(role => role.userUuid === payload.sender)?.role
-
-      if (allowedRoles.includes(userRole)) {
-        // Extract theme from the command
-        const theme = payload.message.replace('/settheme', '').trim()
-
-        // Store the theme for the room
-        roomThemes[room] = theme
-
-        await postMessage({
-          room,
-          message: `Theme set to: ${theme}`
-        })
-      } else {
+      const senderUuid = payload.sender; // Assuming payload.sender contains the user UUID
+      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken); // Call isUserAuthorized with senderUuid
+      if (!isAuthorized) {
         await postMessage({
           room,
           message: 'You need to be a moderator to execute this command.'
-        })
+        });
+        return;
       }
+
+      // Extract theme from the command
+      const theme = payload.message.replace('/settheme', '').trim();
+
+      // Store the theme for the room
+      roomThemes[room] = theme;
+
+      await postMessage({
+        room,
+        message: `Theme set to: ${theme}`
+      });
     } catch (error) {
-      console.error('Error fetching user roles:', error.message)
+      console.error('Error setting theme:', error);
       await postMessage({
         room,
-        message: 'An error occurred while fetching user roles. Please try again.'
-      })
+        message: `Error: ${error.message}`
+      });
     }
-  } else if (payload.message.startsWith('/theme')) {
-    // Retrieve and post the theme for the room
-    const theme = roomThemes[room]
-    if (theme) {
-      await postMessage({
-        room,
-        message: `The room theme is currently set to: ${theme}`
-      })
-    } else {
-      await postMessage({
-        room,
-        message: 'There is currently no room theme. Play whatever you like!'
-      })
-    }
+
   } else if (payload.message.startsWith('/removetheme')) {
     try {
-      // Fetch user roles for the room with authorization header
-      const userRolesResponse = await fetch('https://rooms.prod.tt.fm/roomUserRoles/just-jams', {
-        headers: {
-          Authorization: `Bearer ${process.env.TTL_USER_TOKEN}`
-        }
-      })
-
-      if (!userRolesResponse.ok) {
-        const errorMessage = await userRolesResponse.text()
-        console.error('User Roles Response Error:', errorMessage)
-        throw new Error(`User Roles request failed with status ${userRolesResponse.status}`)
-      }
-
-      const userRolesData = await userRolesResponse.json()
-      const userRoles = Array.isArray(userRolesData) ? userRolesData : []
-
-      // Check if user is a moderator or owner
-      const allowedRoles = ['moderator', 'owner']
-      const userRole = userRoles.find(role => role.userUuid === payload.sender)?.role
-
-      if (allowedRoles.includes(userRole)) {
-        // Remove the theme for the room
-        delete roomThemes[room]
-
-        await postMessage({
-          room,
-          message: 'Theme removed.'
-        })
-      } else {
+      const senderUuid = payload.sender; // Assuming payload.sender contains the sender's UUID
+      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken);
+      if (!isAuthorized) {
         await postMessage({
           room,
           message: 'You need to be a moderator or owner to execute this command.'
-        })
+        });
+        return;
       }
-    } catch (error) {
-      console.error('Error fetching user roles:', error.message)
+  
+      // Remove the theme for the room
+      delete roomThemes[room];
+  
       await postMessage({
         room,
-        message: 'An error occurred while fetching user roles. Please try again.'
-      })
+        message: 'Theme removed.'
+      });
+    } catch (error) {
+      console.error('Error removing theme:', error);
+      await postMessage({
+        room,
+        message: 'An error occurred while removing the theme. Please try again.'
+      });
     }
   }
+ else if (payload.message.startsWith('/theme')) {
+  try {
+    const theme = roomThemes[room];
+    // Check if there's a theme set for the room
+    if (theme) {
+      await postMessage({
+        room,
+        message: `Current theme: ${theme}`
+      });
+    } else {
+      await postMessage({
+        room,
+        message: 'No theme set for the room.'
+      });
+    }
+  } catch (error) {
+    console.error('Error fetching theme:', error);
+    await postMessage({
+      room,
+      message: 'An error occurred while fetching the theme. Please try again.'
+    });
+  }
+
+}
 }
 
-export { roomThemes }

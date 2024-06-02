@@ -4,7 +4,7 @@ import { joinChat, getMessages } from './cometchat.js'
 import { logger } from '../utils/logging.js'
 import { handlers } from '../handlers/index.js'
 import { fetchSpotifyPlaylistTracks, fetchCurrentUsers } from '../utils/API.js'
-import { postVoteCountsForLastSong } from '../utils/voteCounts.js'
+import { postVoteCountsForLastSong, songStatsEnabled } from '../utils/voteCounts.js'
 
 export class Bot {
   constructor (clientId, clientSecret, redirectUri) {
@@ -88,6 +88,7 @@ export class Bot {
         self.scheduleLikeSong(process.env.ROOM_UUID, process.env.BOT_USER_UUID)
         self.updateNextSong()
         setTimeout(() => {
+          if (songStatsEnabled)
           postVoteCountsForLastSong(process.env.ROOM_UUID)
         }, 10000)
       }

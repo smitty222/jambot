@@ -4,8 +4,7 @@ const config = {
   clientId: process.env.SPOTIFY_CLIENT_ID,
   clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
   defaultPlaylistId: process.env.DEFAULT_PLAYLIST_ID,
-  ttlUserToken: process.env.TTL_USER_TOKEN,
-  redirectUri: process.env.REDIRECT_URI
+  redirectUri: process.env.REDIRECT_URI,
 }
 
 let accessToken = null
@@ -210,7 +209,69 @@ async function fetchUserData (userUUIDs) {
   }
 }
 
+const USER_ROLES_URL = 'https://rooms.prod.tt.fm/roomUserRoles/just-jams'; // Adjusted URL with room slug
 
+async function fetchUserRoles(userUuid, token) {
+  try {
+    const response = await fetch(`${USER_ROLES_URL}/${userUuid}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        accept: 'application/json'
+      }
+    });
 
+    if (!response.ok) {
+      throw new Error(`Failed to fetch user roles: ${response.statusText}`);
+    }
 
-export { getAccessToken, fetchUserData, fetchRecentSongs, fetchCurrentUsers, fetchSpotifyPlaylistTracks, fetchCurrentlyPlayingSong}
+    const userRoles = await response.json();
+    return userRoles;
+  } catch (error) {
+    throw new Error(`Error fetching user roles: ${error.message}`);
+  }
+}
+
+async function isUserAuthorized(userUuid, token) {
+  try {
+    const userRoles = await fetchUserRoles(userUuid, token);
+    console.log('User Roles:', userRoles); // Log user roles fetched from the endpoint
+    const userRole = userRoles.length > 0 ? userRoles[0].role : null;
+    return userRole === 'moderator' || userRole === 'owner' || userRole === 'co-owner';
+  } catch (error) {
+    console.error('Error checking user authorization:', error);
+    return false;
+  }
+}
+
+async function songInfoForAI () {
+  const token = process.env.TTL_USER_TOKEN;
+  const roomUUID = process.env.ROOM_UUID; // Replace with your room UUID
+
+  try {
+    const response = await fetch(`https://rooms.prod.tt.fm/rooms/uuid/${roomUUID}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        accept: 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch current song: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const song = data.song;
+
+    if (song && song.trackName && song.artistName) {
+      const songName = song.trackName;
+      const artistName = song.artistName;
+      return { songName, artistName };
+    } else {
+      throw new Error('Song info not found in the current song');
+    }
+  } catch (error) {
+    throw new Error(`Error fetching current song: ${error.message}`);
+  }
+}
+
+export { getAccessToken, songInfoForAI, isUserAuthorized, fetchUserRoles, fetchUserData, fetchRecentSongs, fetchCurrentUsers, fetchSpotifyPlaylistTracks, fetchCurrentlyPlayingSong}
