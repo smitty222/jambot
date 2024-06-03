@@ -222,6 +222,43 @@ export default async (payload, room, state) => {
         message: 'An error occurred while fetching the theme. Please try again.'
       })
     }
+  } else if (payload.message.startsWith('/djbeers')) {
+    try {
+      const userUuid = payload.sender;
+      const senderName = payload.senderName;
+  
+      // Get the current DJ's UUID
+      const currentDJUuid = getCurrentDJ(state);
+  
+      if (!currentDJUuid) {
+          await postMessage({
+              room,
+              message: `${senderName}, there is no DJ currently playing.`
+          });
+          throw new Error('No current DJ found.');
+      }
+  
+      // Fetch the nickname of the current DJ
+      const [currentDJName] = await fetchUserData([currentDJUuid]);
+  
+      if (!currentDJName) {
+          await postMessage({
+              room,
+              message: `${senderName}, could not fetch the current DJ's name.`
+          });
+          throw new Error('Could not fetch the current DJ\'s name.');
+      }
+  
+      // Send a message with the sender's name and the current DJ's name
+      await postMessage({
+          room,
+          message: `@${senderName} gives @${currentDJName} two nice cold beers!! 🍺🍺`
+      });
+  
+      console.log(`${senderName} gives ${currentDJName} two nice cold beers!! 🍺🍺`);
+  } catch (error) {
+      console.error('Error handling /beerDJ command:', error);
+  }
   } else if (payload.message.startsWith('/djbeer')) {
     try {
       const userUuid = payload.sender;
@@ -259,43 +296,6 @@ export default async (payload, room, state) => {
   } catch (error) {
       console.error('Error handling /beerDJ command:', error);
   }
-} else if (payload.message.startsWith('/djbeer')) {
-  try {
-    const userUuid = payload.sender;
-    const senderName = payload.senderName;
-
-    // Get the current DJ's UUID
-    const currentDJUuid = getCurrentDJ(state);
-
-    if (!currentDJUuid) {
-        await postMessage({
-            room,
-            message: `${senderName}, there is no DJ currently playing.`
-        });
-        throw new Error('No current DJ found.');
-    }
-
-    // Fetch the nickname of the current DJ
-    const [currentDJName] = await fetchUserData([currentDJUuid]);
-
-    if (!currentDJName) {
-        await postMessage({
-            room,
-            message: `${senderName}, could not fetch the current DJ's name.`
-        });
-        throw new Error('Could not fetch the current DJ\'s name.');
-    }
-
-    // Send a message with the sender's name and the current DJ's name
-    await postMessage({
-        room,
-        message: `@${senderName} gives @${currentDJName} two nice cold beers!! 🍺🍺`
-    });
-
-    console.log(`${senderName} gives ${currentDJName} two nice cold beers!! 🍺🍺`);
-} catch (error) {
-    console.error('Error handling /beerDJ command:', error);
-}
 
 } else if (payload.message.startsWith('/getdjdrunk')) {
   try {
@@ -327,7 +327,7 @@ export default async (payload, room, state) => {
     // Send a message with the sender's name and the current DJ's name
     await postMessage({
         room,
-        message: `@${senderName} gives @${currentDJName} a million nice cold beers!!! 🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺`
+        message: `@${senderName} gives @${currentDJName} a million nice cold beers!!! 🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺`
     });
 
     console.log(`${senderName} gives ${currentDJName} two nice cold beers!! 🍺🍺`);
