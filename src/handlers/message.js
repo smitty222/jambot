@@ -8,12 +8,13 @@ import { fetchCurrentlyPlayingSong,isUserAuthorized, fetchSpotifyPlaylistTracks}
 import { handleLotteryCommand, handleLotteryNumber, LotteryGameActive } from '../utils/lotteryGame.js'
 import {addTracksToPlaylist, removeTrackFromPlaylist} from '../utils/playlistUpdate.js'
 import { enableSongStats, disableSongStats } from '../utils/voteCounts.js'
-import { Bot } from '../libs/bot.js'
+import { escortUserFromDJStand } from '../utils/escortDJ.js'
+import { isUserDJ } from '../libs/bot.js'
 
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
 const roomThemes ={}
-
+let usersToBeRemoved = {};
 let currentQuestion = null
 let submittedAnswer = null
 let totalPoints = 0
@@ -72,7 +73,7 @@ export default async (payload, room) => {
       })
     }
 
-    //  Trivia Stuff
+    ////////////////  Trivia Stuff /////////////////////////////
   } else if (payload.message.startsWith('/triviastart')) {
     if (currentQuestion) {
       await postMessage({
@@ -353,7 +354,7 @@ export default async (payload, room) => {
   } else if (payload.message.startsWith('/commands')) {
     await postMessage({
       room,
-      message: 'General commands are:\n- /theme : Checks the current room theme\n- /trivia : Trivia Game\n- /lottery: Numbers!\n- /jump : Makes the bot jump\n- /dislike : Makes the bot downvote\n- /addDJ : Adds the bot as DJ\n- /removeDJ : Removes the bot as DJ\n- /gifs : Bot will list all GIF commands\n- /mod : Bot will list all Mod commands'
+      message: 'General commands are:\n- /theme : Checks the current room theme\n- /trivia : Trivia Game\n- /lottery: Numbers!\n- /jump : Makes the bot jump\n- /dislike : Makes the bot downvote\n- /addDJ : Adds the bot as DJ\n- /removeDJ : Removes the bot as DJ\n- /dive : stage\n- /escortme : Stagedive after your next song\n- /gifs : Bot will list all GIF commands\n- /mod : Bot will list all Mod commands'
     });
 
   } else if (payload.message.startsWith('/gifs')) {
@@ -406,10 +407,37 @@ export default async (payload, room) => {
     }
   } else if (payload.message.startsWith('/removeDJ')) {
     try {
-      await roomBot.removeDJ()
+      const isBotDJ = roomBot.state?.djs.some(dj => dj.uuid === process.env.BOT_USER_UUID);
+      if (isBotDJ) {
+        await roomBot.removeDJ(process.env.BOT_USER_UUID);
+      } else {
+        console.log('Bot is not a DJ.');
+      }
     } catch (error) {
-      console.error('Error adding DJ:', error)
+      console.error('Error removing DJ:', error);    }
+
+
+} else if (payload.message.startsWith('/dive')) {
+    try {
+      const userUuid = payload.sender; // Assuming you have access to the userUuid in the payload
+      await roomBot.removeDJ(userUuid);
+    } catch (error) {
+      console.error('Error removing user from DJ:', error);
     }
+
+  } else if (payload.message.startsWith('/escortme')) {
+    try {
+        const userUuid = payload.sender;
+        usersToBeRemoved[userUuid] = true; // Store the user in usersToBeRemoved object
+        await escortUserFromDJStand(userUuid)
+        await postMessage({
+          room,
+          message: `${payload.senderName}, you will be removed from the stage after your next song`
+        })
+    } catch (error) {
+        console.error('Error handling /escortme command:', error);
+    }
+
   } else if (payload.message.startsWith('/updatesong')) {
     try {
       await roomBot.updateNextSong()
@@ -758,3 +786,4 @@ export default async (payload, room) => {
 }
 }
 
+export {usersToBeRemoved}

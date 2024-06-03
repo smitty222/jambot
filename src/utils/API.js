@@ -75,7 +75,8 @@ async function fetchSpotifyPlaylistTracks () {
   return tracks
 }
 
-// TURNTABLE API
+/////////////// TURNTABLE API /////////////////////////////
+
 async function fetchCurrentlyPlayingSong () {
   const token = process.env.TTL_USER_TOKEN;
   const roomUUID = process.env.ROOM_UUID; // Replace with your room UUID
@@ -243,35 +244,38 @@ async function isUserAuthorized(userUuid, token) {
   }
 }
 
-async function songInfoForAI () {
+async function currentsongduration() {
   const token = process.env.TTL_USER_TOKEN;
-  const roomUUID = process.env.ROOM_UUID; // Replace with your room UUID
+  const roomUUID = process.env.ROOM_UUID;
 
   try {
-    const response = await fetch(`https://rooms.prod.tt.fm/rooms/uuid/${roomUUID}`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        accept: 'application/json'
+      console.log('Fetching currently playing song duration...');
+      const response = await fetch(`https://rooms.prod.tt.fm/rooms/uuid/${roomUUID}`, {
+          headers: {
+              Authorization: `Bearer ${token}`,
+              accept: 'application/json'
+          }
+      });
+
+      if (!response.ok) {
+          throw new Error(`Failed to fetch current song: ${response.statusText}`);
       }
-    });
 
-    if (!response.ok) {
-      throw new Error(`Failed to fetch current song: ${response.statusText}`);
-    }
+      const data = await response.json();
+      const song = data.song;
 
-    const data = await response.json();
-    const song = data.song;
+      if (!song || !song.duration) {
+          throw new Error('Song duration not found in the current song');
+      }
 
-    if (song && song.trackName && song.artistName) {
-      const songName = song.trackName;
-      const artistName = song.artistName;
-      return { songName, artistName };
-    } else {
-      throw new Error('Song info not found in the current song');
-    }
+      const songDuration = song.duration; // Duration of the currently playing song in seconds
+
+      console.log(`Currently playing song duration: ${songDuration} seconds`);
+      return songDuration;
   } catch (error) {
-    throw new Error(`Error fetching current song: ${error.message}`);
+      throw new Error(`Error fetching current song: ${error.message}`);
   }
 }
 
-export { getAccessToken, songInfoForAI, isUserAuthorized, fetchUserRoles, fetchUserData, fetchRecentSongs, fetchCurrentUsers, fetchSpotifyPlaylistTracks, fetchCurrentlyPlayingSong}
+
+export { getAccessToken, currentsongduration, isUserAuthorized, fetchUserRoles, fetchUserData, fetchRecentSongs, fetchCurrentUsers, fetchSpotifyPlaylistTracks, fetchCurrentlyPlayingSong}
