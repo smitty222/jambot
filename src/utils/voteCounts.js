@@ -1,7 +1,7 @@
 import { postMessage } from '../libs/cometchat.js'
 import { fetchRecentSongs } from './API.js'
 
-let songStatsEnabled = false
+let songStatsEnabled = true
 
 async function postVoteCountsForLastSong (room) {
   try {
