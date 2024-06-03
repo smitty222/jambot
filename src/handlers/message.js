@@ -4,11 +4,13 @@ import { askQuestion } from '../libs/ai.js'
 import { selectRandomQuestion, checkAnswer } from './trivia.js'
 import { logger } from '../utils/logging.js'
 import { roomBot } from '../index.js'
-import { fetchCurrentlyPlayingSong, isUserAuthorized, fetchSpotifyPlaylistTracks } from '../utils/API.js'
+import { fetchCurrentlyPlayingSong, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData } from '../utils/API.js'
 import { handleLotteryCommand, handleLotteryNumber, LotteryGameActive } from '../utils/lotteryGame.js'
 import { addTracksToPlaylist, removeTrackFromPlaylist } from '../utils/playlistUpdate.js'
 import { enableSongStats, disableSongStats } from '../utils/voteCounts.js'
 import { escortUserFromDJStand } from '../utils/escortDJ.js'
+import { getCurrentDJ } from '../libs/bot.js'
+
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
 const roomThemes = {}
@@ -30,7 +32,7 @@ const getNewQuestion = () => {
   return question
 }
 // Messages
-export default async (payload, room) => {
+export default async (payload, room, state) => {
   logger.info({ sender: payload.senderName, message: payload.message })
 
   // Handle Gifs Sent in Chat
@@ -181,7 +183,7 @@ export default async (payload, room) => {
   } else if (payload.message.startsWith('/commands')) {
     await postMessage({
       room,
-      message: 'General commands are:\n- /theme : Checks the current room theme\n- /trivia : Trivia Game\n- /lottery: Numbers!\n- /jump : Makes the bot jump\n- /dislike : Makes the bot downvote\n- /addDJ : Adds the bot as DJ\n- /removeDJ : Removes the bot as DJ\n- /dive : stage\n- /escortme : Stagedive after your next song\n- /gifs : Bot will list all GIF commands\n- /mod : Bot will list all Mod commands'
+      message: 'General commands are:\n- /theme : Checks the current room theme\n- /trivia : Trivia Game\n- /lottery: Numbers!\n- /jump : Makes the bot jump\n- /dislike : Makes the bot downvote\n- /addDJ : Adds the bot as DJ\n- /removeDJ : Removes the bot as DJ\n- /dive : stage\n- /escortme : Stagedive after your next song\n- /djbeer : Gives the DJ a beer\n- /gifs : Bot will list all GIF commands\n- /mod : Bot will list all Mod commands'
     })
   } else if (payload.message.startsWith('/gifs')) {
     await postMessage({
@@ -196,7 +198,7 @@ export default async (payload, room) => {
   } else if (payload.message.startsWith('/secret')) {
     await postMessage({
       room,
-      message: 'Sssshhhhhh be very quiet. These are top secret\n- /bark\n- /barkbark\n- /drink\n- /ass\n- /azz\n- /cam\n- /shirley\n- /berad'
+      message: 'Sssshhhhhh be very quiet. These are top secret\n- /bark\n- /barkbark\n- /drink\n- /djbeers\n- /getdjdrunk\n- /ass\n- /azz\n- /cam\n- /shirley\n- /berad'
     })
     /// /////////////// General Commands ////////////////
   } else if (payload.message.startsWith('/theme')) {
@@ -220,6 +222,119 @@ export default async (payload, room) => {
         message: 'An error occurred while fetching the theme. Please try again.'
       })
     }
+  } else if (payload.message.startsWith('/djbeer')) {
+    try {
+      const userUuid = payload.sender;
+      const senderName = payload.senderName;
+
+      // Get the current DJ's UUID
+      const currentDJUuid = getCurrentDJ(state);
+
+      if (!currentDJUuid) {
+          await postMessage({
+              room,
+              message: `${senderName}, there is no DJ currently playing.`
+          });
+          throw new Error('No current DJ found.');
+      }
+
+      // Fetch the nickname of the current DJ
+      const [currentDJName] = await fetchUserData([currentDJUuid]);
+
+      if (!currentDJName) {
+          await postMessage({
+              room,
+              message: `${senderName}, could not fetch the current DJ's name.`
+          });
+          throw new Error('Could not fetch the current DJ\'s name.');
+      }
+
+      // Send a message with the sender's name and the current DJ's name
+      await postMessage({
+          room,
+          message: `@${senderName} gives @${currentDJName} a nice cold beer! 🍺`
+      });
+
+      console.log(`${senderName} gives ${currentDJName} a nice cold beer! 🍺`);
+  } catch (error) {
+      console.error('Error handling /beerDJ command:', error);
+  }
+} else if (payload.message.startsWith('/djbeer')) {
+  try {
+    const userUuid = payload.sender;
+    const senderName = payload.senderName;
+
+    // Get the current DJ's UUID
+    const currentDJUuid = getCurrentDJ(state);
+
+    if (!currentDJUuid) {
+        await postMessage({
+            room,
+            message: `${senderName}, there is no DJ currently playing.`
+        });
+        throw new Error('No current DJ found.');
+    }
+
+    // Fetch the nickname of the current DJ
+    const [currentDJName] = await fetchUserData([currentDJUuid]);
+
+    if (!currentDJName) {
+        await postMessage({
+            room,
+            message: `${senderName}, could not fetch the current DJ's name.`
+        });
+        throw new Error('Could not fetch the current DJ\'s name.');
+    }
+
+    // Send a message with the sender's name and the current DJ's name
+    await postMessage({
+        room,
+        message: `@${senderName} gives @${currentDJName} two nice cold beers!! 🍺🍺`
+    });
+
+    console.log(`${senderName} gives ${currentDJName} two nice cold beers!! 🍺🍺`);
+} catch (error) {
+    console.error('Error handling /beerDJ command:', error);
+}
+
+} else if (payload.message.startsWith('/getdjdrunk')) {
+  try {
+    const userUuid = payload.sender;
+    const senderName = payload.senderName;
+
+    // Get the current DJ's UUID
+    const currentDJUuid = getCurrentDJ(state);
+
+    if (!currentDJUuid) {
+        await postMessage({
+            room,
+            message: `${senderName}, there is no DJ currently playing.`
+        });
+        throw new Error('No current DJ found.');
+    }
+
+    // Fetch the nickname of the current DJ
+    const [currentDJName] = await fetchUserData([currentDJUuid]);
+
+    if (!currentDJName) {
+        await postMessage({
+            room,
+            message: `${senderName}, could not fetch the current DJ's name.`
+        });
+        throw new Error('Could not fetch the current DJ\'s name.');
+    }
+
+    // Send a message with the sender's name and the current DJ's name
+    await postMessage({
+        room,
+        message: `@${senderName} gives @${currentDJName} a million nice cold beers!!! 🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺`
+    });
+
+    console.log(`${senderName} gives ${currentDJName} two nice cold beers!! 🍺🍺`);
+} catch (error) {
+    console.error('Error handling /beerDJ command:', error);
+}
+
   } else if (payload.message.startsWith('/jump')) {
     try {
       await roomBot.playOneTimeAnimation('jump', process.env.ROOM_UUID, process.env.BOT_USER_UUID)
@@ -265,7 +380,7 @@ export default async (payload, room) => {
   } else if (payload.message.startsWith('/escortme')) {
     try {
       const userUuid = payload.sender
-      usersToBeRemoved[userUuid] = true // Store the user in usersToBeRemoved object
+      usersToBeRemoved[userUuid] = true 
       await escortUserFromDJStand(userUuid)
       await postMessage({
         room,

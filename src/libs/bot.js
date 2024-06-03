@@ -20,6 +20,12 @@ function isUserDJ (senderUuid, state) {
   return currentDJs.includes(senderUuid) //
 }
 
+// Function to get the UUID of the current DJ (the one playing the song)
+export function getCurrentDJ(state) {
+  const currentDJs = getCurrentDJUUIDs(state);
+  return currentDJs.length > 0 ? currentDJs[0] : null;
+}
+
 export class Bot {
   constructor (clientId, clientSecret, redirectUri) {
     this.clientId = clientId
@@ -64,40 +70,47 @@ export class Bot {
     }
   }
 
-  async processNewMessages () {
+  async processNewMessages() {
     try {
-      const response = await getMessages(process.env.ROOM_UUID, this.lastMessageIDs?.fromTimestamp)
-      if (response?.data) {
-        const messages = response.data
-        if (messages?.length) {
-          for (const message in messages) {
-            this.lastMessageIDs.fromTimestamp = messages[message].sentAt + 1
-            const customMessage = messages[message]?.data?.customData?.message ?? ''
-            if (!customMessage) return
-            const sender = messages[message]?.sender ?? ''
+        const response = await getMessages(process.env.ROOM_UUID, this.lastMessageIDs?.fromTimestamp);
+        if (response?.data) {
+            const messages = response.data;
+            if (messages?.length) {
+                for (const message of messages) {
+                    // Add a check to ensure sentAt exists
+                    if (message.sentAt === undefined) {
+                        console.error('Message is missing sentAt:', message);
+                        continue;
+                    }
 
-            // Log the sender's ID and the message
-            console.log(`Sender: ${sender}, Message: ${customMessage}`)
+                    this.lastMessageIDs.fromTimestamp = message.sentAt + 1;
+                    const customMessage = message?.data?.customData?.message ?? '';
+                    if (!customMessage) return;
+                    const sender = message?.sender ?? '';
 
-            // Check if the sender is the bot itself
-            if (sender === process.env.BOT_USER_UUID) continue // Skip processing if sender is bot
+                    // Log the sender's ID and the message
+                    console.log(`Sender: ${sender}, Message: ${customMessage}`);
 
-            if ([process.env.CHAT_USER_ID, process.env.CHAT_REPLY_ID].includes(sender)) return
-            handlers.message(
-              {
-                message: customMessage,
-                sender,
-                senderName: messages[message]?.data?.customData?.userName
-              },
-              process.env.ROOM_UUID
-            )
-          }
+                    // Check if the sender is the bot itself
+                    if (sender === process.env.BOT_USER_UUID) continue; // Skip processing if sender is bot
+
+                    if ([process.env.CHAT_USER_ID, process.env.CHAT_REPLY_ID].includes(sender)) return;
+                    handlers.message(
+                        {
+                            message: customMessage,
+                            sender,
+                            senderName: message?.data?.customData?.userName
+                        },
+                        process.env.ROOM_UUID,
+                        this.state // Pass the state here
+                    );
+                }
+            }
         }
-      }
     } catch (error) {
-      logger.error('Error processing new messages:', error)
+        logger.error('Error processing new messages:', error);
     }
-  }
+}
 
   configureListeners () {
     const self = this
