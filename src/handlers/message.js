@@ -4,17 +4,15 @@ import { askQuestion } from '../libs/ai.js'
 import { selectRandomQuestion, checkAnswer } from './trivia.js'
 import { logger } from '../utils/logging.js'
 import { roomBot } from '../index.js'
-import { fetchCurrentlyPlayingSong,isUserAuthorized, fetchSpotifyPlaylistTracks} from '../utils/API.js'
+import { fetchCurrentlyPlayingSong, isUserAuthorized, fetchSpotifyPlaylistTracks } from '../utils/API.js'
 import { handleLotteryCommand, handleLotteryNumber, LotteryGameActive } from '../utils/lotteryGame.js'
-import {addTracksToPlaylist, removeTrackFromPlaylist} from '../utils/playlistUpdate.js'
+import { addTracksToPlaylist, removeTrackFromPlaylist } from '../utils/playlistUpdate.js'
 import { enableSongStats, disableSongStats } from '../utils/voteCounts.js'
 import { escortUserFromDJStand } from '../utils/escortDJ.js'
-import { isUserDJ } from '../libs/bot.js'
-
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
-const roomThemes ={}
-let usersToBeRemoved = {};
+const roomThemes = {}
+const usersToBeRemoved = {}
 let currentQuestion = null
 let submittedAnswer = null
 let totalPoints = 0
@@ -34,6 +32,7 @@ const getNewQuestion = () => {
 // Messages
 export default async (payload, room) => {
   logger.info({ sender: payload.senderName, message: payload.message })
+
   // Handle Gifs Sent in Chat
   if (payload.message.type === 'ChatGif') {
     logger.info('Received a GIF message:', payload.message)
@@ -73,7 +72,7 @@ export default async (payload, room) => {
       })
     }
 
-    ////////////////  Trivia Stuff /////////////////////////////
+    /// /////////////  Trivia Stuff /////////////////////////////
   } else if (payload.message.startsWith('/triviastart')) {
     if (currentQuestion) {
       await postMessage({
@@ -173,202 +172,54 @@ export default async (payload, room) => {
   } else if (LotteryGameActive) {
     await handleLotteryNumber(payload)
 
-    //////////////// "/ COMMANDS" Start Here. ////////////////////////
+    /// ///////////// Commands Start Here. ////////////////////////
   } else if (payload.message.startsWith('/hello')) {
     await postMessage({
       room,
       message: 'Hi!'
     })
-
-  } else if (payload.message.startsWith('/addsong')) {
-    try {
-      const trackURI = await fetchCurrentlyPlayingSong();
-      const playlistTracks = await fetchSpotifyPlaylistTracks();
-      const playlistTrackURIs = playlistTracks.map(track => track.track.uri);
-
-      if (playlistTrackURIs.includes(trackURI)) {
-        await postMessage({
-          room,
-          message: 'Track is already in the playlist!'
-        });
-      } else {
-        const snapshotId = await addTracksToPlaylist([trackURI]);
-
-        if (snapshotId) {
-          await postMessage({
-            room,
-            message: 'Track added successfully!'
-          });
-        } else {
-          await postMessage({
-            room,
-            message: 'Failed to add the track to the playlist.'
-          });
-        }
-      }
-    } catch (error) {
-      await postMessage({
-        room,
-        message: `Error adding track to playlist: ${error.message}`
-      });
-    }
-  } else if (payload.message.startsWith('/removesong')) {
-    try {
-      const senderUuid = payload.sender; 
-      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken); 
-      if (!isAuthorized) {
-        await postMessage({
-          room,
-          message: 'You need to be a moderator to execute this command.'
-        });
-        return;
-      }
-  
-      const playlistId = process.env.DEFAULT_PLAYLIST_ID;
-      const trackURI = await fetchCurrentlyPlayingSong();
-      const snapshotId = await removeTrackFromPlaylist(playlistId, trackURI);
-  
-      if (snapshotId) {
-        await postMessage({
-          room,
-          message: 'Track removed successfully!'
-        });
-      } else {
-        await postMessage({
-          room,
-          message: 'Failed to remove the track from the playlist.'
-        });
-      }
-    } catch (error) {
-      await postMessage({
-        room,
-        message: `Error removing track from playlist: ${error.message}`
-      });
-    }  
-  
-  } else if (payload.message.startsWith('/fetchsong')) {
-    try {
-      // Call fetchCurrentlyPlayingSong to get the track URI
-      const trackURI = await fetchCurrentlyPlayingSong(process.env.TTL_USER_TOKEN)
-
-      // Send the track URI to the chat
-      await postMessage({
-        room,
-        message: `Currently playing song: ${trackURI}`
-      })
-    } catch (error) {
-      // Handle errors
-      console.error('Error fetching song:', error)
-      await postMessage({
-        room,
-        message: `Error: ${error.message}`
-      })
-    }
-
-  } else if (payload.message.startsWith('/statson')) {
-    try {
-      const senderUuid = payload.sender; 
-      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken); 
-      if (!isAuthorized) {
-        await postMessage({
-          room,
-          message: 'You need to be a moderator to execute this command.'
-        });
-        return;
-      }
-      await enableSongStats();
-      await postMessage({
-        room,
-        message: `Song stats enabled`
-      });
-    } catch (error) {
-      console.error('Error enabling song stats:', error);
-      await postMessage({
-        room,
-        message: `Error: ${error.message}`
-      });
-    }
-  } else if (payload.message.startsWith('/statsoff')) {
-    try {
-      const senderUuid = payload.sender; // Assuming payload.sender contains the user UUID
-      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken); // Call isUserAuthorized with senderUuid
-      if (!isAuthorized) {
-        await postMessage({
-          room,
-          message: 'You need to be a moderator to execute this command.'
-        });
-        return;
-      }
-  
-      await disableSongStats();
-      await postMessage({
-        room,
-        message: `Song stats disabled`
-      });
-    } catch (error) {
-      console.error('Error disabling song stats:', error);
-      await postMessage({
-        room,
-        message: `Error: ${error.message}`
-      });
-    }  
-  } else if (payload.message.startsWith('/bopon')) {
-    try {
-      await roomBot.enableAutoBop();
-      await postMessage({
-        room,
-        message: 'Autobop enabled.'
-      });
-    } catch (error) {
-      console.error('Error enabling autobop:', error);
-      await postMessage({
-        room,
-        message: 'An error occurred while enabling autobop. Please try again.'
-      });
-    }
-  } else if (payload.message.startsWith('/bopoff')) {
-    try {
-      await roomBot.disableAutoBop();
-      await postMessage({
-        room,
-        message: 'Autobop disabled.'
-      });
-    } catch (error) {
-      console.error('Error disabling autobop:', error);
-      await postMessage({
-        room,
-        message: 'An error occurred while disabling autobop. Please try again.'
-      });
-    }
-
-  } else if (payload.message.startsWith('/barkbark')) {
-    await postMessage({
-      room,
-      message: 'WOOF WOOF'
-    })
-  } else if (payload.message.startsWith('/bark')) {
-    await postMessage({
-      room,
-      message: 'WOOF'
-    })
   } else if (payload.message.startsWith('/commands')) {
     await postMessage({
       room,
       message: 'General commands are:\n- /theme : Checks the current room theme\n- /trivia : Trivia Game\n- /lottery: Numbers!\n- /jump : Makes the bot jump\n- /dislike : Makes the bot downvote\n- /addDJ : Adds the bot as DJ\n- /removeDJ : Removes the bot as DJ\n- /dive : stage\n- /escortme : Stagedive after your next song\n- /gifs : Bot will list all GIF commands\n- /mod : Bot will list all Mod commands'
-    });
-
+    })
   } else if (payload.message.startsWith('/gifs')) {
     await postMessage({
       room,
       message: 'Randomly selected GIFs:\n- /burp\n- /dance\n- /party\n- /beer\n- /fart\n- /ass\n- /tomatoes\n- /cheers'
-    });
-
+    })
   } else if (payload.message.startsWith('/mod')) {
     await postMessage({
       room,
-      message: 'Moderator commands are:\n- /settheme : Set room theme\n- /removetheme : Remove room theme\n- /addsong : Add current song to bot playlist\n- /removesong : Remove current song from bot playlist\n- /statsoff : Turns song stats off\n- /statson : Turns song stats back on\n- /bopoff : Turns bot auto like off\n- /bopon : Turns bot auto like back on'
-    });
-
+      message: 'Moderator commands are:\n- /settheme : Set room theme\n- /removetheme : Remove room theme\n- /addsong : Add current song to bot playlist\n- /removesong : Remove current song from bot playlist\n- /statsoff : Turns song stats off\n- /statson : Turns song stats back on\n- /bopoff : Turns bot auto like off\n- /bopon : Turns bot auto like back on\n- /status : Shows bot toggles status'
+    })
+  } else if (payload.message.startsWith('/secret')) {
+    await postMessage({
+      room,
+      message: 'Sssshhhhhh be very quiet. These are top secret\n- /bark\n- /bark bark\n- /star\n- /drink\n- /ass\n- /azz\n- /cam\n- /shirley\n- /berad'
+    })
+    /// /////////////// General Commands ////////////////
+  } else if (payload.message.startsWith('/theme')) {
+    try {
+      const theme = roomThemes[room]
+      if (theme) {
+        await postMessage({
+          room,
+          message: `Current theme: ${theme}`
+        })
+      } else {
+        await postMessage({
+          room,
+          message: 'No theme set for the room.'
+        })
+      }
+    } catch (error) {
+      console.error('Error fetching theme:', error)
+      await postMessage({
+        room,
+        message: 'An error occurred while fetching the theme. Please try again.'
+      })
+    }
   } else if (payload.message.startsWith('/jump')) {
     try {
       await roomBot.playOneTimeAnimation('jump', process.env.ROOM_UUID, process.env.BOT_USER_UUID)
@@ -387,18 +238,6 @@ export default async (payload, room) => {
     } catch (error) {
       console.error('Error Voting on Song', error)
     }
-  } else if (payload.message.startsWith('/star')) {
-    try {
-      await roomBot.voteOnSong(process.env.ROOM_UUID, { star: true }, process.env.BOT_USER_UUID)
-    } catch (error) {
-      console.error('Error Voting on Song', error)
-    }
-  } else if (payload.message.startsWith('/unstar')) {
-    try {
-      await roomBot.voteOnSong(process.env.ROOM_UUID, { star: false }, process.env.BOT_USER_UUID)
-    } catch (error) {
-      console.error('Error Voting on Song', error)
-    }
   } else if (payload.message.startsWith('/addDJ')) {
     try {
       await roomBot.addDJ()
@@ -407,43 +246,60 @@ export default async (payload, room) => {
     }
   } else if (payload.message.startsWith('/removeDJ')) {
     try {
-      const isBotDJ = roomBot.state?.djs.some(dj => dj.uuid === process.env.BOT_USER_UUID);
+      const isBotDJ = roomBot.state?.djs.some(dj => dj.uuid === process.env.BOT_USER_UUID)
       if (isBotDJ) {
-        await roomBot.removeDJ(process.env.BOT_USER_UUID);
+        await roomBot.removeDJ(process.env.BOT_USER_UUID)
       } else {
-        console.log('Bot is not a DJ.');
+        console.log('Bot is not a DJ.')
       }
     } catch (error) {
-      console.error('Error removing DJ:', error);    }
-
-
-} else if (payload.message.startsWith('/dive')) {
-    try {
-      const userUuid = payload.sender; // Assuming you have access to the userUuid in the payload
-      await roomBot.removeDJ(userUuid);
-    } catch (error) {
-      console.error('Error removing user from DJ:', error);
+      console.error('Error removing DJ:', error)
     }
-
+  } else if (payload.message.startsWith('/dive')) {
+    try {
+      const userUuid = payload.sender
+      await roomBot.removeDJ(userUuid)
+    } catch (error) {
+      console.error('Error removing user from DJ:', error)
+    }
   } else if (payload.message.startsWith('/escortme')) {
     try {
-        const userUuid = payload.sender;
-        usersToBeRemoved[userUuid] = true; // Store the user in usersToBeRemoved object
-        await escortUserFromDJStand(userUuid)
-        await postMessage({
-          room,
-          message: `${payload.senderName}, you will be removed from the stage after your next song`
-        })
+      const userUuid = payload.sender
+      usersToBeRemoved[userUuid] = true // Store the user in usersToBeRemoved object
+      await escortUserFromDJStand(userUuid)
+      await postMessage({
+        room,
+        message: `${payload.senderName}, you will be removed from the stage after your next song`
+      })
     } catch (error) {
-        console.error('Error handling /escortme command:', error);
+      console.error('Error handling /escortme command:', error)
     }
 
-  } else if (payload.message.startsWith('/updatesong')) {
+  /// /////////////// Secret Commands /////////////////////
+  } else if (payload.message.startsWith('/barkbark')) {
+    await postMessage({
+      room,
+      message: 'WOOF WOOF'
+    })
+  } else if (payload.message.startsWith('/bark')) {
+    await postMessage({
+      room,
+      message: 'WOOF'
+    })
+  } else if (payload.message.startsWith('/star')) {
     try {
-      await roomBot.updateNextSong()
+      await roomBot.voteOnSong(process.env.ROOM_UUID, { star: true }, process.env.BOT_USER_UUID)
     } catch (error) {
-      console.error('Error updating next song:', error)
+      console.error('Error Voting on Song', error)
     }
+  /*
+  } else if (payload.message.startsWith('/unstar')) {
+    try {
+      await roomBot.voteOnSong(process.env.ROOM_UUID, { star: false }, process.env.BOT_USER_UUID)
+    } catch (error) {
+      console.error('Error Voting on Song', error)
+    }
+    */
   } else if (payload.message.startsWith('/berad')) {
     await postMessage({
       room,
@@ -459,8 +315,54 @@ export default async (payload, room) => {
       room,
       message: 'Im drunk already. Catch me if you can'
     })
+  } else if (payload.message.startsWith('/shirley')) {
+    try {
+      const GifUrl = 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdzdyamVybTVwa256NnVrdWQzcXMwcWd6YXlseTQ0dmY3OWloejQyYyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/3oEjHLzm4BCF8zfPy0/giphy.gif'
+      await postMessage({
+        room,
+        message: '',
+        images: [GifUrl]
+      })
+    } catch (error) {
+      console.error('Error processing command:', error.message)
+    }
+  } else if (payload.message.startsWith('/ass')) {
+    try {
+      const danceImageOptions = [
+        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExY2JkNnliMGxhMjZ5NnVtcGd3dWN1YmVyZHJ3ZXo3cTZyZnJsM2UzbyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/uxXNV3Xa7QqME/giphy.gif',
+        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExY2JkNnliMGxhMjZ5NnVtcGd3dWN1YmVyZHJ3ZXo3cTZyZnJsM2UzbyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/xUPGGL6TieAUk10oNO/giphy.gif',
+        'https://media.giphy.com/media/rAKdqZ8nfiaZi/giphy.gif?cid=790b7611cbd6yb0la26y6umpgwucuberdrwez7q6rfrl3e3o&ep=v1_gifs_search&rid=giphy.gif&ct=g',
+        'https://media.giphy.com/media/IYJBTNLgES23K/giphy.gif?cid=790b7611cbd6yb0la26y6umpgwucuberdrwez7q6rfrl3e3o&ep=v1_gifs_search&rid=giphy.gif&ct=g',
+        'https://media.giphy.com/media/r0maJFJCvM8Pm/giphy.gif?cid=ecf05e47ymi8mjlscn2zhhaq5jwlixct7t9hxqy4bvi0omzp&ep=v1_gifs_search&rid=giphy.gif&ct=g',
+        'https://media.giphy.com/media/CsjpI6bhjptTO/giphy.gif?cid=ecf05e47i0e2qssmhziagwv4stpgetatpz2555i70q4own0v&ep=v1_gifs_search&rid=giphy.gif&ct=g',
+        'https://media.giphy.com/media/H7kO0C0DCkQjUaQxOF/giphy.gif?cid=ecf05e47kpjyfjk0pfslwnyl220r2gsn54t77flye0fpgqol&ep=v1_gifs_search&rid=giphy.gif&ct=g'
+      ]
+      const randomDanceImageUrl = danceImageOptions[Math.floor(Math.random() * danceImageOptions.length)]
+      await postMessage({
+        room,
+        message: '',
+        images: [randomDanceImageUrl]
+      })
+    } catch (error) {
+      console.error('Error processing command:', error.message)
+    }
+  } else if (payload.message.startsWith('/azz')) {
+    try {
+      const danceImageOptions = [
+        'https://media.giphy.com/media/fcDNkoEy1aXOFwbv7q/giphy.gif?cid=ecf05e47fvbfd2n1xikifbbtuje37cga98d9rmx7sjo2olzu&ep=v1_gifs_search&rid=giphy.gif&ct=g',
+        'https://media.giphy.com/media/GB4N7W7OP5iOk/giphy.gif?cid=ecf05e4706qgo7363yeua3o6hq4m5ps3u1y88ssw8tgi1o9e&ep=v1_gifs_search&rid=giphy.gif&ct=g'
+      ]
+      const randomDanceImageUrl = danceImageOptions[Math.floor(Math.random() * danceImageOptions.length)]
+      await postMessage({
+        room,
+        message: '',
+        images: [randomDanceImageUrl]
+      })
+    } catch (error) {
+      console.error('Error processing command:', error.message)
+    }
 
-    //  GIF's
+    /// ///////////  GIF Commands /////////////////////////
   } else if (payload.message.startsWith('/burp')) {
     try {
       const GifUrl = 'https://media.giphy.com/media/3orieOieQrTkLXl2SY/giphy.gif?cid=790b7611gofgmq0d396jww26sbt1bhc9ljg9am4nb8m6f6lo&ep=v1_gifs_search&rid=giphy.gif&ct=g'
@@ -476,22 +378,6 @@ export default async (payload, room) => {
         message: 'An error occurred while processing the burp command. Please try again.'
       })
     }
-  } else if (payload.message.startsWith('/shirley')) {
-    try {
-      const GifUrl = 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdzdyamVybTVwa256NnVrdWQzcXMwcWd6YXlseTQ0dmY3OWloejQyYyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/3oEjHLzm4BCF8zfPy0/giphy.gif'
-      await postMessage({
-        room,
-        message: '',
-        images: [GifUrl]
-      })
-    } catch (error) {
-      console.error('Error processing /burp command:', error.message)
-      await postMessage({
-        room,
-        message: 'An error occurred while processing the burp command. Please try again.'
-      })
-    }
-    // RANDOM GIF's
   } else if (payload.message.startsWith('/dance')) {
     try {
       const danceImageOptions = [
@@ -538,141 +424,56 @@ export default async (payload, room) => {
         'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExZHF6aTAzeXNubW84aHJrZzd1OGM1ZjM0MGp5aTZrYTRrZmdscnYwbyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/IwAZ6dvvvaTtdI8SD5/giphy.gif',
         'https://media.giphy.com/media/xUA7aT1vNqVWHPY1cA/giphy.gif?cid=790b7611ov12e8uoq7xedaifcwz9gj28xb43wtxtnuj0rnod&ep=v1_gifs_search&rid=giphy.gif&ct=g',
         'https://media.giphy.com/media/iJ2cZjydqg9wFkzbGD/giphy.gif?cid=790b7611ov12e8uoq7xedaifcwz9gj28xb43wtxtnuj0rnod&ep=v1_gifs_search&rid=giphy.gif&ct=g'
-        // Add more dance image URLs as needed
       ]
-
-      // Randomly choose a dance image URL
       const randomDanceImageUrl = danceImageOptions[Math.floor(Math.random() * danceImageOptions.length)]
-
-      // Send the dance message with the randomly chosen image
       await postMessage({
         room,
         message: '',
         images: [randomDanceImageUrl]
       })
     } catch (error) {
-      console.error('Error processing /dance command:', error.message)
-      await postMessage({
-        room,
-        message: 'An error occurred while processing the dance command. Please try again.'
-      })
+      console.error('Error processing command:', error.message)
     }
   } else if (payload.message.startsWith('/beer')) {
     try {
-      // Define an array of image URLs
       const danceImageOptions = [
         'https://media.giphy.com/media/l2Je5C6DLUvYVj37a/giphy.gif?cid=ecf05e475as76fua0g8zvld9lzbm85sb3ojqyt95jrxrnlqz&ep=v1_gifs_search&rid=giphy.gif&ct=g',
         'https://media.giphy.com/media/9GJ2w4GMngHCh2W4uk/giphy.gif?cid=ecf05e47vxjww4oli5eck8v6nd6jcmfl9e6awd3a9ok2wa7w&ep=v1_gifs_search&rid=giphy.gif&ct=g',
         'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExaG5yc2UzZXh5dDdzbTh4YnE4dzc5MjMweGc5YXowZjViYWthYXczZiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/DmzUp9lX7lHlm/giphy.gif',
         'https://media.giphy.com/media/70lIzbasCI6vOuE2zG/giphy.gif?cid=ecf05e4758ayajrk9c6dnrcblptih04zceztlwndn0vwxmgd&ep=v1_gifs_search&rid=giphy.gif&ct=g'
-        // Add more image URLs as needed
       ]
-
-      // Randomly choose a image URL
       const randomDanceImageUrl = danceImageOptions[Math.floor(Math.random() * danceImageOptions.length)]
-
-      // Send the message with the randomly chosen image
       await postMessage({
         room,
         message: '',
         images: [randomDanceImageUrl]
       })
     } catch (error) {
-      console.error('Error processing /dance command:', error.message)
-      await postMessage({
-        room,
-        message: 'An error occurred while processing the dance command. Please try again.'
-      })
-    }
-  } else if (payload.message.startsWith('/azz')) {
-    try {
-      // Define an array of image URLs
-      const danceImageOptions = [
-        'https://media.giphy.com/media/fcDNkoEy1aXOFwbv7q/giphy.gif?cid=ecf05e47fvbfd2n1xikifbbtuje37cga98d9rmx7sjo2olzu&ep=v1_gifs_search&rid=giphy.gif&ct=g',
-        'https://media.giphy.com/media/GB4N7W7OP5iOk/giphy.gif?cid=ecf05e4706qgo7363yeua3o6hq4m5ps3u1y88ssw8tgi1o9e&ep=v1_gifs_search&rid=giphy.gif&ct=g'
-      ]
-
-      // Randomly choose a image URL
-      const randomDanceImageUrl = danceImageOptions[Math.floor(Math.random() * danceImageOptions.length)]
-
-      // Send the message with the randomly chosen image
-      await postMessage({
-        room,
-        message: '',
-        images: [randomDanceImageUrl]
-      })
-    } catch (error) {
-      console.error('Error processing /dance command:', error.message)
-      await postMessage({
-        room,
-        message: 'An error occurred while processing the dance command. Please try again.'
-      })
-    }
-  } else if (payload.message.startsWith('/ass')) {
-    try {
-      // Define an array of image URLs
-      const danceImageOptions = [
-        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExY2JkNnliMGxhMjZ5NnVtcGd3dWN1YmVyZHJ3ZXo3cTZyZnJsM2UzbyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/uxXNV3Xa7QqME/giphy.gif',
-        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExY2JkNnliMGxhMjZ5NnVtcGd3dWN1YmVyZHJ3ZXo3cTZyZnJsM2UzbyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/xUPGGL6TieAUk10oNO/giphy.gif',
-        'https://media.giphy.com/media/rAKdqZ8nfiaZi/giphy.gif?cid=790b7611cbd6yb0la26y6umpgwucuberdrwez7q6rfrl3e3o&ep=v1_gifs_search&rid=giphy.gif&ct=g',
-        'https://media.giphy.com/media/IYJBTNLgES23K/giphy.gif?cid=790b7611cbd6yb0la26y6umpgwucuberdrwez7q6rfrl3e3o&ep=v1_gifs_search&rid=giphy.gif&ct=g',
-        'https://media.giphy.com/media/r0maJFJCvM8Pm/giphy.gif?cid=ecf05e47ymi8mjlscn2zhhaq5jwlixct7t9hxqy4bvi0omzp&ep=v1_gifs_search&rid=giphy.gif&ct=g',
-        'https://media.giphy.com/media/CsjpI6bhjptTO/giphy.gif?cid=ecf05e47i0e2qssmhziagwv4stpgetatpz2555i70q4own0v&ep=v1_gifs_search&rid=giphy.gif&ct=g',
-        'https://media.giphy.com/media/H7kO0C0DCkQjUaQxOF/giphy.gif?cid=ecf05e47kpjyfjk0pfslwnyl220r2gsn54t77flye0fpgqol&ep=v1_gifs_search&rid=giphy.gif&ct=g'
-        // Add more image URLs as needed
-      ]
-
-      // Randomly choose a image URL
-      const randomDanceImageUrl = danceImageOptions[Math.floor(Math.random() * danceImageOptions.length)]
-
-      // Send the message with the randomly chosen image
-      await postMessage({
-        room,
-        message: '',
-        images: [randomDanceImageUrl]
-      })
-    } catch (error) {
-      console.error('Error processing /dance command:', error.message)
-      await postMessage({
-        room,
-        message: 'An error occurred while processing the dance command. Please try again.'
-      })
+      console.error('Error processing command:', error.message)
     }
   } else if (payload.message.startsWith('/cheers')) {
     try {
-      // Define an array of cheers options (GIF URLs and emojis)
       const cheersOptions = [
         { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExc3dpem43dXNuNnkzb3A3NmY0ZjBxdTZxazR5aXh1dDl1N3R5OHRyaSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/BPJmthQ3YRwD6QqcVD/giphy.gif' }, // LEO Cheers GIF
         { type: 'gif', value: 'https://media.giphy.com/media/3oeSB36G9Au4V0xUhG/giphy.gif?cid=790b7611swizn7usn6y3op76f4f0qu6qk4yixut9u7ty8tri&ep=v1_gifs_search&rid=giphy.gif&ct=g' }, // Wedding Crashers cheers GIF
         { type: 'gif', value: 'https://media.giphy.com/media/l7jc8M23lg9e3l9SDn/giphy.gif?cid=790b7611swizn7usn6y3op76f4f0qu6qk4yixut9u7ty8tri&ep=v1_gifs_search&rid=giphy.gif&ct=g' }, // Biden cheers GIF
-        { type: 'emoji', value: '🍻🍻🍻🍻' } // Beer clinking emoji
-        // Add more cheers options as needed
+        { type: 'emoji', value: '🍻🍻🍻🍻' }
       ]
-
-      // Randomly choose a cheers option
       const randomCheersOption = cheersOptions[Math.floor(Math.random() * cheersOptions.length)]
-
-      // Check the type of cheers option and send the appropriate message
       if (randomCheersOption.type === 'gif') {
-        // Send the cheers message with the randomly chosen GIF
         await postMessage({
           room,
           message: '',
           images: [randomCheersOption.value]
         })
       } else if (randomCheersOption.type === 'emoji') {
-        // Send the cheers message with the randomly chosen emoji
         await postMessage({
           room,
           message: randomCheersOption.value
         })
       }
     } catch (error) {
-      console.error('Error processing /cheers command:', error.message)
-      await postMessage({
-        room,
-        message: 'An error occurred while processing the cheers command. Please try again.'
-      })
+      console.error('Error processing command:', error.message)
     }
   } else if (payload.message.startsWith('/tomatoes')) {
     try {
@@ -696,94 +497,217 @@ export default async (payload, room) => {
         })
       }
     } catch (error) {
-      console.error('Error processing /cheers command:', error.message)
-      await postMessage({
-        room,
-        message: 'An error occurred while processing the cheers command. Please try again.'
-      })
+      console.error('Error processing command:', error.message)
     }
-    // "/ THEME COMMANDS"
+  /// ////////////// MOD Commands ///////////////////////////
   } else if (payload.message.startsWith('/settheme')) {
     try {
-      const senderUuid = payload.sender; // Assuming payload.sender contains the user UUID
-      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken); // Call isUserAuthorized with senderUuid
+      const senderUuid = payload.sender // Assuming payload.sender contains the user UUID
+      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken) // Call isUserAuthorized with senderUuid
       if (!isAuthorized) {
         await postMessage({
           room,
           message: 'You need to be a moderator to execute this command.'
-        });
-        return;
+        })
+        return
       }
-
-      // Extract theme from the command
-      const theme = payload.message.replace('/settheme', '').trim();
-
-      // Store the theme for the room
-      roomThemes[room] = theme;
-
+      const theme = payload.message.replace('/settheme', '').trim()
+      roomThemes[room] = theme
       await postMessage({
         room,
         message: `Theme set to: ${theme}`
-      });
+      })
     } catch (error) {
-      console.error('Error setting theme:', error);
+      console.error('Error setting theme:', error)
       await postMessage({
         room,
         message: `Error: ${error.message}`
-      });
+      })
     }
-
   } else if (payload.message.startsWith('/removetheme')) {
     try {
-      const senderUuid = payload.sender; // Assuming payload.sender contains the sender's UUID
-      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken);
+      const senderUuid = payload.sender
+      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken)
       if (!isAuthorized) {
         await postMessage({
           room,
           message: 'You need to be a moderator or owner to execute this command.'
-        });
-        return;
+        })
+        return
       }
-  
-      // Remove the theme for the room
-      delete roomThemes[room];
-  
+
+      delete roomThemes[room]
+
       await postMessage({
         room,
         message: 'Theme removed.'
-      });
+      })
     } catch (error) {
-      console.error('Error removing theme:', error);
+      console.error('Error removing theme:', error)
       await postMessage({
         room,
         message: 'An error occurred while removing the theme. Please try again.'
-      });
+      })
     }
-  }
- else if (payload.message.startsWith('/theme')) {
-  try {
-    const theme = roomThemes[room];
-    // Check if there's a theme set for the room
-    if (theme) {
+  } else if (payload.message.startsWith('/addsong')) {
+    try {
+      const trackURI = await fetchCurrentlyPlayingSong()
+      const playlistTracks = await fetchSpotifyPlaylistTracks()
+      const playlistTrackURIs = playlistTracks.map(track => track.track.uri)
+
+      if (playlistTrackURIs.includes(trackURI)) {
+        await postMessage({
+          room,
+          message: 'Track is already in the playlist!'
+        })
+      } else {
+        const snapshotId = await addTracksToPlaylist([trackURI])
+
+        if (snapshotId) {
+          await postMessage({
+            room,
+            message: 'Track added successfully!'
+          })
+        } else {
+          await postMessage({
+            room,
+            message: 'Failed to add the track to the playlist.'
+          })
+        }
+      }
+    } catch (error) {
       await postMessage({
         room,
-        message: `Current theme: ${theme}`
-      });
-    } else {
+        message: `Error adding track to playlist: ${error.message}`
+      })
+    }
+  } else if (payload.message.startsWith('/removesong')) {
+    try {
+      const senderUuid = payload.sender
+      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken)
+      if (!isAuthorized) {
+        await postMessage({
+          room,
+          message: 'You need to be a moderator to execute this command.'
+        })
+        return
+      }
+
+      const playlistId = process.env.DEFAULT_PLAYLIST_ID
+      const trackURI = await fetchCurrentlyPlayingSong()
+      const snapshotId = await removeTrackFromPlaylist(playlistId, trackURI)
+
+      if (snapshotId) {
+        await postMessage({
+          room,
+          message: 'Track removed successfully!'
+        })
+      } else {
+        await postMessage({
+          room,
+          message: 'Failed to remove the track from the playlist.'
+        })
+      }
+    } catch (error) {
       await postMessage({
         room,
-        message: 'No theme set for the room.'
-      });
+        message: `Error removing track from playlist: ${error.message}`
+      })
     }
-  } catch (error) {
-    console.error('Error fetching theme:', error);
-    await postMessage({
-      room,
-      message: 'An error occurred while fetching the theme. Please try again.'
-    });
+  } else if (payload.message.startsWith('/status')) {
+    try {
+      const autobopStatus = roomBot.autobop ? 'enabled' : 'disabled'
+      const songStatsStatus = enableSongStats ? 'enabled' : 'disabled'
+      const statusMessage = `Bot Toggles:\n- Autobop: ${autobopStatus}\n- Song stats: ${songStatsStatus}`
+      await postMessage({
+        room,
+        message: statusMessage
+      })
+    } catch (error) {
+      console.error('Error getting status:', error)
+      await postMessage({
+        room,
+        message: 'An error occurred while getting status. Please try again.'
+      })
+    }
   }
+  /// /////////// Mod Toggle Commands //////////////
+  else if (payload.message.startsWith('/bopon')) {
+    try {
+      await roomBot.enableAutoBop()
+      await postMessage({
+        room,
+        message: 'Autobop enabled.'
+      })
+    } catch (error) {
+      console.error('Error enabling autobop:', error)
+      await postMessage({
+        room,
+        message: 'An error occurred while enabling autobop. Please try again.'
+      })
+    }
+  } else if (payload.message.startsWith('/bopoff')) {
+    try {
+      await roomBot.disableAutoBop()
+      await postMessage({
+        room,
+        message: 'Autobop disabled.'
+      })
+    } catch (error) {
+      console.error('Error disabling autobop:', error)
+      await postMessage({
+        room,
+        message: 'An error occurred while disabling autobop. Please try again.'
+      })
+    }
+  } else if (payload.message.startsWith('/statson')) {
+    try {
+      const senderUuid = payload.sender
+      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken)
+      if (!isAuthorized) {
+        await postMessage({
+          room,
+          message: 'You need to be a moderator to execute this command.'
+        })
+        return
+      }
+      await enableSongStats()
+      await postMessage({
+        room,
+        message: 'Song stats enabled'
+      })
+    } catch (error) {
+      console.error('Error enabling song stats:', error)
+      await postMessage({
+        room,
+        message: `Error: ${error.message}`
+      })
+    }
+  } else if (payload.message.startsWith('/statsoff')) {
+    try {
+      const senderUuid = payload.sender
+      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken)
+      if (!isAuthorized) {
+        await postMessage({
+          room,
+          message: 'You need to be a moderator to execute this command.'
+        })
+        return
+      }
 
-}
+      await disableSongStats()
+      await postMessage({
+        room,
+        message: 'Song stats disabled'
+      })
+    } catch (error) {
+      console.error('Error disabling song stats:', error)
+      await postMessage({
+        room,
+        message: `Error: ${error.message}`
+      })
+    }
+  }
 }
 
-export {usersToBeRemoved}
+export { usersToBeRemoved }

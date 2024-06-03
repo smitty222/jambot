@@ -4,7 +4,7 @@ const config = {
   clientId: process.env.SPOTIFY_CLIENT_ID,
   clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
   defaultPlaylistId: process.env.DEFAULT_PLAYLIST_ID,
-  redirectUri: process.env.REDIRECT_URI,
+  redirectUri: process.env.REDIRECT_URI
 }
 
 let accessToken = null
@@ -75,11 +75,11 @@ async function fetchSpotifyPlaylistTracks () {
   return tracks
 }
 
-/////////////// TURNTABLE API /////////////////////////////
+/// //////////// TURNTABLE API /////////////////////////////
 
 async function fetchCurrentlyPlayingSong () {
-  const token = process.env.TTL_USER_TOKEN;
-  const roomUUID = process.env.ROOM_UUID; // Replace with your room UUID
+  const token = process.env.TTL_USER_TOKEN
+  const roomUUID = process.env.ROOM_UUID // Replace with your room UUID
 
   try {
     const response = await fetch(`https://rooms.prod.tt.fm/rooms/uuid/${roomUUID}`, {
@@ -87,24 +87,24 @@ async function fetchCurrentlyPlayingSong () {
         Authorization: `Bearer ${token}`,
         accept: 'application/json'
       }
-    });
+    })
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch current song: ${response.statusText}`);
+      throw new Error(`Failed to fetch current song: ${response.statusText}`)
     }
 
-    const data = await response.json();
-    const song = data.song;
+    const data = await response.json()
+    const song = data.song
 
     if (song && song.musicProviders && song.musicProviders.spotify) {
-      const spotifyTrackId = song.musicProviders.spotify.split(':').pop();
-      const spotifyTrackURI = `spotify:track:${spotifyTrackId}`; // Construct Spotify track URI
-      return spotifyTrackURI;
+      const spotifyTrackId = song.musicProviders.spotify.split(':').pop()
+      const spotifyTrackURI = `spotify:track:${spotifyTrackId}` // Construct Spotify track URI
+      return spotifyTrackURI
     } else {
-      throw new Error('Spotify track info not found in the current song');
+      throw new Error('Spotify track info not found in the current song')
     }
   } catch (error) {
-    throw new Error(`Error fetching current song: ${error.message}`);
+    throw new Error(`Error fetching current song: ${error.message}`)
   }
 }
 
@@ -210,72 +210,71 @@ async function fetchUserData (userUUIDs) {
   }
 }
 
-const USER_ROLES_URL = 'https://rooms.prod.tt.fm/roomUserRoles/just-jams'; // Adjusted URL with room slug
+const USER_ROLES_URL = 'https://rooms.prod.tt.fm/roomUserRoles/just-jams' // Adjusted URL with room slug
 
-async function fetchUserRoles(userUuid, token) {
+async function fetchUserRoles (userUuid, token) {
   try {
     const response = await fetch(`${USER_ROLES_URL}/${userUuid}`, {
       headers: {
         Authorization: `Bearer ${token}`,
         accept: 'application/json'
       }
-    });
+    })
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch user roles: ${response.statusText}`);
+      throw new Error(`Failed to fetch user roles: ${response.statusText}`)
     }
 
-    const userRoles = await response.json();
-    return userRoles;
+    const userRoles = await response.json()
+    return userRoles
   } catch (error) {
-    throw new Error(`Error fetching user roles: ${error.message}`);
+    throw new Error(`Error fetching user roles: ${error.message}`)
   }
 }
 
-async function isUserAuthorized(userUuid, token) {
+async function isUserAuthorized (userUuid, token) {
   try {
-    const userRoles = await fetchUserRoles(userUuid, token);
-    console.log('User Roles:', userRoles); // Log user roles fetched from the endpoint
-    const userRole = userRoles.length > 0 ? userRoles[0].role : null;
-    return userRole === 'moderator' || userRole === 'owner' || userRole === 'coOwner';
+    const userRoles = await fetchUserRoles(userUuid, token)
+    console.log('User Roles:', userRoles) // Log user roles fetched from the endpoint
+    const userRole = userRoles.length > 0 ? userRoles[0].role : null
+    return userRole === 'moderator' || userRole === 'owner' || userRole === 'coOwner'
   } catch (error) {
-    console.error('Error checking user authorization:', error);
-    return false;
+    console.error('Error checking user authorization:', error)
+    return false
   }
 }
 
-async function currentsongduration() {
-  const token = process.env.TTL_USER_TOKEN;
-  const roomUUID = process.env.ROOM_UUID;
+async function currentsongduration () {
+  const token = process.env.TTL_USER_TOKEN
+  const roomUUID = process.env.ROOM_UUID
 
   try {
-      console.log('Fetching currently playing song duration...');
-      const response = await fetch(`https://rooms.prod.tt.fm/rooms/uuid/${roomUUID}`, {
-          headers: {
-              Authorization: `Bearer ${token}`,
-              accept: 'application/json'
-          }
-      });
-
-      if (!response.ok) {
-          throw new Error(`Failed to fetch current song: ${response.statusText}`);
+    console.log('Fetching currently playing song duration...')
+    const response = await fetch(`https://rooms.prod.tt.fm/rooms/uuid/${roomUUID}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        accept: 'application/json'
       }
+    })
 
-      const data = await response.json();
-      const song = data.song;
+    if (!response.ok) {
+      throw new Error(`Failed to fetch current song: ${response.statusText}`)
+    }
 
-      if (!song || !song.duration) {
-          throw new Error('Song duration not found in the current song');
-      }
+    const data = await response.json()
+    const song = data.song
 
-      const songDuration = song.duration; // Duration of the currently playing song in seconds
+    if (!song || !song.duration) {
+      throw new Error('Song duration not found in the current song')
+    }
 
-      console.log(`Currently playing song duration: ${songDuration} seconds`);
-      return songDuration;
+    const songDuration = song.duration // Duration of the currently playing song in seconds
+
+    console.log(`Currently playing song duration: ${songDuration} seconds`)
+    return songDuration
   } catch (error) {
-      throw new Error(`Error fetching current song: ${error.message}`);
+    throw new Error(`Error fetching current song: ${error.message}`)
   }
 }
 
-
-export { getAccessToken, currentsongduration, isUserAuthorized, fetchUserRoles, fetchUserData, fetchRecentSongs, fetchCurrentUsers, fetchSpotifyPlaylistTracks, fetchCurrentlyPlayingSong}
+export { getAccessToken, currentsongduration, isUserAuthorized, fetchUserRoles, fetchUserData, fetchRecentSongs, fetchCurrentUsers, fetchSpotifyPlaylistTracks, fetchCurrentlyPlayingSong }

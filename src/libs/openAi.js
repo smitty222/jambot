@@ -1,6 +1,5 @@
 import { getRandomFromArray } from '../utils/getRandom.js'
 import { Configuration, OpenAIApi } from 'openai'
-import { fetchCurrentlyPlayingSong } from '../utils/API.js'
 
 const configuration = new Configuration({
   apiKey: process.env.OPENAI_API_KEY
@@ -32,7 +31,6 @@ export const gptGet = async (systemContent, userContent) => {
   replacables.forEach(replacable => {
     reply = reply.replaceAll(replacable.original, replacable.replacement)
   })
-  
 
   return reply
 }

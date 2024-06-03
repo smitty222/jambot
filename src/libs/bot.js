@@ -8,16 +8,16 @@ import { postVoteCountsForLastSong, songStatsEnabled } from '../utils/voteCounts
 import { usersToBeRemoved } from '../handlers/message.js'
 import { escortUserFromDJStand } from '../utils/escortDJ.js'
 
-export function getCurrentDJUUIDs(state) {
+export function getCurrentDJUUIDs (state) {
   if (!state?.djs) {
-    return [];
+    return []
   }
-  return state.djs.map(dj => dj.uuid);
+  return state.djs.map(dj => dj.uuid)
 }
 
-function isUserDJ(senderUuid, state) {
-  const currentDJs = getCurrentDJUUIDs(state); // Get the list of DJ UUIDs
-  return currentDJs.includes(senderUuid); // 
+function isUserDJ (senderUuid, state) {
+  const currentDJs = getCurrentDJUUIDs(state) // Get the list of DJ UUIDs
+  return currentDJs.includes(senderUuid) //
 }
 
 export class Bot {
@@ -37,15 +37,15 @@ export class Bot {
     this.spotifyCredentials = process.env.SPOTIFY_CREDENTIALS
     this.lastPlayedTrackURI = null
     this.currentRoomUsers = []
-    this.autobop = true; 
+    this.autobop = true
   }
 
-  async enableAutoBop() {
-    this.autobop = true;
+  async enableAutoBop () {
+    this.autobop = true
   }
 
-  async disableAutoBop() {
-    this.autobop = false;
+  async disableAutoBop () {
+    this.autobop = false
   }
 
   async connect () {
@@ -107,22 +107,20 @@ export class Bot {
       logger.debug(`State updated for ${payload.name}`)
       if (handlers[payload.name]) handlers[payload.name](self.state, process.env.ROOM_UUID)
 
-        if (payload.name === 'playedSong') {
-          const currentDJ = getCurrentDJUUIDs(self.state)[0]; // Get the UUID of the DJ currently playing the song
+      if (payload.name === 'playedSong') {
+        const currentDJ = getCurrentDJUUIDs(self.state)[0] // Get the UUID of the DJ currently playing the song
         if (currentDJ && usersToBeRemoved[currentDJ]) {
-            await escortUserFromDJStand(currentDJ); // Call escortUserFromDJStand if the current DJ is in usersToBeRemoved
-            delete usersToBeRemoved[currentDJ]; // Remove the current DJ from usersToBeRemoved
-            console.log(`User ${currentDJ} removed from DJ stand after their song ended.`);
+          await escortUserFromDJStand(currentDJ) // Call escortUserFromDJStand if the current DJ is in usersToBeRemoved
+          delete usersToBeRemoved[currentDJ] // Remove the current DJ from usersToBeRemoved
+          console.log(`User ${currentDJ} removed from DJ stand after their song ended.`)
         }
-          self.scheduleLikeSong(process.env.ROOM_UUID, process.env.BOT_USER_UUID)
-          self.updateNextSong()
-          setTimeout(() => {
-            if (songStatsEnabled)
-              postVoteCountsForLastSong(process.env.ROOM_UUID)
-          }, 10000)
-        }
+        self.scheduleLikeSong(process.env.ROOM_UUID, process.env.BOT_USER_UUID)
+        self.updateNextSong()
+        setTimeout(() => {
+          if (songStatsEnabled) { postVoteCountsForLastSong(process.env.ROOM_UUID) }
+        }, 10000)
+      }
     })
-  
   }
 
   getSocketInstance () {
@@ -291,29 +289,28 @@ export class Bot {
     return convertedTrack
   }
 
-  async removeDJ(userUuid) {
+  async removeDJ (userUuid) {
     try {
-        const djUuid = (userUuid === process.env.BOT_USER_UUID) ? null : userUuid;
+      const djUuid = (userUuid === process.env.BOT_USER_UUID) ? null : userUuid
 
-        if (djUuid === null && !this.state?.djs.some(dj => dj.uuid === process.env.BOT_USER_UUID)) {
-            logger.debug('Bot is not a DJ.');
-            return;
-        }
+      if (djUuid === null && !this.state?.djs.some(dj => dj.uuid === process.env.BOT_USER_UUID)) {
+        logger.debug('Bot is not a DJ.')
+        return
+      }
 
-        if (!this.socket) {
-            throw new Error('SocketClient not initialized. Please call connect() first.');
-        }
+      if (!this.socket) {
+        throw new Error('SocketClient not initialized. Please call connect() first.')
+      }
 
-        await this.socket.action('removeDj', {
-            roomUuid: process.env.ROOM_UUID,
-            userUuid: process.env.BOT_USER_UUID, // Always use bot's UUID for removing the bot as DJ
-            djUuid: djUuid // If null, the endpoint will remove the bot as DJ
-        });
+      await this.socket.action('removeDj', {
+        roomUuid: process.env.ROOM_UUID,
+        userUuid: process.env.BOT_USER_UUID, // Always use bot's UUID for removing the bot as DJ
+        djUuid // If null, the endpoint will remove the bot as DJ
+      })
     } catch (error) {
-        logger.error(`Error removing user ${userUuid} from DJ:`, error);
+      logger.error(`Error removing user ${userUuid} from DJ:`, error)
     }
-}
-
+  }
 
   async voteOnSong (roomUuid, songVotes, userUuid) {
     try {
@@ -334,26 +331,26 @@ export class Bot {
     }
   }
 
-  async playOneTimeAnimation(animation, roomUuid, userUuid, emoji = null) {
+  async playOneTimeAnimation (animation, roomUuid, userUuid, emoji = null) {
     try {
       if (!this.socket) {
-        throw new Error('SocketClient not initialized. Please call connect() first.');
+        throw new Error('SocketClient not initialized. Please call connect() first.')
       }
 
       const actionPayload = {
         animation,
         roomUuid,
         userUuid
-      };
-
-      if (animation === 'emoji' && emoji) {
-        actionPayload.emoji = emoji;
       }
 
-      await this.socket.action('playOneTimeAnimation', actionPayload);
-      console.log('Animation played successfully');
+      if (animation === 'emoji' && emoji) {
+        actionPayload.emoji = emoji
+      }
+
+      await this.socket.action('playOneTimeAnimation', actionPayload)
+      console.log('Animation played successfully')
     } catch (error) {
-      logger.error('Error playing animation:', error);
+      logger.error('Error playing animation:', error)
     }
   }
 
@@ -362,10 +359,10 @@ export class Bot {
       if (!this.socket) {
         throw new Error('SocketClient not initialized. Please call connect() first.')
       }
-      if (!this.autobop) { // Check if autobop is enabled
-        return;
+      if (!this.autobop) {
+        return
       }
-      // Set a timeout to trigger the "/like" action after 5 seconds
+
       setTimeout(async () => {
         try {
           await this.voteOnSong(process.env.ROOM_UUID, { like: true }, process.env.BOT_USER_UUID)
@@ -379,4 +376,4 @@ export class Bot {
   }
 }
 
-export {isUserDJ}
+export { isUserDJ }
