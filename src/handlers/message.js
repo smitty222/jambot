@@ -186,7 +186,7 @@ export default async (payload, room) => {
   } else if (payload.message.startsWith('/gifs')) {
     await postMessage({
       room,
-      message: 'Randomly selected GIFs:\n- /burp\n- /dance\n- /party\n- /beer\n- /fart\n- /ass\n- /tomatoes\n- /cheers'
+      message: 'Randomly selected GIFs:\n- /burp\n- /dance\n- /party\n- /beer\n- /fart\n- /tomatoes\n- /cheers'
     })
   } else if (payload.message.startsWith('/mod')) {
     await postMessage({
@@ -196,7 +196,7 @@ export default async (payload, room) => {
   } else if (payload.message.startsWith('/secret')) {
     await postMessage({
       room,
-      message: 'Sssshhhhhh be very quiet. These are top secret\n- /bark\n- /bark bark\n- /star\n- /drink\n- /ass\n- /azz\n- /cam\n- /shirley\n- /berad'
+      message: 'Sssshhhhhh be very quiet. These are top secret\n- /bark\n- /barkbark\n- /drink\n- /ass\n- /azz\n- /cam\n- /shirley\n- /berad'
     })
     /// /////////////// General Commands ////////////////
   } else if (payload.message.startsWith('/theme')) {

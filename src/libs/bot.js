@@ -199,8 +199,6 @@ export class Bot {
 
       const randomSong = await this.getRandomSong()
 
-      logger.debug('Random song selected:', randomSong)
-
       await this.socket.action('addDj', {
         roomUuid: process.env.ROOM_UUID,
         song: randomSong,
