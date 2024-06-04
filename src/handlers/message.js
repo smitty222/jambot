@@ -7,8 +7,8 @@ import { roomBot } from '../index.js'
 import { fetchCurrentlyPlayingSong, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData } from '../utils/API.js'
 import { handleLotteryCommand, handleLotteryNumber, LotteryGameActive } from '../utils/lotteryGame.js'
 import { addTracksToPlaylist, removeTrackFromPlaylist } from '../utils/playlistUpdate.js'
-import { enableSongStats, disableSongStats } from '../utils/voteCounts.js'
-import { enableGreetingMessages, disableGreetingMessages} from './userJoined.js'
+import { enableSongStats, disableSongStats, songStatsEnabled } from '../utils/voteCounts.js'
+import { enableGreetingMessages, disableGreetingMessages, greetingMessagesEnabled} from './userJoined.js'
 import { getCurrentDJ } from '../libs/bot.js'
 
 
@@ -193,7 +193,7 @@ export default async (payload, room, state) => {
   } else if (payload.message.startsWith('/mod')) {
     await postMessage({
       room,
-      message: 'Moderator commands are:\n- /settheme : Set room theme\n- /removetheme : Remove room theme\n- /addsong : Add current song to bot playlist\n- /removesong : Remove current song from bot playlist\n- /statsoff : Turns song stats off\n- /statson : Turns song stats back on\n- /bopoff : Turns bot auto like off\n- /bopon : Turns bot auto like back on\n- /status : Shows bot toggles status'
+      message: 'Moderator commands are:\n- /settheme : Set room theme\n- /removetheme : Remove room theme\n- /addsong : Add current song to bot playlist\n- /removesong : Remove current song from bot playlist\n- /statsoff : Turns song stats off\n- /statson : Turns song stats back on\n- /bopoff : Turns bot auto like off\n- /bopon : Turns bot auto like back on\n- /greeton : Turns on expanded user greeting\n- /greetoff : Turns off expanded user greeting\n- /status : Shows bot toggles status'
     })
   } else if (payload.message.startsWith('/secret')) {
     await postMessage({
@@ -708,8 +708,9 @@ export default async (payload, room, state) => {
   } else if (payload.message.startsWith('/status')) {
     try {
       const autobopStatus = roomBot.autobop ? 'enabled' : 'disabled'
-      const songStatsStatus = enableSongStats ? 'enabled' : 'disabled'
-      const statusMessage = `Bot Toggles:\n- Autobop: ${autobopStatus}\n- Song stats: ${songStatsStatus}`
+      const songStatsStatus = songStatsEnabled ? 'enabled' : 'disabled' 
+      const greetUserStatus = greetingMessagesEnabled ? 'enabled' : 'disabled'
+      const statusMessage = `Bot Toggles:\n- Autobop: ${autobopStatus}\n- Song stats: ${songStatsStatus}\n- Greet users: ${greetUserStatus}`
       await postMessage({
         room,
         message: statusMessage

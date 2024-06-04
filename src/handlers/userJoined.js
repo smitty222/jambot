@@ -61,3 +61,5 @@ export function enableGreetingMessages() {
 export function disableGreetingMessages() {
   greetingMessagesEnabled = false;
 }
+
+export {greetingMessagesEnabled}
