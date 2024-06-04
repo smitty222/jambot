@@ -8,7 +8,7 @@ import { fetchCurrentlyPlayingSong, isUserAuthorized, fetchSpotifyPlaylistTracks
 import { handleLotteryCommand, handleLotteryNumber, LotteryGameActive } from '../utils/lotteryGame.js'
 import { addTracksToPlaylist, removeTrackFromPlaylist } from '../utils/playlistUpdate.js'
 import { enableSongStats, disableSongStats } from '../utils/voteCounts.js'
-import { escortUserFromDJStand } from '../utils/escortDJ.js'
+import { enableGreetingMessages, disableGreetingMessages} from './userJoined.js'
 import { getCurrentDJ } from '../libs/bot.js'
 
 
@@ -183,7 +183,7 @@ export default async (payload, room, state) => {
   } else if (payload.message.startsWith('/commands')) {
     await postMessage({
       room,
-      message: 'General commands are:\n- /theme : Checks the current room theme\n- /trivia : Trivia Game\n- /lottery: Numbers!\n- /jump : Makes the bot jump\n- /dislike : Makes the bot downvote\n- /addDJ : Adds the bot as DJ\n- /removeDJ : Removes the bot as DJ\n- /dive : stage\n- /escortme : Stagedive after your next song\n- /djbeer : Gives the DJ a beer\n- /gifs : Bot will list all GIF commands\n- /mod : Bot will list all Mod commands'
+      message: 'General commands are:\n- /theme : Checks the current room theme\n- /trivia : Trivia Game\n- /lottery: Numbers!\n- /jump : Makes the bot jump\n- /dislike : Makes the bot downvote\n- /addDJ : Adds the bot as DJ\n- /removeDJ : Removes the bot as DJ\n- /dive : Remove yourself from the stage in dramatic fashion\n- /escortme : Stagedive after your next song\n- /djbeer : Gives the DJ a beer\n- /gifs : Bot will list all GIF commands\n- /mod : Bot will list all Mod commands'
     })
   } else if (payload.message.startsWith('/gifs')) {
     await postMessage({
@@ -224,10 +224,7 @@ export default async (payload, room, state) => {
     }
   } else if (payload.message.startsWith('/djbeers')) {
     try {
-      const userUuid = payload.sender;
       const senderName = payload.senderName;
-  
-      // Get the current DJ's UUID
       const currentDJUuid = getCurrentDJ(state);
   
       if (!currentDJUuid) {
@@ -238,7 +235,6 @@ export default async (payload, room, state) => {
           throw new Error('No current DJ found.');
       }
   
-      // Fetch the nickname of the current DJ
       const [currentDJName] = await fetchUserData([currentDJUuid]);
   
       if (!currentDJName) {
@@ -248,23 +244,16 @@ export default async (payload, room, state) => {
           });
           throw new Error('Could not fetch the current DJ\'s name.');
       }
-  
-      // Send a message with the sender's name and the current DJ's name
       await postMessage({
           room,
           message: `@${senderName} gives @${currentDJName} two nice cold beers!! 🍺🍺`
       });
-  
-      console.log(`${senderName} gives ${currentDJName} two nice cold beers!! 🍺🍺`);
   } catch (error) {
       console.error('Error handling /beerDJ command:', error);
   }
   } else if (payload.message.startsWith('/djbeer')) {
     try {
-      const userUuid = payload.sender;
       const senderName = payload.senderName;
-
-      // Get the current DJ's UUID
       const currentDJUuid = getCurrentDJ(state);
 
       if (!currentDJUuid) {
@@ -274,8 +263,6 @@ export default async (payload, room, state) => {
           });
           throw new Error('No current DJ found.');
       }
-
-      // Fetch the nickname of the current DJ
       const [currentDJName] = await fetchUserData([currentDJUuid]);
 
       if (!currentDJName) {
@@ -286,7 +273,6 @@ export default async (payload, room, state) => {
           throw new Error('Could not fetch the current DJ\'s name.');
       }
 
-      // Send a message with the sender's name and the current DJ's name
       await postMessage({
           room,
           message: `@${senderName} gives @${currentDJName} a nice cold beer! 🍺`
@@ -294,15 +280,11 @@ export default async (payload, room, state) => {
 
       console.log(`${senderName} gives ${currentDJName} a nice cold beer! 🍺`);
   } catch (error) {
-      console.error('Error handling /beerDJ command:', error);
   }
 
 } else if (payload.message.startsWith('/getdjdrunk')) {
   try {
-    const userUuid = payload.sender;
     const senderName = payload.senderName;
-
-    // Get the current DJ's UUID
     const currentDJUuid = getCurrentDJ(state);
 
     if (!currentDJUuid) {
@@ -312,8 +294,6 @@ export default async (payload, room, state) => {
         });
         throw new Error('No current DJ found.');
     }
-
-    // Fetch the nickname of the current DJ
     const [currentDJName] = await fetchUserData([currentDJUuid]);
 
     if (!currentDJName) {
@@ -323,14 +303,10 @@ export default async (payload, room, state) => {
         });
         throw new Error('Could not fetch the current DJ\'s name.');
     }
-
-    // Send a message with the sender's name and the current DJ's name
     await postMessage({
         room,
-        message: `@${senderName} gives @${currentDJName} a million nice cold beers!!! 🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺`
+        message: `@${senderName} gives @${currentDJName} a million nice cold beers!!! 🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺`
     });
-
-    console.log(`${senderName} gives ${currentDJName} two nice cold beers!! 🍺🍺`);
 } catch (error) {
     console.error('Error handling /beerDJ command:', error);
 }
@@ -381,7 +357,6 @@ export default async (payload, room, state) => {
     try {
       const userUuid = payload.sender
       usersToBeRemoved[userUuid] = true 
-      await escortUserFromDJStand(userUuid)
       await postMessage({
         room,
         message: `${payload.senderName}, you will be removed from the stage after your next song`
@@ -639,6 +614,7 @@ export default async (payload, room, state) => {
         message: `Error: ${error.message}`
       })
     }
+   
   } else if (payload.message.startsWith('/removetheme')) {
     try {
       const senderUuid = payload.sender
@@ -822,7 +798,37 @@ export default async (payload, room, state) => {
         message: `Error: ${error.message}`
       })
     }
+  // Command to turn on greeting messages
+} else if (payload.message.startsWith('/greeton')) {
+  try {
+      enableGreetingMessages();
+      await postMessage({
+          room,
+          message: 'Greeting messages enabled'
+      });
+  } catch (error) {
+      console.error('Error enabling greeting messages:', error)
+      await postMessage({
+          room,
+          message: `Error: ${error.message}`
+      });
+  }
+
+// Command to turn off greeting messages
+} else if (payload.message.startsWith('/greetoff')) {
+  try {
+      disableGreetingMessages();
+      await postMessage({
+          room,
+          message: 'Greeting messages disabled'
+      });
+  } catch (error) {
+      console.error('Error disabling greeting messages:', error)
+      await postMessage({
+          room,
+          message: `Error: ${error.message}`
+      });
   }
 }
-
-export { usersToBeRemoved }
+}
+export { usersToBeRemoved, roomThemes}

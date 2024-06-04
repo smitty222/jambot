@@ -2,6 +2,8 @@ import { fetchCurrentUsers } from "../utils/API.js";
 import { getCurrentUsers, updateCurrentUsers } from "../utils/currentUsers.js"; // Import getCurrentUsers and updateCurrentUsers
 import { postMessage } from "../libs/cometchat.js";
 
+let greetingMessagesEnabled = true;
+
 // Mapping object for custom welcome messages
 const customWelcomeMessages = {
   '210141ad-6b01-4665-84dc-e47ea7c27dcb': 'Rsmitty has arrived!',
@@ -34,7 +36,7 @@ export default async (payload) => {
     if (uuid && customWelcomeMessages[uuid]) {
       welcomeMessage = customWelcomeMessages[uuid];
     } else {
-      welcomeMessage = `Welcome to the room, ${nickname}!`;
+      welcomeMessage = `Welcome to the room, @${nickname}\n- Current Theme is: ${theme}\n- You can type /commands to see what other things I can do!`;
     }
 
     if (welcomeMessage) {
@@ -51,3 +53,11 @@ export default async (payload) => {
     // Handle errors appropriately
   }
 };
+
+export function enableGreetingMessages() {
+  greetingMessagesEnabled = true;
+}
+
+export function disableGreetingMessages() {
+  greetingMessagesEnabled = false;
+}
