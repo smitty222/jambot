@@ -1,7 +1,7 @@
 // message.js
 import { postMessage } from '../libs/cometchat.js'
 import { askQuestion } from '../libs/ai.js'
-import { selectRandomQuestion, checkAnswer } from './trivia.js'
+import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, displayTriviaInfo, currentQuestion, totalPoints} from '../handlers/triviaCommands.js'
 import { logger } from '../utils/logging.js'
 import { roomBot } from '../index.js'
 import { fetchCurrentlyPlayingSong, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData } from '../utils/API.js'
@@ -10,27 +10,14 @@ import { addTracksToPlaylist, removeTrackFromPlaylist } from '../utils/playlistU
 import { enableSongStats, disableSongStats, songStatsEnabled } from '../utils/voteCounts.js'
 import { enableGreetingMessages, disableGreetingMessages, greetingMessagesEnabled} from './userJoined.js'
 import { getCurrentDJ } from '../libs/bot.js'
+import { resetCurrentQuestion } from './triviaData.js'
 
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
 const roomThemes = {}
 const usersToBeRemoved = {}
-let currentQuestion = null
-let submittedAnswer = null
-let totalPoints = 0
-const askedQuestions = new Set()
-const resetTriviaState = () => {
-  currentQuestion = null
-  submittedAnswer = null
-}
-const getNewQuestion = () => {
-  let question = selectRandomQuestion()
-  while (askedQuestions.has(question)) {
-    question = selectRandomQuestion()
-  }
-  askedQuestions.add(question)
-  return question
-}
+
+
 // Messages
 export default async (payload, room, state) => {
   logger.info({ sender: payload.senderName, message: payload.message })
@@ -76,84 +63,18 @@ export default async (payload, room, state) => {
 
     /// /////////////  Trivia Stuff /////////////////////////////
   } else if (payload.message.startsWith('/triviastart')) {
-    if (currentQuestion) {
-      await postMessage({
-        room,
-        message: 'A trivia question is already active. Wait for it to end.'
-      })
-    } else {
-      currentQuestion = getNewQuestion()
-      const triviaMessage = `Question: ${currentQuestion.question}\nOptions: ${currentQuestion.answers.join(', ')}`
-      await postMessage({
-        room,
-        message: triviaMessage
-      })
-    }
-  } else if (payload.message.startsWith('/submit')) {
-    if (!currentQuestion) {
-      await postMessage({
-        room,
-        message: 'There is no active trivia question.'
-      })
-      return
-    }
-    if (submittedAnswer) {
-      await postMessage({
-        room,
-        message: 'An answer has already been submitted.'
-      })
-      return
-    }
-    const answer = payload.message.split(' ')[1].toUpperCase()
-    if (!['A', 'B', 'C', 'D'].includes(answer)) {
-      await postMessage({
-        room,
-        message: 'Invalid answer format. Please submit your answer as A/B/C/D.'
-      })
-      return
-    }
-    submittedAnswer = answer
-    if (checkAnswer(currentQuestion, submittedAnswer)) {
-      totalPoints++
-      await postMessage({
-        room,
-        message: `Congratulations! Your answer is correct. Total points: ${totalPoints}`
-      })
-      if (totalPoints === 5) {
-        try {
-          await roomBot.playOneTimeAnimation('jump', process.env.ROOM_UUID, process.env.BOT_USER_UUID)
-        } catch (error) {
-          console.error('Error Jumping', error)
-        }
-      }
-    } else {
-      await postMessage({
-        room,
-        message: `Sorry, your answer is incorrect. The correct answer was ${currentQuestion.correctAnswer}.`
-      })
-    }
-    resetTriviaState()
-    currentQuestion = getNewQuestion()
-    const triviaMessage = `Question: ${currentQuestion.question}\nOptions: ${currentQuestion.answers.join(', ')}`
-    await postMessage({
-      room,
-      message: triviaMessage
-    })
-  } else if (payload.message.startsWith('/triviaend')) {
-    resetTriviaState()
-    askedQuestions.clear()
-    await postMessage({
-      room,
-      message: `The trivia game has been ended. Total points: ${totalPoints}`
-    })
-  } else if (payload.message.startsWith('/trivia')) {
-    if (!currentQuestion) {
-      await postMessage({
-        room,
-        message: 'To start a trivia game you can use /triviastart. To submit your answer you can use /submit followed by the letter option you choose. The points will tally up and the game will continue on until you use /triviaend'
-      })
-    }
+    await handleTriviaStart(room);
 
+  } else if (payload.message.startsWith('/a') || payload.message.startsWith('/b') || payload.message.startsWith('/c') || payload.message.startsWith('/d')) {
+    const submittedAnswer = payload.message.substring(1, 2).toUpperCase();
+    await handleTriviaSubmit(payload, roomBot, room);
+
+  } else if (payload.message.startsWith('/triviaend')) {
+    await handleTriviaEnd(resetCurrentQuestion, totalPoints, room);
+  
+  } else if (payload.message.startsWith('/trivia')) {
+    await displayTriviaInfo(postMessage, room, currentQuestion);
+  
     /// //////////// LOTTERY GAME ////////////////////////////////////////////
   } else if (payload.message.startsWith('/lottery')) {
     try {
