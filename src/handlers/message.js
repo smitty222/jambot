@@ -53,7 +53,7 @@ export default async (payload, room, state) => {
     /// /////////////  Trivia Stuff /////////////////////////////
   } else if (payload.message.startsWith('/triviastart')) {
     await handleTriviaStart(room)
-  } else if (payload.message.startsWith('/a') || payload.message.startsWith('/b') || payload.message.startsWith('/c') || payload.message.startsWith('/d')) {
+  } else if (payload.message.startsWith('/a ') || payload.message.startsWith('/b ') || payload.message.startsWith('/c ') || payload.message.startsWith('/d ')) {
     await handleTriviaSubmit(payload, roomBot, room)
   } else if (payload.message.startsWith('/triviaend')) {
     await handleTriviaEnd(resetCurrentQuestion, totalPoints, room)
