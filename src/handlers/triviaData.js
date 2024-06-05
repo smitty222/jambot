@@ -138,226 +138,226 @@ const triviaData = [
 
   // SPORTS!!!
 
-    {
-      category: 'sports',
-      question: 'Which country won the first ever FIFA World Cup in 1930?',
-      answers: [
-        'A. Uruguay',
-        'B. Brazil',
-        'C. Italy',
-        'D. Germany'
-      ],
-      correctAnswer: 'A'
-    },
-    {
-      category: 'sports',
-      question: 'Who holds the record for the most Grand Slam singles titles in tennis?',
-      answers: [
-        'A. Roger Federer',
-        'B. Rafael Nadal',
-        'C. Novak Djokovic',
-        'D. Serena Williams'
-      ],
-      correctAnswer: 'C'
-    },
-    {
-      category: 'sports',
-      question: 'In which year did the modern Olympic Games resume after a hiatus during World War II?',
-      answers: [
-        'A. 1948',
-        'B. 1952',
-        'C. 1944',
-        'D. 1940'
-      ],
-      correctAnswer: 'A'
-    },
-    {
-      category: 'sports',
-      question: 'Which NFL team has won the most Super Bowl titles?',
-      answers: [
-        'A. New England Patriots',
-        'B. Pittsburgh Steelers',
-        'C. San Francisco 49ers',
-        'D. Dallas Cowboys'
-      ],
-      correctAnswer: 'A'
-    },
-    {
-      category: 'sports',
-      question: 'Who was the first athlete to run a mile in less than four minutes?',
-      answers: [
-        'A. Roger Bannister',
-        'B. Steve Prefontaine',
-        'C. Sebastian Coe',
-        'D. Usain Bolt'
-      ],
-      correctAnswer: 'A'
-    },
-    {
-      category: 'sports',
-      question: "What sport does the term 'birdie' come from?",
-      answers: [
-        'A. Golf',
-        'B. Badminton',
-        'C. Tennis',
-        'D. Cricket'
-      ],
-      correctAnswer: 'A'
-    },
-    {
-      category: 'sports',
-      question: "Who is the NBA's all-time leading scorer?",
-      answers: [
-        'A. Kareem Abdul-Jabbar',
-        'B. LeBron James',
-        'C. Michael Jordan',
-        'D. Kobe Bryant'
-      ],
-      correctAnswer: 'B'
-    },
-    {
-      category: 'sports',
-      question: 'In what year were the first modern Olympic Games held?',
-      answers: [
-        'A. 1896',
-        'B. 1900',
-        'C. 1904',
-        'D. 1886'
-      ],
-      correctAnswer: 'A'
-    },
-    {
-      category: 'sports',
-      question: 'Which country has won the most Rugby World Cup titles?',
-      answers: [
-        'A. New Zealand',
-        'B. Australia',
-        'C. South Africa',
-        'D. England'
-      ],
-      correctAnswer: 'A'
-    },
-    {
-      category: 'sports',
-      question: 'Who holds the record for the most career home runs in Major League Baseball?',
-      answers: [
-        'A. Barry Bonds',
-        'B. Babe Ruth',
-        'C. Hank Aaron',
-        'D. Alex Rodriguez'
-      ],
-      correctAnswer: 'A'
-    },
-    {
-      category: 'sports',
-      question: 'What is the official national sport of Canada?',
-      answers: [
-        'A. Ice Hockey',
-        'B. Lacrosse',
-        'C. Curling',
-        'D. Soccer'
-      ],
-      correctAnswer: 'B'
-    },
-    {
-      category: 'sports',
-      question: 'Who is the only boxer to have won world titles in eight different weight divisions?',
-      answers: [
-        'A. Manny Pacquiao',
-        'B. Floyd Mayweather Jr.',
-        'C. Sugar Ray Leonard',
-        'D. Muhammad Ali'
-      ],
-      correctAnswer: 'A'
-    },
-    {
-      category: 'sports',
-      question: 'Which Formula One driver holds the record for the most World Championships?',
-      answers: [
-        'A. Lewis Hamilton',
-        'B. Max Verstappen',
-        'C. Ayrton Senna',
-        'D. Sebastian Vettel'
-      ],
-      correctAnswer: 'A'
-    },
-    {
-      category: 'sports',
-      question: 'What is the only country to have played in every single FIFA World Cup tournament?',
-      answers: [
-        'A. Brazil',
-        'B. Germany',
-        'C. Argentina',
-        'D. Italy'
-      ],
-      correctAnswer: 'A'
-    },
-    {
-      category: 'sports',
-      question: 'What is the term for scoring three goals in a single game in ice hockey?',
-      answers: [
-        'A. Trifecta',
-        'B. Triple play',
-        'C. Three-pointer',
-        'D. Hat trick'
-      ],
-      correctAnswer: 'D'
-    },
-    {
-      category: 'sports',
-      question: 'Which city hosted the Summer Olympics in 2016?',
-      answers: [
-        'A. Rio de Janeiro',
-        'B. London',
-        'C. Beijing',
-        'D. Sydney'
-      ],
-      correctAnswer: 'A'
-    },
-    {
-      category: 'sports',
-      question: 'What is the name of the trophy awarded to the winner of the NHL playoffs?',
-      answers: [
-        'A. Stanley Cup',
-        'B. Lombardi Trophy',
-        'C. Commissioner\'s Trophy',
-        'D. Conn Smythe Trophy'
-      ],
-      correctAnswer: 'A'
-    },
-    {
-      category: 'sports',
-      question: "Who won the FIFA Women's World Cup in 2019?",
-      answers: [
-        'A. United States',
-        'B. Netherlands',
-        'C. Germany',
-        'D. Sweden'
-      ],
-      correctAnswer: 'A'
-    },
-    {
-      category: 'sports',
-      question: "Which tennis player is known as the 'King of Clay'?",
-      answers: [
-        'A. Rafael Nadal',
-        'B. Roger Federer',
-        'C. Novak Djokovic',
-        'D. Andy Murray'
-      ],
-      correctAnswer: 'A'
-    },
-    {
-      category: 'sports',
-      question: 'Who is the only athlete to win Olympic gold medals in both the 100m and 200m sprints in three consecutive Olympic Games?',
-      answers: [
-        'A. Usain Bolt',
-        'B. Carl Lewis',
-        'C. Jesse Owens',
-        'D. Michael Johnson'
-      ],
-      correctAnswer: 'A'
-    },
+  {
+    category: 'sports',
+    question: 'Which country won the first ever FIFA World Cup in 1930?',
+    answers: [
+      'A. Uruguay',
+      'B. Brazil',
+      'C. Italy',
+      'D. Germany'
+    ],
+    correctAnswer: 'A'
+  },
+  {
+    category: 'sports',
+    question: 'Who holds the record for the most Grand Slam singles titles in tennis?',
+    answers: [
+      'A. Roger Federer',
+      'B. Rafael Nadal',
+      'C. Novak Djokovic',
+      'D. Serena Williams'
+    ],
+    correctAnswer: 'C'
+  },
+  {
+    category: 'sports',
+    question: 'In which year did the modern Olympic Games resume after a hiatus during World War II?',
+    answers: [
+      'A. 1948',
+      'B. 1952',
+      'C. 1944',
+      'D. 1940'
+    ],
+    correctAnswer: 'A'
+  },
+  {
+    category: 'sports',
+    question: 'Which NFL team has won the most Super Bowl titles?',
+    answers: [
+      'A. New England Patriots',
+      'B. Pittsburgh Steelers',
+      'C. San Francisco 49ers',
+      'D. Dallas Cowboys'
+    ],
+    correctAnswer: 'A'
+  },
+  {
+    category: 'sports',
+    question: 'Who was the first athlete to run a mile in less than four minutes?',
+    answers: [
+      'A. Roger Bannister',
+      'B. Steve Prefontaine',
+      'C. Sebastian Coe',
+      'D. Usain Bolt'
+    ],
+    correctAnswer: 'A'
+  },
+  {
+    category: 'sports',
+    question: "What sport does the term 'birdie' come from?",
+    answers: [
+      'A. Golf',
+      'B. Badminton',
+      'C. Tennis',
+      'D. Cricket'
+    ],
+    correctAnswer: 'A'
+  },
+  {
+    category: 'sports',
+    question: "Who is the NBA's all-time leading scorer?",
+    answers: [
+      'A. Kareem Abdul-Jabbar',
+      'B. LeBron James',
+      'C. Michael Jordan',
+      'D. Kobe Bryant'
+    ],
+    correctAnswer: 'B'
+  },
+  {
+    category: 'sports',
+    question: 'In what year were the first modern Olympic Games held?',
+    answers: [
+      'A. 1896',
+      'B. 1900',
+      'C. 1904',
+      'D. 1886'
+    ],
+    correctAnswer: 'A'
+  },
+  {
+    category: 'sports',
+    question: 'Which country has won the most Rugby World Cup titles?',
+    answers: [
+      'A. New Zealand',
+      'B. Australia',
+      'C. South Africa',
+      'D. England'
+    ],
+    correctAnswer: 'A'
+  },
+  {
+    category: 'sports',
+    question: 'Who holds the record for the most career home runs in Major League Baseball?',
+    answers: [
+      'A. Barry Bonds',
+      'B. Babe Ruth',
+      'C. Hank Aaron',
+      'D. Alex Rodriguez'
+    ],
+    correctAnswer: 'A'
+  },
+  {
+    category: 'sports',
+    question: 'What is the official national sport of Canada?',
+    answers: [
+      'A. Ice Hockey',
+      'B. Lacrosse',
+      'C. Curling',
+      'D. Soccer'
+    ],
+    correctAnswer: 'B'
+  },
+  {
+    category: 'sports',
+    question: 'Who is the only boxer to have won world titles in eight different weight divisions?',
+    answers: [
+      'A. Manny Pacquiao',
+      'B. Floyd Mayweather Jr.',
+      'C. Sugar Ray Leonard',
+      'D. Muhammad Ali'
+    ],
+    correctAnswer: 'A'
+  },
+  {
+    category: 'sports',
+    question: 'Which Formula One driver holds the record for the most World Championships?',
+    answers: [
+      'A. Lewis Hamilton',
+      'B. Max Verstappen',
+      'C. Ayrton Senna',
+      'D. Sebastian Vettel'
+    ],
+    correctAnswer: 'A'
+  },
+  {
+    category: 'sports',
+    question: 'What is the only country to have played in every single FIFA World Cup tournament?',
+    answers: [
+      'A. Brazil',
+      'B. Germany',
+      'C. Argentina',
+      'D. Italy'
+    ],
+    correctAnswer: 'A'
+  },
+  {
+    category: 'sports',
+    question: 'What is the term for scoring three goals in a single game in ice hockey?',
+    answers: [
+      'A. Trifecta',
+      'B. Triple play',
+      'C. Three-pointer',
+      'D. Hat trick'
+    ],
+    correctAnswer: 'D'
+  },
+  {
+    category: 'sports',
+    question: 'Which city hosted the Summer Olympics in 2016?',
+    answers: [
+      'A. Rio de Janeiro',
+      'B. London',
+      'C. Beijing',
+      'D. Sydney'
+    ],
+    correctAnswer: 'A'
+  },
+  {
+    category: 'sports',
+    question: 'What is the name of the trophy awarded to the winner of the NHL playoffs?',
+    answers: [
+      'A. Stanley Cup',
+      'B. Lombardi Trophy',
+      'C. Commissioner\'s Trophy',
+      'D. Conn Smythe Trophy'
+    ],
+    correctAnswer: 'A'
+  },
+  {
+    category: 'sports',
+    question: "Who won the FIFA Women's World Cup in 2019?",
+    answers: [
+      'A. United States',
+      'B. Netherlands',
+      'C. Germany',
+      'D. Sweden'
+    ],
+    correctAnswer: 'A'
+  },
+  {
+    category: 'sports',
+    question: "Which tennis player is known as the 'King of Clay'?",
+    answers: [
+      'A. Rafael Nadal',
+      'B. Roger Federer',
+      'C. Novak Djokovic',
+      'D. Andy Murray'
+    ],
+    correctAnswer: 'A'
+  },
+  {
+    category: 'sports',
+    question: 'Who is the only athlete to win Olympic gold medals in both the 100m and 200m sprints in three consecutive Olympic Games?',
+    answers: [
+      'A. Usain Bolt',
+      'B. Carl Lewis',
+      'C. Jesse Owens',
+      'D. Michael Johnson'
+    ],
+    correctAnswer: 'A'
+  },
 
   // Entertainment
 
@@ -1044,40 +1044,39 @@ const triviaData = [
 
 ]
 
-let currentQuestion = null;
-let usedQuestions = new Set();
+let currentQuestion = null
 
 export const getNewQuestion = (usedQuestions) => {
-    currentQuestion = selectRandomQuestion(usedQuestions);
-    return currentQuestion;
-};
+  currentQuestion = selectRandomQuestion(usedQuestions)
+  return currentQuestion
+}
 
 export const checkAnswer = (currentQuestion, submittedAnswer) => {
-    if (!currentQuestion) {
-        throw new Error('No active question to check answer for.');
-    }
-    return currentQuestion.correctAnswer === submittedAnswer.toUpperCase();
-};
+  if (!currentQuestion) {
+    throw new Error('No active question to check answer for.')
+  }
+  return currentQuestion.correctAnswer === submittedAnswer.toUpperCase()
+}
 
 // Function to reset the current question
 export const resetCurrentQuestion = () => {
-    currentQuestion = null;
-};
+  currentQuestion = null
+}
 
 // Helper function to select a random question without repeats
 const selectRandomQuestion = (usedQuestions) => {
-    if (usedQuestions.size === triviaData.length) {
-        // All questions have been used, reset the used questions set
-        usedQuestions.clear();
-    }
+  if (usedQuestions.size === triviaData.length) {
+    // All questions have been used, reset the used questions set
+    usedQuestions.clear()
+  }
 
-    let randomIndex;
-    do {
-        randomIndex = Math.floor(Math.random() * triviaData.length);
-    } while (usedQuestions.has(randomIndex));
+  let randomIndex
+  do {
+    randomIndex = Math.floor(Math.random() * triviaData.length)
+  } while (usedQuestions.has(randomIndex))
 
-    usedQuestions.add(randomIndex);
-    return { ...triviaData[randomIndex], index: randomIndex };
-};
+  usedQuestions.add(randomIndex)
+  return { ...triviaData[randomIndex], index: randomIndex }
+}
 
-export {selectRandomQuestion}
+export { selectRandomQuestion }

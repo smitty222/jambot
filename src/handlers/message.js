@@ -1,22 +1,20 @@
 // message.js
 import { postMessage } from '../libs/cometchat.js'
 import { askQuestion } from '../libs/ai.js'
-import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, displayTriviaInfo, currentQuestion, totalPoints} from '../handlers/triviaCommands.js'
+import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, displayTriviaInfo, currentQuestion, totalPoints } from '../handlers/triviaCommands.js'
 import { logger } from '../utils/logging.js'
 import { roomBot } from '../index.js'
 import { fetchCurrentlyPlayingSong, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData } from '../utils/API.js'
 import { handleLotteryCommand, handleLotteryNumber, LotteryGameActive } from '../utils/lotteryGame.js'
 import { addTracksToPlaylist, removeTrackFromPlaylist } from '../utils/playlistUpdate.js'
 import { enableSongStats, disableSongStats, songStatsEnabled } from '../utils/voteCounts.js'
-import { enableGreetingMessages, disableGreetingMessages, greetingMessagesEnabled} from './userJoined.js'
+import { enableGreetingMessages, disableGreetingMessages, greetingMessagesEnabled } from './userJoined.js'
 import { getCurrentDJ } from '../libs/bot.js'
 import { resetCurrentQuestion } from './triviaData.js'
-
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
 const roomThemes = {}
 const usersToBeRemoved = {}
-
 
 // Messages
 export default async (payload, room, state) => {
@@ -39,20 +37,12 @@ export default async (payload, room, state) => {
     try {
       const question = payload.message.replace(`@${process.env.CHAT_NAME}`, '').trim()
       const reply = await askQuestion(question)
-      if (reply) {
-        const responseText = typeof reply === 'string' ? reply : reply.text
-        if (responseText) {
-          await postMessage({
-            room,
-            message: responseText
-          })
-        } else {
-          await postMessage({
-            room,
-            message: 'Sorry, I could not generate a response at the moment.'
-          })
-        }
-      }
+      const responseText = reply?.text || (typeof reply === 'string' ? reply : null)
+
+      await postMessage({
+        room,
+        message: responseText || 'Sorry, I could not generate a response at the moment.'
+      })
     } catch (error) {
       logger.error('Error handling AI response:', error)
       await postMessage({
@@ -60,21 +50,16 @@ export default async (payload, room, state) => {
         message: 'Sorry, something went wrong trying to process your message.'
       })
     }
-
     /// /////////////  Trivia Stuff /////////////////////////////
   } else if (payload.message.startsWith('/triviastart')) {
-    await handleTriviaStart(room);
-
+    await handleTriviaStart(room)
   } else if (payload.message.startsWith('/a') || payload.message.startsWith('/b') || payload.message.startsWith('/c') || payload.message.startsWith('/d')) {
-    const submittedAnswer = payload.message.substring(1, 2).toUpperCase();
-    await handleTriviaSubmit(payload, roomBot, room);
-
+    await handleTriviaSubmit(payload, roomBot, room)
   } else if (payload.message.startsWith('/triviaend')) {
-    await handleTriviaEnd(resetCurrentQuestion, totalPoints, room);
-  
+    await handleTriviaEnd(resetCurrentQuestion, totalPoints, room)
   } else if (payload.message.startsWith('/trivia')) {
-    await displayTriviaInfo(postMessage, room, currentQuestion);
-  
+    await displayTriviaInfo(postMessage, room, currentQuestion)
+
     /// //////////// LOTTERY GAME ////////////////////////////////////////////
   } else if (payload.message.startsWith('/lottery')) {
     try {
@@ -145,93 +130,91 @@ export default async (payload, room, state) => {
     }
   } else if (payload.message.startsWith('/djbeers')) {
     try {
-      const senderName = payload.senderName;
-      const currentDJUuid = getCurrentDJ(state);
-  
+      const senderName = payload.senderName
+      const currentDJUuid = getCurrentDJ(state)
+
       if (!currentDJUuid) {
-          await postMessage({
-              room,
-              message: `${senderName}, there is no DJ currently playing.`
-          });
-          throw new Error('No current DJ found.');
+        await postMessage({
+          room,
+          message: `${senderName}, there is no DJ currently playing.`
+        })
+        throw new Error('No current DJ found.')
       }
-  
-      const [currentDJName] = await fetchUserData([currentDJUuid]);
-  
+
+      const [currentDJName] = await fetchUserData([currentDJUuid])
+
       if (!currentDJName) {
-          await postMessage({
-              room,
-              message: `${senderName}, could not fetch the current DJ's name.`
-          });
-          throw new Error('Could not fetch the current DJ\'s name.');
+        await postMessage({
+          room,
+          message: `${senderName}, could not fetch the current DJ's name.`
+        })
+        throw new Error('Could not fetch the current DJ\'s name.')
       }
       await postMessage({
-          room,
-          message: `@${senderName} gives @${currentDJName} two nice cold beers!! 🍺🍺`
-      });
-  } catch (error) {
-      console.error('Error handling /beerDJ command:', error);
-  }
+        room,
+        message: `@${senderName} gives @${currentDJName} two nice cold beers!! 🍺🍺`
+      })
+    } catch (error) {
+      console.error('Error handling /beerDJ command:', error)
+    }
   } else if (payload.message.startsWith('/djbeer')) {
     try {
-      const senderName = payload.senderName;
-      const currentDJUuid = getCurrentDJ(state);
+      const senderName = payload.senderName
+      const currentDJUuid = getCurrentDJ(state)
 
       if (!currentDJUuid) {
-          await postMessage({
-              room,
-              message: `${senderName}, there is no DJ currently playing.`
-          });
-          throw new Error('No current DJ found.');
+        await postMessage({
+          room,
+          message: `${senderName}, there is no DJ currently playing.`
+        })
+        throw new Error('No current DJ found.')
       }
-      const [currentDJName] = await fetchUserData([currentDJUuid]);
+      const [currentDJName] = await fetchUserData([currentDJUuid])
 
       if (!currentDJName) {
-          await postMessage({
-              room,
-              message: `${senderName}, could not fetch the current DJ's name.`
-          });
-          throw new Error('Could not fetch the current DJ\'s name.');
+        await postMessage({
+          room,
+          message: `${senderName}, could not fetch the current DJ's name.`
+        })
+        throw new Error('Could not fetch the current DJ\'s name.')
       }
 
       await postMessage({
+        room,
+        message: `@${senderName} gives @${currentDJName} a nice cold beer! 🍺`
+      })
+
+      console.log(`${senderName} gives ${currentDJName} a nice cold beer! 🍺`)
+    } catch (error) {
+    }
+  } else if (payload.message.startsWith('/getdjdrunk')) {
+    try {
+      const senderName = payload.senderName
+      const currentDJUuid = getCurrentDJ(state)
+
+      if (!currentDJUuid) {
+        await postMessage({
           room,
-          message: `@${senderName} gives @${currentDJName} a nice cold beer! 🍺`
-      });
+          message: `${senderName}, there is no DJ currently playing.`
+        })
+        throw new Error('No current DJ found.')
+      }
+      const [currentDJName] = await fetchUserData([currentDJUuid])
 
-      console.log(`${senderName} gives ${currentDJName} a nice cold beer! 🍺`);
-  } catch (error) {
-  }
-
-} else if (payload.message.startsWith('/getdjdrunk')) {
-  try {
-    const senderName = payload.senderName;
-    const currentDJUuid = getCurrentDJ(state);
-
-    if (!currentDJUuid) {
+      if (!currentDJName) {
         await postMessage({
-            room,
-            message: `${senderName}, there is no DJ currently playing.`
-        });
-        throw new Error('No current DJ found.');
-    }
-    const [currentDJName] = await fetchUserData([currentDJUuid]);
-
-    if (!currentDJName) {
-        await postMessage({
-            room,
-            message: `${senderName}, could not fetch the current DJ's name.`
-        });
-        throw new Error('Could not fetch the current DJ\'s name.');
-    }
-    await postMessage({
+          room,
+          message: `${senderName}, could not fetch the current DJ's name.`
+        })
+        throw new Error('Could not fetch the current DJ\'s name.')
+      }
+      await postMessage({
         room,
         message: `@${senderName} gives @${currentDJName} a million nice cold beers!!! 🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺`
-    });
-} catch (error) {
-    console.error('Error handling /beerDJ command:', error);
-}
-
+      })
+    } catch (error) {
+      console.error('Error handling /beerDJ command:', error)
+    }
   } else if (payload.message.startsWith('/jump')) {
     try {
       await roomBot.playOneTimeAnimation('jump', process.env.ROOM_UUID, process.env.BOT_USER_UUID)
@@ -277,7 +260,7 @@ export default async (payload, room, state) => {
   } else if (payload.message.startsWith('/escortme')) {
     try {
       const userUuid = payload.sender
-      usersToBeRemoved[userUuid] = true 
+      usersToBeRemoved[userUuid] = true
       await postMessage({
         room,
         message: `${payload.senderName}, you will be removed from the stage after your next song`
@@ -535,7 +518,6 @@ export default async (payload, room, state) => {
         message: `Error: ${error.message}`
       })
     }
-   
   } else if (payload.message.startsWith('/removetheme')) {
     try {
       const senderUuid = payload.sender
@@ -629,7 +611,7 @@ export default async (payload, room, state) => {
   } else if (payload.message.startsWith('/status')) {
     try {
       const autobopStatus = roomBot.autobop ? 'enabled' : 'disabled'
-      const songStatsStatus = songStatsEnabled ? 'enabled' : 'disabled' 
+      const songStatsStatus = songStatsEnabled ? 'enabled' : 'disabled'
       const greetUserStatus = greetingMessagesEnabled ? 'enabled' : 'disabled'
       const statusMessage = `Bot Toggles:\n- Autobop: ${autobopStatus}\n- Song stats: ${songStatsStatus}\n- Greet users: ${greetUserStatus}`
       await postMessage({
@@ -721,36 +703,36 @@ export default async (payload, room, state) => {
       })
     }
   // Command to turn on greeting messages
-} else if (payload.message.startsWith('/greeton')) {
-  try {
-      enableGreetingMessages();
+  } else if (payload.message.startsWith('/greeton')) {
+    try {
+      enableGreetingMessages()
       await postMessage({
-          room,
-          message: 'Greeting messages enabled'
-      });
-  } catch (error) {
+        room,
+        message: 'Greeting messages enabled'
+      })
+    } catch (error) {
       console.error('Error enabling greeting messages:', error)
       await postMessage({
-          room,
-          message: `Error: ${error.message}`
-      });
-  }
+        room,
+        message: `Error: ${error.message}`
+      })
+    }
 
-// Command to turn off greeting messages
-} else if (payload.message.startsWith('/greetoff')) {
-  try {
-      disableGreetingMessages();
+    // Command to turn off greeting messages
+  } else if (payload.message.startsWith('/greetoff')) {
+    try {
+      disableGreetingMessages()
       await postMessage({
-          room,
-          message: 'Greeting messages disabled'
-      });
-  } catch (error) {
+        room,
+        message: 'Greeting messages disabled'
+      })
+    } catch (error) {
       console.error('Error disabling greeting messages:', error)
       await postMessage({
-          room,
-          message: `Error: ${error.message}`
-      });
+        room,
+        message: `Error: ${error.message}`
+      })
+    }
   }
 }
-}
-export { usersToBeRemoved, roomThemes}
+export { usersToBeRemoved, roomThemes }

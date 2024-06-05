@@ -1,6 +1,5 @@
 import 'dotenv/config'
 import express from 'express'
-import { Chain } from 'repeat'
 import { Bot, getCurrentDJUUIDs } from './libs/bot.js'
 import { updateCurrentUsers } from './utils/currentUsers.js'
 import { fetchCurrentUsers } from './utils/API.js'
@@ -24,12 +23,6 @@ const startupTasks = async () => {
 }
 
 startupTasks()
-
-const repeatedTasks = new Chain()
-  .add(async () => {
-    await roomBot.processNewMessages()
-  })
-  .every(500)
 
 const PORT = process.env.PORT || 3000
 

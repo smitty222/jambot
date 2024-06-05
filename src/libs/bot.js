@@ -21,9 +21,9 @@ function isUserDJ (senderUuid, state) {
 }
 
 // Function to get the UUID of the current DJ (the one playing the song)
-export function getCurrentDJ(state) {
-  const currentDJs = getCurrentDJUUIDs(state);
-  return currentDJs.length > 0 ? currentDJs[0] : null;
+export function getCurrentDJ (state) {
+  const currentDJs = getCurrentDJUUIDs(state)
+  return currentDJs.length > 0 ? currentDJs[0] : null
 }
 
 export class Bot {
@@ -70,44 +70,44 @@ export class Bot {
     }
   }
 
-  async processNewMessages() {
+  async processNewMessages () {
     try {
-        const response = await getMessages(process.env.ROOM_UUID, this.lastMessageIDs?.fromTimestamp);
-        if (response?.data) {
-            const messages = response.data;
-            if (messages?.length) {
-                for (const message of messages) {
-                    if (message.sentAt === undefined) {
-                        console.error('Message is missing sentAt:', message);
-                        continue;
-                    }
-
-                    this.lastMessageIDs.fromTimestamp = message.sentAt + 1;
-                    const customMessage = message?.data?.customData?.message ?? '';
-                    if (!customMessage) return;
-                    const sender = message?.sender ?? '';
-
-                    console.log(`Sender: ${sender}, Message: ${customMessage}`);
-
-                    if (sender === process.env.BOT_USER_UUID) continue; 
-
-                    if ([process.env.CHAT_USER_ID, process.env.CHAT_REPLY_ID].includes(sender)) return;
-                    handlers.message(
-                        {
-                            message: customMessage,
-                            sender,
-                            senderName: message?.data?.customData?.userName
-                        },
-                        process.env.ROOM_UUID,
-                        this.state 
-                    );
-                }
+      const response = await getMessages(process.env.ROOM_UUID, this.lastMessageIDs?.fromTimestamp)
+      if (response?.data) {
+        const messages = response.data
+        if (messages?.length) {
+          for (const message of messages) {
+            if (message.sentAt === undefined) {
+              console.error('Message is missing sentAt:', message)
+              continue
             }
+
+            this.lastMessageIDs.fromTimestamp = message.sentAt + 1
+            const customMessage = message?.data?.customData?.message ?? ''
+            if (!customMessage) return
+            const sender = message?.sender ?? ''
+
+            console.log(`Sender: ${sender}, Message: ${customMessage}`)
+
+            if (sender === process.env.BOT_USER_UUID) continue
+
+            if ([process.env.CHAT_USER_ID, process.env.CHAT_REPLY_ID].includes(sender)) return
+            handlers.message(
+              {
+                message: customMessage,
+                sender,
+                senderName: message?.data?.customData?.userName
+              },
+              process.env.ROOM_UUID,
+              this.state
+            )
+          }
         }
+      }
     } catch (error) {
-        logger.error('Error processing new messages:', error);
+      logger.error('Error processing new messages:', error)
     }
-}
+  }
 
   configureListeners () {
     const self = this
@@ -119,15 +119,15 @@ export class Bot {
 
       if (payload.name === 'playedSong') {
         try {
-          const currentDJ = getCurrentDJ(self.state); // Get the current DJ UUID
+          const currentDJ = getCurrentDJ(self.state) // Get the current DJ UUID
           if (currentDJ && usersToBeRemoved[currentDJ]) {
-              await escortUserFromDJStand(currentDJ); // Call escortUserFromDJStand if the current DJ is in usersToBeRemoved
-              delete usersToBeRemoved[currentDJ]; // Remove the current DJ from usersToBeRemoved
-              console.log(`User ${currentDJ} removed from DJ stand after their song ended.`);
+            await escortUserFromDJStand(currentDJ) // Call escortUserFromDJStand if the current DJ is in usersToBeRemoved
+            delete usersToBeRemoved[currentDJ] // Remove the current DJ from usersToBeRemoved
+            console.log(`User ${currentDJ} removed from DJ stand after their song ended.`)
           }
-      } catch (error) {
-          console.error('Error handling playedSong event:', error);
-      }
+        } catch (error) {
+          console.error('Error handling playedSong event:', error)
+        }
         self.scheduleLikeSong(process.env.ROOM_UUID, process.env.BOT_USER_UUID)
         self.updateNextSong()
         setTimeout(() => {
