@@ -15,6 +15,12 @@ const generateWelcomeMessage = (uuid, nickname, room) => {
   if (customWelcomeMessages[uuid]) {
     return customWelcomeMessages[uuid];
   }
+  
+  // If greeting messages are disabled, send a basic welcome message
+  if (!greetingMessagesEnabled) {
+    return `Welcome to the room, @${nickname}`;
+  }
+
   const theme = roomThemes[room] || 'Just Jam';
   return `Welcome to the room, @${nickname}\n- Current Theme is: ${theme}\n- Type /commands to see what else I can do!`;
 };
@@ -36,19 +42,18 @@ const handleUserJoinedWithStatePatch = async (payload) => {
 
       const welcomeMessage = generateWelcomeMessage(uuid, nickname, process.env.ROOM_UUID);
 
-      if (greetingMessagesEnabled && welcomeMessage) {
-        const messagePayload = {
-          room: process.env.ROOM_UUID, // Send message to the room
-          message: welcomeMessage,
-          sender: process.env.BOT_USER_UUID // Ensure the bot UUID is the sender
-        };
+      // Always send the welcome message, regardless of greetingMessagesEnabled
+      const messagePayload = {
+        room: process.env.ROOM_UUID, // Send message to the room
+        message: welcomeMessage,
+        sender: process.env.BOT_USER_UUID // Ensure the bot UUID is the sender
+      };
 
-        console.log('Sending message payload:', messagePayload);
+      console.log('Sending message payload:', messagePayload);
 
-        const response = await postMessage(messagePayload);
+      const response = await postMessage(messagePayload);
 
-        console.log('Message sent response:', response);
-      }
+      console.log('Message sent response:', response);
     } else {
       console.log('No new user identified in statePatch.');
     }
