@@ -50,7 +50,7 @@ export default async (payload, room, state) => {
         message: 'Sorry, something went wrong trying to process your message.'
       })
     }
-   
+
     /// //////////// LOTTERY GAME ////////////////////////////////////////////
   } else if (payload.message.startsWith('/lottery')) {
     try {
@@ -724,18 +724,18 @@ export default async (payload, room, state) => {
         message: `Error: ${error.message}`
       })
     }
- /// /////////////  Trivia Stuff ///////////////////////////// 
-} else if (payload.message.startsWith('/triviastart')) {
-  await handleTriviaStart(room)
-} else if (payload.message.startsWith('/a') || payload.message.startsWith('/b') || payload.message.startsWith('/c') || payload.message.startsWith('/d')) {
-  await handleTriviaSubmit(payload, roomBot, room)
-} else if (payload.message.startsWith('/triviaend')) {
-  await handleTriviaEnd(resetCurrentQuestion, totalPoints, room)
-} else if (payload.message.startsWith('/trivia')) {
-  await postMessage({
-    room,
-    message: 'To start a trivia game you can use /triviastart. To submit your answer you can use /a, /b, /c, or /d. The points will tally up and the game will continue on until you use /triviaend.'
-  })
-}
+    /// /////////////  Trivia Stuff /////////////////////////////
+  } else if (payload.message.startsWith('/triviastart')) {
+    await handleTriviaStart(room)
+  } else if (payload.message.startsWith('/a') || payload.message.startsWith('/b') || payload.message.startsWith('/c') || payload.message.startsWith('/d')) {
+    await handleTriviaSubmit(payload, roomBot, room)
+  } else if (payload.message.startsWith('/triviaend')) {
+    await handleTriviaEnd(resetCurrentQuestion, totalPoints, room)
+  } else if (payload.message.startsWith('/trivia')) {
+    await postMessage({
+      room,
+      message: 'To start a trivia game you can use /triviastart. To submit your answer you can use /a, /b, /c, or /d. The points will tally up and the game will continue on until you use /triviaend.'
+    })
+  }
 }
 export { usersToBeRemoved }
