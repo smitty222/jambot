@@ -7,6 +7,7 @@ import { fetchSpotifyPlaylistTracks, fetchCurrentUsers } from '../utils/API.js'
 import { postVoteCountsForLastSong, songStatsEnabled } from '../utils/voteCounts.js'
 import { usersToBeRemoved } from '../handlers/message.js'
 import { escortUserFromDJStand } from '../utils/escortDJ.js'
+import handleUserJoinedWithStatePatch from '../handlers/userJoined.js'
 
 export function getCurrentDJUUIDs (state) {
   if (!state?.djs) {
@@ -109,34 +110,49 @@ export class Bot {
     }
   }
 
-  configureListeners () {
-    const self = this
-    logger.debug('Setting up listeners')
+  configureListeners() {
+    const self = this;
+    logger.debug('Setting up listeners');
+  
     this.socket.on('statefulMessage', async (payload) => {
-      self.state = fastJson.applyPatch(self.state, payload.statePatch).newDocument
-      logger.debug(`State updated for ${payload.name}`)
-      if (handlers[payload.name]) handlers[payload.name](self.state, process.env.ROOM_UUID)
-
+      self.state = fastJson.applyPatch(self.state, payload.statePatch).newDocument;
+      logger.debug(`State updated for ${payload.name}`);
+  
+      // Log all incoming stateful messages for debugging
+      console.log(`Stateful message received: ${JSON.stringify(payload, null, 2)}`);
+  
+      // Check if the event is for a user joining the room
+      if (payload.name === 'userJoined') {
+        try {
+          await handleUserJoinedWithStatePatch(payload);
+        } catch (error) {
+          logger.error('Error handling userJoined event:', error);
+        }
+      }
+  
+      // Existing handler logic
+      if (handlers[payload.name]) handlers[payload.name](self.state, process.env.ROOM_UUID);
+  
       if (payload.name === 'playedSong') {
         try {
-          const currentDJ = getCurrentDJ(self.state) // Get the current DJ UUID
+          const currentDJ = getCurrentDJ(self.state); // Get the current DJ UUID
           if (currentDJ && usersToBeRemoved[currentDJ]) {
-            await escortUserFromDJStand(currentDJ) // Call escortUserFromDJStand if the current DJ is in usersToBeRemoved
-            delete usersToBeRemoved[currentDJ] // Remove the current DJ from usersToBeRemoved
-            console.log(`User ${currentDJ} removed from DJ stand after their song ended.`)
+            await escortUserFromDJStand(currentDJ); // Call escortUserFromDJStand if the current DJ is in usersToBeRemoved
+            delete usersToBeRemoved[currentDJ]; // Remove the current DJ from usersToBeRemoved
+            console.log(`User ${currentDJ} removed from DJ stand after their song ended.`);
           }
         } catch (error) {
-          console.error('Error handling playedSong event:', error)
+          console.error('Error handling playedSong event:', error);
         }
-        self.scheduleLikeSong(process.env.ROOM_UUID, process.env.BOT_USER_UUID)
-        self.updateNextSong()
+        self.scheduleLikeSong(process.env.ROOM_UUID, process.env.BOT_USER_UUID);
+        self.updateNextSong();
         setTimeout(() => {
-          if (songStatsEnabled) { postVoteCountsForLastSong(process.env.ROOM_UUID) }
-        }, 10000)
+          if (songStatsEnabled) { postVoteCountsForLastSong(process.env.ROOM_UUID); }
+        }, 10000);
       }
-    })
-  }
-
+    });
+  }  
+  
   getSocketInstance () {
     return this.socket
   }

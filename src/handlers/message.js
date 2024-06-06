@@ -13,7 +13,7 @@ import { getCurrentDJ } from '../libs/bot.js'
 import { resetCurrentQuestion } from './triviaData.js'
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
-const roomThemes = {}
+export const roomThemes = {}
 const usersToBeRemoved = {}
 
 // Messages
@@ -50,16 +50,7 @@ export default async (payload, room, state) => {
         message: 'Sorry, something went wrong trying to process your message.'
       })
     }
-    /// /////////////  Trivia Stuff /////////////////////////////
-  } else if (payload.message.startsWith('/triviastart')) {
-    await handleTriviaStart(room)
-  } else if (payload.message.startsWith('/a ') || payload.message.startsWith('/b ') || payload.message.startsWith('/c ') || payload.message.startsWith('/d ')) {
-    await handleTriviaSubmit(payload, roomBot, room)
-  } else if (payload.message.startsWith('/triviaend')) {
-    await handleTriviaEnd(resetCurrentQuestion, totalPoints, room)
-  } else if (payload.message.startsWith('/trivia')) {
-    await displayTriviaInfo(postMessage, room, currentQuestion)
-
+   
     /// //////////// LOTTERY GAME ////////////////////////////////////////////
   } else if (payload.message.startsWith('/lottery')) {
     try {
@@ -89,7 +80,7 @@ export default async (payload, room, state) => {
   } else if (payload.message.startsWith('/commands')) {
     await postMessage({
       room,
-      message: 'General commands are:\n- /theme : Checks the current room theme\n- /trivia : Trivia Game\n- /lottery: Numbers!\n- /jump : Makes the bot jump\n- /dislike : Makes the bot downvote\n- /addDJ : Adds the bot as DJ\n- /removeDJ : Removes the bot as DJ\n- /dive : Remove yourself from the stage in dramatic fashion\n- /escortme : Stagedive after your next song\n- /djbeer : Gives the DJ a beer\n- /gifs : Bot will list all GIF commands\n- /mod : Bot will list all Mod commands'
+      message: 'General commands are:\n- /theme : Checks the current room theme\n- /trivia : Trivia Game\n- /lottery: Numbers!\n- /jump : Makes the bot jump\n- /dislike : Makes the bot downvote\n- /addDJ : Adds the bot as DJ\n- /removeDJ : Removes the bot as DJ\n- /dive : Remove yourself from the stage\n- /escortme : Stagedive after your next song\n- /djbeer : Gives the DJ a beer\n- /gifs : Bot will list all GIF commands\n- /mod : Bot will list all Mod commands'
     })
   } else if (payload.message.startsWith('/gifs')) {
     await postMessage({
@@ -99,7 +90,7 @@ export default async (payload, room, state) => {
   } else if (payload.message.startsWith('/mod')) {
     await postMessage({
       room,
-      message: 'Moderator commands are:\n- /settheme : Set room theme\n- /removetheme : Remove room theme\n- /addsong : Add current song to bot playlist\n- /removesong : Remove current song from bot playlist\n- /statsoff : Turns song stats off\n- /statson : Turns song stats back on\n- /bopoff : Turns bot auto like off\n- /bopon : Turns bot auto like back on\n- /greeton : Turns on expanded user greeting\n- /greetoff : Turns off expanded user greeting\n- /status : Shows bot toggles status'
+      message: 'Moderator commands are:\n- /settheme : Set room theme\n- /removetheme : Remove room theme\n- /addsong : Add current song to bot playlist\n- /removesong : Remove current song from bot playlist\n- /statson : Turns song stats on\n- /statsoff : Turns song stats off\n- /bopoff : Turns bot auto like off\n- /bopon : Turns bot auto like back on\n- /greeton : Turns on expanded user greeting\n- /greetoff : Turns off expanded user greeting\n- /status : Shows bot toggles status'
     })
   } else if (payload.message.startsWith('/secret')) {
     await postMessage({
@@ -152,7 +143,7 @@ export default async (payload, room, state) => {
       }
       await postMessage({
         room,
-        message: `@${senderName} gives @${currentDJName} two nice cold beers!! 🍺🍺`
+        message: `@${senderName} gives @${currentDJName} two ice cold beers!! 🍺🍺`
       })
     } catch (error) {
       console.error('Error handling /beerDJ command:', error)
@@ -181,10 +172,10 @@ export default async (payload, room, state) => {
 
       await postMessage({
         room,
-        message: `@${senderName} gives @${currentDJName} a nice cold beer! 🍺`
+        message: `@${senderName} gives @${currentDJName} a ice cold beer! 🍺`
       })
 
-      console.log(`${senderName} gives ${currentDJName} a nice cold beer! 🍺`)
+      console.log(`${senderName} gives ${currentDJName} a ice cold beer! 🍺`)
     } catch (error) {
     }
   } else if (payload.message.startsWith('/getdjdrunk')) {
@@ -210,7 +201,7 @@ export default async (payload, room, state) => {
       }
       await postMessage({
         room,
-        message: `@${senderName} gives @${currentDJName} a million nice cold beers!!! 🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺`
+        message: `@${senderName} gives @${currentDJName} a million ice cold beers!!! 🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺`
       })
     } catch (error) {
       console.error('Error handling /beerDJ command:', error)
@@ -733,6 +724,18 @@ export default async (payload, room, state) => {
         message: `Error: ${error.message}`
       })
     }
-  }
+ /// /////////////  Trivia Stuff ///////////////////////////// 
+} else if (payload.message.startsWith('/triviastart')) {
+  await handleTriviaStart(room)
+} else if (payload.message.startsWith('/a') || payload.message.startsWith('/b') || payload.message.startsWith('/c') || payload.message.startsWith('/d')) {
+  await handleTriviaSubmit(payload, roomBot, room)
+} else if (payload.message.startsWith('/triviaend')) {
+  await handleTriviaEnd(resetCurrentQuestion, totalPoints, room)
+} else if (payload.message.startsWith('/trivia')) {
+  await postMessage({
+    room,
+    message: 'To start a trivia game you can use /triviastart. To submit your answer you can use /a, /b, /c, or /d. The points will tally up and the game will continue on until you use /triviaend.'
+  })
 }
-export { usersToBeRemoved, roomThemes }
+}
+export { usersToBeRemoved }

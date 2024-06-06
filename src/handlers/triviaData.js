@@ -15,7 +15,216 @@ const triviaData = [
     correctAnswer: 'A'
   },
   {
-    category: 'miscellaneous',
+    "category": "Miscellaneous",
+    "question": "Which athlete has won eight gold medals at a single Olympics?",
+    "answers": [
+      "A. Vera Caslavska",
+      "B. Michael Phelps",
+      "C. Lloyd Spooner",
+      "D. Agnes Keleti"
+    ],
+    "correctAnswer": "B"
+  },
+  {
+    "category": "Miscellaneous",
+    "question": "What popular beverage once contained cocaine?",
+    "answers": [
+      "A. Powerade",
+      "B. Coca-Cola",
+      "C. Schweppes",
+      "D. Dr Pepper"
+    ],
+    "correctAnswer": "B"
+  },
+  {
+    "category": "Miscellaneous",
+    "question": "Which is the largest food and drink company in the world?",
+    "answers": [
+      "A. Kellogg Company",
+      "B. Pepsi",
+      "C. Nestlé",
+      "D. Danone"
+    ],
+    "correctAnswer": "C"
+  },
+  {
+    "category": "Miscellaneous",
+    "question": "Henry John Heinz founded a company specializing in the production of which food product?",
+    "answers": [
+      "A. Mustard",
+      "B. Relish",
+      "C. Mayonnaise",
+      "D. Ketchup"
+    ],
+    "correctAnswer": "D"
+  },
+  {
+    "category": "Miscellaneous",
+    "question": "The name of which game is derived from the Swahili word which means ‘to build’?",
+    "answers": [
+      "A. Jenga",
+      "B. K’Nex",
+      "C. Lego",
+      "D. Kepla"
+    ],
+    "correctAnswer": "A"
+  },
+  {
+    "category": "Miscellaneous",
+    "question": "What is the primary ingredient in guacamole?",
+    "answers": [
+      "A. Banana",
+      "B. Avocado",
+      "C. Pineapple",
+      "D. Tomato"
+    ],
+    "correctAnswer": "B"
+  },
+  {
+    "category": "Miscellaneous",
+    "question": "In a game of bingo, which number is traditionally represented by the phrase “two little ducks”?",
+    "answers": [
+      "A. 11",
+      "B. 59",
+      "C. 22",
+      "D. 14"
+    ],
+    "correctAnswer": "C"
+  },
+  {
+    "category": "Miscellaneous",
+    "question": "At the 1996 Summer Olympics, in what sport was the U.S. team nicknamed the “Magnificent 7”?",
+    "answers": [
+      "A. Diving",
+      "B. Gymnastics",
+      "C. Swimming",
+      "D. Track and Field"
+    ],
+    "correctAnswer": "B"
+  },
+  {
+    "category": "Miscellaneous",
+    "question": "Which animal is, according to the New York Times, by far the most expensive animal to keep in a zoo?",
+    "answers": [
+      "A. Hippo",
+      "B. Toucan",
+      "C. Elephant",
+      "D. Giant panda"
+    ],
+    "correctAnswer": "D"
+  },
+  {
+    "category": "Miscellaneous",
+    "question": "How many players are on the ice per team in an Ice Hockey game?",
+    "answers": [
+      "A. 8",
+      "B. 7",
+      "C. 5",
+      "D. 6"
+    ],
+    "correctAnswer": "D"
+  },
+  {
+    "category": "Miscellaneous",
+    "question": "What is the alcoholic beverage ‘sake’ made of?",
+    "answers": [
+      "A. Rice",
+      "B. Wasabi",
+      "C. Soybeans",
+      "D. Seafood"
+    ],
+    "correctAnswer": "A"
+  },
+  {
+    "category": "Miscellaneous",
+    "question": "Which is an Icelandic traditional dish?",
+    "answers": [
+      "A. Rugbrød",
+      "B. Lutefisk",
+      "C. Sheep’s head",
+      "D. Krebinetter"
+    ],
+    "correctAnswer": "C"
+  },
+  {
+    "category": "Miscellaneous",
+    "question": "In 1989, NHL player Pelle Eklund scored the fastest goal in NHL playoff history. How long did it take?",
+    "answers": [
+      "A. 22 Seconds",
+      "B. 11 Seconds",
+      "C. 31 Seconds",
+      "D. 5 Seconds"
+    ],
+    "correctAnswer": "D"
+  },
+  {
+    "category": "Miscellaneous",
+    "question": "First released in 1982, what actor’s workout videos gained worldwide popularity?",
+    "answers": [
+      "A. Raquel Welch",
+      "B. Jaqueline Smith",
+      "C. Heather Locklear",
+      "D. Jane Fonda"
+    ],
+    "correctAnswer": "D"
+  },
+  {
+    "category": "Miscellaneous",
+    "question": "What Italian brand of handbags, footwear, accessories, … was founded in 1921 in Florence?",
+    "answers": [
+      "A. Delpozo",
+      "B. Dolce & Gabbana",
+      "C. Hugo Boss",
+      "D. Gucci"
+    ],
+    "correctAnswer": "D"
+  },
+  {
+    "category": "Miscellaneous",
+    "question": "Which country does gouda cheese come from?",
+    "answers": [
+      "A. Denmark",
+      "B. Netherlands",
+      "C. Switzerland",
+      "D. Belgium"
+    ],
+    "correctAnswer": "B"
+  },
+  {
+    "category": "Miscellaneous",
+    "question": "Which of these martial arts has its origins in China?",
+    "answers": [
+      "A. Krav Maga",
+      "B. Jujutsu",
+      "C. Karate",
+      "D. Kung fu"
+    ],
+    "correctAnswer": "D"
+  },
+  {
+    "category": "Miscellaneous",
+    "question": "Worldwide, what is the third most popular drink?",
+    "answers": [
+      "A. Tea",
+      "B. Beer",
+      "C. Water",
+      "D. Coffee"
+    ],
+    "correctAnswer": "A"
+  },
+  {
+    "category": "Miscellaneous",
+    "question": "Which company was the first to use Santa Claus in an ad?",
+    "answers": [
+      "A. Walmart",
+      "B. Target",
+      "C. Pepsi",
+      "D. Coca Cola"
+    ],
+    "correctAnswer": "D"
+  },
+  {
+    category: 'Miscellaneous',
     question: "Which planet is known as the 'Morning Star'?",
     answers: [
       'A. Mars',
@@ -26,7 +235,7 @@ const triviaData = [
     correctAnswer: 'B'
   },
   {
-    category: 'miscellaneous',
+    category: 'Miscellaneous',
     question: 'Who is the lead vocalist of the rock band Queen?',
     answers: [
       'A. Freddie Mercury',
@@ -37,7 +246,7 @@ const triviaData = [
     correctAnswer: 'A'
   },
   {
-    category: 'miscellaneous',
+    category: 'Miscellaneous',
     question: 'In Greek mythology, who was the king of the gods?',
     answers: [
       'A. Zeus',
@@ -48,7 +257,7 @@ const triviaData = [
     correctAnswer: 'A'
   },
   {
-    category: 'miscellaneous',
+    category: 'Miscellaneous',
     question: 'What is the chemical symbol for iron?',
     answers: [
       'A. Ir',
@@ -59,7 +268,7 @@ const triviaData = [
     correctAnswer: 'B'
   },
   {
-    category: 'miscellaneous',
+    category: 'Miscellaneous',
     question: 'What is the largest ocean on Earth?',
     answers: [
       'A. Atlantic Ocean',
@@ -70,7 +279,7 @@ const triviaData = [
     correctAnswer: 'D'
   },
   {
-    category: 'miscellaneous',
+    category: 'Miscellaneous',
     question: "Who painted the famous artwork 'The Starry Night'?",
     answers: [
       'A. Pablo Picasso',
@@ -81,7 +290,7 @@ const triviaData = [
     correctAnswer: 'B'
   },
   {
-    category: 'miscellaneous',
+    category: 'Miscellaneous',
     question: 'What is the chemical symbol for sodium?',
     answers: [
       'A. Sa',
@@ -92,7 +301,7 @@ const triviaData = [
     correctAnswer: 'D'
   },
   {
-    category: 'miscellaneous',
+    category: 'Miscellaneous',
     question: 'Which continent is the largest by land area?',
     answers: [
       'A. Africa',
@@ -103,7 +312,7 @@ const triviaData = [
     correctAnswer: 'B'
   },
   {
-    category: 'miscellaneous',
+    category: 'Miscellaneous',
     question: "Who is known as the 'Father of Modern Physics'?",
     answers: [
       'A. Isaac Newton',
@@ -114,7 +323,7 @@ const triviaData = [
     correctAnswer: 'A'
   },
   {
-    category: 'miscellaneous',
+    category: 'Miscellaneous',
     question: 'What is the main ingredient in hummus?',
     answers: [
       'A. Chickpeas',
@@ -125,7 +334,7 @@ const triviaData = [
     correctAnswer: 'A'
   },
   {
-    category: 'miscellaneous',
+    category: 'Miscellaneous',
     question: 'What is the chemical symbol for silver?',
     answers: [
       'A. Si',
@@ -899,149 +1108,82 @@ const triviaData = [
   // NATURE & ANIMALS
 
   {
-    question: 'Which of these animals don’t live in the wild in Australia?',
-    answers: ['A. Possum', 'B. Opossum', 'C. Kookaburra', 'D. Koala'],
-    correctAnswer: 'B'
+    "category": "Nature and Animals",
+    "question": "Which of these animals don't live in the wild in Australia?",
+    "answers": [
+      "A. Possum",
+      "B. Opossum",
+      "C. Kookaburra",
+      "D. Koala"
+    ],
+    "correctAnswer": "B"
   },
   {
-    question: 'Hickory trees produce which types of nuts?',
-    answers: ['A. Pistachios', 'B. Pecans', 'C. Macadamia', 'D. Walnuts'],
-    correctAnswer: 'B'
+    "category": "Nature and Animals",
+    "question": "Hickory trees produce which types of nuts?",
+    "answers": [
+      "A. Pistachios",
+      "B. Pecans",
+      "C. Macadamia",
+      "D. Walnuts"
+    ],
+    "correctAnswer": "B"
   },
   {
-    question: 'Which planet is known as the morning star, as well as the evening star?',
-    answers: ['A. Mars', 'B. Jupiter', 'C. Saturn', 'D. Venus'],
-    correctAnswer: 'D'
+    "category": "Nature and Animals",
+    "question": "Which planet is known as the morning star, as well as the evening star?",
+    "answers": [
+      "A. Mars",
+      "B. Jupiter",
+      "C. Saturn",
+      "D. Venus"
+    ],
+    "correctAnswer": "D"
   },
   {
-    question: 'What color skin does a polar bear have?',
-    answers: ['A. Pink', 'B. Gray', 'C. White', 'D. Black'],
-    correctAnswer: 'C'
+    "category": "Nature and Animals",
+    "question": "What color skin does a polar bear have?",
+    "answers": [
+      "A. Pink",
+      "B. Gray",
+      "C. White",
+      "D. Black"
+    ],
+    "correctAnswer": "C"
   },
   {
-    question: 'A Blue Whale has a heart roughly the size of a what?',
-    answers: ['A. VW Beetle', 'B. Basketball', 'C. Peanut', 'D. Grapefruit'],
-    correctAnswer: 'D'
+    "category": "Nature and Animals",
+    "question": "A Blue Whale has a heart roughly the size of a what?",
+    "answers": [
+      "A. VW Beetle",
+      "B. Basketball",
+      "C. Peanut",
+      "D. Grapefruit"
+    ],
+    "correctAnswer": "D"
   },
   {
-    question: 'This region, famous for its wines, only produces 4% of California’s wines. What is the name of this region?',
-    answers: ['A. Snake River Valley', 'B. Sonoma', 'C. Los Carneros', 'D. Napa Valley'],
-    correctAnswer: 'D'
+    "category": "Nature and Animals",
+    "question": "This region, famous for its wines, only produces 4% of California's wines. What is the name of this region?",
+    "answers": [
+      "A. Snake River Valley",
+      "B. Sonoma",
+      "C. Los Carneros",
+      "D. Napa Valley"
+    ],
+    "correctAnswer": "D"
   },
   {
-    question: 'A mongoose would typically feed on which of the following types of animal?',
-    answers: ['A. Stork', 'B. Earthworm', 'C. Hyena', 'D. Meerkat'],
-    correctAnswer: 'D'
+    "category": "Nature and Animals",
+    "question": "A mongoose would typically feed on which of the following types of animal?",
+    "answers": [
+      "A. Stork",
+      "B. Earthworm",
+      "C. Hyena",
+      "D. Meerkat"
+    ],
+    "correctAnswer": "D"
   },
-  {
-    question: 'Which country flag, nicknamed “The Maple Leaf’, consists of a red field with a white square and features a red maple leaf at its center?',
-    answers: ['A. Turkey', 'B. Vietnam', 'C. Canada', 'D. Colombia'],
-    correctAnswer: 'C'
-  },
-
-  // SPORTS & LEISURE
-
-  {
-    question: 'Which athlete has won eight gold medals at a single Olympics?',
-    answers: ['A. Vera Caslavska', 'B. Michael Phelps', 'C. Lloyd Spooner', 'D. Agnes Keleti'],
-    correctAnswer: 'B'
-  },
-  {
-    question: 'What popular beverage once contained cocaine?',
-    answers: ['A. Powerade', 'B. Coca-Cola', 'C. Schweppes', 'D. Dr Pepper'],
-    correctAnswer: 'B'
-  },
-  {
-    question: 'Which is the largest food and drink company in the world?',
-    answers: ['A. Kellogg Company', 'B. Pepsi', 'C. Nestlé', 'D. Danone'],
-    correctAnswer: 'C'
-  },
-  {
-    question: 'Henry John Heinz founded a company specializing in the production of which food product?',
-    answers: ['A. Mustard', 'B. Relish', 'C. Mayonnaise', 'D. Ketchup'],
-    correctAnswer: 'D'
-  },
-  {
-    question: 'The name of which game is derived from the Swahili word which means ‘to build’?',
-    answers: ['A. Jenga', 'B. K’Nex', 'C. Lego', 'D. Kepla'],
-    correctAnswer: 'A'
-  },
-  {
-    question: 'What is the primary ingredient in guacamole?',
-    answers: ['A. Banana', 'B. Avocado', 'C. Pineapple', 'D. Tomato'],
-    correctAnswer: 'B'
-  },
-  {
-    question: 'In a game of bingo, which number is traditionally represented by the phrase “two little ducks”?',
-    answers: ['A. 11', 'B. 59', 'C. 22', 'D. 14'],
-    correctAnswer: 'C'
-  },
-  {
-    question: 'At the 1996 Summer Olympics, in what sport was the U.S. team nicknamed the “Magnificent 7”?',
-    answers: ['A. Diving', 'B. Gymnastics', 'C. Swimming', 'D. Track and Field'],
-    correctAnswer: 'B'
-  },
-  {
-    question: 'Which animal is, according to the New York times, by far the most expensive animal to keep in a zoo?',
-    answers: ['A. Hippo', 'B. Toucan', 'C. Elephant', 'D. Giant panda'],
-    correctAnswer: 'D'
-  },
-  {
-    question: 'How many players are on the ice per team in an Ice Hockey game?',
-    answers: ['A. 8', 'B. 7', 'C. 5', 'D. 6'],
-    correctAnswer: 'D'
-  },
-  {
-    question: 'What is the alcoholic beverage ‘sake’ made of?',
-    answers: ['A. Rice', 'B. Wasabi', 'C. Soybeans', 'D. Seafood'],
-    correctAnswer: 'A'
-  },
-  {
-    question: 'What is the maximum time allowed to find a lost ball while playing Golf?',
-    answers: ['A. 6', 'B. 4', 'C. 7', 'D. 5'],
-    correctAnswer: 'D'
-  },
-  {
-    question: 'Which is an Icelandic traditional dish?',
-    answers: ['A. Rugbrød', 'B. Lutefisk', 'C. Sheep’s head', 'D. Krebinetter'],
-    correctAnswer: 'C'
-  },
-  {
-    question: 'In 1989, NHL player Pelle Eklund scored the fastest goal in NHL playoff history. How long did it take?',
-    answers: ['A. 22 Seconds', 'B. 11 Seconds', 'C. 31 Seconds', 'D. 5 Seconds'],
-    correctAnswer: 'D'
-  },
-  {
-    question: 'First released in 1982, what actor’s workout videos gained worldwide popularity?',
-    answers: ['A. Raquel Welch', 'B. Jaqueline Smith', 'C. Heather Locklear', 'D. Jane Fonda'],
-    correctAnswer: 'D'
-  },
-  {
-    question: 'What Italian brand of handbags, footwear, accessories, … was founded in 1921 in Florence?',
-    answers: ['A. Delpozo', 'B. Dolce & Gabbana', 'C. Hugo Boss', 'D. Gucci'],
-    correctAnswer: 'D'
-  },
-  {
-    question: 'Which country does gouda cheese come from?',
-    answers: ['A. Denmark', 'B. Netherlands', 'C. Switzerland', 'D. Belgium'],
-    correctAnswer: 'B'
-  },
-  {
-    question: 'Which of these martial arts has its origins in China?',
-    answers: ['A. Krav Maga', 'B. Jujutsu', 'C. Karate', 'D. Kung fu'],
-    correctAnswer: 'D'
-  },
-  {
-    question: 'Worldwide, what is the third most popular drink?',
-    answers: ['A. Tea', 'B. Beer', 'C. Water', 'D. Coffee'],
-    correctAnswer: 'A'
-  },
-  {
-    question: 'Which company was the first to use Santa Claus in an ad?',
-    answers: ['A. Walmart', 'B. Target', 'C. Pepsi', 'D. Coca Cola'],
-    correctAnswer: 'D'
-  }
-
 ]
 
 let currentQuestion = null
