@@ -14,7 +14,7 @@ async function handleTriviaStart (room) {
     })
   } else {
     currentQuestion = getNewQuestion(usedQuestions)
-    const triviaMessage = `Question: ${currentQuestion.question}\nOptions: ${currentQuestion.answers.join(', ')}`
+    const triviaMessage = `${currentQuestion.question}\n ${currentQuestion.answers.join('\n')}`
     await postMessage({
       room,
       message: triviaMessage

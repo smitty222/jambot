@@ -49,39 +49,6 @@ const triviaData = [
   },
   {
     category: 'Miscellaneous',
-    question: 'Henry John Heinz founded a company specializing in the production of which food product?',
-    answers: [
-      'A. Mustard',
-      'B. Relish',
-      'C. Mayonnaise',
-      'D. Ketchup'
-    ],
-    correctAnswer: 'D'
-  },
-  {
-    category: 'Miscellaneous',
-    question: 'The name of which game is derived from the Swahili word which means ‘to build’?',
-    answers: [
-      'A. Jenga',
-      'B. K’Nex',
-      'C. Lego',
-      'D. Kepla'
-    ],
-    correctAnswer: 'A'
-  },
-  {
-    category: 'Miscellaneous',
-    question: 'What is the primary ingredient in guacamole?',
-    answers: [
-      'A. Banana',
-      'B. Avocado',
-      'C. Pineapple',
-      'D. Tomato'
-    ],
-    correctAnswer: 'B'
-  },
-  {
-    category: 'Miscellaneous',
     question: 'In a game of bingo, which number is traditionally represented by the phrase “two little ducks”?',
     answers: [
       'A. 11',
