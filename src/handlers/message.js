@@ -95,7 +95,7 @@ export default async (payload, room, state) => {
   } else if (payload.message.startsWith('/secret')) {
     await postMessage({
       room,
-      message: 'Sssshhhhhh be very quiet. These are top secret\n- /bark\n- /barkbark\n- /drink\n- /djbeers\n- /getdjdrunk\n- /ass\n- /azz\n- /cam\n- /shirley\n- /berad'
+      message: 'Sssshhhhhh be very quiet. These are top secret\n- /bark\n- /barkbark\n- /drink\n- /djbeers\n- /getdjdrunk\n- /jam\n- /ass\n- /azz\n- /cam\n- /shirley\n- /berad'
     })
     /// /////////////// General Commands ////////////////
   } else if (payload.message.startsWith('/theme')) {
@@ -277,14 +277,36 @@ export default async (payload, room, state) => {
     } catch (error) {
       console.error('Error Voting on Song', error)
     }
-  /*
+  
   } else if (payload.message.startsWith('/unstar')) {
     try {
       await roomBot.voteOnSong(process.env.ROOM_UUID, { star: false }, process.env.BOT_USER_UUID)
     } catch (error) {
       console.error('Error Voting on Song', error)
     }
-    */
+  } else if (payload.message.startsWith('/jam')) {
+    const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  
+    try {
+      for (let i = 0; i < 10; i++) {
+        
+        await roomBot.voteOnSong(process.env.ROOM_UUID, { star: true }, process.env.BOT_USER_UUID);
+        console.log(`Round ${i + 1}: Starred the song`);
+  
+        await roomBot.playOneTimeAnimation('jump', process.env.ROOM_UUID, process.env.BOT_USER_UUID);
+        console.log(`Round ${i + 1}: Bot jumped`);
+  
+        await delay(500);
+  
+        await roomBot.voteOnSong(process.env.ROOM_UUID, { star: false }, process.env.BOT_USER_UUID);
+        console.log(`Round ${i + 1}: Unstarred the song`);
+  
+        await delay(500);
+      }
+    } catch (error) {
+      console.error('Error Jamming', error);
+    }
+
   } else if (payload.message.startsWith('/berad')) {
     await postMessage({
       room,
