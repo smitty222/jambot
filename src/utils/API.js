@@ -82,7 +82,7 @@ async function fetchCurrentlyPlayingSong () {
   const roomUUID = process.env.ROOM_UUID // Replace with your room UUID
 
   try {
-    const response = await fetch(`https://rooms.prod.tt.fm/rooms/uuid/${roomUUID}`, {
+    const response = await fetch(`https://gateway.prod.tt.fm/api/room-service/rooms/uuid/${roomUUID}`, {
       headers: {
         Authorization: `Bearer ${token}`,
         accept: 'application/json'
@@ -112,7 +112,7 @@ async function fetchRecentSongs () {
   const token = process.env.TTL_USER_TOKEN
 
   try {
-    const response = await fetch('https://playlists.prod.tt.fm/rooms/just-jams/recent-songs', {
+    const response = await fetch('https://gateway.prod.tt.fm/api/playlist-service/rooms/just-jams/recent-songs', {
       headers: {
         Authorization: `Bearer ${token}`,
         accept: 'application/json'
@@ -134,7 +134,7 @@ async function fetchCurrentUsers () {
   const token = process.env.TTL_USER_TOKEN
 
   try {
-    const response = await fetch('https://rooms.prod.tt.fm/rooms/just-jams', {
+    const response = await fetch('https://gateway.prod.tt.fm/api/room-service/rooms/just-jams', {
       headers: {
         Authorization: `Bearer ${token}`,
         accept: 'application/json'
@@ -163,7 +163,7 @@ async function fetchUserData (userUUIDs) {
     throw new Error('No user UUIDs provided')
   }
 
-  const endpoint = `https://api.prod.tt.fm/users/profiles?users=${userUUIDs.join(',')}`
+  const endpoint = `https://gateway.prod.tt.fm/api/user-service/users/profiles?users=${userUUIDs.join(',')}`
 
   if (!token) {
     console.error('TTL_USER_TOKEN is not set')
@@ -210,7 +210,7 @@ async function fetchUserData (userUUIDs) {
   }
 }
 
-const USER_ROLES_URL = 'https://rooms.prod.tt.fm/roomUserRoles/just-jams' // Adjusted URL with room slug
+const USER_ROLES_URL = 'https://gateway.prod.tt.fm/api/room-service/roomUserRoles/just-jams' // Adjusted URL with room slug
 
 async function fetchUserRoles (userUuid, token) {
   try {
@@ -250,7 +250,7 @@ async function currentsongduration () {
 
   try {
     console.log('Fetching currently playing song duration...')
-    const response = await fetch(`https://rooms.prod.tt.fm/rooms/uuid/${roomUUID}`, {
+    const response = await fetch(`https://gateway.prod.tt.fm/api/room-service/rooms/uuid/${roomUUID}`, {
       headers: {
         Authorization: `Bearer ${token}`,
         accept: 'application/json'
