@@ -1,10 +1,10 @@
 // message.js
 import { postMessage } from '../libs/cometchat.js'
 import { askQuestion } from '../libs/ai.js'
-import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, displayTriviaInfo, currentQuestion, totalPoints } from '../handlers/triviaCommands.js'
+import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, totalPoints } from '../handlers/triviaCommands.js'
 import { logger } from '../utils/logging.js'
 import { roomBot } from '../index.js'
-import { fetchCurrentlyPlayingSong, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData } from '../utils/API.js'
+import { fetchCurrentlyPlayingSong, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSongData } from '../utils/API.js'
 import { handleLotteryCommand, handleLotteryNumber, LotteryGameActive } from '../utils/lotteryGame.js'
 import { addTracksToPlaylist, removeTrackFromPlaylist } from '../utils/playlistUpdate.js'
 import { enableSongStats, disableSongStats, songStatsEnabled } from '../utils/voteCounts.js'
@@ -12,9 +12,11 @@ import { enableGreetingMessages, disableGreetingMessages, greetingMessagesEnable
 import { getCurrentDJ } from '../libs/bot.js'
 import { resetCurrentQuestion } from './triviaData.js'
 
+
 const ttlUserToken = process.env.TTL_USER_TOKEN
 export const roomThemes = {}
 const usersToBeRemoved = {}
+
 
 // Messages
 export default async (payload, room, state) => {
@@ -26,31 +28,83 @@ export default async (payload, room, state) => {
     return
   }
 
-  // AI Chat Stuff
-  if (
-    typeof payload.message === 'string' &&
+// AI Chat Stuff
+if (
+  typeof payload.message === 'string' &&
   payload.message.includes(`@${process.env.CHAT_NAME}`) &&
   payload.senderName &&
   !payload.senderName.startsWith(`@${process.env.BOT_USER_UUID}`) &&
   !payload.message.includes('played')
-  ) {
-    try {
-      const question = payload.message.replace(`@${process.env.CHAT_NAME}`, '').trim()
-      const reply = await askQuestion(question)
-      const responseText = reply?.text || (typeof reply === 'string' ? reply : null)
+) {
+  try {
+    const question = payload.message.replace(`@${process.env.CHAT_NAME}`, '').trim().toLowerCase();
+    console.log(`Received question: "${question}"`);
+    logger.info(`Received question: "${question}" from ${payload.senderName}`);
 
-      await postMessage({
-        room,
-        message: responseText || 'Sorry, I could not generate a response at the moment.'
-      })
-    } catch (error) {
-      logger.error('Error handling AI response:', error)
-      await postMessage({
-        room,
-        message: 'Sorry, something went wrong trying to process your message.'
-      })
+    let context = question;
+
+    // Check if the question is related to the current song
+    if (question.includes('song is this') || question.includes('this song') || question.includes('song is playing')) {
+      const currentSong = roomBot.currentSong;
+
+      // Log the current song details to make sure they're captured correctly
+      if (currentSong) {
+        console.log(`Current song details: ${JSON.stringify(currentSong)}`);
+        logger.info(`Current song details: ${JSON.stringify(currentSong)}`);
+
+        // Add song details to the context
+        const artistText = currentSong.artistName ? `by ${currentSong.artistName}` : '';
+        context = `The current song is "${currentSong.trackName}" ${artistText}. ${question} briefly`;
+      } else {
+        console.warn('No song is currently playing or trackName is missing.');
+        logger.warn('No song is currently playing or trackName is missing.');
+
+        await postMessage({
+          room,
+          message: 'No song is currently playing.'
+        });
+        return; 
+      }
+    }
+    
+    // Check if the question includes "popularity score"
+    if (question.includes('popularity score')) {
+      context = `The popularity of the track comes from Spotify's metrics. The value will be between 0 and 100, with 100 being the most popular.
+      The popularity of a track is a value between 0 and 100, with 100 being the most popular. The popularity is calculated by algorithm and is based, in the most part, on the total number of plays the track has had and how recent those plays are.
+      Generally speaking, songs that are being played a lot now will have a higher popularity than songs that were played a lot in the past. Duplicate tracks (e.g. the same track from a single and an album) are rated independently. Artist and album popularity is derived mathematically from track popularity. Note: the popularity value may lag actual popularity by a few days: the value is not updated in real time. ${question}`;
     }
 
+    if (context) {
+      console.log(`Context passed to AI: "${context}"`);
+      logger.info(`Context passed to AI: "${context}"`);
+
+      const reply = await askQuestion(context);
+      const responseText = reply?.text || (typeof reply === 'string' ? reply : 'Sorry, I could not generate a response at the moment.');
+
+      console.log('AI Reply:', responseText);
+      logger.info(`AI Reply: ${responseText}`);
+
+      await postMessage({
+        room,
+        message: responseText
+      });
+    } else {
+      console.log('No question found in the message');
+      await postMessage({
+        room,
+        message: 'Please provide a question for me to answer.'
+      });
+    }
+
+  } catch (error) {
+    logger.error('Error handling AI response:', error);
+    await postMessage({
+      room,
+      message: 'Sorry, something went wrong trying to process your message.'
+    });
+  }
+
+    
     /// //////////// LOTTERY GAME ////////////////////////////////////////////
   } else if (payload.message.startsWith('/lottery')) {
     try {
@@ -72,12 +126,14 @@ export default async (payload, room, state) => {
     await handleLotteryNumber(payload)
 
     /// ///////////// Commands Start Here. ////////////////////////
+    
   } else if (payload.message.startsWith('/hello')) {
     await postMessage({
       room,
       message: 'Hi!'
     })
-  } else if (payload.message.startsWith('/commands')) {
+  
+} else if (payload.message.startsWith('/commands')) {
     await postMessage({
       room,
       message: 'General commands are:\n- /theme : Checks the current room theme\n- /trivia : Trivia Game\n- /lottery: Numbers!\n- /jump : Makes the bot jump\n- /dislike : Makes the bot downvote\n- /addDJ : Adds the bot as DJ\n- /removeDJ : Removes the bot as DJ\n- /dive : Remove yourself from the stage\n- /escortme : Stagedive after your next song\n- /djbeer : Gives the DJ a beer\n- /gifs : Bot will list all GIF commands\n- /mod : Bot will list all Mod commands'
@@ -95,7 +151,7 @@ export default async (payload, room, state) => {
   } else if (payload.message.startsWith('/secret')) {
     await postMessage({
       room,
-      message: 'Sssshhhhhh be very quiet. These are top secret\n- /bark\n- /barkbark\n- /drink\n- /djbeers\n- /getdjdrunk\n- /jam\n- /ass\n- /azz\n- /cam\n- /shirley\n- /berad'
+      message: 'Sssshhhhhh be very quiet. These are top secret\n- /bark\n- /barkbark\n- /drink\n- /djbeers\n- /getdjdrunk\n- /jam\n- /ass\n- /azz\n- /cam\n- /shirley\n- /berad\n- /ello'
     })
     /// /////////////// General Commands ////////////////
   } else if (payload.message.startsWith('/theme')) {
@@ -329,6 +385,32 @@ export default async (payload, room, state) => {
         room,
         message: '',
         images: [GifUrl]
+      })
+    } catch (error) {
+      console.error('Error processing command:', error.message)
+    }
+  } else if (payload.message.startsWith('/ello')) {
+    try {
+      const GifUrl = 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdjczM2hxOHRtZWlxdmVoamsxZHA5NHk3OXljemMyeXBubzhpMTFkYyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/3vPU8fnm8HZ1C/giphy.gif'
+      await postMessage({
+        room,
+        message: '',
+        images: [GifUrl]
+      })
+    } catch (error) {
+      console.error('Error processing command:', error.message)
+    }
+  } else if (payload.message.startsWith('/allen')) {
+    try {
+      const danceImageOptions = [
+        'https://media.giphy.com/media/sA8nO56Gj9RHq/giphy.gif?cid=790b7611h6b5ihdlko5foubqcifo0e3h0i7e6p1vo2h8znzj&ep=v1_gifs_search&rid=giphy.gif&ct=g',
+        ''
+      ]
+      const randomDanceImageUrl = danceImageOptions[Math.floor(Math.random() * danceImageOptions.length)]
+      await postMessage({
+        room,
+        message: '',
+        images: [randomDanceImageUrl]
       })
     } catch (error) {
       console.error('Error processing command:', error.message)
@@ -745,6 +827,199 @@ export default async (payload, room, state) => {
         room,
         message: `Error: ${error.message}`
       })
+    }
+    ///////////////// SPOTIFY STUFF ////////////////////////////
+  } else if (payload.message.startsWith('/nextsong')) {  
+    const nextSong = roomBot.nextSong;
+    if (nextSong && nextSong.trackName) {
+      const songDetails = `Track Name: ${nextSong.trackName}\nArtist Name: ${nextSong.artistName}`;
+      await postMessage({
+        room,
+        message: songDetails
+      });
+    } else {
+      await postMessage({
+        room,
+        message: 'No song is currently playing or trackName is missing.'
+      });
+    }
+  
+  } else if (payload.message.startsWith('/song')) {  
+    const currentSong = roomBot.currentSong;
+    if (currentSong && currentSong.trackName) {
+      const songDetails = `Track Name: ${currentSong.trackName}\nArtist Name: ${currentSong.artistName}\n${currentSong.spotifyUrl}`;
+      await postMessage({
+        room,
+        message: songDetails
+      });
+    } else {
+      await postMessage({
+        room,
+        message: 'No song is currently playing or trackName is missing.'
+      });
+    }
+  } else if (payload.message.startsWith('/album')) {    
+    const currentSong = roomBot.currentSong;
+    if (currentSong && currentSong.trackName) {
+        // Prepare album details as a text message
+        const albumDetails = `Album Name: ${currentSong.albumName}\nArtist Name: ${currentSong.artistName}\nTrack Name: ${currentSong.trackName}\nTrack ${currentSong.trackNumber} of ${currentSong.totalTracks}`;
+
+        // Prepare image URL array
+        const albumArtUrl = currentSong.albumArt;
+        const images = albumArtUrl ? [albumArtUrl] : []; // Ensure it's an array
+
+        // Send text message first
+        await postMessage({
+            room,
+            message: albumDetails // Text details
+        });
+
+        // Send image message after
+        if (images.length > 0) {
+            await postMessage({
+                room,
+                images: images // Image URLs
+            });
+        }
+    } else {
+        await postMessage({
+            room,
+            message: 'No song is currently playing or trackName is missing.'
+        });
+    }
+
+  } else if (payload.message.startsWith('/art')) {
+    const currentSong = roomBot.currentSong;
+    if (currentSong && currentSong.albumArt) {
+        // Prepare image URL array
+        const albumArtUrl = currentSong.albumArt;
+        const images = albumArtUrl ? [albumArtUrl] : []; // Ensure it's an array
+
+        // Send image message only
+        if (images.length > 0) {
+            await postMessage({
+                room,
+                images: images // Image URLs
+            });
+        }
+}
+  } else if (payload.message.startsWith('/score')) {  
+    const currentSong = roomBot.currentSong;
+    if (currentSong && currentSong.trackName) {
+      const songDetails = `${currentSong.trackName} by ${currentSong.artistName} received a popularity score of ${currentSong.popularity} out of 100`;
+      await postMessage({
+        room,
+        message: songDetails
+      });
+
+    } else {
+      await postMessage({
+        room,
+        message: 'No song is currently playing or trackName is missing.'
+      });
+    }
+  } else if (payload.message.startsWith('/audio?')) {  
+    const currentSong = roomBot.currentSong;
+    if (currentSong && currentSong.trackName) {
+      const audioDetails = "Acousticness: Confidence (0.0 to 1.0) of how acoustic a track is. 1.0 means high confidence it's acoustic.\n\nDanceability: Suitability for dancing (0.0 to 1.0). 1.0 is most danceable, considering tempo, rhythm, and beat.\n\nEnergy: Intensity and activity (0.0 to 1.0). 1.0 is highly energetic, with features like loudness and tempo.\n\nInstrumentalness: Likelihood (0.0 to 1.0) that a track is instrumental. Values close to 1.0 suggest no vocals.\n\nLiveness: Presence of an audience (0.0 to 1.0). Higher values mean a greater likelihood the track is live.\n\nLoudness: Overall loudness in decibels (dB). Values range from -60 to 0 dB, showing the relative loudness of the track.\n\nSpeechiness: Likelihood (0.0 to 1.0) that the track contains spoken words. Values above 0.66 indicate mostly speech.\n\nTempo: Estimated beats per minute (BPM). Reflects the speed or pace of the track.\n\nValence: Musical positiveness (0.0 to 1.0). Higher values are more positive (happy, cheerful), lower values are more negative (sad, angry).";
+      await postMessage({
+        room,
+        message: audioDetails
+      });
+    }
+  } else if (payload.message.startsWith('/audio')) {  
+    const currentSong = roomBot.currentSong;
+    if (currentSong && currentSong.trackName) {
+      const audioDetails = `Audio Stats for ${currentSong.trackName}\n\nAcousticness: ${currentSong.audioFeatures.acousticness}\n Danceability: ${currentSong.audioFeatures.danceability}\n Energy: ${currentSong.audioFeatures.energy}\n Instrumentalness: ${currentSong.audioFeatures.instrumentalness}\n Liveness: ${currentSong.audioFeatures.liveness}\n Loudness: ${currentSong.audioFeatures.loudness}\n Speechiness: ${currentSong.audioFeatures.speechiness}\n Tempo: ${currentSong.audioFeatures.tempo}\n Valence: ${currentSong.audioFeatures.valence}\n\n\n use '/audio?' for details on each statistic`;
+      await postMessage({
+        room,
+        message: audioDetails
+      });
+    }
+  } else if (roomBot.currentSong.audioFeatures.loudness > -3.5) {
+    try {
+        const currentSong = roomBot.currentSong;
+        if (currentSong.trackName && currentSong.trackName !== 'Unknown') {
+            const GifUrl = 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExZzlhdm9mZ2xnb3VqNmdxMDEyYWx1bTgyMjZ2aHJ3bmFwajY5NXVidCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/126CZqbY33wNgc/giphy.gif';
+            await postMessage({
+                room,
+                images: [GifUrl]
+            });
+            await postMessage({
+                room,
+                message: `${currentSong.trackName} by ${currentSong.artistName} scored a loudness rating of ${currentSong.audioFeatures.loudness} dB on a scale of -60 to 0`
+            });
+        }
+    } catch (error) {
+        console.error('Error posting message:', error);
+    }
+  } else if (roomBot.currentSong.audioFeatures.danceability > .8) {
+    try {
+        const currentSong = roomBot.currentSong;
+        if (currentSong.trackName && currentSong.trackName !== 'Unknown') {
+            const GifUrl = 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNGIyenJzdHZlM3Z4ZzAxdWFmNDNhMHF6cGhpZmhmc2g4eGp4NTh1eiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/JTgOyVfSRiMDmNcoj0/giphy.gif';
+            await postMessage({
+                room,
+                images: [GifUrl]
+            });
+            await postMessage({
+                room,
+                message: `${currentSong.trackName} by ${currentSong.artistName} scored a danceability rating of ${currentSong.audioFeatures.danceability} on a scale of 0 to 1. Start dancing!`
+            });
+        }
+    } catch (error) {
+        console.error('Error posting message:', error);
+    }
+  } else if (roomBot.currentSong.audioFeatures.energy > .8) {
+    try {
+        const currentSong = roomBot.currentSong;
+        if (currentSong.trackName && currentSong.trackName !== 'Unknown') {
+            const GifUrl = 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExaGQwYjFrbjNoeG9haXF5bWJxd2Y1aGY5amo0M25uNmpqNWJvamRnNSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/sfvVcEvsC6BoI/giphy.gif';
+            await postMessage({
+                room,
+                images: [GifUrl]
+            });
+            await postMessage({
+                room,
+                message: `${currentSong.trackName} by ${currentSong.artistName} scored an energy rating of ${currentSong.audioFeatures.energy} on a scale of 0 to 1.`
+            });
+        }
+    } catch (error) {
+        console.error('Error posting message:', error);
+    }
+  } else if (roomBot.currentSong.audioFeatures.valence > .8) {
+    try {
+        const currentSong = roomBot.currentSong;
+        if (currentSong.trackName && currentSong.trackName !== 'Unknown') {
+            const GifUrl = 'https://media.giphy.com/media/CyoQdbc7FHqqTpkSPI/giphy.gif?cid=790b76114q12xnozb9iot6dvhsh7d7mwp179jxtyr6b8thrz&ep=v1_gifs_search&rid=giphy.gif&ct=g';
+            await postMessage({
+                room,
+                images: [GifUrl]
+            });
+            await postMessage({
+                room,
+                message: `${currentSong.trackName} by ${currentSong.artistName} scored a valence rating of ${currentSong.audioFeatures.valence} on a scale of 0 to 1 meaning this is a very happy song!`
+            });
+        }
+    } catch (error) {
+        console.error('Error posting message:', error);
+    }
+  } else if (roomBot.currentSong.audioFeatures.valence < .2) {
+    try {
+        const currentSong = roomBot.currentSong;
+        if (currentSong.trackName && currentSong.trackName !== 'Unknown') {
+            const GifUrl = 'https://media.giphy.com/media/yONd8hlMtvY1W/giphy.gif?cid=ecf05e47xbgk28p1ogoi4v0t2um19vhafeqpg89c93mcjkbw&ep=v1_gifs_search&rid=giphy.gif&ct=g';
+            await postMessage({
+                room,
+                images: [GifUrl]
+            });
+            await postMessage({
+                room,
+                message: `${currentSong.trackName} by ${currentSong.artistName} scored a valence rating of ${currentSong.audioFeatures.valence} on a scale of 0 to 1 meaning this is a very sad song..you're bumming me out`
+            });
+        }
+    } catch (error) {
+        console.error('Error posting message:', error);
     }
     /// /////////////  Trivia Stuff /////////////////////////////
   } else if (payload.message.startsWith('/triviastart')) {

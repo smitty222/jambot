@@ -74,6 +74,97 @@ async function fetchSpotifyPlaylistTracks () {
 
   return tracks
 }
+async function spotifyTrackInfo(trackId) {
+  const url = `https://api.spotify.com/v1/tracks/${trackId}`;
+  try {
+    if (!accessToken) {
+      accessToken = await getAccessToken(config.clientId, config.clientSecret);
+    }
+    const options = {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${accessToken}` }
+    };
+    const response = await fetch(url, options);
+    const trackInfo = await response.json();
+    if (!response.ok) {
+      console.error('Error fetching track info:', trackInfo);
+      return null;
+    }
+    const spotifyTrackDetails = {
+      spotifyTrackName: trackInfo.name || 'Unknown',
+      spotifyArtistName: trackInfo.artists.map(artist => artist.name).join(', ') || 'Unknown',
+      spotifyAlbumName: trackInfo.album.name || 'Unknown',
+      spotifyReleaseDate: trackInfo.album.release_date || 'Unknown',
+      spotifyAlbumType: trackInfo.album.album_type || 'Unknown', // Added album type
+      spotifyTrackNumber: trackInfo.track_number || 'Unknown', // Added track number
+      spotifyTotalTracks: trackInfo.album.total_tracks || 'Unknown', // Added total tracks
+      spotifyDuration: trackInfo.duration_ms 
+        ? `${Math.floor(trackInfo.duration_ms / 60000)}:${((trackInfo.duration_ms % 60000) / 1000).toFixed(0).padStart(2, '0')}` 
+        : 'Unknown',
+      spotifyAlbumArt: trackInfo.album.images?.[0]?.url || '',
+      spotifyPopularity: trackInfo.popularity || 0,
+      spotifyPreviewUrl: trackInfo.preview_url || '',
+      spotifySpotifyUrl: trackInfo.external_urls.spotify || '',
+      spotifyIsrc: trackInfo.external_ids.isrc || 'Unknown',
+    };
+    return spotifyTrackDetails;
+  } catch (error) {
+    console.error('Error fetching track info:', error);
+    return null;
+  }
+}
+async function fetchTrackDetails(trackUri) {
+  const trackId = trackUri.split(':').pop();
+  const accessToken = await getAccessToken(config.clientId, config.clientSecret);
+
+  try {
+    const response = await fetch(`https://api.spotify.com/v1/tracks/${trackId}`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch track details: ${response.statusText}`);
+    }
+
+    const trackData = await response.json();
+    return {
+      title: trackData.name,
+      artist: trackData.artists.map(artist => artist.name).join(', ')
+    };
+  } catch (error) {
+    console.error('Error fetching track details:', error);
+    return null;
+  }
+}
+async function fetchAudioFeatures(trackId) {
+  const url = `https://api.spotify.com/v1/audio-features/${trackId}`;
+  
+  try {
+    if (!accessToken) {
+      accessToken = await getAccessToken(config.clientId, config.clientSecret);
+    }
+
+    const options = {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${accessToken}` }
+    };
+
+    const response = await fetch(url, options);
+    const audioFeatures = await response.json();
+
+    if (!response.ok) {
+      console.error('Error fetching audio features:', audioFeatures);
+      throw new Error('Failed to fetch audio features');
+    }
+
+    return audioFeatures;
+  } catch (error) {
+    console.error('Error fetching audio features:', error);
+    throw error; // Optionally rethrow the error to be handled upstream
+  }
+}
 
 /// //////////// TURNTABLE API /////////////////////////////
 
@@ -129,6 +220,32 @@ async function fetchRecentSongs () {
     throw new Error(`Error fetching recent songs: ${error.message}`)
   }
 }
+
+async function fetchSongData(spotifyUrl) {
+  const token = process.env.TTL_USER_TOKEN;
+
+  // Encode the Spotify URL to match the format expected by the API
+  const encodedUrl = encodeURIComponent(spotifyUrl);
+
+  try {
+    const response = await fetch(`https://gateway.prod.tt.fm/api/playlist-service/song-data/${encodedUrl}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        accept: 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch song data: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    throw new Error(`Error fetching song data: ${error.message}`);
+  }
+}
+
 
 async function fetchCurrentUsers () {
   const token = process.env.TTL_USER_TOKEN
@@ -277,4 +394,4 @@ async function currentsongduration () {
   }
 }
 
-export { getAccessToken, currentsongduration, isUserAuthorized, fetchUserRoles, fetchUserData, fetchRecentSongs, fetchCurrentUsers, fetchSpotifyPlaylistTracks, fetchCurrentlyPlayingSong }
+export { getAccessToken, currentsongduration, fetchAudioFeatures, spotifyTrackInfo, fetchTrackDetails, isUserAuthorized, fetchUserRoles, fetchUserData, fetchRecentSongs, fetchCurrentUsers, fetchSpotifyPlaylistTracks, fetchCurrentlyPlayingSong, fetchSongData }

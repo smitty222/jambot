@@ -28,7 +28,15 @@ export const postMessage = async (options) => {
     id: uuidv4()
   }
 
-  if (options.images) customData.imageUrls = options.images
+  // Handle images
+  if (options.images) {
+    customData.imageUrls = options.images; // Ensure imageUrls is an array of URLs
+  }
+
+  // Handle GIFs
+  if (options.gifs) {
+    customData.gifUrls = options.gifs; // For GIFs if needed
+  }
 
   if (options.mentions) {
     customData.mentions = options.mentions.map((mention) => ({

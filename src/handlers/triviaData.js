@@ -177,7 +177,7 @@ const triviaData = [
       'C. Water',
       'D. Coffee'
     ],
-    correctAnswer: 'A'
+    correctAnswer: 'B'
   },
   {
     category: 'Miscellaneous',
