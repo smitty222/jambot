@@ -1,5 +1,6 @@
 import { postMessage } from '../libs/cometchat.js'
 import { fetchRecentSongs } from './API.js'
+import { roomBot } from '../index.js'
 
 let songStatsEnabled = false
 
@@ -29,11 +30,11 @@ async function postVoteCountsForLastSong (room) {
       })
       return
     }
-
+    const popularity = roomBot.currentSong.popularity
     const { song, voteCounts } = lastSong
     const { artistName, trackName } = song
     const { likes = 0, dislikes = 0, stars = 0 } = voteCounts // Provide default values if not available
-    const message = `${trackName} by ${artistName} - 👍: ${likes}, 👎: ${dislikes}, ⭐: ${stars}`
+    const message = `${trackName} by ${artistName}:\n 👍: ${likes}\n 👎: ${dislikes}\n ⭐: ${stars}\n Popularity Score: ${popularity} out of 100`
 
     await postMessage({
       room,

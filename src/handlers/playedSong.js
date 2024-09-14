@@ -15,13 +15,9 @@ const handleAlbumTheme = async (payload) => {
     try {
       const room = process.env.ROOM_UUID;
       const theme = (roomThemes[room] || '').toLowerCase(); // Convert to lowercase for case-insensitive comparison
-  
-      console.log(`Current room theme: ${theme}`);
-  
-      // Check if the theme matches any of the album-related themes
+
       const albumThemes = ['album monday', 'albums', 'album day'];
       if (!albumThemes.includes(theme)) {
-        console.log('Room theme does not match any of the album themes. Skipping album event handling.');
         return;
       }
   
@@ -137,14 +133,10 @@ const handleAlbumTheme = async (payload) => {
 const handleCoversTheme = async (payload) => {
     try {
         const room = process.env.ROOM_UUID;
-        const theme = (roomThemes[room] || '').toLowerCase(); // Convert to lowercase for case-insensitive comparison
-
-        console.log(`Current room theme: ${theme}`);
-       
+        const theme = (roomThemes[room] || '').toLowerCase(); // Convert to lowercase for case-insensitive comparison       
         // Check if the theme matches any of the cover-related themes
         const coverThemes = ['cover friday', 'covers', 'cover'];
         if (!coverThemes.includes(theme)) {
-            console.log('Room theme does not match any of the cover themes. Skipping cover event handling.');
             return;
         }
 

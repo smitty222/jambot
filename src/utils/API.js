@@ -166,38 +166,77 @@ async function fetchAudioFeatures(trackId) {
   }
 }
 
+async function fetchSpotifyRecommendations(seedArtists = [], seedGenres = [], seedTracks = [], limit = 5) {
+  const recommendationsUrl = 'https://api.spotify.com/v1/recommendations';
+
+  try {
+    if (!accessToken) {
+      accessToken = await getAccessToken(config.clientId, config.clientSecret);
+    }
+
+    // Construct the query parameters
+    const params = new URLSearchParams({
+      seed_artists: seedArtists.join(','),  
+      seed_genres: seedGenres.join(','),
+      seed_tracks: seedTracks.join(','),
+      limit: 5 
+    });
+
+    const options = {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${accessToken}` }
+    };
+
+    const response = await fetch(`${recommendationsUrl}?${params}`, options);
+    
+    if (!response.ok) {
+      
+      const errorResponse = await response.json();
+      console.error('Error fetching recommendations:', errorResponse);
+      throw new Error(`Failed to fetch recommendations: ${errorResponse.error.message}`);
+    }
+
+    const recommendations = await response.json();
+    return recommendations.tracks; // Return only the tracks array
+
+  } catch (error) {
+    console.error('Error fetching Spotify recommendations:', error);
+    return []; // Return an empty array in case of error
+  }
+}
+
 /// //////////// TURNTABLE API /////////////////////////////
 
-async function fetchCurrentlyPlayingSong () {
-  const token = process.env.TTL_USER_TOKEN
-  const roomUUID = process.env.ROOM_UUID // Replace with your room UUID
+async function fetchCurrentlyPlayingSong() {
+  const token = process.env.TTL_USER_TOKEN;
+  const roomUUID = process.env.ROOM_UUID; // Replace with your room UUID
 
   try {
     const response = await fetch(`https://gateway.prod.tt.fm/api/room-service/rooms/uuid/${roomUUID}`, {
       headers: {
         Authorization: `Bearer ${token}`,
-        accept: 'application/json'
-      }
-    })
+        accept: 'application/json',
+      },
+    });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch current song: ${response.statusText}`)
+      throw new Error(`Failed to fetch current song: ${response.statusText}`);
     }
 
-    const data = await response.json()
-    const song = data.song
+    const data = await response.json();
+    const song = data.song;
 
     if (song && song.musicProviders && song.musicProviders.spotify) {
-      const spotifyTrackId = song.musicProviders.spotify.split(':').pop()
-      const spotifyTrackURI = `spotify:track:${spotifyTrackId}` // Construct Spotify track URI
-      return spotifyTrackURI
+      const spotifyTrackId = song.musicProviders.spotify.split(':').pop(); // Extract only the track ID part
+      return spotifyTrackId; // Return only the track ID, not the full URI
     } else {
-      throw new Error('Spotify track info not found in the current song')
+      throw new Error('Spotify track info not found in the current song');
     }
   } catch (error) {
-    throw new Error(`Error fetching current song: ${error.message}`)
+    throw new Error(`Error fetching current song: ${error.message}`);
   }
 }
+
 
 async function fetchRecentSongs () {
   const token = process.env.TTL_USER_TOKEN
@@ -224,7 +263,6 @@ async function fetchRecentSongs () {
 async function fetchSongData(spotifyUrl) {
   const token = process.env.TTL_USER_TOKEN;
 
-  // Encode the Spotify URL to match the format expected by the API
   const encodedUrl = encodeURIComponent(spotifyUrl);
 
   try {
@@ -394,4 +432,4 @@ async function currentsongduration () {
   }
 }
 
-export { getAccessToken, currentsongduration, fetchAudioFeatures, spotifyTrackInfo, fetchTrackDetails, isUserAuthorized, fetchUserRoles, fetchUserData, fetchRecentSongs, fetchCurrentUsers, fetchSpotifyPlaylistTracks, fetchCurrentlyPlayingSong, fetchSongData }
+export { getAccessToken, currentsongduration, fetchSpotifyRecommendations, fetchAudioFeatures, spotifyTrackInfo, fetchTrackDetails, isUserAuthorized, fetchUserRoles, fetchUserData, fetchRecentSongs, fetchCurrentUsers, fetchSpotifyPlaylistTracks, fetchCurrentlyPlayingSong, fetchSongData }

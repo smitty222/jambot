@@ -3,12 +3,13 @@ import { SocketClient } from 'ttfm-socket'
 import { joinChat, getMessages, postMessage } from './cometchat.js'
 import { logger } from '../utils/logging.js'
 import { handlers } from '../handlers/index.js'
-import { fetchSpotifyPlaylistTracks, fetchCurrentUsers, spotifyTrackInfo, fetchAudioFeatures } from '../utils/API.js'
+import { fetchSpotifyPlaylistTracks, fetchCurrentUsers, spotifyTrackInfo, fetchAudioFeatures, fetchCurrentlyPlayingSong } from '../utils/API.js'
 import { postVoteCountsForLastSong, songStatsEnabled } from '../utils/voteCounts.js'
 import { usersToBeRemoved } from '../handlers/message.js'
 import { escortUserFromDJStand } from '../utils/escortDJ.js'
 import handleUserJoinedWithStatePatch from '../handlers/userJoined.js'
 import { handleAlbumTheme, handleCoversTheme } from '../handlers/playedSong.js'
+import { checkAndPostAudioFeatures } from '../utils/audioFeatures.js'
 
 export function getCurrentDJUUIDs (state) {
   if (!state?.djs) {
@@ -18,7 +19,6 @@ export function getCurrentDJUUIDs (state) {
 }
 
 export function getCurrentSpotifyUrl() {
-  // Directly use the global or externally managed `currentSong`
   if (currentSong && currentSong.spotifyUrl) {
     return currentSong.spotifyUrl;
   } else {
@@ -26,6 +26,7 @@ export function getCurrentSpotifyUrl() {
     return null;
   }
 }
+
 function isUserDJ (senderUuid, state) {
   const currentDJs = getCurrentDJUUIDs(state) // Get the list of DJ UUIDs
   return currentDJs.includes(senderUuid) //
@@ -57,6 +58,8 @@ export class Bot {
     this.lastPlayedTrackURI = null
     this.currentRoomUsers = []
     this.autobop = true
+    this.audioStatsEnabled = true
+    this.recentSpotifyTrackIds = []
     this.currentSong = { 
       trackName: 'Unknown',
       spotifyTrackId: null,
@@ -109,6 +112,8 @@ export class Bot {
     this.autobop = false
   }
 
+  
+
   async connect () {
     logger.debug('Connecting to room')
     try {
@@ -123,6 +128,14 @@ export class Bot {
     } catch (error) {
       logger.error('Error connecting to room:', error)
     }
+  }
+
+  updateRecentSpotifyTrackIds(trackId) {
+    if (this.recentSpotifyTrackIds.length >= 5) {
+      this.recentSpotifyTrackIds.shift(); // Remove the oldest ID
+    }
+    this.recentSpotifyTrackIds.push(trackId); // Add the new ID
+    console.log(`Updated recentSpotifyTrackIds: ${JSON.stringify(this.recentSpotifyTrackIds)}`);
   }
 
   async processNewMessages () {
@@ -171,8 +184,7 @@ export class Bot {
     this.socket.on('statefulMessage', async (payload) => {
         self.state = fastJson.applyPatch(self.state, payload.statePatch).newDocument;
         logger.debug(`State updated for ${payload.name}`);
-        console.log('Received statefulMessage payload:', JSON.stringify(payload, null, 2));
-  
+    
         if (payload.name === 'userJoined') {
             try {
                 await handleUserJoinedWithStatePatch(payload);
@@ -185,24 +197,11 @@ export class Bot {
           try {
             let spotifyTrackId = null;
         
-            // Check the primary path for Spotify Track ID
-            const spotifyTrackIdPatch = payload.statePatch.find(patch => patch.path === '/nowPlaying/song/musicProviders/spotify');
-            if (spotifyTrackIdPatch) {
-              spotifyTrackId = spotifyTrackIdPatch.value;
-            }
-        
-            // If not found, check the secondary path
-            if (!spotifyTrackId) {
-              const musicProvidersPatch = payload.statePatch.find(patch => patch.path === '/nowPlaying/song/musicProviders/spotify');
-              if (musicProvidersPatch && musicProvidersPatch.value) {
-                spotifyTrackId = musicProvidersPatch.value.spotify || null;
-              }
-            }
-        
-            // Log Spotify Track ID and the entire statePatch for debugging
-            console.log('Spotify Track ID:', spotifyTrackId);
-            console.log('Complete statePatch:', JSON.stringify(payload.statePatch, null, 2));
-        
+            try {
+              spotifyTrackId = await fetchCurrentlyPlayingSong();  // Fetch the Spotify track ID from the API
+          } catch (fetchError) {
+              console.error('Error fetching Spotify Track ID:', fetchError.message);
+          }
             // Fetch additional track details using the Spotify Track ID
                 if (spotifyTrackId) {
                     const trackInfo = await spotifyTrackInfo(spotifyTrackId);
@@ -248,7 +247,9 @@ export class Bot {
                         }
                       };
 
-                        console.log(`Updated currentSong: ${JSON.stringify(self.currentSong)}`);
+                        self.updateRecentSpotifyTrackIds(spotifyTrackId);
+
+                        console.log(`Updated currentSong: ${JSON.stringify(self.currentSong.trackName)}`);
                         
                         try {
                             await handleAlbumTheme(payload);
@@ -256,6 +257,8 @@ export class Bot {
                         } catch (error) {
                             logger.error('Error handling album or covers theme event:', error);
                         }
+                        
+                        await checkAndPostAudioFeatures(this.currentSong, process.env.ROOM_UUID);
 
                         // Handle DJ logic
                         const currentDJ = getCurrentDJ(self.state);
@@ -266,7 +269,6 @@ export class Bot {
                         }
                     }
                 }
-
                 
 
                 self.scheduleLikeSong(process.env.ROOM_UUID, process.env.BOT_USER_UUID);
@@ -416,7 +418,6 @@ export class Bot {
       }
 
       if (!this.state?.djs.some(dj => dj.uuid === process.env.BOT_USER_UUID)) {
-        console.log('Bot is not currently a DJ. Skipping updateNextSong.')
         return
       }
 
