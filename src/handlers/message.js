@@ -12,11 +12,9 @@ import { enableGreetingMessages, disableGreetingMessages, greetingMessagesEnable
 import { getCurrentDJ } from '../libs/bot.js'
 import { resetCurrentQuestion } from './triviaData.js'
 
-
 const ttlUserToken = process.env.TTL_USER_TOKEN
 export const roomThemes = {}
 const usersToBeRemoved = {}
-
 
 // Messages
 export default async (payload, room, state) => {
@@ -28,83 +26,85 @@ export default async (payload, room, state) => {
     return
   }
 
-// AI Chat Stuff
-if (
-  typeof payload.message === 'string' &&
+  // AI Chat Stuff
+  if (
+    typeof payload.message === 'string' &&
   payload.message.includes(`@${process.env.CHAT_NAME}`) &&
   payload.senderName &&
   !payload.senderName.startsWith(`@${process.env.BOT_USER_UUID}`) &&
   !payload.message.includes('played')
-) {
-  try {
-    const question = payload.message.replace(`@${process.env.CHAT_NAME}`, '').trim().toLowerCase();
-    console.log(`Received question: "${question}"`);
-    logger.info(`Received question: "${question}" from ${payload.senderName}`);
+  ) {
+    try {
+      const question = payload.message.replace(`@${process.env.CHAT_NAME}`, '').trim().toLowerCase()
+      console.log(`Received question: "${question}"`)
+      logger.info(`Received question: "${question}" from ${payload.senderName}`)
 
-    let context = question;
+      let context = question
 
-    // Check if the question is related to the current song
-    if (question.includes('song is this') || question.includes('this song') || question.includes('song is playing')) {
-      const currentSong = roomBot.currentSong;
+      if (question.includes('song is this') || question.includes('this song') || question.includes('song is playing')| question.includes('this')) {
+        const currentSong = roomBot.currentSong
 
-      // Log the current song details to make sure they're captured correctly
-      if (currentSong) {
-        console.log(`Current song details: ${JSON.stringify(currentSong)}`);
-        logger.info(`Current song details: ${JSON.stringify(currentSong)}`);
+        if (currentSong) {
+          console.log(`Current song details: ${JSON.stringify(currentSong)}`)
+          logger.info(`Current song details: ${JSON.stringify(currentSong)}`)
 
-        // Add song details to the context
-        const artistText = currentSong.artistName ? `by ${currentSong.artistName}` : '';
-        context = `The current song is "${currentSong.trackName}" ${artistText}. ${question} briefly`;
-      } else {
-        console.warn('No song is currently playing or trackName is missing.');
-        logger.warn('No song is currently playing or trackName is missing.');
+          const artistText = currentSong.artistName ? `by ${currentSong.artistName}` : ''
+          context = `The current song is "${currentSong.trackName}" ${artistText}. ${question} briefly`
+        } else {
+          console.warn('No song is currently playing or trackName is missing.')
+          logger.warn('No song is currently playing or trackName is missing.')
+
+          await postMessage({
+            room,
+            message: 'No song is currently playing.'
+          })
+          return
+        }
+      }
+      if (question.includes('you good?')) {
+        await postMessage({
+          room,
+          message: 'Couldnt be better'
+        })
+      }
+
+
+      // Check if the question includes "popularity score"
+      if (question.includes('popularity score')) {
+        context = `The popularity of the track comes from Spotify's metrics. The value will be between 0 and 100, with 100 being the most popular.
+      The popularity of a track is a value between 0 and 100, with 100 being the most popular. The popularity is calculated by algorithm and is based, in the most part, on the total number of plays the track has had and how recent those plays are.
+      Generally speaking, songs that are being played a lot now will have a higher popularity than songs that were played a lot in the past. Duplicate tracks (e.g. the same track from a single and an album) are rated independently. Artist and album popularity is derived mathematically from track popularity. Note: the popularity value may lag actual popularity by a few days: the value is not updated in real time. ${question}`
+      }
+
+      if (context) {
+        console.log(`Context passed to AI: "${context}"`)
+        logger.info(`Context passed to AI: "${context}"`)
+
+        const reply = await askQuestion(context)
+        const responseText = reply?.text || (typeof reply === 'string' ? reply : 'Sorry, I could not generate a response at the moment.')
+
+        console.log('AI Reply:', responseText)
+        logger.info(`AI Reply: ${responseText}`)
 
         await postMessage({
           room,
-          message: 'No song is currently playing.'
-        });
-        return; 
+          message: responseText
+        })
+      } else {
+        console.log('No question found in the message')
+        await postMessage({
+          room,
+          message: 'Please provide a question for me to answer.'
+        })
       }
-    }
-    
-    // Check if the question includes "popularity score"
-    if (question.includes('popularity score')) {
-      context = `The popularity of the track comes from Spotify's metrics. The value will be between 0 and 100, with 100 being the most popular.
-      The popularity of a track is a value between 0 and 100, with 100 being the most popular. The popularity is calculated by algorithm and is based, in the most part, on the total number of plays the track has had and how recent those plays are.
-      Generally speaking, songs that are being played a lot now will have a higher popularity than songs that were played a lot in the past. Duplicate tracks (e.g. the same track from a single and an album) are rated independently. Artist and album popularity is derived mathematically from track popularity. Note: the popularity value may lag actual popularity by a few days: the value is not updated in real time. ${question}`;
-    }
-
-    if (context) {
-      console.log(`Context passed to AI: "${context}"`);
-      logger.info(`Context passed to AI: "${context}"`);
-
-      const reply = await askQuestion(context);
-      const responseText = reply?.text || (typeof reply === 'string' ? reply : 'Sorry, I could not generate a response at the moment.');
-
-      console.log('AI Reply:', responseText);
-      logger.info(`AI Reply: ${responseText}`);
-
+    } catch (error) {
+      logger.error('Error handling AI response:', error)
       await postMessage({
         room,
-        message: responseText
-      });
-    } else {
-      console.log('No question found in the message');
-      await postMessage({
-        room,
-        message: 'Please provide a question for me to answer.'
-      });
+        message: 'Sorry, something went wrong trying to process your message.'
+      })
     }
 
-  } catch (error) {
-    logger.error('Error handling AI response:', error);
-    await postMessage({
-      room,
-      message: 'Sorry, something went wrong trying to process your message.'
-    });
-  }
-
-    
     /// //////////// LOTTERY GAME ////////////////////////////////////////////
   } else if (payload.message.startsWith('/lottery')) {
     try {
@@ -126,14 +126,12 @@ if (
     await handleLotteryNumber(payload)
 
     /// ///////////// Commands Start Here. ////////////////////////
-    
   } else if (payload.message.startsWith('/hello')) {
     await postMessage({
       room,
       message: 'Hi!'
     })
-  
-} else if (payload.message.startsWith('/commands')) {
+  } else if (payload.message.startsWith('/commands')) {
     await postMessage({
       room,
       message: 'General commands are:\n- /theme: Checks the current room theme\n- /trivia: Trivia Game\n- /lottery: Numbers!\n- /jump: Makes the bot jump\n- /dislike: Makes the bot downvote\n- /addDJ: Adds the bot as DJ\n- /removeDJ: Removes the bot as DJ\n- /dive: Remove yourself from the stage\n- /escortme: Stagedive after your next song\n- /djbeer: Gives the DJ a beer\n- /audio: Bot will list spotify audio stats for song\n- /gifs: Bot will list all GIF commands\n- /mod: Bot will list all Mod commands'
@@ -333,7 +331,6 @@ if (
     } catch (error) {
       console.error('Error Voting on Song', error)
     }
-  
   } else if (payload.message.startsWith('/unstar')) {
     try {
       await roomBot.voteOnSong(process.env.ROOM_UUID, { star: false }, process.env.BOT_USER_UUID)
@@ -341,28 +338,26 @@ if (
       console.error('Error Voting on Song', error)
     }
   } else if (payload.message.startsWith('/jam')) {
-    const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-  
+    const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms))
+
     try {
       for (let i = 0; i < 10; i++) {
-        
-        await roomBot.voteOnSong(process.env.ROOM_UUID, { star: true }, process.env.BOT_USER_UUID);
-        console.log(`Round ${i + 1}: Starred the song`);
-  
-        await roomBot.playOneTimeAnimation('jump', process.env.ROOM_UUID, process.env.BOT_USER_UUID);
-        console.log(`Round ${i + 1}: Bot jumped`);
-  
-        await delay(500);
-  
-        await roomBot.voteOnSong(process.env.ROOM_UUID, { star: false }, process.env.BOT_USER_UUID);
-        console.log(`Round ${i + 1}: Unstarred the song`);
-  
-        await delay(500);
+        await roomBot.voteOnSong(process.env.ROOM_UUID, { star: true }, process.env.BOT_USER_UUID)
+        console.log(`Round ${i + 1}: Starred the song`)
+
+        await roomBot.playOneTimeAnimation('jump', process.env.ROOM_UUID, process.env.BOT_USER_UUID)
+        console.log(`Round ${i + 1}: Bot jumped`)
+
+        await delay(500)
+
+        await roomBot.voteOnSong(process.env.ROOM_UUID, { star: false }, process.env.BOT_USER_UUID)
+        console.log(`Round ${i + 1}: Unstarred the song`)
+
+        await delay(500)
       }
     } catch (error) {
-      console.error('Error Jamming', error);
+      console.error('Error Jamming', error)
     }
-
   } else if (payload.message.startsWith('/berad')) {
     await postMessage({
       room,
@@ -721,9 +716,8 @@ if (
         message: 'An error occurred while getting status. Please try again.'
       })
     }
-  }
   /// /////////// Mod Toggle Commands //////////////
-  else if (payload.message.startsWith('/bopon')) {
+  } else if (payload.message.startsWith('/bopon')) {
     try {
       await roomBot.enableAutoBop()
       await postMessage({
@@ -840,8 +834,8 @@ if (
         })
         return
       }
-        roomBot.audioStatsEnabled = true;
-        await postMessage({ room, message: 'Audio stats messages enabled.' });
+      roomBot.audioStatsEnabled = true
+      await postMessage({ room, message: 'Audio stats messages enabled.' })
     } catch (error) {
       console.error('Error enabling song stats:', error)
       await postMessage({
@@ -860,8 +854,8 @@ if (
         })
         return
       }
-        roomBot.audioStatsEnabled = false;
-        await postMessage({ room, message: 'Audio stats messages disabled.' });
+      roomBot.audioStatsEnabled = false
+      await postMessage({ room, message: 'Audio stats messages disabled.' })
     } catch (error) {
       console.error('Error enabling song stats:', error)
       await postMessage({
@@ -869,136 +863,135 @@ if (
         message: `Error: ${error.message}`
       })
     }
-    ///////////////// SPOTIFY STUFF ////////////////////////////
-  } else if (payload.message.startsWith('/nextsong')) {  
-    const nextSong = roomBot.nextSong;
+    /// ////////////// SPOTIFY STUFF ////////////////////////////
+  } else if (payload.message.startsWith('/nextsong')) {
+    const nextSong = roomBot.nextSong
     if (nextSong && nextSong.trackName) {
-      const songDetails = `Track Name: ${nextSong.trackName}\nArtist Name: ${nextSong.artistName}`;
+      const songDetails = `Track Name: ${nextSong.trackName}\nArtist Name: ${nextSong.artistName}`
       await postMessage({
         room,
         message: songDetails
-      });
+      })
     } else {
       await postMessage({
         room,
         message: 'No song is currently playing or trackName is missing.'
-      });
+      })
     }
-  
-  } else if (payload.message.startsWith('/song')) {  
-    const currentSong = roomBot.currentSong;
+  } else if (payload.message.startsWith('/song')) {
+    const currentSong = roomBot.currentSong
     if (currentSong && currentSong.trackName) {
-      const songDetails = `Track Name: ${currentSong.trackName}\nArtist Name: ${currentSong.artistName}\n${currentSong.spotifyUrl}`;
+      const songDetails = `Track Name: ${currentSong.trackName}\nArtist Name: ${currentSong.artistName}\n${currentSong.spotifyUrl}`
       await postMessage({
         room,
         message: songDetails
-      });
+      })
     } else {
       await postMessage({
         room,
         message: 'No song is currently playing or trackName is missing.'
-      });
+      })
     }
-  } else if (payload.message.startsWith('/album')) {    
-    const currentSong = roomBot.currentSong;
+  } else if (payload.message.startsWith('/album')) {
+    const currentSong = roomBot.currentSong
     if (currentSong && currentSong.trackName) {
-        const albumDetails = `Album Name: ${currentSong.albumName}\nArtist Name: ${currentSong.artistName}\nTrack Name: ${currentSong.trackName}\nTrack ${currentSong.trackNumber} of ${currentSong.totalTracks}`;
-        const albumArtUrl = currentSong.albumArt;
-        const images = albumArtUrl ? [albumArtUrl] : []; 
+      const albumDetails = `Album Name: ${currentSong.albumName}\nArtist Name: ${currentSong.artistName}\nTrack Name: ${currentSong.trackName}\nTrack ${currentSong.trackNumber} of ${currentSong.totalTracks}`
+      const albumArtUrl = currentSong.albumArt
+      const images = albumArtUrl ? [albumArtUrl] : []
+      await postMessage({
+        room,
+        message: albumDetails
+      })
+      if (images.length > 0) {
         await postMessage({
-            room,
-            message: albumDetails 
-        });
-        if (images.length > 0) {
-            await postMessage({
-                room,
-                images: images 
-            });
-        }
+          room,
+          images
+        })
+      }
     } else {
-        await postMessage({
-            room,
-            message: 'No song is currently playing or trackName is missing.'
-        });
+      await postMessage({
+        room,
+        message: 'No song is currently playing or trackName is missing.'
+      })
     }
   } else if (payload.message.startsWith('/art')) {
-    const currentSong = roomBot.currentSong;
+    const currentSong = roomBot.currentSong
     if (currentSong && currentSong.albumArt) {
-        const albumArtUrl = currentSong.albumArt;
-        const images = albumArtUrl ? [albumArtUrl] : [];
-        if (images.length > 0) {
-            await postMessage({
-                room,
-                images: images 
-            });
-        }
-}
-  } else if (payload.message.startsWith('/score')) {  
-    const currentSong = roomBot.currentSong;
+      const albumArtUrl = currentSong.albumArt
+      const images = albumArtUrl ? [albumArtUrl] : []
+      if (images.length > 0) {
+        await postMessage({
+          room,
+          images
+        })
+      }
+    }
+  } else if (payload.message.startsWith('/score')) {
+    const currentSong = roomBot.currentSong
     if (currentSong && currentSong.trackName) {
-      const songDetails = `${currentSong.trackName} by ${currentSong.artistName} received a popularity score of ${currentSong.popularity} out of 100`;
+      const songDetails = `${currentSong.trackName} by ${currentSong.artistName} received a popularity score of ${currentSong.popularity} out of 100`
       await postMessage({
         room,
         message: songDetails
-      });
+      })
     } else {
       await postMessage({
         room,
         message: 'No song is currently playing or trackName is missing.'
-      });
+      })
     }
-  } else if (payload.message.startsWith('/audio?')) {  
-    const currentSong = roomBot.currentSong;
+  } else if (payload.message.startsWith('/audio?')) {
+    const currentSong = roomBot.currentSong
     if (currentSong && currentSong.trackName) {
-      const audioDetails = "Acousticness: Confidence (0.0 to 1.0) of how acoustic a track is. 1.0 means high confidence it's acoustic.\n\nDanceability: Suitability for dancing (0.0 to 1.0). 1.0 is most danceable, considering tempo, rhythm, and beat.\n\nEnergy: Intensity and activity (0.0 to 1.0). 1.0 is highly energetic, with features like loudness and tempo.\n\nInstrumentalness: Likelihood (0.0 to 1.0) that a track is instrumental. Values close to 1.0 suggest no vocals.\n\nLiveness: Presence of an audience (0.0 to 1.0). Higher values mean a greater likelihood the track is live.\n\nLoudness: Overall loudness in decibels (dB). Values range from -60 to 0 dB, showing the relative loudness of the track.\n\nSpeechiness: Likelihood (0.0 to 1.0) that the track contains spoken words. Values above 0.66 indicate mostly speech.\n\nTempo: Estimated beats per minute (BPM). Reflects the speed or pace of the track.\n\nValence: Musical positiveness (0.0 to 1.0). Higher values are more positive (happy, cheerful), lower values are more negative (sad, angry).";
+      const audioDetails = "Acousticness: Confidence (0.0 to 1.0) of how acoustic a track is. 1.0 means high confidence it's acoustic.\n\nDanceability: Suitability for dancing (0.0 to 1.0). 1.0 is most danceable, considering tempo, rhythm, and beat.\n\nEnergy: Intensity and activity (0.0 to 1.0). 1.0 is highly energetic, with features like loudness and tempo.\n\nInstrumentalness: Likelihood (0.0 to 1.0) that a track is instrumental. Values close to 1.0 suggest no vocals.\n\nLiveness: Presence of an audience (0.0 to 1.0). Higher values mean a greater likelihood the track is live.\n\nLoudness: Overall loudness in decibels (dB). Values range from -60 to 0 dB, showing the relative loudness of the track.\n\nSpeechiness: Likelihood (0.0 to 1.0) that the track contains spoken words. Values above 0.66 indicate mostly speech.\n\nTempo: Estimated beats per minute (BPM). Reflects the speed or pace of the track.\n\nValence: Musical positiveness (0.0 to 1.0). Higher values are more positive (happy, cheerful), lower values are more negative (sad, angry)."
       await postMessage({
         room,
         message: audioDetails
-      });
+      })
     }
-  } else if (payload.message.startsWith('/audio')) {  
-    const currentSong = roomBot.currentSong;
+  } else if (payload.message.startsWith('/audio')) {
+    const currentSong = roomBot.currentSong
     if (currentSong && currentSong.trackName) {
-      const audioDetails = `Audio Stats for ${currentSong.trackName}\n\nAcousticness: ${currentSong.audioFeatures.acousticness}\n Danceability: ${currentSong.audioFeatures.danceability}\n Energy: ${currentSong.audioFeatures.energy}\n Instrumentalness: ${currentSong.audioFeatures.instrumentalness}\n Liveness: ${currentSong.audioFeatures.liveness}\n Loudness: ${currentSong.audioFeatures.loudness}\n Speechiness: ${currentSong.audioFeatures.speechiness}\n Tempo: ${currentSong.audioFeatures.tempo}\n Valence: ${currentSong.audioFeatures.valence}\n\n\n use '/audio?' for details on each statistic`;
+      const audioDetails = `Audio Stats for ${currentSong.trackName}\n\nAcousticness: ${currentSong.audioFeatures.acousticness}\n Danceability: ${currentSong.audioFeatures.danceability}\n Energy: ${currentSong.audioFeatures.energy}\n Instrumentalness: ${currentSong.audioFeatures.instrumentalness}\n Liveness: ${currentSong.audioFeatures.liveness}\n Loudness: ${currentSong.audioFeatures.loudness}\n Speechiness: ${currentSong.audioFeatures.speechiness}\n Tempo: ${currentSong.audioFeatures.tempo}\n Valence: ${currentSong.audioFeatures.valence}\n\n\n use '/audio?' for details on each statistic`
       await postMessage({
         room,
         message: audioDetails
-      });
+      })
     }
-  } else if (payload.message.startsWith('/suggestsong')) {  
-    const seedTracks = roomBot.recentSpotifyTrackIds.slice(0, 5);
-    console.log('Fetching recommendations with seedTracks:', seedTracks);
+  } else if (payload.message.startsWith('/suggestsong')) {
+    const seedTracks = roomBot.recentSpotifyTrackIds.slice(0, 5)
+    console.log('Fetching recommendations with seedTracks:', seedTracks)
 
     try {
-      const recommendations = await fetchSpotifyRecommendations([], [], seedTracks, 5);
+      const recommendations = await fetchSpotifyRecommendations([], [], seedTracks, 5)
 
       if (recommendations.length > 0) {
-        let recommendationsMessage = 'Based on the last 5 songs played in this room, here are 5 suggested songs you might like\n\n';
+        let recommendationsMessage = 'Based on the last 5 songs played in this room, here are 5 suggested songs you might like\n\n'
         recommendations.forEach((track, index) => {
-          recommendationsMessage += `${index + 1}. **${track.name}** by ${track.artists.map(artist => artist.name).join(', ')}\n`;
-          recommendationsMessage += `   Album: ${track.album.name}\n`;
-          recommendationsMessage += `   Release Date: ${track.album.release_date}\n`;
-          recommendationsMessage += `   Popularity: ${track.popularity}\n\n`;
-        });
+          recommendationsMessage += `${index + 1}. **${track.name}** by ${track.artists.map(artist => artist.name).join(', ')}\n`
+          recommendationsMessage += `   Album: ${track.album.name}\n`
+          recommendationsMessage += `   Release Date: ${track.album.release_date}\n`
+          recommendationsMessage += `   Popularity: ${track.popularity}\n\n`
+        })
         await postMessage({
           room,
           message: recommendationsMessage
-        });
+        })
       } else {
         await postMessage({
           room,
           message: 'No recommendations available'
-        });
+        })
       }
     } catch (error) {
-      console.error('Error in /suggestsong command:', error);
+      console.error('Error in /suggestsong command:', error)
       await postMessage({
         room,
         message: 'Could not fetch suggested songs. Please try again later.'
-      });
+      })
     }
     if (payload.message.includes('song feature')) {
-      await handleSongFeature(room);
+      await handleSongFeature(room)
     }
     /// /////////////  Trivia Stuff /////////////////////////////
   } else if (payload.message.startsWith('/triviastart')) {

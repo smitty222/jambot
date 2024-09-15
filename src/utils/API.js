@@ -74,21 +74,21 @@ async function fetchSpotifyPlaylistTracks () {
 
   return tracks
 }
-async function spotifyTrackInfo(trackId) {
-  const url = `https://api.spotify.com/v1/tracks/${trackId}`;
+async function spotifyTrackInfo (trackId) {
+  const url = `https://api.spotify.com/v1/tracks/${trackId}`
   try {
     if (!accessToken) {
-      accessToken = await getAccessToken(config.clientId, config.clientSecret);
+      accessToken = await getAccessToken(config.clientId, config.clientSecret)
     }
     const options = {
       method: 'GET',
       headers: { Authorization: `Bearer ${accessToken}` }
-    };
-    const response = await fetch(url, options);
-    const trackInfo = await response.json();
+    }
+    const response = await fetch(url, options)
+    const trackInfo = await response.json()
     if (!response.ok) {
-      console.error('Error fetching track info:', trackInfo);
-      return null;
+      console.error('Error fetching track info:', trackInfo)
+      return null
     }
     const spotifyTrackDetails = {
       spotifyTrackName: trackInfo.name || 'Unknown',
@@ -98,145 +98,142 @@ async function spotifyTrackInfo(trackId) {
       spotifyAlbumType: trackInfo.album.album_type || 'Unknown', // Added album type
       spotifyTrackNumber: trackInfo.track_number || 'Unknown', // Added track number
       spotifyTotalTracks: trackInfo.album.total_tracks || 'Unknown', // Added total tracks
-      spotifyDuration: trackInfo.duration_ms 
-        ? `${Math.floor(trackInfo.duration_ms / 60000)}:${((trackInfo.duration_ms % 60000) / 1000).toFixed(0).padStart(2, '0')}` 
+      spotifyDuration: trackInfo.duration_ms
+        ? `${Math.floor(trackInfo.duration_ms / 60000)}:${((trackInfo.duration_ms % 60000) / 1000).toFixed(0).padStart(2, '0')}`
         : 'Unknown',
       spotifyAlbumArt: trackInfo.album.images?.[0]?.url || '',
       spotifyPopularity: trackInfo.popularity || 0,
       spotifyPreviewUrl: trackInfo.preview_url || '',
       spotifySpotifyUrl: trackInfo.external_urls.spotify || '',
-      spotifyIsrc: trackInfo.external_ids.isrc || 'Unknown',
-    };
-    return spotifyTrackDetails;
+      spotifyIsrc: trackInfo.external_ids.isrc || 'Unknown'
+    }
+    return spotifyTrackDetails
   } catch (error) {
-    console.error('Error fetching track info:', error);
-    return null;
+    console.error('Error fetching track info:', error)
+    return null
   }
 }
-async function fetchTrackDetails(trackUri) {
-  const trackId = trackUri.split(':').pop();
-  const accessToken = await getAccessToken(config.clientId, config.clientSecret);
+async function fetchTrackDetails (trackUri) {
+  const trackId = trackUri.split(':').pop()
+  const accessToken = await getAccessToken(config.clientId, config.clientSecret)
 
   try {
     const response = await fetch(`https://api.spotify.com/v1/tracks/${trackId}`, {
       headers: {
         Authorization: `Bearer ${accessToken}`
       }
-    });
+    })
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch track details: ${response.statusText}`);
+      throw new Error(`Failed to fetch track details: ${response.statusText}`)
     }
 
-    const trackData = await response.json();
+    const trackData = await response.json()
     return {
       title: trackData.name,
       artist: trackData.artists.map(artist => artist.name).join(', ')
-    };
+    }
   } catch (error) {
-    console.error('Error fetching track details:', error);
-    return null;
+    console.error('Error fetching track details:', error)
+    return null
   }
 }
-async function fetchAudioFeatures(trackId) {
-  const url = `https://api.spotify.com/v1/audio-features/${trackId}`;
-  
+async function fetchAudioFeatures (trackId) {
+  const url = `https://api.spotify.com/v1/audio-features/${trackId}`
+
   try {
     if (!accessToken) {
-      accessToken = await getAccessToken(config.clientId, config.clientSecret);
+      accessToken = await getAccessToken(config.clientId, config.clientSecret)
     }
 
     const options = {
       method: 'GET',
       headers: { Authorization: `Bearer ${accessToken}` }
-    };
-
-    const response = await fetch(url, options);
-    const audioFeatures = await response.json();
-
-    if (!response.ok) {
-      console.error('Error fetching audio features:', audioFeatures);
-      throw new Error('Failed to fetch audio features');
     }
 
-    return audioFeatures;
+    const response = await fetch(url, options)
+    const audioFeatures = await response.json()
+
+    if (!response.ok) {
+      console.error('Error fetching audio features:', audioFeatures)
+      throw new Error('Failed to fetch audio features')
+    }
+
+    return audioFeatures
   } catch (error) {
-    console.error('Error fetching audio features:', error);
-    throw error; // Optionally rethrow the error to be handled upstream
+    console.error('Error fetching audio features:', error)
+    throw error // Optionally rethrow the error to be handled upstream
   }
 }
 
-async function fetchSpotifyRecommendations(seedArtists = [], seedGenres = [], seedTracks = [], limit = 5) {
-  const recommendationsUrl = 'https://api.spotify.com/v1/recommendations';
+async function fetchSpotifyRecommendations (seedArtists = [], seedGenres = [], seedTracks = [], limit = 5) {
+  const recommendationsUrl = 'https://api.spotify.com/v1/recommendations'
 
   try {
     if (!accessToken) {
-      accessToken = await getAccessToken(config.clientId, config.clientSecret);
+      accessToken = await getAccessToken(config.clientId, config.clientSecret)
     }
 
     // Construct the query parameters
     const params = new URLSearchParams({
-      seed_artists: seedArtists.join(','),  
+      seed_artists: seedArtists.join(','),
       seed_genres: seedGenres.join(','),
       seed_tracks: seedTracks.join(','),
-      limit: 5 
-    });
+      limit: 5
+    })
 
     const options = {
       method: 'GET',
       headers: { Authorization: `Bearer ${accessToken}` }
-    };
-
-    const response = await fetch(`${recommendationsUrl}?${params}`, options);
-    
-    if (!response.ok) {
-      
-      const errorResponse = await response.json();
-      console.error('Error fetching recommendations:', errorResponse);
-      throw new Error(`Failed to fetch recommendations: ${errorResponse.error.message}`);
     }
 
-    const recommendations = await response.json();
-    return recommendations.tracks; // Return only the tracks array
+    const response = await fetch(`${recommendationsUrl}?${params}`, options)
 
+    if (!response.ok) {
+      const errorResponse = await response.json()
+      console.error('Error fetching recommendations:', errorResponse)
+      throw new Error(`Failed to fetch recommendations: ${errorResponse.error.message}`)
+    }
+
+    const recommendations = await response.json()
+    return recommendations.tracks // Return only the tracks array
   } catch (error) {
-    console.error('Error fetching Spotify recommendations:', error);
-    return []; // Return an empty array in case of error
+    console.error('Error fetching Spotify recommendations:', error)
+    return [] // Return an empty array in case of error
   }
 }
 
 /// //////////// TURNTABLE API /////////////////////////////
 
-async function fetchCurrentlyPlayingSong() {
-  const token = process.env.TTL_USER_TOKEN;
-  const roomUUID = process.env.ROOM_UUID; // Replace with your room UUID
+async function fetchCurrentlyPlayingSong () {
+  const token = process.env.TTL_USER_TOKEN
+  const roomUUID = process.env.ROOM_UUID // Replace with your room UUID
 
   try {
     const response = await fetch(`https://gateway.prod.tt.fm/api/room-service/rooms/uuid/${roomUUID}`, {
       headers: {
         Authorization: `Bearer ${token}`,
-        accept: 'application/json',
-      },
-    });
+        accept: 'application/json'
+      }
+    })
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch current song: ${response.statusText}`);
+      throw new Error(`Failed to fetch current song: ${response.statusText}`)
     }
 
-    const data = await response.json();
-    const song = data.song;
+    const data = await response.json()
+    const song = data.song
 
     if (song && song.musicProviders && song.musicProviders.spotify) {
-      const spotifyTrackId = song.musicProviders.spotify.split(':').pop(); // Extract only the track ID part
-      return spotifyTrackId; // Return only the track ID, not the full URI
+      const spotifyTrackId = song.musicProviders.spotify.split(':').pop() // Extract only the track ID part
+      return spotifyTrackId // Return only the track ID, not the full URI
     } else {
-      throw new Error('Spotify track info not found in the current song');
+      throw new Error('Spotify track info not found in the current song')
     }
   } catch (error) {
-    throw new Error(`Error fetching current song: ${error.message}`);
+    throw new Error(`Error fetching current song: ${error.message}`)
   }
 }
-
 
 async function fetchRecentSongs () {
   const token = process.env.TTL_USER_TOKEN
@@ -260,30 +257,29 @@ async function fetchRecentSongs () {
   }
 }
 
-async function fetchSongData(spotifyUrl) {
-  const token = process.env.TTL_USER_TOKEN;
+async function fetchSongData (spotifyUrl) {
+  const token = process.env.TTL_USER_TOKEN
 
-  const encodedUrl = encodeURIComponent(spotifyUrl);
+  const encodedUrl = encodeURIComponent(spotifyUrl)
 
   try {
     const response = await fetch(`https://gateway.prod.tt.fm/api/playlist-service/song-data/${encodedUrl}`, {
       headers: {
         Authorization: `Bearer ${token}`,
-        accept: 'application/json',
-      },
-    });
+        accept: 'application/json'
+      }
+    })
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch song data: ${response.statusText}`);
+      throw new Error(`Failed to fetch song data: ${response.statusText}`)
     }
 
-    const data = await response.json();
-    return data;
+    const data = await response.json()
+    return data
   } catch (error) {
-    throw new Error(`Error fetching song data: ${error.message}`);
+    throw new Error(`Error fetching song data: ${error.message}`)
   }
 }
-
 
 async function fetchCurrentUsers () {
   const token = process.env.TTL_USER_TOKEN
@@ -325,9 +321,6 @@ async function fetchUserData (userUUIDs) {
     throw new Error('TTL_USER_TOKEN is not set')
   }
 
-  console.log(`Fetching user data from: ${endpoint}`)
-  console.log(`Using token: ${token}`)
-
   const maxRetries = 3
   const retryDelay = 2000 // 2 seconds delay between retries
 
@@ -342,12 +335,10 @@ async function fetchUserData (userUUIDs) {
 
       if (!response.ok) {
         const errorText = await response.text() // Get the error response text
-        console.error(`Failed to fetch user data: ${response.statusText} - ${errorText}`)
         throw new Error(`Failed to fetch user data: ${response.statusText} - ${errorText}`)
       }
 
       const userData = await response.json()
-      console.log('User data fetched successfully:', userData)
 
       // Extract nicknames from user profiles
       const nicknames = userData.map(user => user.userProfile.nickname)

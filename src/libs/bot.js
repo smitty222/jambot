@@ -18,12 +18,12 @@ export function getCurrentDJUUIDs (state) {
   return state.djs.map(dj => dj.uuid)
 }
 
-export function getCurrentSpotifyUrl() {
-  if (currentSong && currentSong.spotifyUrl) {
-    return currentSong.spotifyUrl;
+export function getCurrentSpotifyUrl () {
+  if (this.currentSong && this.currentSong.spotifyUrl) {
+    return currentSong.spotifyUrl
   } else {
-    console.warn('Current Spotify URL not available.');
-    return null;
+    console.warn('Current Spotify URL not available.')
+    return null
   }
 }
 
@@ -31,8 +31,6 @@ function isUserDJ (senderUuid, state) {
   const currentDJs = getCurrentDJUUIDs(state) // Get the list of DJ UUIDs
   return currentDJs.includes(senderUuid) //
 }
-
-
 
 // Function to get the UUID of the current DJ (the one playing the song)
 export function getCurrentDJ (state) {
@@ -60,7 +58,7 @@ export class Bot {
     this.autobop = true
     this.audioStatsEnabled = true
     this.recentSpotifyTrackIds = []
-    this.currentSong = { 
+    this.currentSong = {
       trackName: 'Unknown',
       spotifyTrackId: null,
       spotifyUrl: null,
@@ -84,9 +82,9 @@ export class Bot {
         loudness: null,
         speechiness: null,
         tempo: null,
-        valence: null,
+        valence: null
       }
-    };
+    }
     this.nextSong = {
       trackName: 'Unknown',
       spotifyUrl: null,
@@ -101,7 +99,7 @@ export class Bot {
       popularity: 0,
       previewUrl: '',
       isrc: 'Unknown'
-    };
+    }
   }
 
   async enableAutoBop () {
@@ -111,8 +109,6 @@ export class Bot {
   async disableAutoBop () {
     this.autobop = false
   }
-
-  
 
   async connect () {
     logger.debug('Connecting to room')
@@ -130,12 +126,12 @@ export class Bot {
     }
   }
 
-  updateRecentSpotifyTrackIds(trackId) {
+  updateRecentSpotifyTrackIds (trackId) {
     if (this.recentSpotifyTrackIds.length >= 5) {
-      this.recentSpotifyTrackIds.shift(); // Remove the oldest ID
+      this.recentSpotifyTrackIds.shift() // Remove the oldest ID
     }
-    this.recentSpotifyTrackIds.push(trackId); // Add the new ID
-    console.log(`Updated recentSpotifyTrackIds: ${JSON.stringify(this.recentSpotifyTrackIds)}`);
+    this.recentSpotifyTrackIds.push(trackId) // Add the new ID
+    console.log(`Updated recentSpotifyTrackIds: ${JSON.stringify(this.recentSpotifyTrackIds)}`)
   }
 
   async processNewMessages () {
@@ -177,150 +173,148 @@ export class Bot {
     }
   }
 
-  configureListeners() {
-    const self = this;
-    logger.debug('Setting up listeners');
-  
+  configureListeners () {
+    const self = this
+    logger.debug('Setting up listeners')
+
     this.socket.on('statefulMessage', async (payload) => {
-        self.state = fastJson.applyPatch(self.state, payload.statePatch).newDocument;
-        logger.debug(`State updated for ${payload.name}`);
-    
-        if (payload.name === 'userJoined') {
-            try {
-                await handleUserJoinedWithStatePatch(payload);
-            } catch (error) {
-                logger.error('Error handling userJoined event:', error);
-            }
+      self.state = fastJson.applyPatch(self.state, payload.statePatch).newDocument
+      logger.debug(`State updated for ${payload.name}`)
+
+      if (payload.name === 'userJoined') {
+        try {
+          await handleUserJoinedWithStatePatch(payload)
+        } catch (error) {
+          logger.error('Error handling userJoined event:', error)
         }
+      }
 
-        if (payload.name === 'playedSong') {
+      if (payload.name === 'playedSong') {
+        try {
+          let spotifyTrackId = null
+
           try {
-            let spotifyTrackId = null;
-        
-            try {
-              spotifyTrackId = await fetchCurrentlyPlayingSong();  // Fetch the Spotify track ID from the API
+            spotifyTrackId = await fetchCurrentlyPlayingSong() // Fetch the Spotify track ID from the API
           } catch (fetchError) {
-              console.error('Error fetching Spotify Track ID:', fetchError.message);
+            console.error('Error fetching Spotify Track ID:', fetchError.message)
           }
-            // Fetch additional track details using the Spotify Track ID
-                if (spotifyTrackId) {
-                    const trackInfo = await spotifyTrackInfo(spotifyTrackId);
+          // Fetch additional track details using the Spotify Track ID
+          if (spotifyTrackId) {
+            const trackInfo = await spotifyTrackInfo(spotifyTrackId)
 
-                    if (trackInfo) {
-                      // Fetch audio features for the track
-                      const audioFeatures = await fetchAudioFeatures(spotifyTrackId);
+            if (trackInfo) {
+              // Fetch audio features for the track
+              const audioFeatures = await fetchAudioFeatures(spotifyTrackId)
 
-                      this.currentSong = {
-                        trackName: trackInfo.spotifyTrackName || 'Unknown',
-                        spotifyUrl: trackInfo.spotifySpotifyUrl || '',
-                        spotifyTrackId,
-                        artistName: trackInfo.spotifyArtistName || 'Unknown',
-                        albumName: trackInfo.spotifyAlbumName || 'Unknown',
-                        releaseDate: trackInfo.spotifyReleaseDate || 'Unknown',
-                        albumType: trackInfo.spotifyAlbumType || 'Unknown',
-                        trackNumber: trackInfo.spotifyTrackNumber || 'Unknown',
-                        totalTracks: trackInfo.spotifyTotalTracks || 'Unknown',
-                        songDuration: trackInfo.spotifyDuration || 'Unknown',
-                        albumArt: trackInfo.spotifyAlbumArt || '',
-                        popularity: trackInfo.spotifyPopularity || 0,
-                        previewUrl: trackInfo.spotifyPreviewUrl || '',
-                        isrc: trackInfo.spotifyIsrc || 'Unknown',
-                        audioFeatures: {
-                          acousticness: audioFeatures.acousticness,
-                          analysis_url: audioFeatures.analysis_url,
-                          danceability: audioFeatures.danceability,
-                          duration_ms: audioFeatures.duration_ms,
-                          energy: audioFeatures.energy,
-                          id: audioFeatures.id,
-                          instrumentalness: audioFeatures.instrumentalness,
-                          key: audioFeatures.key,
-                          liveness: audioFeatures.liveness,
-                          loudness: audioFeatures.loudness,
-                          mode: audioFeatures.mode,
-                          speechiness: audioFeatures.speechiness,
-                          tempo: audioFeatures.tempo,
-                          time_signature: audioFeatures.time_signature,
-                          track_href: audioFeatures.track_href,
-                          type: audioFeatures.type,
-                          uri: audioFeatures.uri,
-                          valence: audioFeatures.valence,
-                        }
-                      };
-
-                        self.updateRecentSpotifyTrackIds(spotifyTrackId);
-
-                        console.log(`Updated currentSong: ${JSON.stringify(self.currentSong.trackName)}`);
-                        
-                        try {
-                            await handleAlbumTheme(payload);
-                            await handleCoversTheme(payload);
-                        } catch (error) {
-                            logger.error('Error handling album or covers theme event:', error);
-                        }
-                        
-                        await checkAndPostAudioFeatures(this.currentSong, process.env.ROOM_UUID);
-
-                        // Handle DJ logic
-                        const currentDJ = getCurrentDJ(self.state);
-                        if (currentDJ && usersToBeRemoved[currentDJ]) {
-                            await escortUserFromDJStand(currentDJ);
-                            delete usersToBeRemoved[currentDJ];
-                            console.log(`User ${currentDJ} removed from DJ stand after their song ended.`);
-                        }
-                    }
+              this.currentSong = {
+                trackName: trackInfo.spotifyTrackName || 'Unknown',
+                spotifyUrl: trackInfo.spotifySpotifyUrl || '',
+                spotifyTrackId,
+                artistName: trackInfo.spotifyArtistName || 'Unknown',
+                albumName: trackInfo.spotifyAlbumName || 'Unknown',
+                releaseDate: trackInfo.spotifyReleaseDate || 'Unknown',
+                albumType: trackInfo.spotifyAlbumType || 'Unknown',
+                trackNumber: trackInfo.spotifyTrackNumber || 'Unknown',
+                totalTracks: trackInfo.spotifyTotalTracks || 'Unknown',
+                songDuration: trackInfo.spotifyDuration || 'Unknown',
+                albumArt: trackInfo.spotifyAlbumArt || '',
+                popularity: trackInfo.spotifyPopularity || 0,
+                previewUrl: trackInfo.spotifyPreviewUrl || '',
+                isrc: trackInfo.spotifyIsrc || 'Unknown',
+                audioFeatures: {
+                  acousticness: audioFeatures.acousticness,
+                  analysis_url: audioFeatures.analysis_url,
+                  danceability: audioFeatures.danceability,
+                  duration_ms: audioFeatures.duration_ms,
+                  energy: audioFeatures.energy,
+                  id: audioFeatures.id,
+                  instrumentalness: audioFeatures.instrumentalness,
+                  key: audioFeatures.key,
+                  liveness: audioFeatures.liveness,
+                  loudness: audioFeatures.loudness,
+                  mode: audioFeatures.mode,
+                  speechiness: audioFeatures.speechiness,
+                  tempo: audioFeatures.tempo,
+                  time_signature: audioFeatures.time_signature,
+                  track_href: audioFeatures.track_href,
+                  type: audioFeatures.type,
+                  uri: audioFeatures.uri,
+                  valence: audioFeatures.valence
                 }
-                
+              }
 
-                self.scheduleLikeSong(process.env.ROOM_UUID, process.env.BOT_USER_UUID);
-                self.updateNextSong();
-                setTimeout(() => {
-                    if (songStatsEnabled) {
-                        postVoteCountsForLastSong(process.env.ROOM_UUID);
-                    }
-                }, 10000);
-            } catch (error) {
-                logger.error('Error handling playedSong event:', error);
+              self.updateRecentSpotifyTrackIds(spotifyTrackId)
+
+              console.log(`Updated currentSong: ${JSON.stringify(self.currentSong.trackName)}`)
             }
           }
-          if (payload.name === 'updatedNextSong') {
-            try {
-                // Extract the Spotify Track ID from the payload
-                const nextSongPatch = payload.statePatch.find(patch => patch.path === '/visibleDjs/0/nextSong');
-                const spotifyTrackId = nextSongPatch ? nextSongPatch.value.musicProviders.spotify : null;
-        
-                // If a Spotify Track ID is available, fetch additional track details
-                if (spotifyTrackId) {
-                    const trackInfo = await spotifyTrackInfo(spotifyTrackId);
-        
-                    if (trackInfo) {
-                        self.nextSong = {
-                            trackName: trackInfo.spotifyTrackName || 'Unknown',
-                            spotifyUrl: trackInfo.spotifySpotifyUrl || `https://open.spotify.com/track/${spotifyTrackId}`,
-                            spotifyTrackId,
-                            artistName: trackInfo.spotifyArtistName || 'Unknown',
-                            albumName: trackInfo.spotifyAlbumName || 'Unknown',
-                            releaseDate: trackInfo.spotifyReleaseDate || 'Unknown',
-                            albumType: trackInfo.spotifyAlbumType || 'Unknown',
-                            trackNumber: trackInfo.spotifyTrackNumber || 'Unknown',
-                            totalTracks: trackInfo.spotifyTotalTracks || 'Unknown',
-                            songDuration: trackInfo.spotifyDuration || 'Unknown',
-                            albumArt: trackInfo.spotifyAlbumArt || '',
-                            popularity: trackInfo.spotifyPopularity || 0,
-                            previewUrl: trackInfo.spotifyPreviewUrl || '',
-                            isrc: trackInfo.spotifyIsrc || 'Unknown'
-                        };
-                    }
-                } else {
-                    console.log('Spotify Track ID not found in payload.');
-                }
-            } catch (error) {
-                console.error('Error processing updatedNextSong payload:', error);
-            }        
-        
-          }
-      });
-  }
+          self.scheduleLikeSong(process.env.ROOM_UUID, process.env.BOT_USER_UUID)
+          self.updateNextSong()
+          setTimeout(() => {
+            if (songStatsEnabled) {
+              postVoteCountsForLastSong(process.env.ROOM_UUID)
+            }
+          }, 9000)
+        } catch (error) {
+          logger.error('Error handling playedSong event:', error)
+        }
+        try {
+          await handleAlbumTheme(payload)
+          await handleCoversTheme(payload)
+        } catch (error) {
+          logger.error('Error handling album or covers theme event:', error)
+        }
+        const currentDJ = getCurrentDJ(self.state)
+        if (currentDJ && usersToBeRemoved[currentDJ]) {
+          await escortUserFromDJStand(currentDJ)
+          delete usersToBeRemoved[currentDJ]
+          console.log(`User ${currentDJ} removed from DJ stand after their song ended.`)
+        }
+        try {
+          await checkAndPostAudioFeatures(this.currentSong, process.env.ROOM_UUID);
+          console.log('Audio features check and post completed.');
+        } catch (error) {
+          console.error('Error during audio features check and post:', error);
+        }
+      }
 
+      if (payload.name === 'updatedNextSong') {
+        try {
+          // Extract the Spotify Track ID from the payload
+          const nextSongPatch = payload.statePatch.find(patch => patch.path === '/visibleDjs/0/nextSong')
+          const spotifyTrackId = nextSongPatch ? nextSongPatch.value.musicProviders.spotify : null
+
+          // If a Spotify Track ID is available, fetch additional track details
+          if (spotifyTrackId) {
+            const trackInfo = await spotifyTrackInfo(spotifyTrackId)
+
+            if (trackInfo) {
+              self.nextSong = {
+                trackName: trackInfo.spotifyTrackName || 'Unknown',
+                spotifyUrl: trackInfo.spotifySpotifyUrl || `https://open.spotify.com/track/${spotifyTrackId}`,
+                spotifyTrackId,
+                artistName: trackInfo.spotifyArtistName || 'Unknown',
+                albumName: trackInfo.spotifyAlbumName || 'Unknown',
+                releaseDate: trackInfo.spotifyReleaseDate || 'Unknown',
+                albumType: trackInfo.spotifyAlbumType || 'Unknown',
+                trackNumber: trackInfo.spotifyTrackNumber || 'Unknown',
+                totalTracks: trackInfo.spotifyTotalTracks || 'Unknown',
+                songDuration: trackInfo.spotifyDuration || 'Unknown',
+                albumArt: trackInfo.spotifyAlbumArt || '',
+                popularity: trackInfo.spotifyPopularity || 0,
+                previewUrl: trackInfo.spotifyPreviewUrl || '',
+                isrc: trackInfo.spotifyIsrc || 'Unknown'
+              }
+            }
+          } else {
+            console.log('Spotify Track ID not found in payload.')
+          }
+        } catch (error) {
+          console.error('Error processing updatedNextSong payload:', error)
+        }
+      }
+    })
+  }
 
   getSocketInstance () {
     return this.socket

@@ -1,10 +1,10 @@
 import { postMessage } from '../libs/cometchat.js'
-import { fetchRecentSongs } from './API.js'
+import { fetchRecentSongs, fetchUserData } from './API.js'
 import { roomBot } from '../index.js'
 
-let songStatsEnabled = false
+let songStatsEnabled = true
 
-async function postVoteCountsForLastSong (room) {
+async function postVoteCountsForLastSong(room) {
   try {
     if (!songStatsEnabled) {
       return
@@ -30,29 +30,51 @@ async function postVoteCountsForLastSong (room) {
       })
       return
     }
-    const popularity = roomBot.currentSong.popularity
-    const { song, voteCounts } = lastSong
+
+    const { song, voteCounts, djUuid } = lastSong
     const { artistName, trackName } = song
+
+    // Check if djUuid is available
+    if (!djUuid) {
+      await postMessage({
+        room,
+        message: 'No DJ found.'
+      })
+      return
+    }
+
+    // Fetch DJ nickname using djUuid
+    let djNickname
+    try {
+      const nicknames = await fetchUserData([djUuid])
+      djNickname = nicknames.length > 0 ? nicknames[0] : 'Unknown DJ'
+    } catch (fetchError) {
+      djNickname = 'Unknown DJ'
+    }
+
+    const popularity = roomBot.currentSong ? roomBot.currentSong.popularity : 'Unknown'
+
     const { likes = 0, dislikes = 0, stars = 0 } = voteCounts // Provide default values if not available
-    const message = `${trackName} by ${artistName}:\n 👍: ${likes}\n 👎: ${dislikes}\n ⭐: ${stars}\n Popularity Score: ${popularity} out of 100`
+
+    const message = `${trackName} by ${artistName}\n 🎧 Played By: ${djNickname}\n 👍: ${likes}\n 👎: ${dislikes}\n ⭐: ${stars}\n Popularity Score: ${popularity} out of 100\n______________________________________________________`
 
     await postMessage({
       room,
       message
     })
+
   } catch (error) {
-    console.error('Error posting vote counts for last song:', error.message)
     // Handle errors appropriately
   }
 }
 
 // Command to turn on song stats
-async function enableSongStats () {
+async function enableSongStats() {
   songStatsEnabled = true
 }
 
 // Command to turn off song stats
-async function disableSongStats () {
+async function disableSongStats() {
   songStatsEnabled = false
 }
 
