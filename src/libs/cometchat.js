@@ -1,8 +1,8 @@
 // cometchat.js
-import { v4 as uuidv4 } from 'uuid'
-import { buildUrl, makeRequest } from '../utils/networking.js'
+import { v4 as uuidv4 } from 'uuid';
+import { buildUrl, makeRequest } from '../utils/networking.js';
 
-const startTimeStamp = Math.floor(Date.now() / 1000)
+const startTimeStamp = Math.floor(Date.now() / 1000);
 
 const headers = {
   appid: process.env.CHAT_API_KEY,
@@ -11,11 +11,11 @@ const headers = {
   origin: 'https://tt.live',
   referer: 'https://tt.live/',
   sdk: 'javascript@3.0.10'
-}
+};
 
 export const postMessage = async (options) => {
-  headers.appid = process.env.CHAT_API_KEY
-  const paths = ['v3.0', 'messages']
+  headers.appid = process.env.CHAT_API_KEY;
+  const paths = ['v3.0', 'messages'];
 
   const customData = {
     message: options.message || '',
@@ -26,16 +26,23 @@ export const postMessage = async (options) => {
     userUuid: process.env.CHAT_USER_ID,
     badges: ['VERIFIED', 'STAFF'],
     id: uuidv4()
+  };
+
+  // Handle URL-specific messages
+  if (options.message && options.message.startsWith('https://')) {
+    customData.type = 'URL'; // Explicitly specify URL message type
+    customData.url = options.message; // Include the URL in the customData
+    customData.interactive = true; // Add an interactive flag if needed
   }
 
   // Handle images
   if (options.images) {
-    customData.imageUrls = options.images // Ensure imageUrls is an array of URLs
+    customData.imageUrls = options.images; // Ensure imageUrls is an array of URLs
   }
 
   // Handle GIFs
   if (options.gifs) {
-    customData.gifUrls = options.gifs // For GIFs if needed
+    customData.gifUrls = options.gifs; // For GIFs if needed
   }
 
   if (options.mentions) {
@@ -43,7 +50,7 @@ export const postMessage = async (options) => {
       start: mention.position,
       userNickname: mention.nickname,
       userUuid: mention.userId
-    }))
+    }));
   }
 
   const payload = {
@@ -60,30 +67,30 @@ export const postMessage = async (options) => {
       incrementUnreadCount: false
     },
     receiver: options.room
-  }
+  };
 
-  const url = buildUrl(`${process.env.CHAT_API_KEY}.apiclient-us.cometchat.io`, paths)
-  const messageResponse = await makeRequest(url, { method: 'POST', body: JSON.stringify(payload) }, headers)
+  const url = buildUrl(`${process.env.CHAT_API_KEY}.apiclient-us.cometchat.io`, paths);
+  const messageResponse = await makeRequest(url, { method: 'POST', body: JSON.stringify(payload) }, headers);
 
   return {
     message: options.message,
     messageResponse
-  }
-}
+  };
+};
 
 export const joinChat = async (roomId) => {
-  headers.appid = process.env.CHAT_API_KEY
-  const paths = ['v3.0', 'groups', roomId, 'members']
+  headers.appid = process.env.CHAT_API_KEY;
+  const paths = ['v3.0', 'groups', roomId, 'members'];
 
-  const url = buildUrl(`${process.env.CHAT_API_KEY}.apiclient-us.cometchat.io`, paths)
-  const response = await makeRequest(url, { headers, method: 'POST' })
-  return response
-}
+  const url = buildUrl(`${process.env.CHAT_API_KEY}.apiclient-us.cometchat.io`, paths);
+  const response = await makeRequest(url, { headers, method: 'POST' });
+  return response;
+};
 
 export const getMessages = async (roomId, fromTimestamp = startTimeStamp) => {
-  headers.appid = process.env.CHAT_API_KEY
-  const messageLimit = 50
-  const paths = ['v3.0', 'groups', roomId, 'messages']
+  headers.appid = process.env.CHAT_API_KEY;
+  const messageLimit = 50;
+  const paths = ['v3.0', 'groups', roomId, 'messages'];
   const searchParams = [
     ['per_page', messageLimit],
     ['hideMessagesFromBlockedUsers', 0],
@@ -93,8 +100,8 @@ export const getMessages = async (roomId, fromTimestamp = startTimeStamp) => {
     ['hideDeleted', 0],
     ['sentAt', fromTimestamp],
     ['affix', 'append']
-  ]
+  ];
 
-  const url = buildUrl(`${process.env.CHAT_API_KEY}.apiclient-us.cometchat.io`, paths, searchParams)
-  return await makeRequest(url, { headers })
-}
+  const url = buildUrl(`${process.env.CHAT_API_KEY}.apiclient-us.cometchat.io`, paths, searchParams);
+  return await makeRequest(url, { headers });
+};

@@ -27,13 +27,13 @@ export async function checkAndPostAudioFeatures(currentSong, room) {
 
   let featureToPost = null;
 
-  if (loudness > -3.5) {
+  if (loudness > -3.0) {
     featureToPost = 'loudness';
   } else if (danceability > 0.85) {
     featureToPost = 'danceability';
-  } else if (energy > 0.85) {
+  } else if (energy > 0.9) {
     featureToPost = 'energy';
-  } else if (valence > 0.8) {
+  } else if (valence > 0.85) {
     featureToPost = 'valenceHappy';
   } else if (valence < 0.2) {
     featureToPost = 'valenceSad';

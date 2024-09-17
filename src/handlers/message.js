@@ -4,13 +4,13 @@ import { askQuestion } from '../libs/ai.js'
 import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, totalPoints } from '../handlers/triviaCommands.js'
 import { logger } from '../utils/logging.js'
 import { roomBot } from '../index.js'
-import { fetchCurrentlyPlayingSong, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSpotifyRecommendations } from '../utils/API.js'
+import { fetchCurrentlyPlayingSong, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSpotifyRecommendations, updateRoomInfo} from '../utils/API.js'
 import { handleLotteryCommand, handleLotteryNumber, LotteryGameActive } from '../utils/lotteryGame.js'
-import { addTracksToPlaylist, removeTrackFromPlaylist } from '../utils/playlistUpdate.js'
 import { enableSongStats, disableSongStats, songStatsEnabled } from '../utils/voteCounts.js'
 import { enableGreetingMessages, disableGreetingMessages, greetingMessagesEnabled } from './userJoined.js'
 import { getCurrentDJ } from '../libs/bot.js'
 import { resetCurrentQuestion } from './triviaData.js'
+import { addTracksToPlaylist, removeTrackFromPlaylist } from '../utils/playlistUpdate.js'
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
 export const roomThemes = {}
@@ -130,6 +130,11 @@ export default async (payload, room, state) => {
     await postMessage({
       room,
       message: 'Hi!'
+    })
+  } else if (payload.message.startsWith('/test')) {
+    await postMessage({
+      room,
+      message: 'https://open.spotify.com/track/3z8DyeoD1bZOQtEYyCL2wn?si=862691bd0df047d8'
     })
   } else if (payload.message.startsWith('/commands')) {
     await postMessage({
@@ -583,121 +588,93 @@ export default async (payload, room, state) => {
     } catch (error) {
       console.error('Error processing command:', error.message)
     }
+  }
   /// ////////////// MOD Commands ///////////////////////////
-  } else if (payload.message.startsWith('/settheme')) {
-    try {
-      const senderUuid = payload.sender // Assuming payload.sender contains the user UUID
-      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken) // Call isUserAuthorized with senderUuid
+  // Import or include the updateRoomInfo function
+// async function updateRoomInfo(payload) { ... }
+
+else if (payload.message.startsWith('/settheme')) {
+  try {
+      const senderUuid = payload.sender; // Assuming payload.sender contains the user UUID
+      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken); // Call isUserAuthorized with senderUuid
       if (!isAuthorized) {
-        await postMessage({
-          room,
-          message: 'You need to be a moderator to execute this command.'
-        })
-        return
-      }
-      const theme = payload.message.replace('/settheme', '').trim()
-      roomThemes[room] = theme
-      await postMessage({
-        room,
-        message: `Theme set to: ${theme}`
-      })
-    } catch (error) {
-      console.error('Error setting theme:', error)
-      await postMessage({
-        room,
-        message: `Error: ${error.message}`
-      })
-    }
-  } else if (payload.message.startsWith('/removetheme')) {
-    try {
-      const senderUuid = payload.sender
-      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken)
-      if (!isAuthorized) {
-        await postMessage({
-          room,
-          message: 'You need to be a moderator or owner to execute this command.'
-        })
-        return
-      }
-
-      delete roomThemes[room]
-
-      await postMessage({
-        room,
-        message: 'Theme removed.'
-      })
-    } catch (error) {
-      console.error('Error removing theme:', error)
-      await postMessage({
-        room,
-        message: 'An error occurred while removing the theme. Please try again.'
-      })
-    }
-  } else if (payload.message.startsWith('/addsong')) {
-    try {
-      const trackURI = await fetchCurrentlyPlayingSong()
-      const playlistTracks = await fetchSpotifyPlaylistTracks()
-      const playlistTrackURIs = playlistTracks.map(track => track.track.uri)
-
-      if (playlistTrackURIs.includes(trackURI)) {
-        await postMessage({
-          room,
-          message: 'Track is already in the playlist!'
-        })
-      } else {
-        const snapshotId = await addTracksToPlaylist([trackURI])
-
-        if (snapshotId) {
           await postMessage({
-            room,
-            message: 'Track added successfully!'
-          })
-        } else {
-          await postMessage({
-            room,
-            message: 'Failed to add the track to the playlist.'
-          })
-        }
+              room,
+              message: 'You need to be a moderator to execute this command.'
+          });
+          return;
       }
-    } catch (error) {
+
+      const theme = payload.message.replace('/settheme', '').trim();
+      roomThemes[room] = theme;
+
+      // Prepare the payload for updating room info based on the theme
+      let updatePayload = null;
+      const themeLower = theme.toLowerCase();
+      
+      if (["albums", "album monday", "album day"].includes(themeLower)) {
+          updatePayload = {
+              design: "FERRY_BUILDING",
+              numberOfDjs: 1
+          };
+      } else if (["covers", "cover friday"].includes(themeLower)) {
+          updatePayload = {
+              design: "FESTIVAL",
+              numberOfDjs: 4
+          };
+      }
+
+      if (updatePayload) {
+          // Call the updateRoomInfo function with the payload
+          await updateRoomInfo(updatePayload);
+      }
+
       await postMessage({
-        room,
-        message: `Error adding track to playlist: ${error.message}`
-      })
-    }
-  } else if (payload.message.startsWith('/removesong')) {
-    try {
-      const senderUuid = payload.sender
-      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken)
+          room,
+          message: `Theme set to: ${theme}`
+      });
+  } catch (error) {
+      console.error('Error setting theme:', error);
+      await postMessage({
+          room,
+          message: `Error: ${error.message}`
+      });
+  }
+  
+} else if (payload.message.startsWith('/removetheme')) {
+  try {
+      const senderUuid = payload.sender;
+      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken);
       if (!isAuthorized) {
-        await postMessage({
-          room,
-          message: 'You need to be a moderator to execute this command.'
-        })
-        return
+          await postMessage({
+              room,
+              message: 'You need to be a moderator or owner to execute this command.'
+          });
+          return;
       }
 
-      const playlistId = process.env.DEFAULT_PLAYLIST_ID
-      const trackURI = await fetchCurrentlyPlayingSong()
-      const snapshotId = await removeTrackFromPlaylist(playlistId, trackURI)
+      // Remove the theme from roomThemes
+      delete roomThemes[room];
 
-      if (snapshotId) {
-        await postMessage({
-          room,
-          message: 'Track removed successfully!'
-        })
-      } else {
-        await postMessage({
-          room,
-          message: 'Failed to remove the track from the playlist.'
-        })
-      }
-    } catch (error) {
+      // Update room info to set design to YACHT and numberOfDjs to 3
+      const updatePayload = {
+          design: "YACHT",
+          numberOfDjs: 3
+      };
+      await updateRoomInfo(updatePayload);
+
       await postMessage({
-        room,
-        message: `Error removing track from playlist: ${error.message}`
-      })
-    }
+          room,
+          message: 'Theme removed and room info updated.'
+      });
+  } catch (error) {
+      console.error('Error removing theme:', error);
+      await postMessage({
+          room,
+          message: 'An error occurred while removing the theme. Please try again.'
+      });
+  }
+
   } else if (payload.message.startsWith('/status')) {
     try {
       const autobopStatus = roomBot.autobop ? 'enabled' : 'disabled'
@@ -959,40 +936,145 @@ export default async (payload, room, state) => {
       })
     }
   } else if (payload.message.startsWith('/suggestsong')) {
-    const seedTracks = roomBot.recentSpotifyTrackIds.slice(0, 5)
-    console.log('Fetching recommendations with seedTracks:', seedTracks)
-
+    const seedTracks = roomBot.recentSpotifyTrackIds.slice(0, 5);
+    console.log('Fetching recommendations with seedTracks:', seedTracks);
+  
     try {
-      const recommendations = await fetchSpotifyRecommendations([], [], seedTracks, 5)
-
+      const recommendations = await fetchSpotifyRecommendations([], [], seedTracks, 5);
+  
       if (recommendations.length > 0) {
-        let recommendationsMessage = 'Based on the last 5 songs played in this room, here are 5 suggested songs you might like\n\n'
-        recommendations.forEach((track, index) => {
-          recommendationsMessage += `${index + 1}. **${track.name}** by ${track.artists.map(artist => artist.name).join(', ')}\n`
-          recommendationsMessage += `   Album: ${track.album.name}\n`
-          recommendationsMessage += `   Release Date: ${track.album.release_date}\n`
-          recommendationsMessage += `   Popularity: ${track.popularity}\n\n`
-        })
+        // Send the initial message
         await postMessage({
           room,
-          message: recommendationsMessage
-        })
+          message: 'Based on the last 5 songs played in this room, here are 5 suggested songs you might like:'
+        });
+  
+        // Loop through recommendations and send only the Spotify URL in each separate message
+        for (const track of recommendations) {
+          await postMessage({
+            room,
+            message: `https://open.spotify.com/track/${track.id}`
+          });
+  
+          // Optional: brief delay between sending messages
+          await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay between messages
+        }
       } else {
         await postMessage({
           room,
-          message: 'No recommendations available'
-        })
+          message: 'No recommendations available.'
+        });
       }
     } catch (error) {
-      console.error('Error in /suggestsong command:', error)
+      console.error('Error in /suggestsong command:', error);
       await postMessage({
         room,
         message: 'Could not fetch suggested songs. Please try again later.'
-      })
+      });
     }
+      
     if (payload.message.includes('song feature')) {
-      await handleSongFeature(room)
+        await handleSongFeature(room);
     }
+
+// Command to add a song to the playlist
+if (payload.message.startsWith('/addsong')) {
+  try {
+    // Log the current song's track ID for debugging
+    console.log('Current song track ID:', roomBot.currentSong.spotifyTrackId);
+
+    const spotifyTrackId = roomBot.currentSong.spotifyTrackId;
+
+    if (!spotifyTrackId) {
+      await postMessage({
+        room,
+        message: 'No track is currently playing or track ID is invalid.'
+      });
+      return;
+    }
+
+    // Construct the Spotify track URI
+    const trackUri = `spotify:track:${spotifyTrackId}`;
+
+    console.log('Track URI:', trackUri); // Log the URI for debugging
+
+    // Fetch playlist tracks and check if the track is already in the playlist
+    const playlistTracks = await fetchSpotifyPlaylistTracks();
+    const playlistTrackURIs = playlistTracks.map(track => track.track.uri);
+
+    if (playlistTrackURIs.includes(trackUri)) {
+      await postMessage({
+        room,
+        message: 'Track is already in the playlist!'
+      });
+    } else {
+      // Add the track to the playlist
+      const snapshotId = await addTracksToPlaylist([trackUri]);
+
+      if (snapshotId) {
+        await postMessage({
+          room,
+          message: 'Track added successfully!'
+        });
+      } else {
+        await postMessage({
+          room,
+          message: 'Failed to add the track to the playlist.'
+        });
+      }
+    }
+  } catch (error) {
+    await postMessage({
+      room,
+      message: `Error adding track to playlist: ${error.message}`
+    });
+  }
+}
+
+// Command to remove a song from the playlist
+if (payload.message.startsWith('/removesong')) {
+  try {
+    const senderUuid = payload.sender;
+    const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken);
+    if (!isAuthorized) {
+      await postMessage({
+        room,
+        message: 'You need to be a moderator to execute this command.'
+      });
+      return;
+    }
+
+    const trackUri = await fetchCurrentlyPlayingSong();
+    
+    if (!trackUri) {
+      await postMessage({
+        room,
+        message: 'No track is currently playing or track URI is invalid.'
+      });
+      return;
+    }
+
+    const snapshotId = await removeTrackFromPlaylist(process.env.DEFAULT_PLAYLIST_ID, trackUri);
+
+    if (snapshotId) {
+      await postMessage({
+        room,
+        message: 'Track removed successfully!'
+      });
+    } else {
+      await postMessage({
+        room,
+        message: 'Failed to remove the track from the playlist.'
+      });
+    }
+  } catch (error) {
+    await postMessage({
+      room,
+      message: `Error removing track from playlist: ${error.message}`
+    });
+  }
+}
+
     /// /////////////  Trivia Stuff /////////////////////////////
   } else if (payload.message.startsWith('/triviastart')) {
     await handleTriviaStart(room)

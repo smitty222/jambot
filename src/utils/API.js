@@ -37,6 +37,31 @@ async function getAccessToken (clientId, clientSecret) {
     throw error
   }
 }
+export async function updateRoomInfo(payload) {
+  const token = process.env.TTL_USER_TOKEN;
+
+  try {
+    const response = await fetch('https://gateway.prod.tt.fm/api/room-service/rooms/just-jams', {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        accept: 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to update room info: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    throw new Error(`Error updating room info: ${error.message}`);
+  }
+}
+
 
 async function fetchSpotifyPlaylistTracks () {
   const playlistId = process.env.DEFAULT_PLAYLIST_ID

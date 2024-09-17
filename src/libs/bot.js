@@ -254,7 +254,7 @@ export class Bot {
             if (songStatsEnabled) {
               postVoteCountsForLastSong(process.env.ROOM_UUID)
             }
-          }, 9000)
+          }, 9500)
         } catch (error) {
           logger.error('Error handling playedSong event:', error)
         }
