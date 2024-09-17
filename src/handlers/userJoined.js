@@ -5,17 +5,18 @@ import { roomThemes } from './message.js';
 let greetingMessagesEnabled = true;
 
 const customWelcomeMessages = {
-  '210141ad-6b01-4665-84dc-e47ea7c27dcb': 'Rsmitty has arrived!',
-  '072b0bb3-518e-4422-97fd-13dc53e8ae7e': 'DJ Shirley! Welcome Back! I missed you so much!',
-  '92302b7d-ae5e-466f-975b-d3fee461f13f': 'Ello Noremac! Welcome!',
-  '1225f84a-c57a-4589-8994-8069794b91ab': 'Govna! Welcome Back Dan!',
-  '4c340480-4f5c-4b9a-9e43-f80519154cb0': 'BeRad! Im so happy to see you!',
+  '210141ad-6b01-4665-84dc-e47ea7c27dcb': '{nickname} has arrived!', //Rsmitty
+  '072b0bb3-518e-4422-97fd-13dc53e8ae7e': '{nickname} Welcome Back You MFer! I missed you so much!', //Shirey
+  '92302b7d-ae5e-466f-975b-d3fee461f13f': 'Ello {nickname}! Welcome!', //Cam
+  '1225f84a-c57a-4589-8994-8069794b91ab': 'Govna! Welcome Back {nickname}!', //Dan
+  '4c340480-4f5c-4b9a-9e43-f80519154cb0': '{nickname}! Im so happy to see you!', //BeRad
   // Add more UUIDs and their corresponding custom welcome messages here
 };
 
 const generateWelcomeMessage = (uuid, nickname, room) => {
   if (customWelcomeMessages[uuid]) {
-    return customWelcomeMessages[uuid];
+    // Replace the placeholder `{nickname}` with the actual nickname
+    return customWelcomeMessages[uuid].replace('{nickname}', nickname);
   }
   
   // If greeting messages are disabled, send a basic welcome message
