@@ -87,47 +87,56 @@ async function addTracksToPlaylist (trackUris, position = null) {
   }
 }
 
-async function removeTrackFromPlaylist (playlistId, trackUri) {
-  const url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks`
+async function removeTrackFromPlaylist(playlistId, trackUri) {
+  const url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks`;
   const headers = {
     Authorization: `Bearer ${getAccessToken()}`,
     'Content-Type': 'application/json'
+  };
+
+  // Ensure trackUri is in the correct format with 'spotify:track:' prefix
+  if (!trackUri.startsWith('spotify:track:')) {
+    trackUri = `spotify:track:${trackUri}`;
   }
 
   const body = {
     tracks: [{ uri: trackUri }]
-  }
+  };
+
+  console.log('Request URL:', url); // Log the request URL
+  console.log('Request Headers:', headers); // Log the request headers
+  console.log('Request Body:', JSON.stringify(body)); // Log the request body
 
   try {
     let response = await fetch(url, {
       method: 'DELETE',
       headers,
       body: JSON.stringify(body)
-    })
+    });
 
     if (!response.ok) {
       if (response.status === 401) { // If unauthorized, refresh the token
-        const newToken = await refreshAccessToken()
-        headers.Authorization = `Bearer ${newToken}`
+        const newToken = await refreshAccessToken();
+        headers.Authorization = `Bearer ${newToken}`;
         response = await fetch(url, {
           method: 'DELETE',
           headers,
           body: JSON.stringify(body)
-        })
+        });
 
         if (!response.ok) {
-          throw new Error(`HTTP error! Status: ${response.status}`)
+          throw new Error(`HTTP error! Status: ${response.status}`);
         }
       } else {
-        throw new Error(`HTTP error! Status: ${response.status}`)
+        throw new Error(`HTTP error! Status: ${response.status}`);
       }
     }
 
-    const data = await response.json()
-    return data.snapshot_id
+    const data = await response.json();
+    return data.snapshot_id;
   } catch (error) {
-    console.error('Error removing track from playlist:', error)
-    throw error
+    console.error('Error removing track from playlist:', error);
+    throw error;
   }
 }
 
