@@ -4,7 +4,7 @@ import { askQuestion } from '../libs/ai.js'
 import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, totalPoints } from '../handlers/triviaCommands.js'
 import { logger } from '../utils/logging.js'
 import { roomBot } from '../index.js'
-import { fetchCurrentlyPlayingSong, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSpotifyRecommendations, updateRoomInfo} from '../utils/API.js'
+import { fetchCurrentlyPlayingSong, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSpotifyRecommendations, updateRoomInfo, fetchSongData} from '../utils/API.js'
 import { handleLotteryCommand, handleLotteryNumber, LotteryGameActive } from '../utils/lotteryGame.js'
 import { enableSongStats, disableSongStats, songStatsEnabled } from '../utils/voteCounts.js'
 import { enableGreetingMessages, disableGreetingMessages, greetingMessagesEnabled } from './userJoined.js'
@@ -131,30 +131,10 @@ export default async (payload, room, state) => {
       room,
       message: 'Hi!'
     })
-  } else if (payload.message.startsWith('/test')) {
-    await postMessage({
-      room,
-      message: 'https://open.spotify.com/track/3z8DyeoD1bZOQtEYyCL2wn?si=862691bd0df047d8'
-    })
   } else if (payload.message.startsWith('/commands')) {
     await postMessage({
       room,
-      message: 'General commands are:\n- /theme: Checks the current room theme\n- /trivia: Trivia Game\n- /lottery: Numbers!\n- /jump: Makes the bot jump\n- /dislike: Makes the bot downvote\n- /addDJ: Adds the bot as DJ\n- /removeDJ: Removes the bot as DJ\n- /dive: Remove yourself from the stage\n- /escortme: Stagedive after your next song\n- /djbeer: Gives the DJ a beer\n- /audio: Bot will list spotify audio stats for song\n- /gifs: Bot will list all GIF commands\n- /mod: Bot will list all Mod commands'
-    })
-  } else if (payload.message.startsWith('/gifs')) {
-    await postMessage({
-      room,
-      message: 'Randomly selected GIFs:\n- /burp\n- /dance\n- /party\n- /beer\n- /fart\n- /tomatoes\n- /cheers'
-    })
-  } else if (payload.message.startsWith('/mod')) {
-    await postMessage({
-      room,
-      message: 'Moderator commands are:\n- /settheme: Set room theme\n- /removetheme: Remove room theme\n- /addsong: Add current song to bot playlist\n- /removesong: Remove current song from bot playlist\n- /songstatson: Turns song stats on\n- /songstatsoff: Turns song stats off\n- /bopoff: Turns bot auto like off\n- /bopon: Turns bot auto like back on\n- /greeton: Turns on expanded user greeting\n- /greetoff: Turns off expanded user greeting\n -/audiostatson: Turns on audio stats\n -/audiostatsoff: Turns off audio stats\n- /status: Shows bot toggles status'
-    })
-  } else if (payload.message.startsWith('/secret')) {
-    await postMessage({
-      room,
-      message: 'Sssshhhhhh be very quiet. These are top secret\n- /bark\n- /barkbark\n- /drink\n- /djbeers\n- /getdjdrunk\n- /jam\n- /ass\n- /azz\n- /cam\n- /shirley\n- /berad\n- /ello\n- /score\n- /art'
+      message: 'General commands are:\n- /theme: Checks the current room theme\n- /trivia: Trivia Game\n- /lottery: Numbers!\n- /addDJ: Adds the bot as DJ\n- /removeDJ: Removes the bot as DJ\n- /dive: Remove yourself from the stage\n- /escortme: Stagedive after your next song\n- /djbeer: Gives the DJ a beer\n- /audio: Spotify audio stats for current song\n- /suggestsong: Spotify suggested songs\n- /album: Display album info for current song\n- /score: Spotify popularity score\n- /gifs: Bot will list all GIF commands\n- /mod: Bot will list all Mod commands'
     })
     /// /////////////// General Commands ////////////////
   } else if (payload.message.startsWith('/theme')) {
@@ -318,8 +298,12 @@ export default async (payload, room, state) => {
     } catch (error) {
       console.error('Error handling /escortme command:', error)
     }
-
   /// /////////////// Secret Commands /////////////////////
+} else if (payload.message.startsWith('/secret')) {
+  await postMessage({
+    room,
+    message: 'Sssshhhhhh be very quiet. These are top secret\n- /bark\n- /barkbark\n- /djbeers\n- /getdjdrunk\n- /jam\n- /ass\n- /azz\n- /cam\n- /shirley\n- /berad\n- /ello\n- /art\n- /ello\n- /allen'
+  })
   } else if (payload.message.startsWith('/barkbark')) {
     await postMessage({
       room,
@@ -403,8 +387,7 @@ export default async (payload, room, state) => {
   } else if (payload.message.startsWith('/allen')) {
     try {
       const danceImageOptions = [
-        'https://media.giphy.com/media/sA8nO56Gj9RHq/giphy.gif?cid=790b7611h6b5ihdlko5foubqcifo0e3h0i7e6p1vo2h8znzj&ep=v1_gifs_search&rid=giphy.gif&ct=g',
-        ''
+        'https://media.giphy.com/media/sA8nO56Gj9RHq/giphy.gif?cid=790b7611h6b5ihdlko5foubqcifo0e3h0i7e6p1vo2h8znzj&ep=v1_gifs_search&rid=giphy.gif&ct=g'
       ]
       const randomDanceImageUrl = danceImageOptions[Math.floor(Math.random() * danceImageOptions.length)]
       await postMessage({
@@ -452,6 +435,11 @@ export default async (payload, room, state) => {
     }
 
     /// ///////////  GIF Commands /////////////////////////
+  } else if (payload.message.startsWith('/gifs')) {
+    await postMessage({
+      room,
+      message: 'Randomly selected GIFs:\n- /burp\n- /dance\n- /party\n- /beer\n- /fart\n- /tomatoes\n- /cheers'
+    })
   } else if (payload.message.startsWith('/burp')) {
     try {
       const GifUrl = 'https://media.giphy.com/media/3orieOieQrTkLXl2SY/giphy.gif?cid=790b7611gofgmq0d396jww26sbt1bhc9ljg9am4nb8m6f6lo&ep=v1_gifs_search&rid=giphy.gif&ct=g'
@@ -590,11 +578,16 @@ export default async (payload, room, state) => {
     }
   }
   /// ////////////// MOD Commands ///////////////////////////
-
+ else if (payload.message.startsWith('/mod')) {
+  await postMessage({
+    room,
+    message: 'Moderator commands are:\n- /settheme: Set room theme\n-   Albums\n  -   Covers\n  -   Rock\n  -   Country\n  -    Rap\n- /removetheme: Remove room theme\n- /addsong: Add current song to bot playlist\n- /removesong: Remove current song from bot playlist\n- /songstatson: Turns song stats on\n- /songstatsoff: Turns song stats off\n- /bopoff: Turns bot auto like off\n- /bopon: Turns bot auto like back on\n- /greeton: Turns on expanded user greeting\n- /greetoff: Turns off expanded user greeting\n -/audiostatson: Turns on audio stats\n -/audiostatsoff: Turns off audio stats\n- /status: Shows bot toggles status'
+  })
+ }
 else if (payload.message.startsWith('/settheme')) {
   try {
-      const senderUuid = payload.sender; // Assuming payload.sender contains the user UUID
-      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken); // Call isUserAuthorized with senderUuid
+      const senderUuid = payload.sender; 
+      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken);
       if (!isAuthorized) {
           await postMessage({
               room,
@@ -606,7 +599,6 @@ else if (payload.message.startsWith('/settheme')) {
       const theme = payload.message.replace('/settheme', '').trim();
       roomThemes[room] = theme;
 
-      // Prepare the payload for updating room info based on the theme
       let updatePayload = null;
       const themeLower = theme.toLowerCase();
       
@@ -620,10 +612,24 @@ else if (payload.message.startsWith('/settheme')) {
               design: "FESTIVAL",
               numberOfDjs: 4
           };
+      } else if (["country"].includes(themeLower)) {
+          updatePayload = {
+            design: "BARN",
+            numberOfDjs: 4
+          };
+      } else if (["rock"].includes(themeLower)) {
+        updatePayload = {
+          design: "UNDERGROUND",
+          numberOfDjs: 4
+        };
+      } else if (["rap"].includes(themeLower)) {
+      updatePayload = {
+        design: "CLUB",
+        numberOfDjs: 4
+        };
       }
 
       if (updatePayload) {
-          // Call the updateRoomInfo function with the payload
           await updateRoomInfo(updatePayload);
       }
 
@@ -651,10 +657,8 @@ else if (payload.message.startsWith('/settheme')) {
           return;
       }
 
-      // Remove the theme from roomThemes
       delete roomThemes[room];
 
-      // Update room info to set design to YACHT and numberOfDjs to 3
       const updatePayload = {
           design: "YACHT",
           numberOfDjs: 3
@@ -1029,26 +1033,50 @@ else if (payload.message.startsWith('/settheme')) {
   } else if (payload.message.startsWith('/suggestsong')) {
     const seedTracks = roomBot.recentSpotifyTrackIds.slice(0, 5);
     console.log('Fetching recommendations with seedTracks:', seedTracks);
-  
+
     try {
       const recommendations = await fetchSpotifyRecommendations([], [], seedTracks, 5);
-  
+
       if (recommendations.length > 0) {
-        // Send the initial message
+
         await postMessage({
           room,
           message: 'Based on the last 5 songs played in this room, here are 5 suggested songs you might like:'
         });
-  
-        // Loop through recommendations and send only the Spotify URL in each separate message
+
         for (const track of recommendations) {
-          await postMessage({
-            room,
-            message: `https://open.spotify.com/track/${track.id}`
-          });
-  
-          // Optional: brief delay between sending messages
-          await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay between messages
+          try {
+            const spotifyUrl = `https://open.spotify.com/track/${track.id}`;
+
+            const songData = await fetchSongData(spotifyUrl);
+
+            const transformedSongData = {
+              ...songData,
+              musicProviders: songData.musicProvidersIds,
+              status: "SUCCESS"
+            };
+
+            const customData = {
+              songs: [
+                {
+                  song: transformedSongData
+                }
+              ]
+            };
+
+            await postMessage({
+              room,
+              customData: customData 
+            });
+
+            await new Promise(resolve => setTimeout(resolve, 500)); 
+          } catch (songError) {
+            console.error(`Error fetching song data for track ${track.id}:`, songError);
+            await postMessage({
+              room,
+              message: `Could not fetch data for track ${track.id}.`
+            });
+          }
         }
       } else {
         await postMessage({
@@ -1070,7 +1098,7 @@ else if (payload.message.startsWith('/settheme')) {
     /// /////////////  Trivia Stuff /////////////////////////////
   } else if (payload.message.startsWith('/triviastart')) {
     await handleTriviaStart(room)
-  } else if (payload.message.startsWith('/alpha') || payload.message.startsWith('/b') || payload.message.startsWith('/c') || payload.message.startsWith('/d')) {
+  } else if (payload.message.startsWith('/a') || payload.message.startsWith('/b') || payload.message.startsWith('/c') || payload.message.startsWith('/d')) {
     await handleTriviaSubmit(payload, roomBot, room)
   } else if (payload.message.startsWith('/triviaend')) {
     await handleTriviaEnd(resetCurrentQuestion, totalPoints, room)

@@ -1,4 +1,3 @@
-// cometchat.js
 import { v4 as uuidv4 } from 'uuid';
 import { buildUrl, makeRequest } from '../utils/networking.js';
 
@@ -17,6 +16,7 @@ export const postMessage = async (options) => {
   headers.appid = process.env.CHAT_API_KEY;
   const paths = ['v3.0', 'messages'];
 
+  // Build the customData object
   const customData = {
     message: options.message || '',
     avatarId: process.env.CHAT_AVATAR_ID,
@@ -45,12 +45,18 @@ export const postMessage = async (options) => {
     customData.gifUrls = options.gifs; // For GIFs if needed
   }
 
+  // Handle mentions
   if (options.mentions) {
     customData.mentions = options.mentions.map((mention) => ({
       start: mention.position,
       userNickname: mention.nickname,
       userUuid: mention.userId
     }));
+  }
+
+  // If song data is provided in the options, include it in the customData
+  if (options.customData && options.customData.songs) {
+    customData.songs = options.customData.songs;
   }
 
   const payload = {
