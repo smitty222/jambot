@@ -1,3 +1,4 @@
+import { fetchSpotifyPlaylistTracks } from './API.js'
 import fetch from 'node-fetch'
 import dotenv from 'dotenv'
 
@@ -7,7 +8,7 @@ const clientId = process.env.SPOTIFY_CLIENT_ID
 const clientSecret = process.env.SPOTIFY_CLIENT_SECRET
 let accessToken = process.env.SPOTIFY_ACCESS_TOKEN
 const refreshToken = process.env.SPOTIFY_REFRESH_TOKEN
-const playlistId = process.env.DEFAULT_PLAYLIST_ID
+
 
 async function refreshAccessToken () {
   const authOptions = {
@@ -39,19 +40,33 @@ function getAccessToken () {
   return accessToken
 }
 
-async function addTracksToPlaylist (trackUris, position = null) {
-  const url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks`
+async function addTracksToPlaylist(playlistId, trackUris, position = null) {
+  // Fetch current tracks in the specified playlist
+  const currentTracks = await fetchSpotifyPlaylistTracks(playlistId);
+  
+  // Extract the track URIs from the fetched tracks
+  const existingTrackUris = currentTracks.map(item => item.track.uri);
+  
+  // Filter out tracks that already exist in the playlist
+  const tracksToAdd = trackUris.filter(uri => !existingTrackUris.includes(uri));
+
+  if (tracksToAdd.length === 0) {
+    console.log('All tracks are already in the playlist. No new tracks added.');
+    return null; // No new tracks to add
+  }
+
+  const url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks`;
   const headers = {
     Authorization: `Bearer ${getAccessToken()}`,
     'Content-Type': 'application/json'
-  }
+  };
 
   const body = {
-    uris: trackUris
-  }
+    uris: tracksToAdd
+  };
 
   if (position !== null) {
-    body.position = position
+    body.position = position;
   }
 
   try {
@@ -59,31 +74,31 @@ async function addTracksToPlaylist (trackUris, position = null) {
       method: 'POST',
       headers,
       body: JSON.stringify(body)
-    })
+    });
 
     if (!response.ok) {
       if (response.status === 401) { // If unauthorized, refresh the token
-        const newToken = await refreshAccessToken()
-        headers.Authorization = `Bearer ${newToken}`
+        const newToken = await refreshAccessToken();
+        headers.Authorization = `Bearer ${newToken}`;
         response = await fetch(url, {
           method: 'POST',
           headers,
           body: JSON.stringify(body)
-        })
+        });
 
         if (!response.ok) {
-          throw new Error(`HTTP error! Status: ${response.status}`)
+          throw new Error(`HTTP error! Status: ${response.status}`);
         }
       } else {
-        throw new Error(`HTTP error! Status: ${response.status}`)
+        throw new Error(`HTTP error! Status: ${response.status}`);
       }
     }
 
-    const data = await response.json()
-    return data.snapshot_id
+    const data = await response.json();
+    return data.snapshot_id; // Return the snapshot ID of the updated playlist
   } catch (error) {
-    console.error('Error adding tracks to playlist:', error)
-    throw error
+    console.error('Error adding tracks to playlist:', error);
+    throw error;
   }
 }
 

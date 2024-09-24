@@ -63,42 +63,42 @@ export async function updateRoomInfo(payload) {
 }
 
 
-async function fetchSpotifyPlaylistTracks () {
-  const playlistId = process.env.DEFAULT_PLAYLIST_ID
-  const tracks = []
-  let url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks`
+async function fetchSpotifyPlaylistTracks(playlistId) {
+  const tracks = [];
+  let url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks`;
 
   try {
     if (!accessToken) {
-      accessToken = await getAccessToken(config.clientId, config.clientSecret)
+      accessToken = await getAccessToken(config.clientId, config.clientSecret);
     }
 
     while (url) {
       const options = {
         method: 'GET',
         headers: { Authorization: `Bearer ${accessToken}` }
-      }
+      };
 
-      const response = await fetch(url, options)
-      const playlist = await response.json()
+      const response = await fetch(url, options);
+      const playlist = await response.json();
 
       if (!response.ok) {
-        console.error('Error fetching playlist tracks:', playlist)
-        return []
+        console.error('Error fetching playlist tracks:', playlist);
+        return [];
       }
 
       if (playlist.items?.length) {
-        tracks.push(...playlist.items)
+        tracks.push(...playlist.items);
       }
-      url = playlist.next
+      url = playlist.next; // Get the next page of tracks
     }
   } catch (error) {
-    console.error('Error fetching playlist tracks:', error)
-    return []
+    console.error('Error fetching playlist tracks:', error);
+    return [];
   }
 
-  return tracks
+  return tracks;
 }
+
 async function spotifyTrackInfo (trackId) {
   const url = `https://api.spotify.com/v1/tracks/${trackId}`
   try {
@@ -191,12 +191,13 @@ async function fetchAudioFeatures (trackId) {
   }
 }
 
-async function fetchSpotifyRecommendations (seedArtists = [], seedGenres = [], seedTracks = [], limit = 5) {
-  const recommendationsUrl = 'https://api.spotify.com/v1/recommendations'
+async function fetchSpotifyRecommendations(seedArtists = [], seedGenres = [], seedTracks = [], limit = 5) {
+  const recommendationsUrl = 'https://api.spotify.com/v1/recommendations';
 
   try {
+    // Ensure access token is available
     if (!accessToken) {
-      accessToken = await getAccessToken(config.clientId, config.clientSecret)
+      accessToken = await getAccessToken(config.clientId, config.clientSecret);
     }
 
     // Construct the query parameters
@@ -204,29 +205,43 @@ async function fetchSpotifyRecommendations (seedArtists = [], seedGenres = [], s
       seed_artists: seedArtists.join(','),
       seed_genres: seedGenres.join(','),
       seed_tracks: seedTracks.join(','),
-      limit: 5
-    })
+      limit: limit.toString(),
+    });
 
-    const options = {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${accessToken}` }
+    let response = await makeSpotifyRequest(recommendationsUrl, params);
+
+    // If unauthorized (token expired), get a new token and retry
+    if (response.status === 401) {
+      console.log('Access token expired. Refreshing token...');
+      accessToken = await getAccessToken(config.clientId, config.clientSecret);
+      response = await makeSpotifyRequest(recommendationsUrl, params); // Retry the request with new token
     }
 
-    const response = await fetch(`${recommendationsUrl}?${params}`, options)
+    // Parse the response
+    const recommendations = await response.json();
 
     if (!response.ok) {
-      const errorResponse = await response.json()
-      console.error('Error fetching recommendations:', errorResponse)
-      throw new Error(`Failed to fetch recommendations: ${errorResponse.error.message}`)
+      console.error('Error fetching recommendations:', recommendations);
+      throw new Error(`Failed to fetch recommendations: ${recommendations.error.message}`);
     }
 
-    const recommendations = await response.json()
-    return recommendations.tracks // Return only the tracks array
+    return recommendations.tracks; // Return only the tracks array
   } catch (error) {
-    console.error('Error fetching Spotify recommendations:', error)
-    return [] // Return an empty array in case of error
+    console.error('Error fetching Spotify recommendations:', error);
+    return []; // Return an empty array in case of error
   }
 }
+
+// Helper function to make the actual API request
+async function makeSpotifyRequest(url, params) {
+  const options = {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${accessToken}` }
+  };
+
+  return await fetch(`${url}?${params}`, options);
+}
+
 
 /// //////////// TURNTABLE API /////////////////////////////
 

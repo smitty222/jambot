@@ -11,6 +11,7 @@ import { enableGreetingMessages, disableGreetingMessages, greetingMessagesEnable
 import { getCurrentDJ } from '../libs/bot.js'
 import { resetCurrentQuestion } from './triviaData.js'
 import { addTracksToPlaylist, removeTrackFromPlaylist } from '../utils/playlistUpdate.js'
+import { addHappySongsToPlaylist } from '../utils/audioFeatures.js'
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
 export const roomThemes = {}
@@ -131,6 +132,45 @@ export default async (payload, room, state) => {
       room,
       message: 'Hi!'
     })
+  } else if (payload.message.startsWith('/test')) {
+    try {
+      // Get the playlist ID from environment variables
+      const happyPlaylistId = process.env.HAPPY_PLAYLIST_ID;
+  
+      // Check if a song is currently playing
+      const spotifyTrackId = roomBot.currentSong.spotifyTrackId;
+  
+      if (!spotifyTrackId) {
+        await postMessage({
+          room,
+          message: 'No track is currently playing or track ID is invalid.'
+        });
+        return;
+      }
+  
+      // Log the track ID for debugging purposes
+      console.log('Current song track ID:', spotifyTrackId);
+  
+      // Call addHappySongsToPlaylist with the current track ID and happy playlist ID
+      const addedToPlaylist = await addHappySongsToPlaylist(spotifyTrackId, happyPlaylistId);
+  
+      if (addedToPlaylist) {
+        await postMessage({
+          room,
+          message: 'Track was happy enough and successfully added to the happy playlist!'
+        });
+      } else {
+        await postMessage({
+          room,
+          message: 'Track did not meet the happiness threshold and was not added to the happy playlist.'
+        });
+      }
+    } catch (error) {
+      await postMessage({
+        room,
+        message: `Error adding track to the happy playlist: ${error.message}`
+      });
+    }  
   } else if (payload.message.startsWith('/commands')) {
     await postMessage({
       room,
@@ -708,7 +748,8 @@ else if (payload.message.startsWith('/settheme')) {
       });
     } else {
       // Add the track to the playlist
-      const snapshotId = await addTracksToPlaylist([trackUri]);
+      const playlistId = process.env.DEFAULT_PLAYLIST_ID
+      const snapshotId = await addTracksToPlaylist(playlistId, [trackUri]);
 
       if (snapshotId) {
         await postMessage({

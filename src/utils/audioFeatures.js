@@ -1,10 +1,12 @@
 import { postMessage } from '../libs/cometchat.js'; // Adjust import paths as needed
+import { fetchAudioFeatures} from './API.js';
+import { addTracksToPlaylist } from './playlistUpdate.js';
 
 let debounceTimer = null; // Timer to manage debouncing
 const DEBOUNCE_DELAY = 1000; // Delay in milliseconds (1 second)
 
+
 export async function checkAndPostAudioFeatures(currentSong, room) {
-  console.log('checkAndPostAudioFeatures called with:', { currentSong, room });
 
   if (!currentSong.trackName || currentSong.trackName === 'Unknown') {
     console.log('No valid track name found, skipping...');
@@ -27,9 +29,9 @@ export async function checkAndPostAudioFeatures(currentSong, room) {
 
   let featureToPost = null;
 
-  if (loudness > -2.5) {
+  if (loudness > -2.0) {
     featureToPost = 'loudness';
-  } else if (danceability > 0.85) {
+  } else if (danceability > 0.93) {
     featureToPost = 'danceability';
   } else if (energy > 0.93) {
     featureToPost = 'energy';
@@ -56,7 +58,7 @@ export async function checkAndPostAudioFeatures(currentSong, room) {
 }
 
 async function postMessageWithFeature(feature, currentSong, room) {
-  console.log('postMessageWithFeature called with:', { feature, currentSong, room });
+  console.log('postMessageWithFeature called with:', { feature });
 
   const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -100,3 +102,45 @@ async function postMessageWithFeature(feature, currentSong, room) {
     console.error('Error posting message with delay:', error);
   }
 }
+
+export async function addHappySongsToPlaylist(trackId) {
+  try {
+    const audioFeatures = await fetchAudioFeatures(trackId);
+    if (audioFeatures.valence > 0.85) {
+      console.log(`Track has a valence rating of ${audioFeatures.valence}. Adding to playlist.`);
+      const happyPlaylistId = process.env.HAPPY_PLAYLIST_ID;
+      const trackUri = `spotify:track:${trackId}`;
+      const snapshotId = await addTracksToPlaylist(happyPlaylistId, [trackUri]);
+      if (snapshotId) {
+        console.log('Track successfully added to the happy playlist.');
+        return true; 
+      }
+    } else {
+      console.log(`Track's valence rating is ${audioFeatures.valence}, which is below the threshold. Skipping...`);
+    }
+  } catch (error) {
+    console.error('Error in addHappySongsToPlaylist:', error);
+  }
+  return false; 
+}
+export async function addDanceSongsToPlaylist(trackId) {
+  try {
+    const audioFeatures = await fetchAudioFeatures(trackId);
+    if (audioFeatures.danceability > 0.85) {
+      console.log(`Track has a danceability rating of ${audioFeatures.danceability}. Adding to playlist.`);
+      const dancePlaylistId = process.env.DANCE_PLAYLIST_ID;
+      const trackUri = `spotify:track:${trackId}`;
+      const snapshotId = await addTracksToPlaylist(dancePlaylistId, [trackUri]);
+      if (snapshotId) {
+        console.log('Track successfully added to the Dance playlist.');
+        return true; 
+      }
+    } else {
+      console.log(`Track's Dance rating is ${audioFeatures.danceability}, which is below the threshold. Skipping...`);
+    }
+  } catch (error) {
+    console.error('Error in addDanceSongsToPlaylist:', error);
+  }
+  return false; 
+}
+

@@ -9,7 +9,7 @@ import { usersToBeRemoved } from '../handlers/message.js'
 import { escortUserFromDJStand } from '../utils/escortDJ.js'
 import handleUserJoinedWithStatePatch from '../handlers/userJoined.js'
 import { handleAlbumTheme, handleCoversTheme } from '../handlers/playedSong.js'
-import { checkAndPostAudioFeatures } from '../utils/audioFeatures.js'
+import { checkAndPostAudioFeatures, addHappySongsToPlaylist, addDanceSongsToPlaylist } from '../utils/audioFeatures.js'
 
 export function getCurrentDJUUIDs (state) {
   if (!state?.djs) {
@@ -246,6 +246,16 @@ export class Bot {
               self.updateRecentSpotifyTrackIds(spotifyTrackId)
 
               console.log(`Updated currentSong: ${JSON.stringify(self.currentSong.trackName)}`)
+              try {
+                await addHappySongsToPlaylist(spotifyTrackId); // Adding happy songs to the playlist if they meet the criteria
+              } catch (error) {
+                console.error('Error adding happy songs to playlist:', error);
+              }
+              try {
+                await addDanceSongsToPlaylist(spotifyTrackId); // Adding happy songs to the playlist if they meet the criteria
+              } catch (error) {
+                console.error('Error adding Dance songs to playlist:', error);
+              }
             }
           }
           self.scheduleLikeSong(process.env.ROOM_UUID, process.env.BOT_USER_UUID)
