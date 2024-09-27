@@ -78,7 +78,7 @@ const triviaData = [
       'C. Elephant',
       'D. Giant panda'
     ],
-    correctAnswer: 'D'
+    correctAnswer: 'C'
   },
   {
     category: 'Miscellaneous',
@@ -945,7 +945,7 @@ const triviaData = [
       'C. Stomach',
       'D. Legs'
     ],
-    correctAnswer: 'B'
+    correctAnswer: 'C'
   },
 
   // HISTORY

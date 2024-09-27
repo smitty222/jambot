@@ -26,11 +26,6 @@ async function handleTriviaSubmit (payload, roomBot, room) {
   const submittedAnswer = payload.message.substring(1).toUpperCase() // Extract the submitted answer from the command
 
   if (!currentQuestion) {
-    await postMessage({
-      room,
-      message: 'No active trivia question. Please start a new game using /triviastart.'
-    })
-    return
   }
 
   // Find the answer based on the letter choice

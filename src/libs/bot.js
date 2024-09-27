@@ -3,7 +3,7 @@ import { SocketClient } from 'ttfm-socket'
 import { joinChat, getMessages, postMessage } from './cometchat.js'
 import { logger } from '../utils/logging.js'
 import { handlers } from '../handlers/index.js'
-import { fetchSpotifyPlaylistTracks, fetchCurrentUsers, spotifyTrackInfo, fetchAudioFeatures, fetchCurrentlyPlayingSong } from '../utils/API.js'
+import { fetchSpotifyPlaylistTracks, fetchCurrentUsers, spotifyTrackInfo, fetchAudioFeatures, fetchCurrentlyPlayingSong, fetchSpotifyRecommendations } from '../utils/API.js'
 import { postVoteCountsForLastSong, songStatsEnabled } from '../utils/voteCounts.js'
 import { usersToBeRemoved } from '../handlers/message.js'
 import { escortUserFromDJStand } from '../utils/escortDJ.js'
@@ -56,6 +56,7 @@ export class Bot {
     this.lastPlayedTrackURI = null
     this.currentRoomUsers = []
     this.autobop = true
+    this.autoDJ = false
     this.audioStatsEnabled = true
     this.recentSpotifyTrackIds = []
     this.currentSong = {
@@ -109,6 +110,13 @@ export class Bot {
   async disableAutoBop () {
     this.autobop = false
   }
+  async enableAutoDJ () {
+    this.autoDJ = true
+  }
+
+  async disableAutoDJ () {
+    this.autoDJ = false
+  }
 
   async connect () {
     logger.debug('Connecting to room')
@@ -126,13 +134,24 @@ export class Bot {
     }
   }
 
-  updateRecentSpotifyTrackIds (trackId) {
-    if (this.recentSpotifyTrackIds.length >= 5) {
-      this.recentSpotifyTrackIds.shift() // Remove the oldest ID
+updateRecentSpotifyTrackIds(trackId) {
+    // Get the current DJ
+    const currentDJ = getCurrentDJ(this.state);
+
+    // Check if the bot is the current DJ
+    if (currentDJ === process.env.BOT_USER_UUID) {
+        console.log('Bot is the current DJ; not updating recentSpotifyTrackIds.');
+        return;
     }
-    this.recentSpotifyTrackIds.push(trackId) // Add the new ID
-    console.log(`Updated recentSpotifyTrackIds: ${JSON.stringify(this.recentSpotifyTrackIds)}`)
-  }
+
+    // Update recent track IDs only if the bot is not the current DJ
+    if (this.recentSpotifyTrackIds.length >= 5) {
+        this.recentSpotifyTrackIds.pop(); // Remove the oldest ID from the end
+    }
+
+    this.recentSpotifyTrackIds.unshift(trackId); // Add the new ID to the beginning
+    console.log(`Updated recentSpotifyTrackIds: ${JSON.stringify(this.recentSpotifyTrackIds)}`);
+}
 
   async processNewMessages () {
     try {
@@ -287,42 +306,6 @@ export class Bot {
           console.error('Error during audio features check and post:', error);
         }
       }
-
-      if (payload.name === 'updatedNextSong') {
-        try {
-          // Extract the Spotify Track ID from the payload
-          const nextSongPatch = payload.statePatch.find(patch => patch.path === '/visibleDjs/0/nextSong')
-          const spotifyTrackId = nextSongPatch ? nextSongPatch.value.musicProviders.spotify : null
-
-          // If a Spotify Track ID is available, fetch additional track details
-          if (spotifyTrackId) {
-            const trackInfo = await spotifyTrackInfo(spotifyTrackId)
-
-            if (trackInfo) {
-              self.nextSong = {
-                trackName: trackInfo.spotifyTrackName || 'Unknown',
-                spotifyUrl: trackInfo.spotifySpotifyUrl || `https://open.spotify.com/track/${spotifyTrackId}`,
-                spotifyTrackId,
-                artistName: trackInfo.spotifyArtistName || 'Unknown',
-                albumName: trackInfo.spotifyAlbumName || 'Unknown',
-                releaseDate: trackInfo.spotifyReleaseDate || 'Unknown',
-                albumType: trackInfo.spotifyAlbumType || 'Unknown',
-                trackNumber: trackInfo.spotifyTrackNumber || 'Unknown',
-                totalTracks: trackInfo.spotifyTotalTracks || 'Unknown',
-                songDuration: trackInfo.spotifyDuration || 'Unknown',
-                albumArt: trackInfo.spotifyAlbumArt || '',
-                popularity: trackInfo.spotifyPopularity || 0,
-                previewUrl: trackInfo.spotifyPreviewUrl || '',
-                isrc: trackInfo.spotifyIsrc || 'Unknown'
-              }
-            }
-          } else {
-            console.log('Spotify Track ID not found in payload.')
-          }
-        } catch (error) {
-          console.error('Error processing updatedNextSong payload:', error)
-        }
-      }
     })
   }
 
@@ -344,150 +327,192 @@ export class Bot {
     }
   }
 
-  async getRandomSong () {
+  async getRandomSong(useSuggestions = false) {
     try {
-      const tracks = await fetchSpotifyPlaylistTracks()
+        let tracks;
+
+        // Check if suggestions are to be used
+        if (useSuggestions) {
+            const recentTracks = this.recentSpotifyTrackIds.slice(0, 5);
+            console.log('Fetching Spotify recommendations using recent tracks:', recentTracks);
+            tracks = await fetchSpotifyRecommendations([], [], recentTracks, 5);
+        } else {
+            const playlistId = process.env.DEFAULT_PLAYLIST_ID; // Ensure this is set in your environment
+            console.log(`Fetching tracks for playlist ID: ${playlistId}`);
+            tracks = await fetchSpotifyPlaylistTracks(playlistId); // Pass the playlist ID here
+        }
+
+        if (!tracks || tracks.length === 0) {
+            throw new Error('No tracks found in the selected source.');
+        }
+
+        const randomTrackIndex = Math.floor(Math.random() * tracks.length);
+        const randomTrack = tracks[randomTrackIndex];
+
+        // Use the convertTracks function for consistency
+        const song = await this.convertTracks(randomTrack);
+
+        console.log('Generated song:', song);
+
+        return song;
+    } catch (error) {
+        console.error('Error getting random song:', error);
+        throw error;
+    }
+}
+
+  
+async updateNextSong() {
+  try {
+      logger.debug('Attempting to update the next song...');
+
+      if (!this.socket) {
+          throw new Error('SocketClient not initialized. Please call connect() first.');
+      }
+
+      // Check if the bot is currently a DJ
+      if (!this.state?.djs.some(dj => dj.uuid === process.env.BOT_USER_UUID)) {
+          logger.warn('Bot is not a DJ, skipping song update.');
+          return;
+      }
+
+      let tracks;
+
+      // Use this.autoDJ to determine whether to use recommendations or playlist
+      if (this.autoDJ) {
+          const recentTracks = this.recentSpotifyTrackIds.slice(0, 3);
+          logger.debug('Fetching Spotify recommendations using recent tracks:', recentTracks);
+          tracks = await fetchSpotifyRecommendations([], [], recentTracks, 5);
+      } else {
+          const playlistId = process.env.DEFAULT_PLAYLIST_ID;
+          logger.debug(`Fetching tracks for playlist ID: ${playlistId}`);
+          tracks = await fetchSpotifyPlaylistTracks(playlistId);
+      }
 
       if (!tracks || tracks.length === 0) {
-        throw new Error('No tracks found in the Spotify playlist.')
+          logger.warn('No tracks found. Please check your playlist or recommendation settings.');
+          return;
       }
 
-      console.log('Fetched tracks:', tracks)
+      // Select a random track from the fetched tracks
+      const randomTrackIndex = Math.floor(Math.random() * tracks.length);
+      const randomTrack = tracks[randomTrackIndex];
 
-      const randomTrackIndex = Math.floor(Math.random() * tracks.length)
-      const randomTrack = tracks[randomTrackIndex]
+      // Extract the Spotify URI from the track object
+      const spotifyUri = randomTrack.track ? randomTrack.track.uri : randomTrack.uri;
 
-      console.log('Random track:', randomTrack)
+      if (!spotifyUri) {
+          logger.error('Invalid track object:', JSON.stringify(randomTrack, null, 2));
+          throw new Error('Random track selection failed or track object is invalid.');
+      }
+
+      // Construct the song object for updating the next song
+      const song = {
+          musicProviders: {
+              spotify: spotifyUri
+          }
+      };
+
+      // Send the song update action to the room
+      await this.socket.action('updateNextSong', {
+          roomUuid: process.env.ROOM_UUID,
+          song: song,
+          userUuid: process.env.BOT_USER_UUID
+      });
+
+      logger.debug('Next song updated successfully.');
+  } catch (error) {
+      logger.error('Error updating next song:', error);
+  }
+}
+
+  convertTracks(track) {
+    try {
+        // Check if the track object is valid and contains necessary data
+        if (!track || !track.name || !track.artists || !track.id) {
+            throw new Error('Invalid track item received.');
+        }
+  
+        // Assuming the conversion process requires track name, artist, and track ID
+        const song = {
+            title: track.name,
+            artist: track.artists[0].name,  // You may want to add validation for multiple artists
+            trackId: track.id,
+            durationMs: track.duration_ms,
+            album: track.album.name,
+            artworkUrl: track.album.images[0]?.url, // Optional chaining in case the artwork doesn't exist
+            spotifyUri: `spotify:track:${track.id}` // Construct the Spotify URI
+        };
+  
+        return song;
+  
+    } catch (error) {
+        logger.error('Error converting track:', error.message);
+        throw error;
+    }
+}
+
+async addDJ(useSuggestions = false) {
+  try {
+    
+      if (this.state?.djs.some(dj => dj.uuid === process.env.BOT_USER_UUID)) {
+          logger.debug('Bot is already a DJ.');
+          return;
+      }
+
+      logger.debug('Bot is not currently a DJ. Adding as DJ...');
+
+      if (!this.socket) {
+          throw new Error('SocketClient not initialized. Please call connect() first.');
+      }
+
+      let tracks;
+
+      if (useSuggestions) {
+          const recentTracks = this.recentSpotifyTrackIds.slice(0, 3);
+          logger.debug('Fetching Spotify recommendations using recent tracks:', recentTracks);
+          tracks = await fetchSpotifyRecommendations([], [], recentTracks, 5);
+      } else {
+          const playlistId = process.env.DEFAULT_PLAYLIST_ID;
+          logger.debug(`Fetching tracks for playlist ID: ${playlistId}`);
+          tracks = await fetchSpotifyPlaylistTracks(playlistId);
+      }
+
+      if (!tracks || tracks.length === 0) {
+          logger.warn('No tracks found. Please check your playlist or recommendation settings.');
+          return;
+      }
+
+
+      const randomTrackIndex = Math.floor(Math.random() * tracks.length);
+      const randomTrack = tracks[randomTrackIndex];
+
+      // Adjust the path to the Spotify URI depending on track structure
+      const spotifyUri = randomTrack.track ? randomTrack.track.uri : randomTrack.uri;
+
+      if (!spotifyUri) {
+          logger.error('Invalid track object:', JSON.stringify(randomTrack, null, 2));
+          throw new Error('Random track selection failed or track object is invalid.');
+      }
 
       const song = {
-        artistName: randomTrack.track.artists[0].name,
-        trackName: randomTrack.track.name,
-        genre: null,
-        duration: Math.floor(randomTrack.track.duration_ms / 1000),
-        isrc: randomTrack.track.external_ids.isrc || null,
-        musicProviders: {
-          spotify: `spotify:track:${randomTrack.track.id}`
-        },
-        playbackToken: null,
-        thumbnails: {},
-        songShortId: '',
-        crateSongUuid: '',
-        status: '',
-        position: 0
-      }
-
-      console.log('Generated song:', song)
-
-      return song
-    } catch (error) {
-      console.error('Error getting random song:', error)
-      throw error
-    }
-  }
-
-  async addDJ () {
-    try {
-      logger.debug('Attempting to add DJ...')
-
-      if (this.state?.djs.some(dj => dj.uuid === process.env.BOT_USER_UUID)) {
-        logger.debug('Bot is already a DJ.')
-        return
-      }
-
-      logger.debug('Bot is not currently a DJ. Adding as DJ...')
-
-      if (!this.socket) {
-        throw new Error('SocketClient not initialized. Please call connect() first.')
-      }
-
-      const randomSong = await this.getRandomSong()
+          musicProviders: {
+              spotify: spotifyUri
+          }
+      };
 
       await this.socket.action('addDj', {
-        roomUuid: process.env.ROOM_UUID,
-        song: randomSong,
-        tokenRole: 'bot',
-        userUuid: process.env.BOT_USER_UUID
-      })
+          roomUuid: process.env.ROOM_UUID,
+          song: song,
+          tokenRole: 'bot',
+          userUuid: process.env.BOT_USER_UUID
+      });
 
-      logger.debug('DJ added successfully.')
-    } catch (error) {
-      logger.error('Error adding DJ:', error)
-    }
+      logger.debug('DJ added successfully.');
+  } catch (error) {
+      logger.error('Error adding DJ:', error);
   }
-
-  async updateNextSong () {
-    try {
-      if (!this.socket) {
-        throw new Error('SocketClient not initialized. Please call connect() first.')
-      }
-
-      if (!this.state?.djs.some(dj => dj.uuid === process.env.BOT_USER_UUID)) {
-        return
-      }
-
-      await new Promise(resolve => setTimeout(resolve, 500)) // Add a delay to ensure smooth operation
-
-      const randomSong = await this.getRandomSong() // Fetch a random song
-
-      const actionPayload = {
-        roomUuid: process.env.ROOM_UUID,
-        userUuid: process.env.BOT_USER_UUID,
-        song: randomSong
-      }
-
-      await this.socket.action('updateNextSong', actionPayload) // Update the next song with the random song
-    } catch (error) {
-      console.error('Error updating next song:', error)
-    }
-  }
-
-  async convertTracks () {
-    const convertedTrack = {
-      artistName: item.track.artists[0].name,
-      trackName: item.track.name,
-      genre: null,
-      duration: Math.floor(item.track.duration_ms / 1000),
-      isrc: item.track.external_ids.isrc,
-      musicProviders: {
-        apple: null,
-        audius: null,
-        napster: null,
-        soundCloudPublic: null,
-        spotify: 'spotify:track:' + item.track.id,
-        youtube: null,
-        pandora: null,
-        deezer: null,
-        tidal: null,
-        amazonMusic: null,
-        yandex: null,
-        spinrilla: null,
-        uploadService: null,
-        sevenDigital: null
-      },
-      playbackToken: null,
-      thumbnails: {
-        apple: null,
-        audius: null,
-        napster: null,
-        soundCloudPublic: null,
-        spotify: null,
-        youtube: null,
-        pandora: null,
-        deezer: null,
-        tidal: null,
-        amazonMusic: null,
-        yandex: null,
-        spinrilla: null,
-        uploadService: null,
-        sevenDigital: null
-      },
-      songShortId: '',
-      crateSongUuid: '',
-      status: '',
-      position: 0
-    }
-    return convertedTrack
-  }
+}
 
   async removeDJ (userUuid) {
     try {

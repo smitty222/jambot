@@ -8,6 +8,12 @@ const DEBOUNCE_DELAY = 1000; // Delay in milliseconds (1 second)
 
 export async function checkAndPostAudioFeatures(currentSong, room) {
 
+  // Assuming the current DJ info is available in `room.currentDj`
+  if (room.currentDj?.uuid === process.env.BOT_USER_UUID) {
+    console.log('Bot is currently the DJ, skipping checkAndPostAudioFeatures...');
+    return; // Exit if the bot is the DJ
+  }
+
   if (!currentSong.trackName || currentSong.trackName === 'Unknown') {
     console.log('No valid track name found, skipping...');
     return;
@@ -103,7 +109,7 @@ async function postMessageWithFeature(feature, currentSong, room) {
   }
 }
 
-export async function addHappySongsToPlaylist(trackId) {
+export async function addHappySongsToPlaylist(trackId, room) {
   try {
     const audioFeatures = await fetchAudioFeatures(trackId);
     if (audioFeatures.valence > 0.85) {
@@ -113,7 +119,12 @@ export async function addHappySongsToPlaylist(trackId) {
       const snapshotId = await addTracksToPlaylist(happyPlaylistId, [trackUri]);
       if (snapshotId) {
         console.log('Track successfully added to the happy playlist.');
-        return true; 
+
+        // Post a message announcing the song was added
+        const message = `🎉 This track has been added to the Happy Songs playlist!`;
+        await postMessage({ room, message });
+
+        return true;
       }
     } else {
       console.log(`Track's valence rating is ${audioFeatures.valence}, which is below the threshold. Skipping...`);
@@ -121,9 +132,10 @@ export async function addHappySongsToPlaylist(trackId) {
   } catch (error) {
     console.error('Error in addHappySongsToPlaylist:', error);
   }
-  return false; 
+  return false;
 }
-export async function addDanceSongsToPlaylist(trackId) {
+
+export async function addDanceSongsToPlaylist(trackId, room) {
   try {
     const audioFeatures = await fetchAudioFeatures(trackId);
     if (audioFeatures.danceability > 0.85) {
@@ -133,7 +145,12 @@ export async function addDanceSongsToPlaylist(trackId) {
       const snapshotId = await addTracksToPlaylist(dancePlaylistId, [trackUri]);
       if (snapshotId) {
         console.log('Track successfully added to the Dance playlist.');
-        return true; 
+
+        // Post a message announcing the song was added
+        const message = `💃🕺 This track has been added to the Dance Songs playlist!`;
+        await postMessage({ room, message });
+
+        return true;
       }
     } else {
       console.log(`Track's Dance rating is ${audioFeatures.danceability}, which is below the threshold. Skipping...`);
@@ -141,6 +158,7 @@ export async function addDanceSongsToPlaylist(trackId) {
   } catch (error) {
     console.error('Error in addDanceSongsToPlaylist:', error);
   }
-  return false; 
+  return false;
 }
+
 

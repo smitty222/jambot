@@ -305,10 +305,25 @@ export default async (payload, room, state) => {
     }
   } else if (payload.message.startsWith('/addDJ')) {
     try {
-      await roomBot.addDJ()
+        const args = payload.message.split(' '); // Split the command into parts
+        const option = args[1]; // Get the second part which will be the option
+
+        if (option === 'auto') {
+            await roomBot.enableAutoDJ(); // Call the enableAutoDJ function
+            console.log('Auto DJ enabled');
+
+            // Since auto is specified, pass true to addDJ
+            await roomBot.addDJ(true); // Pass true for auto DJ
+            console.log('Added Auto DJ');
+        } else {
+            // Proceed as normal, without enabling Auto DJ
+            await roomBot.addDJ(); // Call addDJ without any options
+            console.log('DJ added normally');
+        }
     } catch (error) {
-      console.error('Error adding DJ:', error)
+        console.error('Error adding DJ:', error);
     }
+
   } else if (payload.message.startsWith('/removeDJ')) {
     try {
       const isBotDJ = roomBot.state?.djs.some(dj => dj.uuid === process.env.BOT_USER_UUID)
@@ -621,7 +636,7 @@ export default async (payload, room, state) => {
  else if (payload.message.startsWith('/mod')) {
   await postMessage({
     room,
-    message: 'Moderator commands are:\n- /settheme: Set room theme\n-   Albums\n  -   Covers\n  -   Rock\n  -   Country\n  -    Rap\n- /removetheme: Remove room theme\n- /addsong: Add current song to bot playlist\n- /removesong: Remove current song from bot playlist\n- /songstatson: Turns song stats on\n- /songstatsoff: Turns song stats off\n- /bopoff: Turns bot auto like off\n- /bopon: Turns bot auto like back on\n- /greeton: Turns on expanded user greeting\n- /greetoff: Turns off expanded user greeting\n -/audiostatson: Turns on audio stats\n -/audiostatsoff: Turns off audio stats\n- /status: Shows bot toggles status'
+    message: 'Moderator commands are:\n- /settheme: Set room theme\n-   Albums\n  -   Covers\n  -   Rock\n  -   Country\n  -    Rap\n- /removetheme: Remove room theme\n- /addsong: Add current song to bot playlist\n- /removesong: Remove current song from bot playlist\n- /songstatson: Turns song stats on\n- /songstatsoff: Turns song stats off\n- /bopoff: Turns bot auto like off\n- /bopon: Turns bot auto like back on\n- /autodjoff: Turns off auto DJ\n- /autodjon: Turns on auto DJ\n- /greeton: Turns on expanded user greeting\n- /greetoff: Turns off expanded user greeting\n -/audiostatson: Turns on audio stats\n -/audiostatsoff: Turns off audio stats\n- /status: Shows bot toggles status'
   })
  }
 else if (payload.message.startsWith('/settheme')) {
@@ -814,10 +829,11 @@ else if (payload.message.startsWith('/settheme')) {
   } else if (payload.message.startsWith('/status')) {
     try {
       const autobopStatus = roomBot.autobop ? 'enabled' : 'disabled'
+      const autoDJStatus = roomBot.autoDJ ? 'enabled' : 'disabled'
       const songStatsStatus = songStatsEnabled ? 'enabled' : 'disabled'
       const greetUserStatus = greetingMessagesEnabled ? 'enabled' : 'disabled'
       const audioStatsStatus = roomBot.audioStatsEnabled ? 'enabled' : 'disabled'
-      const statusMessage = `Bot Mod Toggles:\n- Autobop: ${autobopStatus}\n- Song stats: ${songStatsStatus}\n- Greet users: ${greetUserStatus}\n- Audio Stats: ${audioStatsStatus}`
+      const statusMessage = `Bot Mod Toggles:\n- Autobop: ${autobopStatus}\n- Auto DJ: ${autoDJStatus}\n- Song stats: ${songStatsStatus}\n- Greet users: ${greetUserStatus}\n- Audio Stats: ${audioStatsStatus}`
       await postMessage({
         room,
         message: statusMessage
@@ -856,6 +872,34 @@ else if (payload.message.startsWith('/settheme')) {
       await postMessage({
         room,
         message: 'An error occurred while disabling autobop. Please try again.'
+      })
+    }
+  } else if (payload.message.startsWith('/autodjon')) {
+    try {
+      await roomBot.enableAutoDJ()
+      await postMessage({
+        room,
+        message: 'AutoDJ enabled.'
+      })
+    } catch (error) {
+      console.error('Error enabling autoDJ:', error)
+      await postMessage({
+        room,
+        message: 'An error occurred while enabling autoDJ. Please try again.'
+      })
+    }
+  } else if (payload.message.startsWith('/autodjoff')) {
+    try {
+      await roomBot.disableAutoDJ()
+      await postMessage({
+        room,
+        message: 'AutoDJ disabled.'
+      })
+    } catch (error) {
+      console.error('Error disabling autoDJ:', error)
+      await postMessage({
+        room,
+        message: 'An error occurred while disabling autoDJ. Please try again.'
       })
     }
   } else if (payload.message.startsWith('/songstatson')) {
@@ -1072,14 +1116,15 @@ else if (payload.message.startsWith('/settheme')) {
       })
     }
   } else if (payload.message.startsWith('/suggestsong')) {
-    const seedTracks = roomBot.recentSpotifyTrackIds.slice(0, 5);
+    const seedTracks = roomBot.recentSpotifyTrackIds.slice(0, 5);  // Get the last 5 played tracks
     console.log('Fetching recommendations with seedTracks:', seedTracks);
 
     try {
+      // Fetch Spotify recommendations based on the last 5 tracks
       const recommendations = await fetchSpotifyRecommendations([], [], seedTracks, 5);
 
       if (recommendations.length > 0) {
-
+        // Announce to the room that song suggestions are coming
         await postMessage({
           room,
           message: 'Based on the last 5 songs played in this room, here are 5 suggested songs you might like:'
@@ -1087,16 +1132,20 @@ else if (payload.message.startsWith('/settheme')) {
 
         for (const track of recommendations) {
           try {
+            // Create Spotify URL for the track
             const spotifyUrl = `https://open.spotify.com/track/${track.id}`;
 
+            // Fetch additional data for the song
             const songData = await fetchSongData(spotifyUrl);
 
+            // Transform the song data if needed (to fit the expected structure)
             const transformedSongData = {
               ...songData,
               musicProviders: songData.musicProvidersIds,
               status: "SUCCESS"
             };
 
+            // Structure the custom data payload for posting the song
             const customData = {
               songs: [
                 {
@@ -1105,14 +1154,19 @@ else if (payload.message.startsWith('/settheme')) {
               ]
             };
 
+            // Post the song data as a custom message to the room
             await postMessage({
               room,
-              customData: customData 
+              customData: customData
             });
 
+            // Add a slight delay between each message to avoid spamming the room too quickly
             await new Promise(resolve => setTimeout(resolve, 500)); 
+
           } catch (songError) {
             console.error(`Error fetching song data for track ${track.id}:`, songError);
+
+            // Notify the room if there was an issue fetching data for a specific track
             await postMessage({
               room,
               message: `Could not fetch data for track ${track.id}.`
@@ -1120,6 +1174,7 @@ else if (payload.message.startsWith('/settheme')) {
           }
         }
       } else {
+        // Notify the room if no recommendations are available
         await postMessage({
           room,
           message: 'No recommendations available.'
@@ -1127,12 +1182,96 @@ else if (payload.message.startsWith('/settheme')) {
       }
     } catch (error) {
       console.error('Error in /suggestsong command:', error);
+
+      // Notify the room if an error occurs during the recommendation fetch
       await postMessage({
         room,
         message: 'Could not fetch suggested songs. Please try again later.'
       });
+    }    
+  } else if (payload.message.startsWith('/suggest')) {
+    const currentSongId = roomBot.currentSong?.spotifyUrl?.split('/track/')[1]; // Extract the current song's Spotify ID
+
+    if (!currentSongId) {
+        await postMessage({
+          room,
+          message: 'There is no current song playing or no valid Spotify ID for the current song.'
+        });
+        return;
     }
-      
+
+    console.log('Fetching recommendations based on the current song:', currentSongId);
+
+    try {
+      // Fetch Spotify recommendations using only the current song's ID as the seed track
+      const recommendations = await fetchSpotifyRecommendations([], [], [currentSongId], 5);
+
+      if (recommendations.length > 0) {
+        // Announce to the room that song suggestions are coming
+        await postMessage({
+          room,
+          message: 'Based on the current song playing, here are a few songs you might like:'
+        });
+
+        for (const track of recommendations) {
+          try {
+            // Create Spotify URL for the track
+            const spotifyUrl = `https://open.spotify.com/track/${track.id}`;
+
+            // Fetch additional data for the song
+            const songData = await fetchSongData(spotifyUrl);
+
+            // Transform the song data if needed (to fit the expected structure)
+            const transformedSongData = {
+              ...songData,
+              musicProviders: songData.musicProvidersIds,
+              status: "SUCCESS"
+            };
+
+            // Structure the custom data payload for posting the song
+            const customData = {
+              songs: [
+                {
+                  song: transformedSongData
+                }
+              ]
+            };
+
+            // Post the song data as a custom message to the room
+            await postMessage({
+              room,
+              customData: customData
+            });
+
+            // Add a slight delay between each message to avoid spamming the room too quickly
+            await new Promise(resolve => setTimeout(resolve, 500)); 
+
+          } catch (songError) {
+            console.error(`Error fetching song data for track ${track.id}:`, songError);
+
+            // Notify the room if there was an issue fetching data for a specific track
+            await postMessage({
+              room,
+              message: `Could not fetch data for track ${track.id}.`
+            });
+          }
+        }
+      } else {
+        // Notify the room if no recommendations are available
+        await postMessage({
+          room,
+          message: 'No recommendations available based on the current song.'
+        });
+      }
+    } catch (error) {
+      console.error('Error in /suggest command:', error);
+
+      // Notify the room if an error occurs during the recommendation fetch
+      await postMessage({
+        room,
+        message: 'Could not fetch suggested songs. Please try again later.'
+      });
+    }  
     if (payload.message.includes('song feature')) {
         await handleSongFeature(room);
     }

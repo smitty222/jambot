@@ -64,6 +64,13 @@ export async function updateRoomInfo(payload) {
 
 
 async function fetchSpotifyPlaylistTracks(playlistId) {
+  if (!playlistId) {
+    console.error('No playlist ID provided');
+    return [];
+  }
+
+  console.log('Fetching tracks for playlist ID:', playlistId); // Log playlist ID
+
   const tracks = [];
   let url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks`;
 
@@ -89,6 +96,7 @@ async function fetchSpotifyPlaylistTracks(playlistId) {
       if (playlist.items?.length) {
         tracks.push(...playlist.items);
       }
+
       url = playlist.next; // Get the next page of tracks
     }
   } catch (error) {
@@ -99,30 +107,54 @@ async function fetchSpotifyPlaylistTracks(playlistId) {
   return tracks;
 }
 
-async function spotifyTrackInfo (trackId) {
-  const url = `https://api.spotify.com/v1/tracks/${trackId}`
-  try {
+async function spotifyTrackInfo(trackId) {
+  const url = `https://api.spotify.com/v1/tracks/${trackId}`;
+  
+  // Function to make the API request
+  async function makeSpotifyRequest() {
     if (!accessToken) {
-      accessToken = await getAccessToken(config.clientId, config.clientSecret)
+      accessToken = await getAccessToken(config.clientId, config.clientSecret);
     }
+    
     const options = {
       method: 'GET',
-      headers: { Authorization: `Bearer ${accessToken}` }
+      headers: { Authorization: `Bearer ${accessToken}` },
+    };
+
+    const response = await fetch(url, options);
+    const trackInfo = await response.json();
+
+    // If the token expired, try refreshing it and retry the request
+    if (response.status === 401) {
+      console.log('Access token expired. Refreshing token...');
+      accessToken = await getAccessToken(config.clientId, config.clientSecret);
+
+      // Retry the request with the new token
+      options.headers.Authorization = `Bearer ${accessToken}`;
+      const retryResponse = await fetch(url, options);
+      return await retryResponse.json();
     }
-    const response = await fetch(url, options)
-    const trackInfo = await response.json()
+
     if (!response.ok) {
-      console.error('Error fetching track info:', trackInfo)
-      return null
+      console.error('Error fetching track info:', trackInfo);
+      return null;
     }
+    
+    return trackInfo;
+  }
+
+  try {
+    const trackInfo = await makeSpotifyRequest();
+    if (!trackInfo) return null;
+
     const spotifyTrackDetails = {
       spotifyTrackName: trackInfo.name || 'Unknown',
       spotifyArtistName: trackInfo.artists.map(artist => artist.name).join(', ') || 'Unknown',
       spotifyAlbumName: trackInfo.album.name || 'Unknown',
       spotifyReleaseDate: trackInfo.album.release_date || 'Unknown',
-      spotifyAlbumType: trackInfo.album.album_type || 'Unknown', // Added album type
-      spotifyTrackNumber: trackInfo.track_number || 'Unknown', // Added track number
-      spotifyTotalTracks: trackInfo.album.total_tracks || 'Unknown', // Added total tracks
+      spotifyAlbumType: trackInfo.album.album_type || 'Unknown', 
+      spotifyTrackNumber: trackInfo.track_number || 'Unknown', 
+      spotifyTotalTracks: trackInfo.album.total_tracks || 'Unknown', 
       spotifyDuration: trackInfo.duration_ms
         ? `${Math.floor(trackInfo.duration_ms / 60000)}:${((trackInfo.duration_ms % 60000) / 1000).toFixed(0).padStart(2, '0')}`
         : 'Unknown',
@@ -130,39 +162,40 @@ async function spotifyTrackInfo (trackId) {
       spotifyPopularity: trackInfo.popularity || 0,
       spotifyPreviewUrl: trackInfo.preview_url || '',
       spotifySpotifyUrl: trackInfo.external_urls.spotify || '',
-      spotifyIsrc: trackInfo.external_ids.isrc || 'Unknown'
-    }
-    return spotifyTrackDetails
+      spotifyIsrc: trackInfo.external_ids.isrc || 'Unknown',
+      spotifyTrackUri: trackInfo.uri || 'Unknown',  
+    };
+
+    return spotifyTrackDetails;
   } catch (error) {
-    console.error('Error fetching track info:', error)
-    return null
+    console.error('Error fetching track info:', error);
+    return null;
   }
 }
-async function fetchTrackDetails (trackUri) {
-  const trackId = trackUri.split(':').pop()
-  const accessToken = await getAccessToken(config.clientId, config.clientSecret)
-
+async function fetchTrackDetails(trackUri) {
   try {
+    const trackId = extractTrackId(trackUri); // Extract track ID
+    const accessToken = await getAccessToken(config.clientId, config.clientSecret); // Refresh token if needed
+
     const response = await fetch(`https://api.spotify.com/v1/tracks/${trackId}`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`
-      }
-    })
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch track details: ${response.statusText}`)
+      throw new Error(`Failed to fetch track details: ${response.statusText}`);
     }
 
-    const trackData = await response.json()
+    const trackData = await response.json();
     return {
       title: trackData.name,
       artist: trackData.artists.map(artist => artist.name).join(', ')
-    }
+    };
   } catch (error) {
-    console.error('Error fetching track details:', error)
-    return null
+    console.error('Error fetching track details:', error);
+    return null;
   }
 }
+
 async function fetchAudioFeatures (trackId) {
   const url = `https://api.spotify.com/v1/audio-features/${trackId}`
 
@@ -188,6 +221,41 @@ async function fetchAudioFeatures (trackId) {
   } catch (error) {
     console.error('Error fetching audio features:', error)
     throw error // Optionally rethrow the error to be handled upstream
+  }
+}
+export async function fetchRecentArtists(limit = 5) {
+  const recentArtistsUrl = 'https://api.spotify.com/v1/me/top/artists';
+
+  try {
+    if (!accessToken) {
+      accessToken = await getAccessToken(config.clientId, config.clientSecret);
+    }
+
+    const options = {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    };
+
+    const response = await fetch(`${recentArtistsUrl}?limit=${limit}`, options);
+    
+    if (!response.ok) {
+      console.error('Error fetching recent artists:', await response.json());
+      throw new Error('Failed to fetch recent artists');
+    }
+
+    const data = await response.json();
+    return data.items.map(artist => ({
+      id: artist.id,
+      name: artist.name,
+      popularity: artist.popularity,
+      genres: artist.genres,
+      followers: artist.followers.total,
+      spotifyUrl: artist.external_urls.spotify,
+      images: artist.images,
+    }));
+  } catch (error) {
+    console.error('Error fetching recent artists:', error);
+    throw error;
   }
 }
 
@@ -240,6 +308,29 @@ async function makeSpotifyRequest(url, params) {
   };
 
   return await fetch(`${url}?${params}`, options);
+}
+// Helper function to extract track ID from Spotify URL/URI
+export async function extractTrackId(input) {
+  // Spotify track URL pattern
+  const trackUrlPattern = /https?:\/\/(open\.)?spotify\.com\/track\/([a-zA-Z0-9]+)(\?.*)?/;
+  const match = input.match(trackUrlPattern);
+
+  if (match && match[2]) {
+    // Extract the track ID from the URL
+    return match[2];
+  }
+
+  // If the input is a URI or direct track ID, return the last segment
+  if (input.includes(':')) {
+    return input.split(':').pop();
+  }
+
+  // If it's already a valid track ID (base62 format), return it
+  if (/^[a-zA-Z0-9]+$/.test(input)) {
+    return input;
+  }
+
+  throw new Error('Invalid track ID or URL');
 }
 
 
