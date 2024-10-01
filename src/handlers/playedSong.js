@@ -6,6 +6,7 @@ import { roomThemes } from './message.js'
 import { getCurrentDJUUIDs } from '../libs/bot.js'
 import { askQuestion } from '../libs/ai.js'
 
+
 const formatDate = (dateString) => {
   const [year, month, day] = dateString.split('-')
   return `${month}-${day}-${year}`
@@ -131,47 +132,63 @@ const parseDuration = (durationStr) => {
 
 const handleCoversTheme = async (payload) => {
   try {
-    const room = process.env.ROOM_UUID
-    const theme = (roomThemes[room] || '').toLowerCase() // Convert to lowercase for case-insensitive comparison
+    const room = process.env.ROOM_UUID;
+    const theme = (roomThemes[room] || '').toLowerCase(); // Convert to lowercase for case-insensitive comparison
     // Check if the theme matches any of the cover-related themes
-    const coverThemes = ['cover friday', 'covers', 'cover']
+    const coverThemes = ['cover friday', 'covers', 'cover'];
     if (!coverThemes.includes(theme)) {
-      return
+      return;
     }
 
     // Extract the current song information from the payload
-    const currentSong = roomBot.currentSong
-    console.log('Current song:', currentSong)
+    const currentSong = roomBot.currentSong;
+    console.log('Current song:', currentSong);
 
     if (currentSong && currentSong.spotifyUrl) {
       try {
         // Fetch additional song data using Spotify URL
-        const songData = await fetchSongData(currentSong.spotifyUrl)
-        console.log('Song data:', songData)
+        const songData = await fetchSongData(currentSong.spotifyUrl);
+        console.log('Song data:', songData);
 
-        // Now ask a question to the AI about this song
-        const question = `Is this song a cover? Song Name: ${currentSong.trackName}, Artist Name: ${currentSong.artistName}, Release Date: ${currentSong.releaseDate}`
+        // Check if the current song is in the covers.json list
+        const isCoverSong = coversList.find(
+          (entry) =>
+            entry.coverSong.toLowerCase() === currentSong.trackName.toLowerCase() &&
+            entry.coverArtist.toLowerCase() === currentSong.artistName.toLowerCase()
+        );
 
-        const aiResponse = await askQuestion(question)
+        if (isCoverSong) {
+          // If the song is in the covers.json list, post the original song details
+          const originalInfo = `Original Song: "${isCoverSong.originalSong}" by ${isCoverSong.originalArtist}`;
+          await postMessage({
+            room,
+            message: `Cover Friday:\n______________________________________________________\nThis is a cover!\n${originalInfo}\n______________________________________________________`,
+          });
+        } else {
+          // Now ask the AI about the song if it's not in the covers list
+          const question = `Is ${currentSong.trackName} by ${currentSong.artistName} a cover? If so, please provide information about the original. If not, please explain why.`;
 
-        // Post the AI's response in the chat
-        await postMessage({
-          room,
-          message: `Current Theme: ${theme}\n\n${aiResponse}\n______________________________________________________`
-        })
+          const aiResponse = await askQuestion(question);
+
+          // Post the AI's response in the chat
+          await postMessage({
+            room,
+            message: `Cover Friday:\n______________________________________________________\n${aiResponse}\n______________________________________________________`,
+          });
+        }
       } catch (error) {
-        console.error('Error fetching song data:', error)
+        console.error('Error fetching song data:', error);
       }
     } else {
-      console.log('No song is currently playing or Spotify song ID is missing.')
+      console.log('No song is currently playing or Spotify song ID is missing.');
     }
   } catch (error) {
-    console.error('Error handling covers theme event:', error.message)
+    console.error('Error handling covers theme event:', error.message);
     await postMessage({
       room,
-      message: 'There was an error processing the cover theme event.'
-    })
+      message: 'There was an error processing the cover theme event.',
+    });
   }
-}
+};
 
 export { handleAlbumTheme, handleCoversTheme }

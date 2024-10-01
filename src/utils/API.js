@@ -196,31 +196,47 @@ async function fetchTrackDetails(trackUri) {
   }
 }
 
-async function fetchAudioFeatures (trackId) {
-  const url = `https://api.spotify.com/v1/audio-features/${trackId}`
+async function fetchAudioFeatures(trackId, retries = 3) {
+  const url = `https://api.spotify.com/v1/audio-features/${trackId}`;
 
   try {
     if (!accessToken) {
-      accessToken = await getAccessToken(config.clientId, config.clientSecret)
+      accessToken = await getAccessToken(config.clientId, config.clientSecret);
     }
 
     const options = {
       method: 'GET',
-      headers: { Authorization: `Bearer ${accessToken}` }
-    }
+      headers: { Authorization: `Bearer ${accessToken}` },
+      // Add a timeout using AbortController
+      timeout: 5000 // Timeout after 5 seconds
+    };
 
-    const response = await fetch(url, options)
-    const audioFeatures = await response.json()
+    const response = await fetch(url, options);
+    const audioFeatures = await response.json();
 
     if (!response.ok) {
-      console.error('Error fetching audio features:', audioFeatures)
-      throw new Error('Failed to fetch audio features')
+      console.error('Error fetching audio features:', audioFeatures);
+      throw new Error(`Failed to fetch audio features: ${response.statusText}`);
     }
 
-    return audioFeatures
+    return audioFeatures;
+
   } catch (error) {
-    console.error('Error fetching audio features:', error)
-    throw error // Optionally rethrow the error to be handled upstream
+    // Retry if the error is recoverable
+    if (retries > 0 && error.code === 'ERR_STREAM_PREMATURE_CLOSE') {
+      console.warn(`Retrying fetchAudioFeatures for track ${trackId}. Retries left: ${retries}`);
+      return fetchAudioFeatures(trackId, retries - 1);
+    } else {
+      // Handle token expiration or other errors
+      if (error.message.includes('401')) {
+        console.error('Access token expired, fetching a new token');
+        accessToken = await getAccessToken(config.clientId, config.clientSecret);
+        return fetchAudioFeatures(trackId, retries); // Retry with a new token
+      }
+
+      console.error('Error fetching audio features:', error);
+      throw error; // Re-throw the error to handle it upstream if necessary
+    }
   }
 }
 export async function fetchRecentArtists(limit = 5) {
@@ -438,54 +454,42 @@ async function fetchCurrentUsers () {
   }
 }
 
-async function fetchUserData (userUUIDs) {
-  const token = process.env.TTL_USER_TOKEN
+export async function fetchUserData(userUUIDs) {
+  const token = process.env.TTL_USER_TOKEN;
   if (!userUUIDs || userUUIDs.length === 0) {
-    console.error('No user UUIDs provided')
-    throw new Error('No user UUIDs provided')
+      console.error('No user UUIDs provided');
+      throw new Error('No user UUIDs provided');
   }
 
-  const endpoint = `https://gateway.prod.tt.fm/api/user-service/users/profiles?users=${userUUIDs.join(',')}`
+  const queryString = userUUIDs.map(uuid => `users=${uuid}`).join('&'); // Correct query format
+  const endpoint = `https://gateway.prod.tt.fm/api/user-service/users/profiles?${queryString}`;
 
   if (!token) {
-    console.error('TTL_USER_TOKEN is not set')
-    throw new Error('TTL_USER_TOKEN is not set')
+      console.error('TTL_USER_TOKEN is not set');
+      throw new Error('TTL_USER_TOKEN is not set');
   }
 
-  const maxRetries = 3
-  const retryDelay = 2000 // 2 seconds delay between retries
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      const response = await fetch(endpoint, {
-        headers: {
+  const response = await fetch(endpoint, {
+      headers: {
           Authorization: `Bearer ${token}`,
           accept: 'application/json'
-        }
-      })
-
-      if (!response.ok) {
-        const errorText = await response.text() // Get the error response text
-        throw new Error(`Failed to fetch user data: ${response.statusText} - ${errorText}`)
       }
+  });
 
-      const userData = await response.json()
-
-      // Extract nicknames from user profiles
-      const nicknames = userData.map(user => user.userProfile.nickname)
-
-      return nicknames
-    } catch (error) {
-      console.error(`Attempt ${attempt} failed: ${error.message}`)
-      if (attempt < maxRetries) {
-        console.log(`Retrying in ${retryDelay / 1000} seconds...`)
-        await new Promise(resolve => setTimeout(resolve, retryDelay))
-      } else {
-        throw new Error(`Error fetching user data after ${maxRetries} attempts: ${error.message}`)
-      }
-    }
+  if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to fetch user data: ${response.statusText} - ${errorText}`);
   }
+
+  const userData = await response.json();
+
+  // Log the returned data for debugging
+  console.log('Fetched user data:', userData);
+
+  return userData; // Return the array of user profiles
 }
+
+
 
 const USER_ROLES_URL = 'https://gateway.prod.tt.fm/api/room-service/roomUserRoles/just-jams' // Adjusted URL with room slug
 
@@ -515,6 +519,17 @@ async function isUserAuthorized (userUuid, token) {
     console.log('User Roles:', userRoles) // Log user roles fetched from the endpoint
     const userRole = userRoles.length > 0 ? userRoles[0].role : null
     return userRole === 'moderator' || userRole === 'owner' || userRole === 'coOwner'
+  } catch (error) {
+    console.error('Error checking user authorization:', error)
+    return false
+  }
+}
+export async function isUserOwner (userUuid, token) {
+  try {
+    const userRoles = await fetchUserRoles(userUuid, token)
+    console.log('User Roles:', userRoles) // Log user roles fetched from the endpoint
+    const userRole = userRoles.length > 0 ? userRoles[0].role : null
+    return userRole === 'owner'
   } catch (error) {
     console.error('Error checking user authorization:', error)
     return false
@@ -554,4 +569,4 @@ async function currentsongduration () {
   }
 }
 
-export { getAccessToken, currentsongduration, fetchSpotifyRecommendations, fetchAudioFeatures, spotifyTrackInfo, fetchTrackDetails, isUserAuthorized, fetchUserRoles, fetchUserData, fetchRecentSongs, fetchCurrentUsers, fetchSpotifyPlaylistTracks, fetchCurrentlyPlayingSong, fetchSongData }
+export { getAccessToken, currentsongduration, fetchSpotifyRecommendations, fetchAudioFeatures, spotifyTrackInfo, fetchTrackDetails, isUserAuthorized, fetchUserRoles, fetchRecentSongs, fetchCurrentUsers, fetchSpotifyPlaylistTracks, fetchCurrentlyPlayingSong, fetchSongData }

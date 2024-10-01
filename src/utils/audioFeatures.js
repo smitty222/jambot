@@ -43,7 +43,7 @@ export async function checkAndPostAudioFeatures(currentSong, room) {
     featureToPost = 'energy';
   } else if (valence > 0.93) {
     featureToPost = 'valenceHappy';
-  } else if (valence < 0.2) {
+  } else if (valence < 0.11) {
     featureToPost = 'valenceSad';
   }
 
