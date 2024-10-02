@@ -483,9 +483,6 @@ export async function fetchUserData(userUUIDs) {
 
   const userData = await response.json();
 
-  // Log the returned data for debugging
-  console.log('Fetched user data:', userData);
-
   return userData; // Return the array of user profiles
 }
 

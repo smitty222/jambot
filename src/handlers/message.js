@@ -735,6 +735,10 @@ if (payload.message.startsWith('/roulette start')) {
   });
 }
 
+function formatBalance(balance) {
+  return balance > 999 ? balance.toLocaleString() : balance.toString();
+}
+
 if (payload.message.startsWith('/balance')) {
   const userId = payload.sender; // Get the user's ID from the payload
   
@@ -750,17 +754,20 @@ if (payload.message.startsWith('/balance')) {
   if (userWallet && userWallet.balance !== undefined) {
       // Access the balance property directly
       const balance = userWallet.balance; 
+      const formattedBalance = formatBalance(balance); // Format the balance with commas
+
       await postMessage({
-          room,
-          message: `@${nickname}, your current balance is $${balance}.`
+          room: process.env.ROOM_UUID,
+          message: `@${nickname}, your current balance is $${formattedBalance}.`
       });
   } else {
       await postMessage({
-          room,
+          room: process.env.ROOM_UUID,
           message: `@${nickname}, you do not have a wallet yet. You can use /getwallet`
       });
   }
 }
+
 if (payload.message.startsWith('/getwallet')) {
   const userId = payload.sender; // Get the user's ID from the payload
   const nickname = await getUserNickname(userId); // Get the user's nickname
@@ -818,31 +825,33 @@ if (payload.message.startsWith('/checkbalance')) {
 }
 if (payload.message.startsWith('/bankroll')) {
   try {
-      const bankrollMessage = await getNicknamesFromWallets(); // Fetch the bankroll information
+      const bankroll = await getNicknamesFromWallets(); // Fetch the bankroll information
       
-      console.log("Bankroll Message:", bankrollMessage); // Log the result
-      console.log("Room ID:", payload.roomId); // Log the room ID
-      
-      // Send a simple test message first to verify that postMessage works
-      await postMessage({
-          room: payload.roomId,
-          message: "Test message to verify postMessage is working."
-      });
+      // Sort the bankroll by balance in descending order
+      const sortedBankroll = bankroll
+          .sort((a, b) => b.balance - a.balance) // Sort descending by balance
+          .slice(0, 5) // Only take the top 5 wallets
+          .map((user, index) => `${index + 1}. ${user.nickname}: $${user.balance}`); // Add numbering and format each user
 
-      // Then try sending the bankroll message
+      // Create the final message with a heading and the sorted leaderboard
+      const finalMessage = `🏆 **Top Wallet Leaders** 🏆\n\n${sortedBankroll.join('\n')}`;
+
+      // Post the message to the chat
       await postMessage({
-          room: payload.roomId,
-          message: bankrollMessage // Send the formatted message
+          room: room,
+          message: finalMessage // Send the formatted message
       });
   } catch (error) {
       console.error('Error fetching bankroll information:', error);
+
       // Send an error message using postMessage
       await postMessage({
-          room: payload.roomId,
+          room: room,
           message: 'There was an error fetching the bankroll information.' // Error message
       });
   }
 }
+
 
   /// ////////////// MOD Commands ///////////////////////////
   if (payload.message.startsWith('/mod')) {

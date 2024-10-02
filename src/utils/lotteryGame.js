@@ -1,5 +1,6 @@
 import { postMessage } from '../libs/cometchat.js'
-import { fetchUserData } from './API.js'
+import { getUserNickname } from '../handlers/roulette.js'
+import { addToUserWallet } from '../libs/walletManager.js' // Import the wallet management function
 
 // Global variables
 const MAX_NUMBER = 100
@@ -8,6 +9,7 @@ const TIMEOUT_DURATION = 30000 // 30 seconds timeout
 const DRAWING_DELAY = 5000 // 5 seconds delay before drawing
 const lotteryEntries = {}
 let LotteryGameActive = false
+const LOTTERY_WIN_AMOUNT = 100000 // Amount to add to the winner's wallet
 
 // Function to generate a random number within a given range
 function generateRandomNumber (min, max) {
@@ -58,44 +60,72 @@ async function handleLotteryNumber (payload) {
   }
 }
 
-async function drawWinningNumber () {
-  const winningNumber = generateRandomNumber(MIN_NUMBER, MAX_NUMBER)
-  const winners = []
+async function drawWinningNumber() {
+  const winningNumber = generateRandomNumber(MIN_NUMBER, MAX_NUMBER);
+  const winners = [];
   for (const sender in lotteryEntries) {
-    if (lotteryEntries[sender] === winningNumber) {
-      winners.push(sender)
-    }
+      if (lotteryEntries[sender] === winningNumber) {
+          winners.push(sender);
+      }
   }
 
-  let message = `The winning number is: ${winningNumber}.`
+  let message = `The winning number is: ${winningNumber}.`;
 
   if (winners.length > 0) {
-    try {
-      const nicknames = await fetchUserData(winners)
-      if (nicknames.length > 0) {
-        await postMessage({
+      try {
+          // Use getUserNickname to fetch the winner's nickname
+          const nicknamesPromises = winners.map(getUserNickname); // Create an array of promises
+          const nicknames = await Promise.all(nicknamesPromises); // Wait for all promises to resolve
+          
+          // Filter out null nicknames if any
+          const validNicknames = nicknames.filter(nickname => nickname !== null);
+
+          await postMessage({
+              room: process.env.ROOM_UUID,
+              message
+          });
+          
+          if (validNicknames.length > 0) {
+              await postMessage({
+                  room: process.env.ROOM_UUID,
+                  message: `WE HAVE A WINNER!! Congrats @${validNicknames.join(', ')}!! You won $100,000!`
+              });
+          } else {
+              await postMessage({
+                  room: process.env.ROOM_UUID,
+                  message: 'There was an issue fetching nicknames for the winners.'
+              });
+          }
+
+          // Add $100,000 to each winner's wallet
+          for (const winner of winners) {
+              try {
+                  await addToUserWallet(winner, LOTTERY_WIN_AMOUNT); // Add the winnings to the wallet
+                  console.log(`Added $${LOTTERY_WIN_AMOUNT} to the wallet of ${winner}`);
+              } catch (error) {
+                  console.error(`Error adding winnings to wallet for ${winner}: ${error.message}`);
+                  await postMessage({
+                      room: process.env.ROOM_UUID,
+                      message: `Error adding winnings to @${validNicknames[winners.indexOf(winner)]}'s wallet. Please contact support.`
+                  });
+              }
+          }
+      } catch (error) {
+          console.error(`Error during user data fetch: ${error.message}`);
+          await postMessage({
+              room: process.env.ROOM_UUID,
+              message: 'An error occurred while fetching winner information. Please try again later.'
+          });
+      }
+  } else {
+      message += ' There are no winners this time.';
+      await postMessage({
           room: process.env.ROOM_UUID,
           message
-        })
-        await postMessage({
-          room: process.env.ROOM_UUID,
-          message: `WE HAVE A WINNER!! Congrats @${nicknames.join(', ')}!!`
-        })
-      }
-    } catch (error) {
-      console.error(`Error during user data fetch: ${error.message}`)
-      await postMessage({
-        room: process.env.ROOM_UUID,
-        message: 'An error occurred while fetching winner information. Please try again later.'
-      })
-    }
-  } else {
-    message += ' There are no winners this time.'
-    postMessage({
-      room: process.env.ROOM_UUID,
-      message
-    })
+      });
   }
 }
+
+
 
 export { handleLotteryCommand, handleLotteryNumber, LotteryGameActive }
