@@ -1,14 +1,35 @@
 {
-  "210141ad-6b01-4665-84dc-e47ea7c27dcb": {
-    "balance": 41
-  },
-  "887b6c25-6eb6-42ae-a68f-cd84e60d4d5a": {
+  "35efe060-6e18-430d-9173-e3c5e0839a12": {
     "balance": 5
   },
-  "072b0bb3-518e-4422-97fd-13dc53e8ae7e": {
-    "balance": 50
+  "210141ad-6b01-4665-84dc-e47ea7c27dcb": {
+    "balance": 795.8
+  },
+  "3ea72ae7-77db-4d08-9dc6-ce875890c1b5": {
+    "balance": 160
   },
   "92302b7d-ae5e-466f-975b-d3fee461f13f": {
-    "balance": 50
+    "balance": 570.9
+  },
+  "072b0bb3-518e-4422-97fd-13dc53e8ae7e": {
+    "balance": 405.4
+  },
+  "df2cd59d-c1ab-4589-98cd-e14f8a400f77": {
+    "balance": 142.8
+  },
+  "e99d7d47-7d45-4ab5-b868-8a188db1ec5f": {
+    "balance": 8
+  },
+  "526c87f3-72b6-49dc-bd1a-b9375ccf6621": {
+    "balance": 90
+  },
+  "554d0d38-0b7b-45d8-9f18-20b4f5689e70": {
+    "balance": 224
+  },
+  "00910757-9a3c-482e-b087-8adeabd3dbe1": {
+    "balance": 18
+  },
+  "887b6c25-6eb6-42ae-a68f-cd84e60d4d5a": {
+    "balance": 16
   }
 }

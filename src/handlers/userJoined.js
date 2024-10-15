@@ -10,6 +10,10 @@ const customWelcomeMessages = {
   '92302b7d-ae5e-466f-975b-d3fee461f13f': 'Ello {nickname}! Welcome!', //Cam
   '1225f84a-c57a-4589-8994-8069794b91ab': 'Govna! Welcome Back {nickname}!', //Dan
   '4c340480-4f5c-4b9a-9e43-f80519154cb0': '{nickname}! Im so happy to see you!', //BeRad
+  'df2cd59d-c1ab-4589-98cd-e14f8a400f77': 'All the way from Kenya, everybody welcome {nickname}! Great to see you!', //Alvn
+  '3ea72ae7-77db-4d08-9dc6-ce875890c1b5': 'He loves his Metal, but dont let him fool you, hes got tunes from all genres. Welcome back, {nickname}!',//Metalman
+  'e99d7d47-7d45-4ab5-b868-8a188db1ec5f': 'Nobody chills harder than {nickname}! Welcome back!', //Straight up Chill
+  '554d0d38-0b7b-45d8-9f18-20b4f5689e70': 'Busterrrrrrrrr Douglassssssss {nickname}! In the house!' // P Eacho
   // Add more UUIDs and their corresponding custom welcome messages here
 };
 

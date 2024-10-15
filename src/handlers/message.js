@@ -4,16 +4,18 @@ import { askQuestion } from '../libs/ai.js'
 import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, totalPoints } from '../handlers/triviaCommands.js'
 import { logger } from '../utils/logging.js'
 import { roomBot } from '../index.js'
-import { fetchCurrentlyPlayingSong, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSpotifyRecommendations, updateRoomInfo, fetchSongData, isUserOwner} from '../utils/API.js'
+import { fetchCurrentlyPlayingSong, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSpotifyRecommendations, updateRoomInfo, fetchSongData, isUserOwner, DeleteQueueSong, fetchAllUserQueueSongIDsWithUUID} from '../utils/API.js'
 import { handleLotteryCommand, handleLotteryNumber, LotteryGameActive } from '../utils/lotteryGame.js'
 import { enableSongStats, disableSongStats, songStatsEnabled } from '../utils/voteCounts.js'
 import { enableGreetingMessages, disableGreetingMessages, greetingMessagesEnabled } from './userJoined.js'
 import { getCurrentDJ } from '../libs/bot.js'
 import { resetCurrentQuestion } from './triviaData.js'
 import { addTracksToPlaylist, removeTrackFromPlaylist } from '../utils/playlistUpdate.js'
-import { addHappySongsToPlaylist } from '../utils/audioFeatures.js'
 import {getUserNickname, handleRouletteBet, rouletteGameActive, startRouletteGame } from '../handlers/roulette.js';
-import { getBalanceByNickname, getNicknamesFromWallets, addDollarsByNickname, loadWallets, saveWallets } from '../libs/walletManager.js'
+import { getBalanceByNickname, getNicknamesFromWallets, addDollarsByNickname, loadWallets, saveWallets, removeFromUserWallet } from '../libs/walletManager.js'
+import { getJackpotValue, handleSlotsCommand} from './slots.js';
+import { handleBlackjackBet, handleHit, handleStand, joinTable, getBlackjackGameActive, setBlackjackGameActive, tableUsers, preventFurtherJoins} from '../handlers/blackJack.js'
+import { updateAfkStatus, isUserAfkAuthorized, userTokens } from './afk.js'
 
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
@@ -28,7 +30,7 @@ export default async (payload, room, state) => {
   if (payload.message.type === 'ChatGif') {
     logger.info('Received a GIF message:', payload.message)
     return
-  }
+  }  
 
   // AI Chat Stuff
 if (
@@ -165,51 +167,97 @@ if (
       room,
       message: 'Hi!'
     })
-  } else if (payload.message.startsWith('/test')) {
-    try {
-      // Get the playlist ID from environment variables
-      const happyPlaylistId = process.env.HAPPY_PLAYLIST_ID;
-  
-      // Check if a song is currently playing
-      const spotifyTrackId = roomBot.currentSong.spotifyTrackId;
-  
-      if (!spotifyTrackId) {
-        await postMessage({
-          room,
-          message: 'No track is currently playing or track ID is invalid.'
-        });
-        return;
-      }
-  
-      // Log the track ID for debugging purposes
-      console.log('Current song track ID:', spotifyTrackId);
-  
-      // Call addHappySongsToPlaylist with the current track ID and happy playlist ID
-      const addedToPlaylist = await addHappySongsToPlaylist(spotifyTrackId, happyPlaylistId);
-  
-      if (addedToPlaylist) {
-        await postMessage({
-          room,
-          message: 'Track was happy enough and successfully added to the happy playlist!'
-        });
-      } else {
-        await postMessage({
-          room,
-          message: 'Track did not meet the happiness threshold and was not added to the happy playlist.'
-        });
-      }
-    } catch (error) {
+  // Command for deleting the current song
+} else if (payload.message.startsWith('/delete')) {
+  console.log('Delete command received.');
+
+  const userId = payload.sender; // Get the user UUID from the payload
+  console.log(`Received delete request from user ID: ${userId}`);
+
+  // Check if the user ID is AFK authorized
+  if (!isUserAfkAuthorized(userId)) {
+      console.log(`User ID: ${userId} is not authorized to delete songs.`);
       await postMessage({
-        room,
-        message: `Error adding track to the happy playlist: ${error.message}`
+          room,
+          message: 'You are not authorized to use this command.'
       });
-    }  
+      return; // Exit if the user is not authorized
+  }
+  console.log(`User ID: ${userId} is authorized.`);
+
+  // Ensure the current song information is available
+  console.log(`Checking current song: ${JSON.stringify(roomBot.currentSong)}`);
+  if (!roomBot.currentSong || !roomBot.currentSong.songId) {
+      console.log('No song is currently playing or the song ID is unavailable.');
+      await postMessage({
+          room,
+          message: 'No song is currently playing or the song ID is unavailable.'
+      });
+      return;
+  }
+
+  // Get the current song's songID
+  const currentSongID = roomBot.currentSong.songId;
+  console.log(`Current song ID: ${currentSongID}`);
+
+  // Get the user's token for authorization
+  const userToken = userTokens[userId];
+  console.log(`User token for deletion: ${userToken ? 'Token found' : 'No token found'}`);
+
+  try {
+      // Fetch the user's queue with the user's token
+      const userQueue = await fetchAllUserQueueSongIDsWithUUID(userToken);
+
+      const matchingSong = userQueue.find(song => song.songID === currentSongID); // Note the corrected property `songID`
+
+      if (!matchingSong) {
+          console.log('No matching song found in user queue.');
+          await postMessage({
+              room,
+              message: 'The currently playing song is not in your queue, so it cannot be deleted.'
+          });
+          return;
+      }
+
+      // Extract the corresponding crateSongUUID
+      const crateSongUUID = matchingSong.crateSongUUID;
+      console.log(`Found matching song in queue with crateSongUUID: ${crateSongUUID}`);
+
+      // Call the DeleteQueueSong function to remove the song
+      console.log('Attempting to delete the song...');
+      await DeleteQueueSong(crateSongUUID, userToken);
+      console.log(`Successfully deleted the song with crateSongUUID: ${crateSongUUID}`);
+
+      // Provide success feedback
+      await postMessage({
+          room,
+          message: `Successfully deleted the current song from the queue with crateSongUUID: ${crateSongUUID}.`
+      });
+
+  } catch (error) {
+      console.error(`Failed to delete the current song: ${error.message}`);
+      await postMessage({
+          room,
+          message: `Failed to delete the current song: ${error.message}.`
+      });
+  }
+  
+  } else if (payload.message.startsWith('/test')) {
+    await postMessage({
+      room,
+      message: '  _________________\n |_______________|\n |  | 7 | 🍒 | 🍋 |  |\n|_______________|'
+    })
   } else if (payload.message.startsWith('/commands')) {
     await postMessage({
       room,
-      message: 'General commands are:\n- /theme: Checks the current room theme\n- /trivia: Trivia Game\n- /lottery: Numbers!\n- /addDJ: Adds the bot as DJ\n- /removeDJ: Removes the bot as DJ\n- /dive: Remove yourself from the stage\n- /escortme: Stagedive after your next song\n- /djbeer: Gives the DJ a beer\n- /audio: Spotify audio stats for current song\n- /suggestsong: Spotify suggested songs\n- /album: Display album info for current song\n- /score: Spotify popularity score\n- /gifs: Bot will list all GIF commands\n- /mod: Bot will list all Mod commands'
+      message: 'General commands are:\n- /theme: Checks the current room theme\n- /games: List of games to play\n- /escortme: Stagedive after your next song\n- /djbeer: Gives the DJ a beer\n- /suggestsong: Spotify suggested songs\n- /album: Display album info for current song\n- /score: Spotify popularity score\n- /bankroll: Lists top wallet leaders\n- /gifs: Bot will list all GIF commands\n- /mod: Bot will list all Mod commands'
     })
     /// /////////////// General Commands ////////////////
+  } else if (payload.message.startsWith('/games')) {
+    await postMessage({
+      room,
+      message: 'Games:\n- /trivia: Play Trivia\n- /lottery: Play the Lottery\n- /roulette: Play Roulette\n- /slots: Play Slots\n- /blackjack: Play Blackjack\n- /slotinfo: Display slots payout info\n- /jackpot: Slots progressive jackpot value'
+    })
   } else if (payload.message.startsWith('/theme')) {
     try {
       const theme = roomThemes[room]
@@ -233,91 +281,119 @@ if (
     }
   } else if (payload.message.startsWith('/djbeers')) {
     try {
-      const senderName = payload.senderName
-      const currentDJUuid = getCurrentDJ(state)
+      const senderName = payload.senderName;
+      const currentDJUuid = getCurrentDJ(state);
 
       if (!currentDJUuid) {
         await postMessage({
           room,
           message: `${senderName}, there is no DJ currently playing.`
-        })
-        throw new Error('No current DJ found.')
+        });
+        throw new Error('No current DJ found.');
       }
 
-      const [currentDJName] = await fetchUserData([currentDJUuid])
+      // Fetch user data for the current DJ
+      const currentDJData = await fetchUserData([currentDJUuid]);
+
+      // Ensure the user data is valid and extract the nickname
+      const currentDJName = currentDJData.length > 0 && currentDJData[0].userProfile
+        ? currentDJData[0].userProfile.nickname
+        : null;
 
       if (!currentDJName) {
         await postMessage({
           room,
           message: `${senderName}, could not fetch the current DJ's name.`
-        })
-        throw new Error('Could not fetch the current DJ\'s name.')
+        });
+        throw new Error('Could not fetch the current DJ\'s name.');
       }
+
+      // Post the message with the sender's and DJ's names
       await postMessage({
         room,
         message: `@${senderName} gives @${currentDJName} two ice cold beers!! 🍺🍺`
-      })
+      });
     } catch (error) {
-      console.error('Error handling /beerDJ command:', error)
+      console.error('Error handling /djbeers command:', error);
     }
   } else if (payload.message.startsWith('/djbeer')) {
     try {
-      const senderName = payload.senderName
-      const currentDJUuid = getCurrentDJ(state)
+      const senderName = payload.senderName;
+      const currentDJUuid = getCurrentDJ(state);
 
       if (!currentDJUuid) {
         await postMessage({
           room,
           message: `${senderName}, there is no DJ currently playing.`
-        })
-        throw new Error('No current DJ found.')
+        });
+        throw new Error('No current DJ found.');
       }
-      const [currentDJName] = await fetchUserData([currentDJUuid])
+
+      // Fetch user data for the current DJ
+      const currentDJData = await fetchUserData([currentDJUuid]);
+
+      // Ensure the user data is valid and extract the nickname
+      const currentDJName = currentDJData.length > 0 && currentDJData[0].userProfile
+        ? currentDJData[0].userProfile.nickname
+        : null;
 
       if (!currentDJName) {
         await postMessage({
           room,
           message: `${senderName}, could not fetch the current DJ's name.`
-        })
-        throw new Error('Could not fetch the current DJ\'s name.')
+        });
+        throw new Error('Could not fetch the current DJ\'s name.');
       }
 
+      // Post the message with the sender's and DJ's names
       await postMessage({
         room,
-        message: `@${senderName} gives @${currentDJName} a ice cold beer! 🍺`
-      })
+        message: `@${senderName} gives @${currentDJName} an ice cold beer! 🍺`
+      });
 
-      console.log(`${senderName} gives ${currentDJName} a ice cold beer! 🍺`)
+      console.log(`${senderName} gives ${currentDJName} an ice cold beer! 🍺`);
     } catch (error) {
+      console.error('Error handling /djbeer command:', error);
     }
+
   } else if (payload.message.startsWith('/getdjdrunk')) {
     try {
-      const senderName = payload.senderName
-      const currentDJUuid = getCurrentDJ(state)
+      const senderName = payload.senderName;
+      const currentDJUuid = getCurrentDJ(state);
 
       if (!currentDJUuid) {
         await postMessage({
           room,
           message: `${senderName}, there is no DJ currently playing.`
-        })
-        throw new Error('No current DJ found.')
+        });
+        throw new Error('No current DJ found.');
       }
-      const [currentDJName] = await fetchUserData([currentDJUuid])
+
+      // Fetch user data for the current DJ
+      const currentDJData = await fetchUserData([currentDJUuid]);
+
+      // Ensure the user data is valid and extract the nickname
+      const currentDJName = currentDJData.length > 0 && currentDJData[0].userProfile
+        ? currentDJData[0].userProfile.nickname
+        : null;
 
       if (!currentDJName) {
         await postMessage({
           room,
           message: `${senderName}, could not fetch the current DJ's name.`
-        })
-        throw new Error('Could not fetch the current DJ\'s name.')
+        });
+        throw new Error('Could not fetch the current DJ\'s name.');
       }
+
+      // Post the message with the sender's and DJ's names
       await postMessage({
         room,
         message: `@${senderName} gives @${currentDJName} a million ice cold beers!!! 🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺`
-      })
+      });
     } catch (error) {
-      console.error('Error handling /beerDJ command:', error)
+      console.error('Error handling /getdjdrunk command:', error);
     }
+
   } else if (payload.message.startsWith('/jump')) {
     try {
       await roomBot.playOneTimeAnimation('jump', process.env.ROOM_UUID, process.env.BOT_USER_UUID)
@@ -377,20 +453,29 @@ if (
     }
   } else if (payload.message.startsWith('/escortme')) {
     try {
-      const userUuid = payload.sender
-      usersToBeRemoved[userUuid] = true
+      const userUuid = payload.sender;  
+
+      if (usersToBeRemoved[userUuid]) {
+        await postMessage({
+          room,
+          message: `${payload.senderName}, you're already set to be removed after your current song.`
+        });
+        return;
+      }
+      usersToBeRemoved[userUuid] = true;
+
       await postMessage({
         room,
-        message: `${payload.senderName}, you will be removed from the stage after your next song`
-      })
+        message: `${payload.senderName}, you will be removed from the stage after your next song ends.`
+      });
     } catch (error) {
-      console.error('Error handling /escortme command:', error)
+      console.error('Error handling /escortme command:', error);
     }
   /// /////////////// Secret Commands /////////////////////
 } else if (payload.message.startsWith('/secret')) {
   await postMessage({
     room,
-    message: 'Sssshhhhhh be very quiet. These are top secret\n- /bark\n- /barkbark\n- /djbeers\n- /getdjdrunk\n- /jam\n- /ass\n- /azz\n- /cam\n- /shirley\n- /berad\n- /ello\n- /art\n- /ello\n- /allen'
+    message: 'Sssshhhhhh be very quiet. These are top secret\n- /bark\n- /barkbark\n- /djbeers\n- /getdjdrunk\n- /jam\n- /ass\n- /azz\n- /cam\n- /shirley\n- /berad\n- /ello\n- /art\n- /ello\n- /allen\n- /art'
   })
   } else if (payload.message.startsWith('/barkbark')) {
     await postMessage({
@@ -510,6 +595,26 @@ if (
         'https://media.giphy.com/media/r0maJFJCvM8Pm/giphy.gif?cid=ecf05e47ymi8mjlscn2zhhaq5jwlixct7t9hxqy4bvi0omzp&ep=v1_gifs_search&rid=giphy.gif&ct=g',
         'https://media.giphy.com/media/CsjpI6bhjptTO/giphy.gif?cid=ecf05e47i0e2qssmhziagwv4stpgetatpz2555i70q4own0v&ep=v1_gifs_search&rid=giphy.gif&ct=g',
         'https://media.giphy.com/media/H7kO0C0DCkQjUaQxOF/giphy.gif?cid=ecf05e47kpjyfjk0pfslwnyl220r2gsn54t77flye0fpgqol&ep=v1_gifs_search&rid=giphy.gif&ct=g'
+      ]
+      const randomDanceImageUrl = danceImageOptions[Math.floor(Math.random() * danceImageOptions.length)]
+      await postMessage({
+        room,
+        message: '',
+        images: [randomDanceImageUrl]
+      })
+    } catch (error) {
+      console.error('Error processing command:', error.message)
+    }
+  } else if (payload.message.startsWith('/titties')) {
+    try {
+      const danceImageOptions = [
+        'https://media.giphy.com/media/e3ju7ALSHtJmM/giphy.gif?cid=790b7611cyxzebyly4t75g8ozzbf00q5l4u9afsklnpc7qvh&ep=v1_gifs_search&rid=giphy.gif&ct=g',
+        'https://media.giphy.com/media/13lIl3lZmDtwNq/giphy.gif?cid=790b7611cyxzebyly4t75g8ozzbf00q5l4u9afsklnpc7qvh&ep=v1_gifs_search&rid=giphy.gif&ct=g',
+        'https://media.giphy.com/media/Hri053BSFUkRa/giphy.gif?cid=ecf05e47ivnowgc3ezif52b7a9mlfr5hg6wn4okbemd1t4zl&ep=v1_gifs_search&rid=giphy.gif&ct=g',
+        'https://media.giphy.com/media/qPj2kjakDOPQY/giphy.gif?cid=ecf05e47nbx8btyqq37pl0qtf18gdbr6ijbs4297kg8d7e39&ep=v1_gifs_search&rid=giphy.gif&ct=g',
+        'https://media.giphy.com/media/28A92fQr8uG6Q/giphy.gif?cid=790b7611cyxzebyly4t75g8ozzbf00q5l4u9afsklnpc7qvh&ep=v1_gifs_search&rid=giphy.gif&ct=g',
+        'https://media.giphy.com/media/h0yZVLoXKJKb6/giphy.gif?cid=ecf05e47ivnowgc3ezif52b7a9mlfr5hg6wn4okbemd1t4zl&ep=v1_gifs_search&rid=giphy.gif&ct=g',
+        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExY3l4emVieWx5NHQ3NWc4b3p6YmYwMHE1bDR1OWFmc2tsbnBjN3F2aCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/tGbhyv8Wmi4EM/giphy.gif'
       ]
       const randomDanceImageUrl = danceImageOptions[Math.floor(Math.random() * danceImageOptions.length)]
       await postMessage({
@@ -679,6 +784,8 @@ if (
       console.error('Error processing command:', error.message)
     }
   }
+/////////////////////// VIRTUAL CASINO ////////////////////////
+
 /////////////////////// ROULETTE ///////////////////////////////
 if (payload.message.startsWith('/roulette start')) {
   // Check if the roulette game is already active
@@ -851,13 +958,226 @@ if (payload.message.startsWith('/bankroll')) {
       });
   }
 }
+//////////////////////// SLOTS //////////////////////////////
+if (payload.message.startsWith('/slots')) {
+  try {
+      const args = payload.message.trim().split(' ');
+      let betAmount = 1; // Default bet amount
 
+      if (args.length > 1) {
+          betAmount = parseFloat(args[1]);
+          if (isNaN(betAmount) || betAmount <= 0) {
+              // Handle invalid bet amount
+              await postMessage({
+                  room: room,
+                  message: 'Please provide a valid bet amount.'
+              });
+              return;
+          }
+      }
+
+      const userUUID = payload.sender; // Adjust this based on how you get userUUID
+
+      const response = await handleSlotsCommand(userUUID, betAmount); // Pass bet amount
+      await postMessage({
+          room: room,
+          message: response
+      });
+  } catch (err) {
+      console.error('Error processing the /slots command:', err);
+      await postMessage({
+          room: room,
+          message: 'An error occurred while processing your slots game.'
+      });
+  }
+}
+else if (payload.message.startsWith('/slotinfo')) {
+  // Create a message that contains information about the slots scoring system
+  const infoMessage = `
+    🎰 **Slots Scoring System Info** 🎰
+
+    **Slot Symbols:**
+    - 🍒: Cherries
+    - 🍋: Lemons
+    - 🍊: Oranges
+    - 🍉: Watermelons
+    - 🔔: Bells
+    - ⭐: Stars
+    - 💎: Diamonds
+
+    **Payouts for 3 Matching Symbols:**
+    - 🍊🍊🍊: 3x
+    - 🍋🍋🍋: 4x
+    - 🍒🍒🍒: 5x
+    - 🍉🍉🍉: 6x
+    - 🔔🔔🔔: 8x
+    - ⭐⭐⭐: 10x
+    - 💎💎💎: 20x
+
+    **Payouts for 2 Matching Symbols:**
+    - 🍊🍊: 1.2x
+    - 🍋🍋: 1.5x
+    - 🍉🍉: 2.5x
+    - 🍒🍒: 2x
+    - 🔔🔔: 3x
+    - ⭐⭐: 4x
+    - 💎💎: 5x
+
+    **Jackpot Contribution:**
+    - 5% of your bet contributes to the progressive jackpot! 🎉
+  `;
+
+  // Send the slot information as a message
+  await postMessage({
+    room,
+    message: infoMessage
+  });
+}
+
+
+else if (payload.message.startsWith('/jackpot')) {
+  // Get the current jackpot value
+  const jackpotValue = getJackpotValue();
+  
+  // Round the jackpot value to two decimal places
+  const roundedJackpotValue = jackpotValue.toFixed(2); 
+
+  // Send the jackpot value as a message
+  await postMessage({
+    room,
+    message: `🎰 The current progressive jackpot is: $${roundedJackpotValue}!`
+  });
+}
+
+ ///////////////////// BLACKJACK /////////////////////////
+ if (payload.message.startsWith('/blackjack')) {
+  const userUUID = payload.sender;  
+  const nickname = payload.senderName; 
+  const room = process.env.ROOM_UUID;
+
+  if (getBlackjackGameActive()) {
+      await postMessage({ room: room, message: "A blackjack game is already active! Use /join to join the table." });
+  } else {
+    
+      setBlackjackGameActive(true); 
+
+      await postMessage({ room: room, message: "Blackjack game is starting in 30 seconds! Use /join to join the table" });
+
+      if (!tableUsers.includes(userUUID)) {
+        await joinTable(userUUID, nickname); 
+    }
+      setTimeout(async () => {
+
+          await postMessage({ room: room, message: "Blackjack game started!\n All users please place your bets using /bet [amount]." });
+          
+          
+          preventFurtherJoins(); 
+      }, 30000); 
+  }
+  return;
+}
+
+
+if (payload.message.startsWith('/bet')) {
+  const userUUID = payload.sender;
+  const nickname = payload.senderName; // Get the user's nickname
+  const betAmount = parseInt(payload.message.split(' ')[1], 10);
+  const room = process.env.ROOM_UUID;
+
+  // Check if the user is at the table
+  if (!tableUsers.includes(userUUID)) {
+      await postMessage({ room: room, message: "You must join the blackjack table first using /blackjack." });
+      return;
+  }
+
+  // Check if a game is active before allowing bets
+  if (!getBlackjackGameActive()) {
+      await postMessage({ room: room, message: "No active blackjack game. Start one with /blackjack." });
+      return;
+  }
+
+  // Validate bet amount
+  if (isNaN(betAmount) || betAmount <= 0) {
+      await postMessage({ room: room, message: "Please enter a valid bet amount." });
+      return;
+  }
+
+  // Remove the bet amount from the user's wallet
+  const successfulRemoval = await removeFromUserWallet(userUUID, betAmount);
+  if (!successfulRemoval) {
+      await postMessage({ room: room, message: `Sorry ${nickname}, you do not have enough funds to place that bet.` });
+      return;
+  }
+
+  // Pass the nickname to the handleBlackjackBet function
+  await handleBlackjackBet(userUUID, betAmount, nickname);
+  return;
+}
+
+
+
+// Player hits
+if (payload.message.startsWith('/hit')) {
+  const userUUID = payload.sender;
+  const nickname = payload.senderName; // Get the user's nickname
+  const room = process.env.ROOM_UUID;
+
+  // Check if user is at the table
+  if (!tableUsers.includes(userUUID)) {
+      await postMessage({ room: room, message: "You must join the blackjack table first." });
+      return;
+  }
+
+  // Pass the userUUID and nickname to handleHit
+  await handleHit(userUUID, nickname); // Pass nickname
+  return;
+}
+
+
+// Player stands
+if (payload.message.startsWith('/stand')) {
+  const userId = payload.sender;
+  const nickname = payload.senderName; // Get the user's nickname
+  const room = process.env.ROOM_UUID;
+
+  // Check if user is at the table
+  if (!tableUsers.includes(userId)) {
+      await postMessage({ room: room, message: "You must join the blackjack table first." });
+      return;
+  }
+
+  await handleStand(userId, nickname); // Pass the nickname to the function
+  return;
+}
+
+if (payload.message.startsWith('/join')) {
+  const userId = payload.sender;
+  const nickname = payload.senderName; // Get the user's nickname
+  const room = process.env.ROOM_UUID;
+
+  if (!getBlackjackGameActive()) {
+      await postMessage({ room: room, message: "No active blackjack game. Start one with /blackjack." });
+      return;
+  }
+
+  await joinTable(userId, nickname); // Pass the nickname to joinTable
+  return;
+}
+
+// Handle the /leave command
+if (payload.message.startsWith('/leave')) {
+  const userId = payload.sender;
+  const room = process.env.ROOM_UUID;
+
+  await leaveTable(userId);
+  return;
+}
 
   /// ////////////// MOD Commands ///////////////////////////
   if (payload.message.startsWith('/mod')) {
   await postMessage({
     room,
-    message: 'Moderator commands are:\n- /settheme: Set room theme\n-   Albums\n  -   Covers\n  -   Rock\n  -   Country\n  -    Rap\n- /removetheme: Remove room theme\n- /addsong: Add current song to bot playlist\n- /removesong: Remove current song from bot playlist\n- /songstatson: Turns song stats on\n- /songstatsoff: Turns song stats off\n- /bopoff: Turns bot auto like off\n- /bopon: Turns bot auto like back on\n- /autodjoff: Turns off auto DJ\n- /autodjon: Turns on auto DJ\n- /greeton: Turns on expanded user greeting\n- /greetoff: Turns off expanded user greeting\n -/audiostatson: Turns on audio stats\n -/audiostatsoff: Turns off audio stats\n- /status: Shows bot toggles status'
+    message: 'Moderator commands are:\n- /settheme: Set room theme\n----- Albums\n----- Covers\n----- Rock\n----- Country\n----- Rap\n- /removetheme: Remove room theme\n- /addsong: Add current song to bot playlist\n- /removesong: Remove song from bot playlist\n- /addDJ: Bot DJs from main playlist\n- /addDJ auto: Bot DJs from Spotify Recs\n- /removeDJ: Remove bot as DJ\n\n ----- BOT TOGGLES -----\n- /status: Shows bot toggles status\n- /songstatson: Turns song stats on\n- /songstatsoff: Turns song stats off\n\n- /bopoff: Turns bot auto like off\n- /bopon: Turns bot auto like back on\n\n- /autodjoff: Turns off auto DJ\n- /autodjon: Turns on auto DJ\n\n- /greeton: Turns on expanded user greeting\n- /greetoff: Turns off expanded user greeting\n\n -/audiostatson: Turns on audio stats\n -/audiostatsoff: Turns off audio stats'
   })
  }
  if (payload.message.startsWith('/addmoney')) {
@@ -1360,6 +1680,11 @@ else if (payload.message.startsWith('/settheme')) {
           design: "UNDERGROUND",
           numberOfDjs: 4
         };
+      } else if (["happy hour"].includes(themeLower)) {
+        updatePayload = {
+          design: "TOMORROWLAND",
+          numberOfDjs: 5
+        };
       } else if (["rap"].includes(themeLower)) {
       updatePayload = {
         design: "CLUB",
@@ -1721,7 +2046,7 @@ else if (payload.message.startsWith('/settheme')) {
   } else if (payload.message.startsWith('/song')) {
     const currentSong = roomBot.currentSong
     if (currentSong && currentSong.trackName) {
-      const songDetails = `Track Name: ${currentSong.trackName}\nArtist Name: ${currentSong.artistName}\n${currentSong.spotifyUrl}`
+      const songDetails = `Track Name: ${currentSong.trackName}\nArtist Name: ${currentSong.artistName}\n${currentSong.spotifyUrl}\nSong Duration: ${currentSong.songDuration}\n Song ID: ${currentSong.songId}`
       await postMessage({
         room,
         message: songDetails
@@ -1810,7 +2135,7 @@ else if (payload.message.startsWith('/settheme')) {
         // Announce to the room that song suggestions are coming
         await postMessage({
           room,
-          message: 'Based on the last 5 songs played in this room, here are 5 suggested songs you might like:'
+          message: 'Based on the last 5 songs played in this room, here are some suggested songs you might like:'
         });
 
         for (const track of recommendations) {
@@ -1847,13 +2172,7 @@ else if (payload.message.startsWith('/settheme')) {
             await new Promise(resolve => setTimeout(resolve, 500)); 
 
           } catch (songError) {
-            console.error(`Error fetching song data for track ${track.id}:`, songError);
-
-            // Notify the room if there was an issue fetching data for a specific track
-            await postMessage({
-              room,
-              message: `Could not fetch data for track ${track.id}.`
-            });
+            console.error(`Error fetching song data for track ${track.id}:`, songError);           
           }
         }
       } else {
@@ -1931,12 +2250,6 @@ else if (payload.message.startsWith('/settheme')) {
 
           } catch (songError) {
             console.error(`Error fetching song data for track ${track.id}:`, songError);
-
-            // Notify the room if there was an issue fetching data for a specific track
-            await postMessage({
-              room,
-              message: `Could not fetch data for track ${track.id}.`
-            });
           }
         }
       } else {
@@ -1958,6 +2271,38 @@ else if (payload.message.startsWith('/settheme')) {
     if (payload.message.includes('song feature')) {
         await handleSongFeature(room);
     }
+
+    ////////////////// SPECIAL //////////////////////////
+  } else if (payload.message.startsWith('/afk')) {
+    const userId = payload.sender; // Get the user UUID from the payload
+
+    // Check if the user is AFK authorized
+    if (!isUserAfkAuthorized(userId)) {
+        await postMessage({
+            room,
+            message: 'You are not authorized to use this command.'
+        });
+        return; // Exit if the user does not have a token
+    }
+
+    // Handling the /afkon and /afkoff commands
+    if (payload.message.startsWith('/afkon')) {
+        // Update AFK status to ON
+        updateAfkStatus(userId, true);
+        await postMessage({
+            room,
+            message: 'AFK status is now ON.'
+        });
+    } else if (payload.message.startsWith('/afkoff')) {
+        // Update AFK status to OFF
+        updateAfkStatus(userId, false);
+        await postMessage({
+            room,
+            message: 'AFK status is now OFF.'
+        });
+    }
+    
+  
     /// /////////////  Trivia Stuff /////////////////////////////
   } else if (payload.message.startsWith('/triviastart')) {
     await handleTriviaStart(room)

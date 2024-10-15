@@ -2,6 +2,7 @@ import { postMessage } from '../libs/cometchat.js';
 import { fetchUserData, updateRoomInfo } from '../utils/API.js';
 import { addToUserWallet, getUserWallet, loadWallets, saveWallets, removeFromUserWallet } from '../libs/walletManager.js';
 
+
 // Global variabless
 let rouletteGameActive = false;
 let bets = {};
@@ -53,11 +54,8 @@ function getRouletteColor(number) {
     if (number === 0 || number === '00') {
         return 'green'; // Both 0 and 00 are green
     }
-    
-    // Define red and black numbers for roulette
     const redNumbers = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
     const blackNumbers = [2, 4, 6, 8, 10, 11, 13, 15, 17, 20, 22, 24, 26, 28, 29, 31, 33, 35];
-
     if (redNumbers.includes(number)) {
         return 'red';
     } else if (blackNumbers.includes(number)) {
@@ -69,7 +67,7 @@ function getRouletteColor(number) {
 async function logUserBets() {
     let logMessages = [];
     for (const [userId, userBets] of Object.entries(bets)) {
-        const nickname = await getUserNickname(userId); // Ensure this function retrieves the nickname correctly
+        const nickname = await getUserNickname(userId); 
 
         // Ensure userBets is an array
         if (Array.isArray(userBets)) {
@@ -95,8 +93,13 @@ async function logUserBets() {
 export async function getUserNickname(userId) {
     const userArray = [userId]; 
     const users = await fetchUserData(userArray); // Fetch user data
+
     // Check if we have any user profiles returned and return the nickname
-    return users.length > 0 && users[0].userProfile ? users[0].userProfile.nickname : null; // Access userProfile for the nickname
+    if (users && users.length > 0 && users[0].userProfile) {
+        return users[0].userProfile.nickname || 'Unknown'; // Access userProfile for the nickname
+    } else {
+        return 'Unknown'; // Return 'Unknown' if no user data is found
+    }
 }
 
 async function initializeWallet(user) {
@@ -107,19 +110,17 @@ async function initializeWallet(user) {
         console.log('Loaded wallets:', wallets);
 
         if (!wallets[user]) {
-            // Create a new wallet with the default balance if it doesn't exist
             wallets[user] = { balance: defaultWalletSize };
-            await saveWallets(wallets); // Save after creation
+            await saveWallets(wallets); 
             console.log(`Created new wallet for user ${user} with balance: ${defaultWalletSize}`);
-            return defaultWalletSize; // Return the default value
+            return defaultWalletSize; 
         }
-
         console.log(`Wallet exists for user ${user} with balance: ${wallets[user].balance}`);
-        return wallets[user].balance; // Return existing balance
+        return wallets[user].balance; 
     } catch (error) {
         console.error('Error initializing wallet:', error);
-        // Handle error accordingly (e.g., return a default value or rethrow)
-        throw error; // Optional: rethrow the error to be handled further up the chain
+
+        throw error; 
     }
 }
 
@@ -276,20 +277,10 @@ async function handleRouletteBet(payload) {
     const wallets = await loadWallets(); // Ensure wallets are loaded before accessing them
 
     // Initialize wallet for the user if it hasn't been set
+    const defaultWalletBalance = 50; // Default balance for new users
     if (!wallets[user]) {
-        initializeWallet(user); // Assuming this function sets up a new wallet
-    }
-    // Default wallet balance for new users
-    const defaultWalletBalance = 50;
-    // Ensure user has enough funds to place the bet
-    if (!wallets[user]) {
-        // Initialize the wallet with a default balance
-        wallets[user] = { balance: defaultWalletBalance };
-
-        // Save the updated wallets to persistent storage
-        await saveWallets(wallets);
-
-        // Inform the user their wallet has been created
+        wallets[user] = { balance: defaultWalletBalance }; // Initialize with default balance
+        await saveWallets(wallets); // Save the updated wallets
         await postMessage({
             room: process.env.ROOM_UUID,
             message: `@${nickname}, a wallet has been created for you with a starting balance of $${defaultWalletBalance}.`
@@ -308,9 +299,9 @@ async function handleRouletteBet(payload) {
     // Check if the betTypeOrNumber is a valid number (bet on a specific number)
     if (!isNaN(betTypeOrNumber) && parseInt(betTypeOrNumber, 10) >= 0 && parseInt(betTypeOrNumber, 10) <= 36) {
         const number = parseInt(betTypeOrNumber, 10);
-        placeBet(user, 'number', amount, { number });
         confirmationMessage = `@${nickname} placed a bet of $${amount} on number ${number}.`;
         validBet = true; // Mark the bet as valid
+        await placeBet(user, 'number', amount, { number }); // Pass additional parameters
     } else {
         // Handle non-number bet types
         switch (betTypeOrNumber) {
@@ -319,50 +310,26 @@ async function handleRouletteBet(payload) {
             case 'green':
             case 'odd':
             case 'even':
-                placeBet(user, betTypeOrNumber, amount);
                 confirmationMessage = `@${nickname} placed a bet of $${amount} on ${betTypeOrNumber}.`;
                 validBet = true; // Mark the bet as valid
+                await placeBet(user, betTypeOrNumber, amount); // No additional params needed
                 break;
 
             case 'high':
             case 'low':
-                placeBet(user, betTypeOrNumber, amount); // Place the bet for simple types
                 confirmationMessage = `@${nickname} placed a bet of $${amount} on ${betTypeOrNumber}.`;
                 validBet = true;
+                await placeBet(user, betTypeOrNumber, amount); // No additional params needed
                 break;
 
             case 'dozen1':
             case 'dozen2':
             case 'dozen3':
                 const dozenNumber = betTypeOrNumber.charAt(betTypeOrNumber.length - 1); // Get the last character as the dozen number
-                placeBet(user, 'dozen', amount, { dozen: dozenNumber });
                 confirmationMessage = `@${nickname} placed a bet of $${amount} on dozen ${dozenNumber}.`;
                 validBet = true;
+                await placeBet(user, 'dozen', amount, { dozen: dozenNumber }); // Pass additional parameters
                 break;
-
-            case 'column':
-                // Ensure the user has provided exactly one parameter: column number
-                const additionalParams = commandParts.slice(1, commandParts.length - 1);
-                if (additionalParams.length === 1 && !isNaN(parseInt(additionalParams[0], 10))) {
-                    const columnNumber = parseInt(additionalParams[0], 10);
-                    if (columnNumber >= 1 && columnNumber <= 3) {
-                        placeBet(user, 'column', amount, { column: columnNumber });
-                        confirmationMessage = `@${nickname} placed a bet of $${amount} on column ${columnNumber}.`;
-                        validBet = true;
-                    } else {
-                        await postMessage({
-                            room: process.env.ROOM_UUID,
-                            message: `@${nickname}, please enter a valid column number (1, 2, or 3).`
-                        });
-                    }
-                } else {
-                    await postMessage({
-                        room: process.env.ROOM_UUID,
-                        message: `@${nickname}, please use the format /column <column_number> <bet_amount>.`
-                    });
-                }
-                break;
-
             default:
                 await postMessage({
                     room: process.env.ROOM_UUID,
@@ -371,34 +338,6 @@ async function handleRouletteBet(payload) {
         }
     }
 
-    if (validBet) {
-        // Check if the user exists in the wallets
-        if (wallets[user]) {
-            // Check if the wallet is properly structured
-            if (typeof wallets[user] === 'object' && wallets[user].hasOwnProperty('balance')) {
-                // Deduct the bet amount from the user's wallet
-                const deductionSuccessful = await removeFromUserWallet(user, amount); // Use the removeFromUserWallet function
-
-                if (!deductionSuccessful) {
-                    await postMessage({
-                        room: process.env.ROOM_UUID,
-                        message: `@${nickname}, you do not have enough funds to place that bet!`
-                    });
-                    return; // Exit if insufficient funds
-                }
-            } else {
-                console.error(`Wallet for user ${user} is not properly initialized.`);
-                return; // Exit if wallet is invalid
-            }
-        } else {
-            console.error(`User ${user} not found in wallets.`);
-            // Initialize wallet for the user if not found
-            wallets[user] = { balance: defaultWalletSize }; // Initialize with default balance
-            await saveWallets(wallets); // Save the updated wallets after creating a new wallet
-            console.log(`Wallet created for user ${user} with balance ${defaultWalletSize}.`);
-        }
-    }
-        
     // Send the confirmation message only once if a valid bet was placed
     if (validBet && confirmationMessage) {
         await postMessage({
@@ -407,6 +346,7 @@ async function handleRouletteBet(payload) {
         });
     }
 }
+
 
 
 function getDozenRange(dozenNumber) {
@@ -424,7 +364,7 @@ function getDozenRange(dozenNumber) {
 
 // Function to place a bet for a user
 async function placeBet(user, betType, amount, additionalParams = {}) {
-    const currentBalance = await initializeWallet(user); // Ensure the user has a wallet initialized
+    const currentBalance = await initializeWallet(user); 
 
     // Check if the user has enough balance to place the bet
     if (currentBalance < amount) {
@@ -432,20 +372,30 @@ async function placeBet(user, betType, amount, additionalParams = {}) {
             room: process.env.ROOM_UUID,
             message: `@${user}, you do not have enough funds to place that bet!`
         });
-        return; // Exit if not enough funds
+        return; 
     }
 
-    // Deduct the amount from the user's wallet
-    await addToUserWallet(user, -amount); // Deduct the amount from the user's wallet
+    // Deduct the amount from the user's wallet using removeFromUserWallet
+    const success = await removeFromUserWallet(user, amount);
+
+    // Check if the wallet deduction was successful
+    if (!success) {
+        await postMessage({
+            room: process.env.ROOM_UUID,
+            message: `@${user}, an error occurred while processing your bet. Please try again.`
+        });
+        return; 
+    }
 
     // Log the bet for the user
-    if (!bets[user]) bets[user] = []; // Ensure the bets array is initialized
+    if (!bets[user]) bets[user] = []; 
     bets[user].push({ type: betType, amount: amount, ...additionalParams });
+
     // Optional: Log the successful bet placement
     console.log(`User ${user} placed a bet of $${amount} on ${betType}.`);
 }
 
-// Function to simulate drawing the winning number
+
 async function drawWinningNumber() {
     logUserBets();
     if (!rouletteGameActive) {
@@ -456,18 +406,16 @@ async function drawWinningNumber() {
         return;
     }
 
-    // Generate a winning number between 0 and 36
     const winningNumber = Math.floor(Math.random() * 37);
-    const winningColor = getRouletteColor(winningNumber); // Red, Black, or Green
+    const winningColor = getRouletteColor(winningNumber); 
 
-    // Logging the generated values for debugging
     console.log(`Winning Number: ${winningNumber}, Winning Color: ${winningColor}`);
 
     const colorEmoji = winningColor === 'red' ? '🟥' : winningColor === 'black' ? '⬛' : '🟩';
 
     await postMessage({
         room: process.env.ROOM_UUID,
-        message: `The ball landed on ${winningNumber} ${colorEmoji}  (${winningColor.toUpperCase()}) !`
+        message: `The ball landed on ${winningNumber} ${colorEmoji} (${winningColor.toUpperCase()}) !`
     });
 
     let userWinnings = {}; // Object to store each user's total winnings and total bets
@@ -549,76 +497,67 @@ async function drawWinningNumber() {
     // Now set the game as inactive
     rouletteGameActive = false;
 
-    let updatePayload = null;
-    updatePayload = {
-            "pinnedMessages": [
-              ]
+    let updatePayload = {
+        "pinnedMessages": []
     };
     await updateRoomInfo(updatePayload);
 
     let hasWinners = false; // Flag to track if there are winners
 
-// Announce winners and calculate the net outcome
-if (Object.keys(userWinnings).length > 0) {
-    let outcomeMessage = "\n"; // Initialize outcome message
+    // Announce winners and calculate the net outcome
+    if (Object.keys(userWinnings).length > 0) {
+        let outcomeMessage = "\n"; // Initialize outcome message
 
-    for (const [user, winnings] of Object.entries(userWinnings)) {
-        const netOutcome = winnings.totalWin - winnings.totalBet; // Calculate net outcome
-        const nickname = winnings.nickname; // Get user's nickname
-        console.log(`Net outcome for @${nickname}: ${netOutcome}`);
-        
-        // Format the win and loss messages
-        const winAmount = winnings.totalWin; // Total winnings
-        const lossAmount = winnings.totalBet; // Total bet amount for losses
-
-        // Get user's current balance
-        const currentBalance = await getUserWallet(user); // Use the wallet manager function
-
-        // Check if the user is a winner or a loser
-        if (netOutcome > 0) {
-            hasWinners = true; // Mark that we have winners
+        for (const [user, winnings] of Object.entries(userWinnings)) {
+            const netOutcome = winnings.totalWin - winnings.totalBet; // Calculate net outcome
+            const nickname = winnings.nickname; // Get user's nickname
+            console.log(`Net outcome for @${nickname}: ${netOutcome}`);
             
-            outcomeMessage += `🎉         ${nickname} is a Winner!    +$${netOutcome} 🎉\nWin: +$${winAmount}\nBets: $${lossAmount}\nLoss: -$0\nCurrent Balance: $${currentBalance}\n\n`; // Add win message to outcome
+            // Format the win and loss messages
+            const winAmount = winnings.totalWin; // Total winnings
+            const lossAmount = winnings.totalBet; // Total bet amount for losses
 
-            // Update wallet balance and store it
-            try {
-                await addToUserWallet(user, winnings.totalWin); // Add winnings to user's wallet
-                const updatedBalance = await getUserWallet(user); // Fetch the new balance after adding winnings
-                console.log(`Updated balance for @${nickname} after winning: $${updatedBalance}`);
-            } catch (error) {
-                console.error(`Error updating wallet for @${nickname}: ${error}`);
-            }
-        } else {
-            outcomeMessage += `       ${nickname} is a Loser! Loss: -$${lossAmount}\nWin: +$0\nBets: $${lossAmount}\nLoss: -$${lossAmount}\nCurrent Balance: $${currentBalance}\n\n`; // Add loss message to outcome
+            // Get user's current balance
+            const currentBalance = await getUserWallet(user); // Use the wallet manager function
 
-            // Update wallet balance and store it
-            try {
-                await addToUserWallet(user, -lossAmount); // Deduct total lost bets from user's wallet
-                const updatedBalance = await getUserWallet(user); // Fetch the new balance after deduction
-                console.log(`Updated balance for @${nickname} after losing: $${updatedBalance}`);
-            } catch (error) {
-                console.error(`Error deducting bet for @${nickname}: ${error}`);
+            // Check if the user is a winner or a loser
+            if (netOutcome > 0) {
+                hasWinners = true; // Mark that we have winners
+                
+                outcomeMessage += `🎉 ${nickname} is a Winner! +$${netOutcome} 🎉\nWin: +$${winAmount}\nBets: $${lossAmount}\nLoss: -$0\nCurrent Balance: $${currentBalance}\n\n`; // Add win message to outcome
+
+                // Update wallet balance and store it
+                try {
+                    await addToUserWallet(user, winnings.totalWin); // Add winnings to user's wallet
+                    const updatedBalance = await getUserWallet(user); // Fetch the new balance after adding winnings
+                    console.log(`Updated balance for @${nickname} after winning: $${updatedBalance}`);
+                } catch (error) {
+                    console.error(`Error updating wallet for @${nickname}: ${error}`);
+                }
+            } else {
+                outcomeMessage += `       ${nickname} is a Loser! Loss: -$${lossAmount}\nWin: +$0\nBets: $${lossAmount}\nLoss: -$${lossAmount}\nCurrent Balance: $${currentBalance}\n\n`; // Add loss message to outcome
+                // No further deduction, as bets are already deducted in placeBet
             }
         }
+
+        // Handle no winners case
+        if (!hasWinners) {
+            outcomeMessage += "No winners this round. Better luck next time!";
+        }
+
+        console.log(outcomeMessage); // Log the outcome message
+
+        // Post the outcome message to the room
+        await postMessage({
+            room: process.env.ROOM_UUID,
+            message: outcomeMessage // Send the formatted outcome message
+        });
     }
 
-    // Handle no winners case
-    if (!hasWinners) {
-        outcomeMessage += "No winners this round. Better luck next time!";
-    }
-
-    console.log(outcomeMessage); // Log the outcome message
-
-    // Post the outcome message to the room
-    await postMessage({
-        room: process.env.ROOM_UUID,
-        message: outcomeMessage // Send the formatted outcome message
-    });
+    // Reset bets after the game ends
+    bets = {};
 }
 
-// Reset bets after the game ends
-bets = {};
-}
 
 // Main handler function to route commands
 export async function handleRouletteCommandWrapper(payload) {

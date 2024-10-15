@@ -3,13 +3,16 @@ import { SocketClient } from 'ttfm-socket'
 import { joinChat, getMessages, postMessage } from './cometchat.js'
 import { logger } from '../utils/logging.js'
 import { handlers } from '../handlers/index.js'
-import { fetchSpotifyPlaylistTracks, fetchCurrentUsers, spotifyTrackInfo, fetchAudioFeatures, fetchCurrentlyPlayingSong, fetchSpotifyRecommendations } from '../utils/API.js'
+import { fetchSpotifyPlaylistTracks, fetchCurrentUsers, spotifyTrackInfo, fetchAudioFeatures, fetchCurrentlyPlayingSong, fetchSpotifyRecommendations, fetchRecentSongs } from '../utils/API.js'
 import { postVoteCountsForLastSong, songStatsEnabled } from '../utils/voteCounts.js'
 import { usersToBeRemoved } from '../handlers/message.js'
 import { escortUserFromDJStand } from '../utils/escortDJ.js'
 import handleUserJoinedWithStatePatch from '../handlers/userJoined.js'
 import { handleAlbumTheme, handleCoversTheme } from '../handlers/playedSong.js'
 import { checkAndPostAudioFeatures, addHappySongsToPlaylist, addDanceSongsToPlaylist } from '../utils/audioFeatures.js'
+import { songPayment } from './walletManager.js'
+import { updateRoomInfo } from '../utils/API.js'
+
 
 export function getCurrentDJUUIDs (state) {
   if (!state?.djs) {
@@ -62,6 +65,7 @@ export class Bot {
     this.currentSong = {
       trackName: 'Unknown',
       spotifyTrackId: null,
+      songId: null,
       spotifyUrl: null,
       artistName: 'Unknown',
       albumName: 'Unknown',
@@ -210,17 +214,20 @@ updateRecentSpotifyTrackIds(trackId) {
 
       if (payload.name === 'playedSong') {
         try {
-          let spotifyTrackId = null
+          let spotifyTrackId = null;
+          let songId = null;
 
           try {
-            spotifyTrackId = await fetchCurrentlyPlayingSong() // Fetch the Spotify track ID from the API
+            const currentlyPlaying = await fetchCurrentlyPlayingSong(); // Fetch both songID and Spotify track ID
+            spotifyTrackId = currentlyPlaying.spotifyTrackId; // Extract the Spotify track ID
+            songId = currentlyPlaying.songId; // Extract the songID
           } catch (fetchError) {
-            console.error('Error fetching Spotify Track ID:', fetchError.message)
+            console.error('Error fetching currently playing song', fetchError.message)
           }
           // Fetch additional track details using the Spotify Track ID
           if (spotifyTrackId) {
             const trackInfo = await spotifyTrackInfo(spotifyTrackId)
-
+            
             if (trackInfo) {
               // Fetch audio features for the track
               const audioFeatures = await fetchAudioFeatures(spotifyTrackId)
@@ -229,6 +236,7 @@ updateRecentSpotifyTrackIds(trackId) {
                 trackName: trackInfo.spotifyTrackName || 'Unknown',
                 spotifyUrl: trackInfo.spotifySpotifyUrl || '',
                 spotifyTrackId,
+                songId,
                 artistName: trackInfo.spotifyArtistName || 'Unknown',
                 albumName: trackInfo.spotifyAlbumName || 'Unknown',
                 releaseDate: trackInfo.spotifyReleaseDate || 'Unknown',
@@ -263,8 +271,8 @@ updateRecentSpotifyTrackIds(trackId) {
               }
 
               self.updateRecentSpotifyTrackIds(spotifyTrackId)
-
               console.log(`Updated currentSong: ${JSON.stringify(self.currentSong.trackName)}`)
+
               try {
                 await addHappySongsToPlaylist(spotifyTrackId); // Adding happy songs to the playlist if they meet the criteria
               } catch (error) {
@@ -277,6 +285,7 @@ updateRecentSpotifyTrackIds(trackId) {
               }
             }
           }
+        
           self.scheduleLikeSong(process.env.ROOM_UUID, process.env.BOT_USER_UUID)
           self.updateNextSong()
           setTimeout(() => {
@@ -300,11 +309,18 @@ updateRecentSpotifyTrackIds(trackId) {
           console.log(`User ${currentDJ} removed from DJ stand after their song ended.`)
         }
         try {
-          await checkAndPostAudioFeatures(this.currentSong, process.env.ROOM_UUID);
-          console.log('Audio features check and post completed.');
+          // Only call checkAndPostAudioFeatures if audioStatsEnabled is true
+          if (this.audioStatsEnabled) {
+            await checkAndPostAudioFeatures(this.currentSong, process.env.ROOM_UUID);
+            console.log('Audio features check and post completed.');
+          } else {
+            console.log('Audio stats disabled, skipping audio features check and post.');
+          }
         } catch (error) {
           console.error('Error during audio features check and post:', error);
         }
+        
+        await songPayment();
       }
     })
   }

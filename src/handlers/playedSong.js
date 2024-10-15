@@ -5,6 +5,7 @@ import { fetchSongData, fetchUserData, spotifyTrackInfo } from '../utils/API.js'
 import { roomThemes } from './message.js'
 import { getCurrentDJUUIDs } from '../libs/bot.js'
 import { askQuestion } from '../libs/ai.js'
+import { getUserNickname } from './roulette.js'
 
 
 const formatDate = (dateString) => {
@@ -52,7 +53,7 @@ const handleAlbumTheme = async (payload) => {
       // Post album information at the start of the album, only if spotifyTrackNumber is 1
       if (spotifyTrackNumber === 1) {
         const currentDJUuid = getCurrentDJUUIDs(roomBot.state);
-        const [currentDJName] = await fetchUserData([currentDJUuid]);
+        const currentDJName = await getUserNickname(currentDJUuid);
 
         // Post the album art as an image along with the album details
         await postMessage({
@@ -84,14 +85,14 @@ const handleAlbumTheme = async (payload) => {
 
         if (currentDJUuid) {
           console.log(`Waiting ${songDuration} milliseconds before removing the DJ...`);
-          const adjustedSongDuration = songDuration - 2000;
+          const adjustedSongDuration = songDuration - 5000;
           // Remove the DJ after the last song's duration
           setTimeout(async () => {
             await roomBot.removeDJ(currentDJUuid); // Call removeDJ with the current DJ's UUID
             console.log(`DJ ${currentDJUuid} removed from the stage after the final track.`);
           }, adjustedSongDuration); // Wait for the duration of the song
 
-          const [currentDJName] = await fetchUserData([currentDJUuid]);
+          const currentDJName = await getUserNickname(currentDJUuid);
 
           // Post a thank-you message to the DJ
           await postMessage({

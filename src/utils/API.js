@@ -352,35 +352,85 @@ export async function extractTrackId(input) {
 
 /// //////////// TURNTABLE API /////////////////////////////
 
-async function fetchCurrentlyPlayingSong () {
-  const token = process.env.TTL_USER_TOKEN
-  const roomUUID = process.env.ROOM_UUID // Replace with your room UUID
+async function fetchCurrentlyPlayingSong() {
+  const token = process.env.TTL_USER_TOKEN;
+  const roomUUID = process.env.ROOM_UUID; // Replace with your room UUID
 
   try {
     const response = await fetch(`https://gateway.prod.tt.fm/api/room-service/rooms/uuid/${roomUUID}`, {
       headers: {
         Authorization: `Bearer ${token}`,
-        accept: 'application/json'
-      }
-    })
+        accept: 'application/json',
+      },
+    });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch current song: ${response.statusText}`)
+      throw new Error(`Failed to fetch current song: ${response.statusText}`);
     }
 
-    const data = await response.json()
-    const song = data.song
+    const data = await response.json();
+    const song = data.song;
 
     if (song && song.musicProviders && song.musicProviders.spotify) {
-      const spotifyTrackId = song.musicProviders.spotify.split(':').pop() // Extract only the track ID part
-      return spotifyTrackId // Return only the track ID, not the full URI
+      const spotifyTrackId = song.musicProviders.spotify; // This contains the Spotify track ID
+      const songId = song.id; // Assuming song.id exists in the response
+
+      return { spotifyTrackId, songId }; // Return both spotifyTrackId and songId
     } else {
-      throw new Error('Spotify track info not found in the current song')
+      throw new Error('Spotify track info not found in the current song');
     }
   } catch (error) {
-    throw new Error(`Error fetching current song: ${error.message}`)
+    throw new Error(`Error fetching current song: ${error.message}`);
   }
 }
+
+async function fetchAllUserQueueSongIDsWithUUID(userToken) {
+  if (!userToken) {
+    throw new Error('User token is required for fetching queue songs.');
+  }
+
+  let allSongs = [];
+  let offset = 0;
+  const defaultLimit = 100; // Maximum limit per request (adjust if necessary)
+
+  try {
+    while (true) {
+      const response = await fetch(`https://gateway.prod.tt.fm/api/playlist-service/crate/special/queue/songs?limit=${defaultLimit}&offset=${offset}`, {
+        headers: {
+          Authorization: `Bearer ${userToken}`, // Use the user-specific token
+          accept: 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch queue songs: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const songs = data.songs; // Assuming `data.songs` contains the list of songs
+
+      if (songs.length === 0) {
+        break; // Exit if no more songs are returned
+      }
+
+      // Extract both the songID and crateSongUUID for each song
+      const songDetails = songs.map(song => ({
+        songID: song.songId,            // Assuming each song has a `songID` field
+        crateSongUUID: song.crateSongUUID // Assuming each song has a `crateSongUUID` field
+      }));
+
+      allSongs = allSongs.concat(songDetails); // Append to the list of all songs
+      offset += songs.length; // Update the offset for pagination
+    }
+
+    return allSongs; // Return an array of objects containing `songID` and `crateSongUUID`
+  } catch (error) {
+    console.error('Error fetching user queue song details:', error.message);
+    throw error;
+  }
+}
+
+
 
 async function fetchRecentSongs () {
   const token = process.env.TTL_USER_TOKEN
@@ -482,7 +532,6 @@ export async function fetchUserData(userUUIDs) {
   }
 
   const userData = await response.json();
-
   return userData; // Return the array of user profiles
 }
 
@@ -565,5 +614,34 @@ async function currentsongduration () {
     throw new Error(`Error fetching current song: ${error.message}`)
   }
 }
+async function DeleteQueueSong(crateSongUuid, userToken) {
+  if (!crateSongUuid) {
+    throw new Error('crateSongUuid must be provided');
+  }
+  
+  if (!userToken) {
+    throw new Error('User token must be provided');
+  }
 
-export { getAccessToken, currentsongduration, fetchSpotifyRecommendations, fetchAudioFeatures, spotifyTrackInfo, fetchTrackDetails, isUserAuthorized, fetchUserRoles, fetchRecentSongs, fetchCurrentUsers, fetchSpotifyPlaylistTracks, fetchCurrentlyPlayingSong, fetchSongData }
+  try {
+    const response = await fetch(`https://gateway.prod.tt.fm/api/playlist-service/crate/special/queue/songs/${crateSongUuid}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${userToken}`,
+        Accept: 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to delete song from queue: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data; // Return the response data from the API
+  } catch (error) {
+    throw new Error(`Error deleting song from queue: ${error.message}`);
+  }
+}
+
+
+export { getAccessToken, currentsongduration, fetchSpotifyRecommendations, fetchAudioFeatures, spotifyTrackInfo, fetchTrackDetails, isUserAuthorized, fetchUserRoles, fetchRecentSongs, fetchCurrentUsers, fetchSpotifyPlaylistTracks, fetchCurrentlyPlayingSong, fetchSongData, DeleteQueueSong, fetchAllUserQueueSongIDsWithUUID }

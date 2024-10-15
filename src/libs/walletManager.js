@@ -1,8 +1,15 @@
 import { promises as fs } from 'fs';
 import path from 'path';
+import { fetchRecentSongs } from '../utils/API.js';
+import { getUserNickname } from '../handlers/roulette.js';
 
 const walletsFilePath = path.join(process.cwd(), 'src/libs/wallets.json');
 const usersFilePath = path.join(process.cwd(), 'src/libs/users.json');
+
+// Helper function to round to nearest tenth
+function roundToTenth(amount) {
+    return Math.round(amount * 10) / 10; // Rounds to one decimal place
+}
 
 // Load wallets from the JSON file
 async function loadWallets() {
@@ -18,6 +25,34 @@ async function loadWallets() {
             console.error('Error reading wallets file:', error);
             return {}; // Return an empty object on error
         }
+    }
+}
+
+async function addOrUpdateUser(userUUID) {
+    try {
+        // Fetch the user's nickname using the getUserNickname function
+        const nickname = await getUserNickname(userUUID);
+
+        // Step 1: Load the current users
+        const users = await loadUsers();
+
+        // Step 2: Check if the user already exists
+        if (!users[userUUID]) {
+            if (nickname) {
+                // Step 3: Add the user if they don't exist and if we have a valid nickname
+                users[userUUID] = { nickname };
+
+                // Step 4: Save the updated users list to the users.json file
+                await saveUsers(users);
+                console.log(`User ${nickname} added successfully with UUID: ${userUUID}`);
+            } else {
+                console.log(`Nickname not found for user ${userUUID}, not added.`);
+            }
+        } else {
+            console.log(`User with UUID: ${userUUID} already exists.`);
+        }
+    } catch (error) {
+        console.error('Error adding or updating user:', error);
     }
 }
 
@@ -70,92 +105,71 @@ async function getNicknamesFromWallets() {
 }
 
 // Function to add dollars to a user's wallet
-async function addToUserWallet(user, amount) {
-    // Ensure the amount is a valid number
-    if (typeof amount !== 'number' || amount <= 0) {
-        console.error('Invalid amount:', amount);
-        return; // Exit early for invalid amounts
-    }
-
+async function addToUserWallet(userUUID, amount, nickname) {
     try {
-        const wallets = await loadWallets(); // Load current wallets
+        // Add or update the user in the users.json file before adding to their wallet
+        await addOrUpdateUser(userUUID, nickname);
 
-        // Check if the user's wallet is present
-        if (!wallets[user]) {
-            console.error(`User wallet not found for user ${user}.`);
-            return; // Exit if the wallet does not exist
+        // Step 1: Load existing wallets
+        const wallets = await loadWallets();
+
+        // Step 2: Ensure the user's wallet exists, if not, initialize it
+        if (!wallets[userUUID]) {
+            wallets[userUUID] = { balance: 0 }; // Create a wallet if it doesn't exist
         }
 
-        // Update the wallet balance safely
-        wallets[user].balance += amount;
+        // Step 3: Add the amount and round the result
+        wallets[userUUID].balance = roundToTenth(wallets[userUUID].balance + amount);
 
-        // Save the updated wallets
+        // Step 4: Save the updated wallets back to the file
         await saveWallets(wallets);
-        console.log(`Updated wallet for user ${user}: $${wallets[user].balance}`);
+        return true; // Return true to indicate success
+
     } catch (error) {
-        console.error('Error updating wallet:', error);
+        console.error('Error adding to wallet:', error);
+        return false; // Return false to indicate an error
     }
 }
 
-async function removeFromUserWallet(user, amount) {
-    // Load the wallets data
-    const wallets = await loadWallets(); // Ensure wallets are loaded before accessing them
 
-    // Check if the user's wallet exists
-    if (!wallets[user]) {
-        console.error(`Wallet for user ${user} does not exist.`);
-        return false; // Exit if the wallet does not exist
+async function removeFromUserWallet(userUUID, amount) {
+    try {
+        const wallets = await loadWallets(); // Load wallets using a helper function
+
+        // Ensure the user's wallet exists; if not, initialize it
+        if (!wallets[userUUID]) {
+            wallets[userUUID] = { balance: 0 }; // Create a wallet if it doesn't exist
+        }
+
+        // Check if the new balance would be negative
+        const newBalance = roundToTenth(wallets[userUUID].balance - amount);
+        wallets[userUUID].balance = newBalance < 0 ? 0 : newBalance; // Set to zero if negative
+
+        await saveWallets(wallets); // Save updated wallets back to the file
+        return true; // Return true to indicate success
+    } catch (error) {
+        console.error('Error removing from wallet:', error);
+        return false; // Return false to indicate an error
     }
-
-    // Ensure the wallet is properly structured
-    if (typeof wallets[user] !== 'object' || !wallets[user].hasOwnProperty('balance')) {
-        console.error(`Wallet for user ${user} is not properly initialized.`);
-        return false; // Exit if wallet is invalid
-    }
-
-    // Check if the amount is valid
-    if (isNaN(amount) || amount <= 0) {
-        console.error(`Invalid amount: ${amount}. Cannot remove.`);
-        return false; // Exit if the amount is not valid
-    }
-
-    // Check if the user has enough balance to remove the amount
-    if (wallets[user].balance < amount) {
-        console.error(`User ${user} does not have enough funds to remove $${amount}.`);
-        return false; // Exit if insufficient funds
-    }
-
-    // Deduct the amount from the user's balance
-    wallets[user].balance -= amount;
-
-    // Save the updated wallets to persistent storage
-    await saveWallets(wallets); 
-
-    console.log(`Removed $${amount} from user ${user}'s wallet. New balance: $${wallets[user].balance}.`);
-    return true; // Return true to indicate success
 }
+
+
 
 
 // Get user's wallet balance
-async function getUserWallet(userUUID, nickname = 'Unknown') {
-    const wallets = await loadWallets();
-    const users = await loadUsers();
+async function getUserWallet(userUUID) {
+    try {
+        const data = await fs.readFile(walletsFilePath, 'utf8');
+        const wallets = JSON.parse(data);
 
-    // Initialize user if they do not exist
-    if (!users[userUUID]) {
-        users[userUUID] = { nickname };
-        await saveUsers(users);
-        console.log(`Added new user ${nickname} with UUID ${userUUID} to users.json.`);
+        if (wallets[userUUID] && wallets[userUUID].balance !== undefined) {
+            return roundToTenth(wallets[userUUID].balance); // Round balance when retrieving
+        }
+        return 0; // Return 0 if no wallet found
+    } catch (error) {
+        console.error('Error reading wallet file:', error);
+        return 0;
     }
-
-    // Initialize wallet if it doesn't exist
-    if (!wallets[userUUID]) {
-        wallets[userUUID] = { balance: 0 }; // Initialize with 0 balance
-        await saveWallets(wallets);
-    }
-
-    // Return the user's wallet balance, ensuring the structure is consistent
-    return wallets[userUUID].balance || 0; // Return 0 if the wallet doesn't exist
 }
 
 // Function to add dollars to a user by their nickname
@@ -198,6 +212,48 @@ async function getBalanceByNickname(nickname) {
     return balance; // Return 0 if the wallet doesn't have a balance property
 }
 
+async function songPayment() {
+    try {
+      const songPlays = await fetchRecentSongs(); // Fetch recent song plays
+    
+      // Check if songPlays is valid and an array
+      if (!songPlays || !Array.isArray(songPlays)) {
+        console.error('Invalid response format:');
+        return; // Exit if the response is not valid
+      }
+  
+      // Check if there are any song plays
+      if (songPlays.length === 0) {
+        console.log('No recent songs found.');
+        return; // Exit if there are no recent songs
+      }
+  
+      // Get the most recent songPlay (the first item in the array)
+      const mostRecentSongPlay = songPlays[0];
+  
+      // Extract relevant information from the most recent songPlay
+      const { song, playedAt } = mostRecentSongPlay; // Destructure song and playedAt
+      const userUUID = mostRecentSongPlay.djUuid; // Get DJ UUID from the songPlay
+      const voteCount = mostRecentSongPlay.voteCounts.likes; // Get like votes count
+  
+      if (userUUID && typeof voteCount === 'number' && voteCount > 0) {
+        const success = await addToUserWallet(userUUID, voteCount * 2); // Add $2 for each like
+        if (success) {
+          console.log(`Added $${voteCount * 1} to user ${userUUID}'s wallet for ${voteCount} likes.`);
+        } else {
+          console.error(`Failed to add to wallet for user ${userUUID}`);
+        }
+      } else {
+        console.error(`Invalid userUUID or voteCount for songPlay`);
+      }
+      } catch (error) {
+      console.error('Error in songPayment:', error);
+    }
+  }
+  
+  
+  
+
 // Export functions
 export { 
     addToUserWallet, 
@@ -207,5 +263,7 @@ export {
     getBalanceByNickname, 
     saveWallets, 
     loadWallets , 
-    removeFromUserWallet
+    removeFromUserWallet, 
+    songPayment, 
+   
 };

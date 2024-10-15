@@ -1,81 +1,85 @@
-import { postMessage } from '../libs/cometchat.js'
-import { fetchRecentSongs, fetchUserData } from './API.js'
-import { roomBot } from '../index.js'
+import { postMessage } from '../libs/cometchat.js';
+import { fetchRecentSongs, fetchUserData } from './API.js';
+import { roomBot } from '../index.js';
 
-let songStatsEnabled = false
+let songStatsEnabled = false;
 
 async function postVoteCountsForLastSong(room) {
   try {
     if (!songStatsEnabled) {
-      return
+      return;
     }
 
-    const recentSongs = await fetchRecentSongs()
+    const recentSongs = await fetchRecentSongs();
 
     if (!recentSongs || recentSongs.length === 0) {
       await postMessage({
         room,
         message: 'No recent songs found.'
-      })
-      return
+      });
+      return;
     }
 
     // Get the most recent song
-    const lastSong = recentSongs[0]
+    const lastSong = recentSongs[0];
 
     if (!lastSong) {
       await postMessage({
         room,
         message: 'No previous song found.'
-      })
-      return
+      });
+      return;
     }
 
-    const { song, voteCounts, djUuid } = lastSong
-    const { artistName, trackName } = song
+    const { song, voteCounts, djUuid } = lastSong;
+    const { artistName, trackName } = song;
 
     // Check if djUuid is available
     if (!djUuid) {
       await postMessage({
         room,
         message: 'No DJ found.'
-      })
-      return
+      });
+      return;
     }
 
     // Fetch DJ nickname using djUuid
-    let djNickname
+    let djNickname = 'Unknown DJ';  // Default to 'Unknown DJ'
     try {
-      const nicknames = await fetchUserData([djUuid])
-      djNickname = nicknames.length > 0 ? nicknames[0] : 'Unknown DJ'
+      const userData = await fetchUserData([djUuid]);  // Fetch user data
+      // Check if userData returned and extract the nickname
+      if (userData.length > 0 && userData[0].userProfile) {
+        djNickname = userData[0].userProfile.nickname;  // Access nickname from userProfile
+      }
     } catch (fetchError) {
-      djNickname = 'Unknown DJ'
+      console.error(`Failed to fetch DJ nickname: ${fetchError.message}`);
     }
 
-    const popularity = roomBot.currentSong ? roomBot.currentSong.popularity : 'Unknown'
+    const popularity = roomBot.currentSong ? roomBot.currentSong.popularity : 'Unknown';
 
-    const { likes = 0, dislikes = 0, stars = 0 } = voteCounts // Provide default values if not available
+    const { likes = 0, dislikes = 0, stars = 0 } = voteCounts;  // Provide default values if not available
 
-    const message = `${trackName} by ${artistName}\n 🎧 Played By: ${djNickname}\n 👍: ${likes}\n 👎: ${dislikes}\n ⭐: ${stars}\n Popularity Score: ${popularity} out of 100\n______________________________________________________`
+    const message = `${trackName} by ${artistName}\n 🎧 Played By: ${djNickname}\n 👍: ${likes}\n 👎: ${dislikes}\n ⭐: ${stars}\n Popularity Score: ${popularity} out of 100\n______________________________________________________`;
 
     await postMessage({
       room,
       message
-    })
+    });
 
   } catch (error) {
-    // Handle errors appropriately
+    console.error('Error in postVoteCountsForLastSong:', error.message);
+    // Handle errors appropriately, such as notifying the user or logging the issue
   }
 }
 
 // Command to turn on song stats
 async function enableSongStats() {
-  songStatsEnabled = true
+  songStatsEnabled = true;
 }
 
 // Command to turn off song stats
 async function disableSongStats() {
-  songStatsEnabled = false
+  songStatsEnabled = false;
 }
 
-export { postVoteCountsForLastSong, enableSongStats, disableSongStats, songStatsEnabled }
+export { postVoteCountsForLastSong, enableSongStats, disableSongStats, songStatsEnabled };
