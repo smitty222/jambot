@@ -3,13 +3,13 @@ import { SocketClient } from 'ttfm-socket'
 import { joinChat, getMessages, postMessage } from './cometchat.js'
 import { logger } from '../utils/logging.js'
 import { handlers } from '../handlers/index.js'
-import { fetchSpotifyPlaylistTracks, fetchCurrentUsers, spotifyTrackInfo, fetchAudioFeatures, fetchCurrentlyPlayingSong, fetchSpotifyRecommendations, fetchRecentSongs } from '../utils/API.js'
+import { fetchSpotifyPlaylistTracks, fetchCurrentUsers, spotifyTrackInfo,fetchCurrentlyPlayingSong, fetchRecentSongs } from '../utils/API.js'
 import { postVoteCountsForLastSong, songStatsEnabled } from '../utils/voteCounts.js'
 import { usersToBeRemoved } from '../handlers/message.js'
 import { escortUserFromDJStand } from '../utils/escortDJ.js'
 import handleUserJoinedWithStatePatch from '../handlers/userJoined.js'
 import { handleAlbumTheme, handleCoversTheme } from '../handlers/playedSong.js'
-import { checkAndPostAudioFeatures, addHappySongsToPlaylist, addDanceSongsToPlaylist } from '../utils/audioFeatures.js'
+//import { checkAndPostAudioFeatures, addHappySongsToPlaylist, addDanceSongsToPlaylist } from '../utils/audioFeatures.js'
 import { songPayment } from './walletManager.js'
 import { updateRoomInfo } from '../utils/API.js'
 
@@ -78,17 +78,6 @@ export class Bot {
       popularity: 0,
       previewUrl: '',
       isrc: 'Unknown',
-      audioFeatures: {
-        acousticness: null,
-        danceability: null,
-        energy: null,
-        instrumentalness: null,
-        liveness: null,
-        loudness: null,
-        speechiness: null,
-        tempo: null,
-        valence: null
-      }
     }
     this.nextSong = {
       trackName: 'Unknown',
@@ -229,8 +218,6 @@ updateRecentSpotifyTrackIds(trackId) {
             const trackInfo = await spotifyTrackInfo(spotifyTrackId)
             
             if (trackInfo) {
-              // Fetch audio features for the track
-              const audioFeatures = await fetchAudioFeatures(spotifyTrackId)
 
               this.currentSong = {
                 trackName: trackInfo.spotifyTrackName || 'Unknown',
@@ -248,41 +235,10 @@ updateRecentSpotifyTrackIds(trackId) {
                 popularity: trackInfo.spotifyPopularity || 0,
                 previewUrl: trackInfo.spotifyPreviewUrl || '',
                 isrc: trackInfo.spotifyIsrc || 'Unknown',
-                audioFeatures: {
-                  acousticness: audioFeatures.acousticness,
-                  analysis_url: audioFeatures.analysis_url,
-                  danceability: audioFeatures.danceability,
-                  duration_ms: audioFeatures.duration_ms,
-                  energy: audioFeatures.energy,
-                  id: audioFeatures.id,
-                  instrumentalness: audioFeatures.instrumentalness,
-                  key: audioFeatures.key,
-                  liveness: audioFeatures.liveness,
-                  loudness: audioFeatures.loudness,
-                  mode: audioFeatures.mode,
-                  speechiness: audioFeatures.speechiness,
-                  tempo: audioFeatures.tempo,
-                  time_signature: audioFeatures.time_signature,
-                  track_href: audioFeatures.track_href,
-                  type: audioFeatures.type,
-                  uri: audioFeatures.uri,
-                  valence: audioFeatures.valence
-                }
               }
 
               self.updateRecentSpotifyTrackIds(spotifyTrackId)
               console.log(`Updated currentSong: ${JSON.stringify(self.currentSong.trackName)}`)
-
-              try {
-                await addHappySongsToPlaylist(spotifyTrackId); // Adding happy songs to the playlist if they meet the criteria
-              } catch (error) {
-                console.error('Error adding happy songs to playlist:', error);
-              }
-              try {
-                await addDanceSongsToPlaylist(spotifyTrackId); // Adding happy songs to the playlist if they meet the criteria
-              } catch (error) {
-                console.error('Error adding Dance songs to playlist:', error);
-              }
             }
           }
         
@@ -307,17 +263,6 @@ updateRecentSpotifyTrackIds(trackId) {
           await escortUserFromDJStand(currentDJ)
           delete usersToBeRemoved[currentDJ]
           console.log(`User ${currentDJ} removed from DJ stand after their song ended.`)
-        }
-        try {
-          // Only call checkAndPostAudioFeatures if audioStatsEnabled is true
-          if (this.audioStatsEnabled) {
-            await checkAndPostAudioFeatures(this.currentSong, process.env.ROOM_UUID);
-            console.log('Audio features check and post completed.');
-          } else {
-            console.log('Audio stats disabled, skipping audio features check and post.');
-          }
-        } catch (error) {
-          console.error('Error during audio features check and post:', error);
         }
         
         await songPayment();
@@ -397,8 +342,9 @@ async updateNextSong() {
       // Use this.autoDJ to determine whether to use recommendations or playlist
       if (this.autoDJ) {
           const recentTracks = this.recentSpotifyTrackIds.slice(0, 3);
+          const popularity = { min_popularity: 50 };
           logger.debug('Fetching Spotify recommendations using recent tracks:', recentTracks);
-          tracks = await fetchSpotifyRecommendations([], [], recentTracks, 5);
+          tracks = await fetchSpotifyRecommendations([], [], recentTracks, 5, popularity);
       } else {
           const playlistId = process.env.DEFAULT_PLAYLIST_ID;
           logger.debug(`Fetching tracks for playlist ID: ${playlistId}`);
@@ -485,18 +431,19 @@ async addDJ(useSuggestions = false) {
       let tracks;
 
       if (useSuggestions) {
-          const recentTracks = this.recentSpotifyTrackIds.slice(0, 3);
-          logger.debug('Fetching Spotify recommendations using recent tracks:', recentTracks);
-          tracks = await fetchSpotifyRecommendations([], [], recentTracks, 5);
+        const recentTracks = this.recentSpotifyTrackIds.slice(0, 3);
+        const popularity = { min_popularity: 50 }; // Add optional popularity filter
+        logger.debug('Fetching Spotify recommendations using recent tracks:', recentTracks);
+        tracks = await fetchSpotifyRecommendations([], [], recentTracks, 5, popularity); // Pass the popularity filter
       } else {
-          const playlistId = process.env.DEFAULT_PLAYLIST_ID;
-          logger.debug(`Fetching tracks for playlist ID: ${playlistId}`);
-          tracks = await fetchSpotifyPlaylistTracks(playlistId);
+        const playlistId = process.env.DEFAULT_PLAYLIST_ID;
+        logger.debug(`Fetching tracks for playlist ID: ${playlistId}`);
+        tracks = await fetchSpotifyPlaylistTracks(playlistId);
       }
-
+  
       if (!tracks || tracks.length === 0) {
-          logger.warn('No tracks found. Please check your playlist or recommendation settings.');
-          return;
+        logger.warn('No tracks found. Please check your playlist or recommendation settings.');
+        return;
       }
 
 

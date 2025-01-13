@@ -1,4 +1,4 @@
-import { addToUserWallet, removeFromUserWallet } from '../libs/walletManager.js'; // Adjust the path as needed
+import { addToUserWallet, removeFromUserWallet, getUserWallet } from '../libs/walletManager.js'; // Adjust the path as needed
 import { postMessage } from '../libs/cometchat.js';
 
 let tableUsers = [];
@@ -10,6 +10,8 @@ let deck = [];
 let currentPlayerIndex = 0; // Track current player's turn
 const userNicknames = {}; // Object to map UUIDs to nicknames
 let canJoinTable = true; // Flag to track if users can join
+let bettingTimeout; // To track the betting timeout
+const BETTING_TIMEOUT_DURATION = 30000; // 30 seconds
 
 function preventFurtherJoins() {
     canJoinTable = false; // Set the flag to false to prevent further joins
@@ -110,20 +112,49 @@ async function leaveTable(userUUID) {
 async function handleBlackjackBet(userUUID, betAmount, nickname) {
     const room = process.env.ROOM_UUID;
 
-    // Store the bet for the player
-    playerBets[userUUID] = betAmount; // Assuming playerBets is an object that tracks player bets
-    console.log(`User ${userUUID} (${nickname}) placed a bet of $${betAmount}.`);
-    
-    // Use nickname in the message
+    // Get the user's current wallet balance
+    const userWallet = await getUserWallet(userUUID);
+    const userBalance = userWallet ? userWallet.balance : 0;
+
+    console.log(`User ${nickname} balance before bet: $${userBalance}`);
+
+    // Store the bet for the player (already validated in /bet)
+    playerBets[userUUID] = betAmount;
+    console.log(`User ${nickname} placed a bet of $${betAmount}.`);
+
+    // Notify the room of the user's bet
     await postMessage({ room: room, message: `${nickname} placed a bet of $${betAmount}.` });
 
     // Check if all players have placed their bets
     if (allPlayersHaveBet()) {
-        await startGame(); 
+        clearTimeout(bettingTimeout); // Cancel the timeout if all bets are in
+        await startGame();
     } else {
-        await postMessage({ room: room, message: `Waiting for other players to place their bets...` });
+        // Notify that we are waiting for other players
+        await postMessage({
+            room: room,
+            message: `Waiting for other players to place their bets...`
+        });
+
+        // Start a betting timeout if not already started
+        if (!bettingTimeout) {
+            bettingTimeout = setTimeout(async () => {
+                // Remove players who haven't placed bets
+                for (const user of tableUsers) {
+                    if (!playerBets[user]) {
+                        console.log(`User ${user} did not place a bet and will be removed.`);
+                        await leaveTable(user);
+                    }
+                }
+                
+                // Start the game with remaining players
+                await postMessage({ room: room, message: `Time's up! Starting the game with current bets.` });
+                await startGame();
+            }, BETTING_TIMEOUT_DURATION);
+        }
     }
 }
+
 
 function allPlayersHaveBet() {
     return tableUsers.every(user => playerBets[user] > 0);
@@ -250,15 +281,20 @@ async function playDealerTurn() {
         const nickname = userNicknames[user] || user; // Fallback to UUID if nickname is not found
 
         await postMessage({ room: room, message: `Player ${nickname} final value: ${playerValue}` });
-
-        if (dealerValue > 21 || playerValue > dealerValue) {
+        if (playerValue > 21) {
+            // Player busts, loses the game
+            await postMessage({ room: room, message: `Player ${nickname} busts with ${playerValue}. They lose.` });
+        } else if (dealerValue > 21 || playerValue > dealerValue) {
+            // Dealer busts or player has a higher hand without busting
             const winAmount = playerBets[user] * 2; // Calculate the winning amount
             await addToUserWallet(user, winAmount); // Pay out the winning bet
             await postMessage({ room: room, message: `Player ${nickname} wins! Amount won: $${winAmount}` }); // Include the win amount
         } else if (playerValue === dealerValue) {
+            // Tie between dealer and player
             await postMessage({ room: room, message: `Player ${nickname} ties with the dealer.` });
             await addToUserWallet(user, playerBets[user]); // Return the bet
         } else {
+            // Dealer has a higher hand, player loses
             await postMessage({ room: room, message: `Player ${nickname} loses.` });
         }
     }

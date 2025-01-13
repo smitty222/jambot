@@ -48,9 +48,16 @@ function getJackpotValue() {
 
 // Update the jackpot value in the JSON file
 function updateJackpotValue(newValue) {
+    console.log(`Updating jackpot value to: ${newValue}`);
     const data = { progressiveJackpot: newValue };
-    fs.writeFileSync(jackpotFile, JSON.stringify(data), 'utf8');
+    try {
+        fs.writeFileSync(jackpotFile, JSON.stringify(data), 'utf8');
+        console.log('Jackpot file updated successfully.');
+    } catch (error) {
+        console.error('Failed to update jackpot file:', error);
+    }
 }
+
 
 // Function to calculate the multiplier for wins
 function calculateMultiplier(result) {
@@ -58,6 +65,9 @@ function calculateMultiplier(result) {
 
     // Check for 3-symbol match
     if (payouts.hasOwnProperty(resultString)) {
+        if (resultString === '💎💎💎') {
+            return 'jackpot'; // Special case for the jackpot
+        }
         return payouts[resultString];
     }
 
@@ -79,6 +89,7 @@ function calculateMultiplier(result) {
     return 0; // No win
 }
 
+
 // Function to calculate payout with an RTP adjustment mechanism
 function calculateRTP(winMultiplier, betAmount, rtp = 0.96) {
     // Expected payout based on RTP
@@ -87,38 +98,30 @@ function calculateRTP(winMultiplier, betAmount, rtp = 0.96) {
 }
 
 async function playSlots(userUUID, betSize = 1, paylines = 1) {
-    const maxBetSize = 1000; // Set a maximum bet size if desired
-    const minBetSize = 1; // Set a minimum bet size
+    const maxBetSize = 10000; // Set a maximum bet size if desired
+    const minBetSize = 1; // Set a mrsinimum bet size
 
     if (betSize < minBetSize || betSize > maxBetSize) {
         return `Bet amount must be between $${minBetSize} and $${maxBetSize}.`;
     }
-    const maxPaylines = 5; // Set a maximum number of paylines
-    const rtp = 0.96;    // 96% RTP (Return to Player)
-    const hitFrequency = 0.3; // 30% hit frequency for small wins
 
     try {
-        // Get the current balance before the bet
         let currentBalance = await getUserWallet(userUUID);
-        console.log(`User ${userUUID} current balance before bet: $${currentBalance}`);
 
-        // Check for valid bet size and paylines
         const totalBet = betSize * paylines;
         if (betSize <= 0 || totalBet > currentBalance) {
-            console.error(`Invalid bet amount: $${totalBet} for user ${userUUID}.`);
             return `Invalid bet amount. Your current balance is $${currentBalance}.`;
         }
 
-        // Deduct the total bet from the user's wallet
-        const deductionSuccess = await removeFromUserWallet(userUUID, totalBet);
-        if (!deductionSuccess) {
-            console.error(`Failed to deduct bet of $${totalBet} from user ${userUUID}.`);
-            return `Unable to place your bet of $${totalBet}. Please check your balance.`;
-        }
+        // Deduct the bet from the user's wallet
+        await removeFromUserWallet(userUUID, totalBet);
 
-        console.log(`User ${userUUID} deducted bet of $${totalBet}.`);
+        // Increment the progressive jackpot by 5% of the total bet
+        let currentJackpot = getJackpotValue();
+        const jackpotIncrement = totalBet * 0.05; // 5% of the total bet
+        currentJackpot += jackpotIncrement;
+        updateJackpotValue(currentJackpot);
 
-        // Spin the slots across the chosen number of paylines
         const results = [];
         let winnings = 0;
 
@@ -128,47 +131,32 @@ async function playSlots(userUUID, betSize = 1, paylines = 1) {
 
             const multiplier = calculateMultiplier(slotsResult);
 
-            if (multiplier > 0) {
-                // Calculate winnings using the calculateRTP function
-                winnings += calculateRTP(multiplier, betSize, rtp);
+            if (multiplier === 'jackpot') {
+                // Jackpot hit with 3 diamonds
+                winnings += currentJackpot;
+                currentJackpot = 100; // Reset jackpot
+                updateJackpotValue(currentJackpot); // Save the new jackpot value
+                console.log(`User ${userUUID} hit the jackpot!`);
+            } else if (multiplier > 0) {
+                winnings += calculateRTP(multiplier, betSize);
             }
         }
 
-        // Retrieve the current jackpot value
-        let progressiveJackpot = getJackpotValue();
-
-        // Update the progressive jackpot
-        const jackpotContribution = totalBet * 0.05; // 5% of bet goes to jackpot
-        progressiveJackpot += jackpotContribution;
-
-        // Determine if player hits the jackpot
-        if (isJackpotHit()) {
-            winnings += progressiveJackpot; // Add jackpot to winnings
-            progressiveJackpot = 100; // Reset jackpot
-            console.log(`User ${userUUID} hit the jackpot!`);
-        }
-
-        // Save the updated jackpot value
-        updateJackpotValue(progressiveJackpot);
-
         if (winnings > 0) {
-            await addToUserWallet(userUUID, winnings); // Update the wallet with winnings
-
-            // Refresh the balance after winning
-            currentBalance = await getUserWallet(userUUID); // Fetch updated balance
-            console.log(`User ${userUUID} won! New balance: $${currentBalance}`);
+            await addToUserWallet(userUUID, winnings);
+            currentBalance = await getUserWallet(userUUID); 
             return `____SPIN____\n\n${results.map(r => r.join(' | ')).join('\n')}\n_____________\n\n You Win $${winnings.toFixed(2)}!\nCurrent Balance: $${currentBalance}.`;
         } else {
-            // Fetch the updated balance after deduction
-            currentBalance = await getUserWallet(userUUID); // Refresh balance after deduction
-            console.log(`User ${userUUID} lost the bet. New balance: $${currentBalance}`);
-            return `____SPIN____\n\n${results.map(r => r.join(' | ')).join('\n')}\n______________\n\n You Lose $${totalBet}.\nCurrent Balance: $${currentBalance}.`;
+            currentBalance = await getUserWallet(userUUID); 
+            return `____SPIN____\n\n${results.map(r => r.join(' | ')).join('\n')}\n_____________\n\n You Lose $${totalBet}.\nCurrent Balance: $${currentBalance}.`;
         }
     } catch (error) {
         console.error('Error while playing slots:', error);
         return 'An error occurred while playing the slots. Please try again later.';
     }
 }
+
+
 
 
 // Simulate progressive jackpot hit with low probability

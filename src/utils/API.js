@@ -195,8 +195,8 @@ async function fetchTrackDetails(trackUri) {
     return null;
   }
 }
-
-async function fetchAudioFeatures(trackId, retries = 3) {
+  // Deprecated SPOTIFY ENDPOINT
+/*async function fetchAudioFeatures(trackId, retries = 3) {
   const url = `https://api.spotify.com/v1/audio-features/${trackId}`;
 
   try {
@@ -238,7 +238,7 @@ async function fetchAudioFeatures(trackId, retries = 3) {
       throw error; // Re-throw the error to handle it upstream if necessary
     }
   }
-}
+}*/
 export async function fetchRecentArtists(limit = 5) {
   const recentArtistsUrl = 'https://api.spotify.com/v1/me/top/artists';
 
@@ -274,8 +274,8 @@ export async function fetchRecentArtists(limit = 5) {
     throw error;
   }
 }
-
-async function fetchSpotifyRecommendations(seedArtists = [], seedGenres = [], seedTracks = [], limit = 5) {
+   //Deprecated SPOTIFY ENDPOINT
+/*async function fetchSpotifyRecommendations(seedArtists = [], seedGenres = [], seedTracks = [], limit = 5) {
   const recommendationsUrl = 'https://api.spotify.com/v1/recommendations';
 
   try {
@@ -314,17 +314,8 @@ async function fetchSpotifyRecommendations(seedArtists = [], seedGenres = [], se
     console.error('Error fetching Spotify recommendations:', error);
     return []; // Return an empty array in case of error
   }
-}
+}*/
 
-// Helper function to make the actual API request
-async function makeSpotifyRequest(url, params) {
-  const options = {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${accessToken}` }
-  };
-
-  return await fetch(`${url}?${params}`, options);
-}
 // Helper function to extract track ID from Spotify URL/URI
 export async function extractTrackId(input) {
   // Spotify track URL pattern
@@ -644,4 +635,4 @@ async function DeleteQueueSong(crateSongUuid, userToken) {
 }
 
 
-export { getAccessToken, currentsongduration, fetchSpotifyRecommendations, fetchAudioFeatures, spotifyTrackInfo, fetchTrackDetails, isUserAuthorized, fetchUserRoles, fetchRecentSongs, fetchCurrentUsers, fetchSpotifyPlaylistTracks, fetchCurrentlyPlayingSong, fetchSongData, DeleteQueueSong, fetchAllUserQueueSongIDsWithUUID }
+export { getAccessToken, currentsongduration, spotifyTrackInfo, fetchTrackDetails, isUserAuthorized, fetchUserRoles, fetchRecentSongs, fetchCurrentUsers, fetchSpotifyPlaylistTracks, fetchCurrentlyPlayingSong, fetchSongData, DeleteQueueSong, fetchAllUserQueueSongIDsWithUUID }

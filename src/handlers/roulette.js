@@ -251,18 +251,21 @@ for (const [user, userBets] of Object.entries(bets)) {
 async function handleRouletteBet(payload) {
     const user = payload.sender;
     const nickname = await getUserNickname(user);
-    const commandParts = payload.message.split(' ');
+    const message = payload.message.trim(); // Trim any extra spaces
+    const commandParts = message.split(' ');
+
+    // Validate that the message starts with '/' and has at least two parts (e.g., "/red 15")
+    if (!message.startsWith('/') || commandParts.length < 2) {
+        console.log(`Ignoring non-bet message: ${message}`);
+        return; // Exit if the message is not a valid bet command
+    }
+
     const betTypeOrNumber = commandParts[0].substring(1); // Remove the '/'
-
-    console.log(`Received command: ${payload.message}`); // Debugging log
-    console.log(`Command parts: ${commandParts}`); // Debugging log
-
     const amountString = commandParts[commandParts.length - 1]; // Get the last part
     const amount = parseFloat(amountString); // Parse it as a float
 
-    // Debugging log for amount string
-    console.log(`Amount string: "${amountString}"`); // Log the raw amount string
-    console.log(`Parsed amount: ${amount}`); // Log the parsed amount
+    console.log(`Received command: ${payload.message}`); // Debugging log
+    console.log(`Command parts: ${commandParts}`); // Debugging log
 
     // Validate the bet amount
     if (isNaN(amount) || amount <= 0) {
@@ -273,81 +276,52 @@ async function handleRouletteBet(payload) {
         return; // Exit if the amount is not valid
     }
 
-    // Load the wallets data
+    // Ensure the bet type is recognized (add valid bet types here)
+    const validBetTypes = ['red', 'black', 'green', 'odd', 'even', 'number', 'dozen', 'high', 'low'];
+    if (!validBetTypes.includes(betTypeOrNumber) && isNaN(parseInt(betTypeOrNumber, 10))) {
+        console.log(`Invalid bet type: ${betTypeOrNumber}`);
+        return; // Exit if the bet type is not valid
+    }
+
     const wallets = await loadWallets(); // Ensure wallets are loaded before accessing them
 
-    // Initialize wallet for the user if it hasn't been set
-    const defaultWalletBalance = 50; // Default balance for new users
     if (!wallets[user]) {
-        wallets[user] = { balance: defaultWalletBalance }; // Initialize with default balance
+        wallets[user] = { balance: defaultWalletSize }; // Initialize with default balance
         await saveWallets(wallets); // Save the updated wallets
         await postMessage({
             room: process.env.ROOM_UUID,
-            message: `@${nickname}, a wallet has been created for you with a starting balance of $${defaultWalletBalance}.`
+            message: `@${nickname}, a wallet has been created for you with a starting balance of $${defaultWalletSize}.`
         });
     }
 
-    // Initialize bets array for the user if it doesn't exist
-    if (!bets[user]) {
-        bets[user] = []; // Initialize to an empty array if it doesn't exist
-    }
-
-    // Handle different bet types and validations
-    let validBet = false; // Track if the bet was valid
-    let confirmationMessage = ''; // Store the confirmation message
-
-    // Check if the betTypeOrNumber is a valid number (bet on a specific number)
-    if (!isNaN(betTypeOrNumber) && parseInt(betTypeOrNumber, 10) >= 0 && parseInt(betTypeOrNumber, 10) <= 36) {
-        const number = parseInt(betTypeOrNumber, 10);
-        confirmationMessage = `@${nickname} placed a bet of $${amount} on number ${number}.`;
-        validBet = true; // Mark the bet as valid
-        await placeBet(user, 'number', amount, { number }); // Pass additional parameters
-    } else {
-        // Handle non-number bet types
-        switch (betTypeOrNumber) {
-            case 'red':
-            case 'black':
-            case 'green':
-            case 'odd':
-            case 'even':
-                confirmationMessage = `@${nickname} placed a bet of $${amount} on ${betTypeOrNumber}.`;
-                validBet = true; // Mark the bet as valid
-                await placeBet(user, betTypeOrNumber, amount); // No additional params needed
-                break;
-
-            case 'high':
-            case 'low':
-                confirmationMessage = `@${nickname} placed a bet of $${amount} on ${betTypeOrNumber}.`;
-                validBet = true;
-                await placeBet(user, betTypeOrNumber, amount); // No additional params needed
-                break;
-
-            case 'dozen1':
-            case 'dozen2':
-            case 'dozen3':
-                const dozenNumber = betTypeOrNumber.charAt(betTypeOrNumber.length - 1); // Get the last character as the dozen number
-                confirmationMessage = `@${nickname} placed a bet of $${amount} on dozen ${dozenNumber}.`;
-                validBet = true;
-                await placeBet(user, 'dozen', amount, { dozen: dozenNumber }); // Pass additional parameters
-                break;
-            default:
-                await postMessage({
-                    room: process.env.ROOM_UUID,
-                    message: `@${nickname}, that bet type is not valid. Please use /red, /black, /odd, /even, /high, /low, /number, /dozen1, /dozen2, /dozen3, or /column.`
-                });
-        }
-    }
-
-    // Send the confirmation message only once if a valid bet was placed
-    if (validBet && confirmationMessage) {
+    if (wallets[user].balance < amount) {
         await postMessage({
             room: process.env.ROOM_UUID,
-            message: confirmationMessage
+            message: `@${nickname}, you do not have enough funds to place this bet.`
         });
+        return; // Exit if insufficient funds
     }
+
+    // Deduct the bet amount from the user's balance and save the wallet
+    wallets[user].balance -= amount;
+    await saveWallets(wallets);
+    console.log(`@${nickname} placed a bet of $${amount} on ${betTypeOrNumber}. New balance: $${wallets[user].balance}`);
+
+    if (!bets[user]) {
+        bets[user] = [];
+    }
+
+    bets[user].push({
+        type: isNaN(betTypeOrNumber) ? betTypeOrNumber : 'number',
+        number: !isNaN(betTypeOrNumber) ? parseInt(betTypeOrNumber, 10) : null,
+        amount
+    });
+
+    await postMessage({
+        room: process.env.ROOM_UUID,
+        message: `@${nickname} has placed a bet of $${amount} on ${betTypeOrNumber}.`
+    });
 }
-
-
 
 function getDozenRange(dozenNumber) {
     switch (dozenNumber) {
@@ -407,7 +381,7 @@ async function drawWinningNumber() {
     }
 
     const winningNumber = Math.floor(Math.random() * 37);
-    const winningColor = getRouletteColor(winningNumber); 
+    const winningColor = getRouletteColor(winningNumber);
 
     console.log(`Winning Number: ${winningNumber}, Winning Color: ${winningColor}`);
 
@@ -473,90 +447,58 @@ async function drawWinningNumber() {
                     }
                     break;
                 default:
-                    await postMessage({
-                        room: process.env.ROOM_UUID,
-                        message: `Invalid bet type from @${nickname}`
-                    });
-                    break;
+                    console.error(`Unknown bet type: ${bet.type}`);
             }
 
-            // If there's a win amount, update the user's total winnings
-            if (winAmount > 0) {
-                totalWinAmount += winAmount; // Accumulate winnings
-            }
+            totalWinAmount += winAmount; // Add current bet winnings to the user's total winnings
         }
 
-        // Store total winnings and total bet amount in userWinnings object
+        // Record user total bets and winnings
         userWinnings[user] = {
-            nickname: nickname,
             totalWin: totalWinAmount,
-            totalBet: totalBetAmount
+            totalBet: totalBetAmount,
+            nickname: nickname
         };
     }
 
-    // Now set the game as inactive
-    rouletteGameActive = false;
-
-    let updatePayload = {
-        "pinnedMessages": []
-    };
-    await updateRoomInfo(updatePayload);
-
     let hasWinners = false; // Flag to track if there are winners
+    let outcomeMessage = "\n"; // Initialize outcome message
 
-    // Announce winners and calculate the net outcome
-    if (Object.keys(userWinnings).length > 0) {
-        let outcomeMessage = "\n"; // Initialize outcome message
+    for (const [user, winnings] of Object.entries(userWinnings)) {
+        const netOutcome = winnings.totalWin - winnings.totalBet; // Calculate net outcome
+        const nickname = winnings.nickname;
 
-        for (const [user, winnings] of Object.entries(userWinnings)) {
-            const netOutcome = winnings.totalWin - winnings.totalBet; // Calculate net outcome
-            const nickname = winnings.nickname; // Get user's nickname
-            console.log(`Net outcome for @${nickname}: ${netOutcome}`);
-            
-            // Format the win and loss messages
-            const winAmount = winnings.totalWin; // Total winnings
-            const lossAmount = winnings.totalBet; // Total bet amount for losses
+        // Fetch the user's current balance before updating
+        const currentBalance = await getUserWallet(user);
 
-            // Get user's current balance
-            const currentBalance = await getUserWallet(user); // Use the wallet manager function
+        if (netOutcome > 0) {
+            hasWinners = true;
+            outcomeMessage += `🎉 ${nickname} is a Winner! +$${netOutcome} 🎉\nWin: +$${winnings.totalWin}\nBets: $${winnings.totalBet}\nCurrent Balance Before Payout: $${currentBalance}\n`;
 
-            // Check if the user is a winner or a loser
-            if (netOutcome > 0) {
-                hasWinners = true; // Mark that we have winners
-                
-                outcomeMessage += `🎉 ${nickname} is a Winner! +$${netOutcome} 🎉\nWin: +$${winAmount}\nBets: $${lossAmount}\nLoss: -$0\nCurrent Balance: $${currentBalance}\n\n`; // Add win message to outcome
-
-                // Update wallet balance and store it
-                try {
-                    await addToUserWallet(user, winnings.totalWin); // Add winnings to user's wallet
-                    const updatedBalance = await getUserWallet(user); // Fetch the new balance after adding winnings
-                    console.log(`Updated balance for @${nickname} after winning: $${updatedBalance}`);
-                } catch (error) {
-                    console.error(`Error updating wallet for @${nickname}: ${error}`);
-                }
-            } else {
-                outcomeMessage += `       ${nickname} is a Loser! Loss: -$${lossAmount}\nWin: +$0\nBets: $${lossAmount}\nLoss: -$${lossAmount}\nCurrent Balance: $${currentBalance}\n\n`; // Add loss message to outcome
-                // No further deduction, as bets are already deducted in placeBet
+            try {
+                await addToUserWallet(user, winnings.totalWin);
+                const updatedBalance = await getUserWallet(user); // Fetch updated balance after payout
+                outcomeMessage += `Updated Balance: $${updatedBalance}\n\n`;
+            } catch (error) {
+                console.error(`Error updating wallet for @${nickname}: ${error}`);
             }
+        } else {
+            outcomeMessage += `😢 ${nickname} loses. Loss: -$${winnings.totalBet}\nCurrent Balance: $${currentBalance}\n\n`;
         }
-
-        // Handle no winners case
-        if (!hasWinners) {
-            outcomeMessage += "No winners this round. Better luck next time!";
-        }
-
-        console.log(outcomeMessage); // Log the outcome message
-
-        // Post the outcome message to the room
-        await postMessage({
-            room: process.env.ROOM_UUID,
-            message: outcomeMessage // Send the formatted outcome message
-        });
     }
 
-    // Reset bets after the game ends
-    bets = {};
+    if (!hasWinners) {
+        outcomeMessage += "No winners this round. Better luck next time!";
+    }
+
+    console.log(outcomeMessage);
+
+    await postMessage({
+        room: process.env.ROOM_UUID,
+        message: outcomeMessage
+    });
 }
+
 
 
 // Main handler function to route commands

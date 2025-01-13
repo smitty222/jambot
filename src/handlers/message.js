@@ -4,15 +4,15 @@ import { askQuestion } from '../libs/ai.js'
 import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, totalPoints } from '../handlers/triviaCommands.js'
 import { logger } from '../utils/logging.js'
 import { roomBot } from '../index.js'
-import { fetchCurrentlyPlayingSong, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSpotifyRecommendations, updateRoomInfo, fetchSongData, isUserOwner, DeleteQueueSong, fetchAllUserQueueSongIDsWithUUID} from '../utils/API.js'
-import { handleLotteryCommand, handleLotteryNumber, LotteryGameActive } from '../utils/lotteryGame.js'
+import { fetchCurrentlyPlayingSong, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, updateRoomInfo, fetchSongData, isUserOwner, DeleteQueueSong, fetchAllUserQueueSongIDsWithUUID} from '../utils/API.js'
+import { handleLotteryCommand, handleLotteryNumber, LotteryGameActive, getLotteryWinners } from '../utils/lotteryGame.js'
 import { enableSongStats, disableSongStats, songStatsEnabled } from '../utils/voteCounts.js'
 import { enableGreetingMessages, disableGreetingMessages, greetingMessagesEnabled } from './userJoined.js'
 import { getCurrentDJ } from '../libs/bot.js'
 import { resetCurrentQuestion } from './triviaData.js'
 import { addTracksToPlaylist, removeTrackFromPlaylist } from '../utils/playlistUpdate.js'
 import {getUserNickname, handleRouletteBet, rouletteGameActive, startRouletteGame } from '../handlers/roulette.js';
-import { getBalanceByNickname, getNicknamesFromWallets, addDollarsByNickname, loadWallets, saveWallets, removeFromUserWallet } from '../libs/walletManager.js'
+import { getBalanceByNickname, getNicknamesFromWallets, addDollarsByNickname, loadWallets, saveWallets, removeFromUserWallet, getUserWallet } from '../libs/walletManager.js'
 import { getJackpotValue, handleSlotsCommand} from './slots.js';
 import { handleBlackjackBet, handleHit, handleStand, joinTable, getBlackjackGameActive, setBlackjackGameActive, tableUsers, preventFurtherJoins} from '../handlers/blackJack.js'
 import { updateAfkStatus, isUserAfkAuthorized, userTokens } from './afk.js'
@@ -72,10 +72,17 @@ if (
       await roomBot.removeDJ(process.env.BOT_USER_UUID); // Remove the DJ from the stage
       return; // Exit early to avoid processing further
     }
-    if (question.includes('9+10')) {
+    if (question.includes('9+10'||'9 + 10')) {
       await postMessage({
         room,
         message: "21...are you stoopid?"
+      });
+      return; // Exit early to avoid processing further
+    }
+    if (question.includes('are you a bot?'||'are you a bot')) {
+      await postMessage({
+        room,
+        message: "I am not"
       });
       return; // Exit early to avoid processing further
     }
@@ -250,7 +257,7 @@ if (
   } else if (payload.message.startsWith('/commands')) {
     await postMessage({
       room,
-      message: 'General commands are:\n- /theme: Checks the current room theme\n- /games: List of games to play\n- /escortme: Stagedive after your next song\n- /djbeer: Gives the DJ a beer\n- /suggestsong: Spotify suggested songs\n- /album: Display album info for current song\n- /score: Spotify popularity score\n- /bankroll: Lists top wallet leaders\n- /gifs: Bot will list all GIF commands\n- /mod: Bot will list all Mod commands'
+      message: 'General commands are:\n- /theme: Checks the current room theme\n- /games: List of games to play\n- /escortme: Stagedive after your next song\n- /djbeer: Gives the DJ a beer\n- /album: Display album info for current song\n- /score: Spotify popularity score\n- /bankroll: Lists top wallet leaders\n- /lottowinners: Lists all lottery ball winners\n- /gifs: Bot will list all GIF commands\n- /mod: Bot will list all Mod commands'
     })
     /// /////////////// General Commands ////////////////
   } else if (payload.message.startsWith('/games')) {
@@ -933,12 +940,14 @@ if (payload.message.startsWith('/checkbalance')) {
 if (payload.message.startsWith('/bankroll')) {
   try {
       const bankroll = await getNicknamesFromWallets(); // Fetch the bankroll information
-      
+
       // Sort the bankroll by balance in descending order
       const sortedBankroll = bankroll
           .sort((a, b) => b.balance - a.balance) // Sort descending by balance
           .slice(0, 5) // Only take the top 5 wallets
-          .map((user, index) => `${index + 1}. ${user.nickname}: $${user.balance}`); // Add numbering and format each user
+          .map((user, index) => 
+              `${index + 1}. ${user.nickname}: $${Math.round(user.balance).toLocaleString()}` // Round balance and format with commas
+          );
 
       // Create the final message with a heading and the sorted leaderboard
       const finalMessage = `🏆 **Top Wallet Leaders** 🏆\n\n${sortedBankroll.join('\n')}`;
@@ -958,6 +967,45 @@ if (payload.message.startsWith('/bankroll')) {
       });
   }
 }
+
+if (payload.message.startsWith('/lottowinners')) {
+  try {
+    // Fetch the list of lottery winners
+    const winners = await getLotteryWinners();
+
+    if (winners.length === 0) {
+      // If there are no winners, send an appropriate message
+      await postMessage({
+        room: process.env.ROOM_UUID,
+        message: 'No lottery winners found at this time.'
+      });
+      return;
+    }
+
+    // Format the list of winners
+    const formattedWinners = winners.map((winner, index) => 
+      `${index + 1}. ${winner.nickname}: Won $${Math.round(winner.amountWon).toLocaleString()} with number ${winner.winningNumber} on ${winner.date}`
+    );
+
+    // Create the final message
+    const finalMessage = `💰 💵 **Lottery Winners List** 💵 💰\n\n${formattedWinners.join('\n')}`;
+
+    // Post the message to the chat
+    await postMessage({
+      room: process.env.ROOM_UUID,
+      message: finalMessage // Send the formatted winners list
+    });
+  } catch (error) {
+    console.error('Error fetching or displaying lottery winners:', error);
+
+    // Send an error message
+    await postMessage({
+      room: process.env.ROOM_UUID,
+      message: 'There was an error fetching the lottery winners list.'
+    });
+  }
+}
+
 //////////////////////// SLOTS //////////////////////////////
 if (payload.message.startsWith('/slots')) {
   try {
@@ -1102,17 +1150,37 @@ if (payload.message.startsWith('/bet')) {
       return;
   }
 
+  // Retrieve the user's wallet before processing the bet
+  const userWallet = await getUserWallet(userUUID);
+  const userBalance = userWallet !== undefined ? userWallet : 0;
+
+  console.log(`User ${nickname} wallet balance before bet: $${userBalance}`);
+
+  // Ensure the user has enough funds to place the bet
+  if (betAmount > userBalance) {
+      await postMessage({ room: room, message: `Sorry ${nickname}, you do not have enough funds to place that bet. Your current balance is $${userBalance}.` });
+      return;
+  }
+
   // Remove the bet amount from the user's wallet
   const successfulRemoval = await removeFromUserWallet(userUUID, betAmount);
   if (!successfulRemoval) {
-      await postMessage({ room: room, message: `Sorry ${nickname}, you do not have enough funds to place that bet.` });
+      await postMessage({ room: room, message: `Sorry ${nickname}, we couldn't process your bet.` });
       return;
   }
+
+  // Log the successful wallet update
+  const updatedUserWallet = await getUserWallet(userUUID);
+  const updatedBalance = updatedUserWallet.balance;
+  console.log(`User ${nickname} successfully placed a bet of $${betAmount}. New balance: $${updatedBalance}`);
 
   // Pass the nickname to the handleBlackjackBet function
   await handleBlackjackBet(userUUID, betAmount, nickname);
   return;
 }
+
+
+
 
 
 
@@ -2179,7 +2247,7 @@ else if (payload.message.startsWith('/settheme')) {
         // Notify the room if no recommendations are available
         await postMessage({
           room,
-          message: 'No recommendations available.'
+          message: 'Spotify sucks and stopped letting us use their song recommendations...sorry'
         });
       }
     } catch (error) {
@@ -2188,7 +2256,7 @@ else if (payload.message.startsWith('/settheme')) {
       // Notify the room if an error occurs during the recommendation fetch
       await postMessage({
         room,
-        message: 'Could not fetch suggested songs. Please try again later.'
+        message: 'Spotify sucks and stopped letting us use their song recommendations...sorry'
       });
     }    
   } else if (payload.message.startsWith('/suggest')) {
@@ -2197,7 +2265,7 @@ else if (payload.message.startsWith('/settheme')) {
     if (!currentSongId) {
         await postMessage({
           room,
-          message: 'There is no current song playing or no valid Spotify ID for the current song.'
+          message: 'Spotify sucks and stopped letting us use their song recommendations...sorry'
         });
         return;
     }
@@ -2256,7 +2324,7 @@ else if (payload.message.startsWith('/settheme')) {
         // Notify the room if no recommendations are available
         await postMessage({
           room,
-          message: 'No recommendations available based on the current song.'
+          message: 'Spotify sucks and stopped letting us use their song recommendations...sorry'
         });
       }
     } catch (error) {
@@ -2265,7 +2333,7 @@ else if (payload.message.startsWith('/settheme')) {
       // Notify the room if an error occurs during the recommendation fetch
       await postMessage({
         room,
-        message: 'Could not fetch suggested songs. Please try again later.'
+        message: 'Spotify sucks and stopped letting us use their song recommendations...sorry'
       });
     }  
     if (payload.message.includes('song feature')) {

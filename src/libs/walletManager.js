@@ -73,7 +73,7 @@ async function saveWallets(wallets) {
 }
 
 // Load users from the JSON file
-async function loadUsers() {
+export async function loadUsers() {
     try {
         const data = await fs.readFile(usersFilePath, 'utf8');
         return JSON.parse(data);
@@ -162,15 +162,20 @@ async function getUserWallet(userUUID) {
         const data = await fs.readFile(walletsFilePath, 'utf8');
         const wallets = JSON.parse(data);
 
-        if (wallets[userUUID] && wallets[userUUID].balance !== undefined) {
-            return roundToTenth(wallets[userUUID].balance); // Round balance when retrieving
+        // If wallet doesn't exist, create one with an initial balance
+        if (!wallets[userUUID]) {
+            console.log(`Wallet not found for user ${userUUID}. Creating wallet with initial balance.`);
+            wallets[userUUID] = { balance: 50 }; // Starting balance
+            await fs.writeFile(walletsFilePath, JSON.stringify(wallets, null, 2)); // Save the updated wallets data
         }
-        return 0; // Return 0 if no wallet found
+
+        return roundToTenth(wallets[userUUID].balance); // Round balance when retrieving
     } catch (error) {
         console.error('Error reading wallet file:', error);
-        return 0;
+        return 0; // Return 0 if an error occurs
     }
 }
+
 
 // Function to add dollars to a user by their nickname
 async function addDollarsByNickname(nickname, amount) {
