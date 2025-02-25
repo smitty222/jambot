@@ -1,5 +1,5 @@
 // message.js
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
 import { askQuestion } from '../libs/ai.js'
 import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, totalPoints } from '../handlers/triviaCommands.js'
 import { logger } from '../utils/logging.js'
@@ -18,6 +18,7 @@ import { handleBlackjackBet, handleHit, handleStand, joinTable, getBlackjackGame
 import { updateAfkStatus, isUserAfkAuthorized, userTokens } from './afk.js'
 
 
+
 const ttlUserToken = process.env.TTL_USER_TOKEN
 export const roomThemes = {}
 const usersToBeRemoved = {}
@@ -25,13 +26,14 @@ const usersToBeRemoved = {}
 // Messages
 export default async (payload, room, state) => {
   logger.info({ sender: payload.senderName, message: payload.message })
-
+  
   // Handle Gifs Sent in Chat
   if (payload.message.type === 'ChatGif') {
     logger.info('Received a GIF message:', payload.message)
     return
   }  
 
+  
   // AI Chat Stuff
 if (
   typeof payload.message === 'string' &&
@@ -169,11 +171,13 @@ if (
     await handleLotteryNumber(payload)
 
     /// ///////////// Commands Start Here. ////////////////////////
+
   } else if (payload.message.startsWith('/hello')) {
-    await postMessage({
-      room,
-      message: 'Hi!'
-    })
+      await postMessage({
+        room,  
+        message: 'Hi!'  
+      });
+    
   // Command for deleting the current song
 } else if (payload.message.startsWith('/delete')) {
   console.log('Delete command received.');
@@ -252,8 +256,12 @@ if (
   } else if (payload.message.startsWith('/test')) {
     await postMessage({
       room,
-      message: '  _________________\n |_______________|\n |  | 7 | 🍒 | 🍋 |  |\n|_______________|'
+      message: 'Hello'
     })
+    // Send a direct message to the sender
+    const senderUUID = payload.sender; // Extract sender's UUID
+    await sendDirectMessage(senderUUID, 'This is a private test message just for you!');
+
   } else if (payload.message.startsWith('/commands')) {
     await postMessage({
       room,
@@ -1229,15 +1237,6 @@ if (payload.message.startsWith('/join')) {
   }
 
   await joinTable(userId, nickname); // Pass the nickname to joinTable
-  return;
-}
-
-// Handle the /leave command
-if (payload.message.startsWith('/leave')) {
-  const userId = payload.sender;
-  const room = process.env.ROOM_UUID;
-
-  await leaveTable(userId);
   return;
 }
 

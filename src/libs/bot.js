@@ -11,7 +11,7 @@ import handleUserJoinedWithStatePatch from '../handlers/userJoined.js'
 import { handleAlbumTheme, handleCoversTheme } from '../handlers/playedSong.js'
 //import { checkAndPostAudioFeatures, addHappySongsToPlaylist, addDanceSongsToPlaylist } from '../utils/audioFeatures.js'
 import { songPayment } from './walletManager.js'
-import { updateRoomInfo } from '../utils/API.js'
+import { checkArtistAndNotify } from '../handlers/artistChecker.js'
 
 
 export function getCurrentDJUUIDs (state) {
@@ -23,7 +23,7 @@ export function getCurrentDJUUIDs (state) {
 
 export function getCurrentSpotifyUrl () {
   if (this.currentSong && this.currentSong.spotifyUrl) {
-    return currentSong.spotifyUrl
+    return this.currentSong.spotifyUrl
   } else {
     console.warn('Current Spotify URL not available.')
     return null
@@ -190,8 +190,17 @@ updateRecentSpotifyTrackIds(trackId) {
     logger.debug('Setting up listeners')
 
     this.socket.on('statefulMessage', async (payload) => {
-      self.state = fastJson.applyPatch(self.state, payload.statePatch).newDocument
-      logger.debug(`State updated for ${payload.name}`)
+      self.state = fastJson.applyPatch(self.state, payload.statePatch).newDocument;
+      
+      // Log the full payload for debugging
+      logger.debug('Received payload:', JSON.stringify(payload, null, 2));
+      
+      // Check for the 'votedOnSong' event (or similar name)
+      if (payload.name === 'votedOnSong') {
+        logger.debug('Payload details:', JSON.stringify(payload, null, 2)); // Log everything about the event
+      } else {
+          logger.debug(`State updated for ${payload.name}`);
+      }
 
       if (payload.name === 'userJoined') {
         try {
@@ -266,6 +275,11 @@ updateRecentSpotifyTrackIds(trackId) {
         }
         
         await songPayment();
+
+        setTimeout(() => {
+          console.log(`Checking artist match for: ${self.currentSong.artistName}`);
+          checkArtistAndNotify(self.state, self.currentSong);
+      }, 10000);
       }
     })
   }

@@ -12,6 +12,7 @@ const headers = {
   sdk: 'javascript@3.0.10'
 };
 
+// Updated postMessage function with support for direct messages
 export const postMessage = async (options) => {
   headers.appid = process.env.CHAT_API_KEY;
   const paths = ['v3.0', 'messages'];
@@ -59,9 +60,13 @@ export const postMessage = async (options) => {
     customData.songs = options.customData.songs;
   }
 
+  // Determine if the message is for a group or a user
+  const receiverType = options.receiverType === 'user' ? 'user' : 'group';
+  const receiver = receiverType === 'user' ? options.receiver : options.room;
+
   const payload = {
     type: 'ChatMessage',
-    receiverType: 'group',
+    receiverType: receiverType === 'user' ? 'user' : 'group',
     category: 'custom',
     data: {
       customData,
@@ -72,7 +77,7 @@ export const postMessage = async (options) => {
     metadata: {
       incrementUnreadCount: false
     },
-    receiver: options.room
+    receiver
   };
 
   const url = buildUrl(`${process.env.CHAT_API_KEY}.apiclient-us.cometchat.io`, paths);
@@ -84,6 +89,20 @@ export const postMessage = async (options) => {
   };
 };
 
+// Function to send a direct message to a specific user
+export const sendDirectMessage = async (receiverUUID, message) => {
+  try {
+    const options = {
+      message: message,
+      receiver: receiverUUID, // Receiver's UUID for direct message
+      receiverType: 'user',  // Specify that the receiver is a user
+    };
+    return await postMessage(options); // Use the modified postMessage function
+  } catch (error) {
+    logger.error(`Failed to send direct message to ${receiverUUID}: ${error.message}`);
+  }
+};
+
 export const joinChat = async (roomId) => {
   headers.appid = process.env.CHAT_API_KEY;
   const paths = ['v3.0', 'groups', roomId, 'members'];
@@ -93,11 +112,12 @@ export const joinChat = async (roomId) => {
   return response;
 };
 
-export const getMessages = async (roomId, fromTimestamp = startTimeStamp) => {
+export const getMessages = async (roomOrUserId, fromTimestamp = startTimeStamp, receiverType = 'group') => {
   headers.appid = process.env.CHAT_API_KEY;
   const messageLimit = 50;
-  const paths = ['v3.0', 'groups', roomId, 'messages'];
-  const searchParams = [
+
+  let paths;
+  let searchParams = [
     ['per_page', messageLimit],
     ['hideMessagesFromBlockedUsers', 0],
     ['unread', 0],
@@ -108,6 +128,18 @@ export const getMessages = async (roomId, fromTimestamp = startTimeStamp) => {
     ['affix', 'append']
   ];
 
+  if (receiverType === 'group') {
+    // Fetching messages for a group chat
+    paths = ['v3.0', 'groups', roomOrUserId, 'messages'];
+  } else if (receiverType === 'user') {
+    // Fetching direct messages for a user
+    paths = ['v3.0', 'users', roomOrUserId, 'messages'];  // This fetches direct messages for a user
+  }
+
+  // Build the URL for the API request
   const url = buildUrl(`${process.env.CHAT_API_KEY}.apiclient-us.cometchat.io`, paths, searchParams);
+
+  // Fetch messages
   return await makeRequest(url, { headers });
 };
+

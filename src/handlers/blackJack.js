@@ -263,51 +263,61 @@ async function handleNextPlayer() {
 async function playDealerTurn() {
     const room = process.env.ROOM_UUID;
     await postMessage({ room: room, message: `Dealer's turn.` });
-    
+
+    // Dealer hits until reaching 17 or higher
     while (calculateHandValue(dealerHand) < 17) {
         dealerHand.push(deck.pop());
-        await postMessage({ room: room, message: `Dealer hits: ${dealerHand.map(card => `${card.value}${card.suit}`).join(' ')} (Value: ${calculateHandValue(dealerHand)})` });
+        await postMessage({
+            room: room,
+            message: `Dealer hits: ${dealerHand.map(card => `${card.value}${card.suit}`).join(' ')} (Value: ${calculateHandValue(dealerHand)})`,
+        });
     }
 
     const dealerValue = calculateHandValue(dealerHand);
-    console.log(`Dealer's hand final value: ${dealerValue}`);
-    await postMessage({ room: room, message: `Dealer's final hand: ${dealerHand.map(card => `${card.value}${card.suit}`).join(' ')} (Value: ${dealerValue})` });
+    await postMessage({
+        room: room,
+        message: `Dealer's final hand: ${dealerHand.map(card => `${card.value}${card.suit}`).join(' ')} (Value: ${dealerValue})`,
+    });
 
-    // Determine winners and payout bets
+    // Determine results for each player
     for (const user of tableUsers) {
         const playerValue = calculateHandValue(playerHands[user]);
-        
-        // Get the user's nickname
-        const nickname = userNicknames[user] || user; // Fallback to UUID if nickname is not found
+        const nickname = userNicknames[user] || user;
 
-        await postMessage({ room: room, message: `Player ${nickname} final value: ${playerValue}` });
         if (playerValue > 21) {
-            // Player busts, loses the game
-            await postMessage({ room: room, message: `Player ${nickname} busts with ${playerValue}. They lose.` });
+            // Player busts
+            await postMessage({ room: room, message: `${nickname} busted and loses their bet of $${playerBets[user]}.` });
         } else if (dealerValue > 21 || playerValue > dealerValue) {
-            // Dealer busts or player has a higher hand without busting
-            const winAmount = playerBets[user] * 2; // Calculate the winning amount
-            await addToUserWallet(user, winAmount); // Pay out the winning bet
-            await postMessage({ room: room, message: `Player ${nickname} wins! Amount won: $${winAmount}` }); // Include the win amount
+            // Dealer busts or player has a higher hand
+            const payout = playerBets[user] * 2; // Win 2x bet
+            await addToUserWallet(user, payout);
+            await postMessage({ room: room, message: `${nickname} wins! Payout: $${payout}.` });
         } else if (playerValue === dealerValue) {
-            // Tie between dealer and player
-            await postMessage({ room: room, message: `Player ${nickname} ties with the dealer.` });
+            // Tie
             await addToUserWallet(user, playerBets[user]); // Return the bet
+            await postMessage({ room: room, message: `${nickname} ties with the dealer and gets their bet back.` });
         } else {
-            // Dealer has a higher hand, player loses
-            await postMessage({ room: room, message: `Player ${nickname} loses.` });
+            // Dealer wins
+            await postMessage({ room: room, message: `${nickname} loses their bet of $${playerBets[user]}.` });
         }
     }
 
-    // Reset the game
-    blackjackGameActive = false;
-    canJoinTable = true;
+    // Reset game state
+    resetGame();
+}
+
+function resetGame() {
+    tableUsers = [];
     playerBets = {};
     playerHands = {};
     dealerHand = [];
+    deck = [];
     currentPlayerIndex = 0;
-    await postMessage({ room: room, message: `The game is over. Ready for the next round!` });
+    blackjackGameActive = false;
+    canJoinTable = true;
+    bettingTimeout = null;
 }
+
 
 
 export { joinTable, leaveTable, handleBlackjackBet, handleHit, handleStand, getBlackjackGameActive, setBlackjackGameActive, tableUsers, preventFurtherJoins};

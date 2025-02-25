@@ -30,7 +30,7 @@ const replaceThisSong = (question) => {
 const askQuestion = async (question) => {
   try {
     const apiKey = process.env.BARD_API_KEY // Use environment variable for the API key
-    await bard.initializeChat(apiKey)
+    bard.initializeChat(apiKey)
 
     // Log the received question
     console.log(`Original question: "${question}"`)
