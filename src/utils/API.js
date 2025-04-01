@@ -77,6 +77,7 @@ async function fetchSpotifyPlaylistTracks(playlistId) {
   try {
     if (!accessToken) {
       accessToken = await getAccessToken(config.clientId, config.clientSecret);
+      console.log('Access token:', accessToken);  // Log access token
     }
 
     while (url) {
@@ -87,6 +88,8 @@ async function fetchSpotifyPlaylistTracks(playlistId) {
 
       const response = await fetch(url, options);
       const playlist = await response.json();
+      
+      console.log('Full playlist response:', playlist);  // Log the full response
 
       if (!response.ok) {
         console.error('Error fetching playlist tracks:', playlist);
@@ -94,7 +97,10 @@ async function fetchSpotifyPlaylistTracks(playlistId) {
       }
 
       if (playlist.items?.length) {
+        console.log(`Fetched ${playlist.items.length} tracks.`);
         tracks.push(...playlist.items);
+      } else {
+        console.log('No tracks found in the playlist or empty response.');
       }
 
       url = playlist.next; // Get the next page of tracks
@@ -106,6 +112,7 @@ async function fetchSpotifyPlaylistTracks(playlistId) {
 
   return tracks;
 }
+
 
 async function spotifyTrackInfo(trackId) {
   const url = `https://api.spotify.com/v1/tracks/${trackId}`;
@@ -445,29 +452,28 @@ async function fetchRecentSongs () {
   }
 }
 
-async function fetchSongData (spotifyUrl) {
-  const token = process.env.TTL_USER_TOKEN
-
-  const encodedUrl = encodeURIComponent(spotifyUrl)
+async function fetchSongData(spotifyTrackId) {
+  const token = process.env.TTL_USER_TOKEN;
 
   try {
-    const response = await fetch(`https://gateway.prod.tt.fm/api/playlist-service/song-data/${encodedUrl}`, {
+    const response = await fetch(`https://gateway.prod.tt.fm/api/playlist-service/song-data/${spotifyTrackId}/spotify`, {
       headers: {
         Authorization: `Bearer ${token}`,
-        accept: 'application/json'
-      }
-    })
+        accept: 'application/json',
+      },
+    });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch song data: ${response.statusText}`)
+      throw new Error(`Failed to fetch song data: ${response.statusText}`);
     }
 
-    const data = await response.json()
-    return data
+    const data = await response.json();
+    return data;
   } catch (error) {
-    throw new Error(`Error fetching song data: ${error.message}`)
+    throw new Error(`Error fetching song data: ${error.message}`);
   }
 }
+
 
 async function fetchCurrentUsers () {
   const token = process.env.TTL_USER_TOKEN
@@ -634,5 +640,63 @@ async function DeleteQueueSong(crateSongUuid, userToken) {
   }
 }
 
+async function searchSpotify(artistName, trackName) {
+  const searchUrl = `https://api.spotify.com/v1/search?q=artist:${encodeURIComponent(artistName)}%20track:${encodeURIComponent(trackName)}&type=track&limit=1`;
 
-export { getAccessToken, currentsongduration, spotifyTrackInfo, fetchTrackDetails, isUserAuthorized, fetchUserRoles, fetchRecentSongs, fetchCurrentUsers, fetchSpotifyPlaylistTracks, fetchCurrentlyPlayingSong, fetchSongData, DeleteQueueSong, fetchAllUserQueueSongIDsWithUUID }
+  try {
+    // Ensure access token is available
+    if (!accessToken) {
+      accessToken = await getAccessToken(config.clientId, config.clientSecret);
+    }
+
+    // Fetch track data from Spotify
+    const response = await fetch(searchUrl, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    });
+
+    // Check if the response was successful
+    if (!response.ok) {
+      throw new Error(`Failed to search for track: ${response.statusText} for artist: ${artistName} and track: ${trackName}`);
+    }
+
+    // Parse the response data
+    const data = await response.json();
+
+    // Check if tracks were found
+    if (data.tracks.items.length === 0) {
+      console.error(`Track not found: ${trackName} by ${artistName}`);
+      return null; // Return null if track not found
+    }
+
+    // Get the first track result
+    const track = data.tracks.items[0];
+
+    // Validate track data
+    if (!track || !track.id || !track.album || !track.album.name || !track.album.images[0]?.url) {
+      console.error("Invalid track data received:", track);
+      return null; // Return null if track data is incomplete
+    }
+
+    // Return track details
+    return {
+      spotifyTrackID: track.id, // Track ID
+      spotifyTrackName: track.name, // Track name
+      spotifyArtistName: track.artists.map(artist => artist.name).join(', '), // Artist names
+      spotifyUrl: track.external_urls.spotify, // Spotify URL
+      spotifyAlbumName: track.album.name, // Album name
+      spotifyAlbumArt: track.album.images[0]?.url || '', // Album art
+      spotifyReleaseDate: track.album.release_date, // Release date
+      spotifyTrackNumber: track.track_number, // Track number in the album
+      popularity: track.popularity // Popularity score
+    };
+  } catch (error) {
+    console.error("Error searching for track:", error);
+    return null; // Return null in case of an error
+  }
+}
+
+
+export { getAccessToken, currentsongduration, spotifyTrackInfo, fetchTrackDetails, isUserAuthorized, fetchUserRoles, fetchRecentSongs, fetchCurrentUsers, fetchSpotifyPlaylistTracks, fetchCurrentlyPlayingSong, fetchSongData, DeleteQueueSong, fetchAllUserQueueSongIDsWithUUID, searchSpotify }

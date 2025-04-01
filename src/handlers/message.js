@@ -4,11 +4,11 @@ import { askQuestion } from '../libs/ai.js'
 import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, totalPoints } from '../handlers/triviaCommands.js'
 import { logger } from '../utils/logging.js'
 import { roomBot } from '../index.js'
-import { fetchCurrentlyPlayingSong, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, updateRoomInfo, fetchSongData, isUserOwner, DeleteQueueSong, fetchAllUserQueueSongIDsWithUUID} from '../utils/API.js'
+import { fetchCurrentlyPlayingSong, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSongData, updateRoomInfo, isUserOwner, DeleteQueueSong, fetchAllUserQueueSongIDsWithUUID, searchSpotify} from '../utils/API.js'
 import { handleLotteryCommand, handleLotteryNumber, LotteryGameActive, getLotteryWinners } from '../utils/lotteryGame.js'
 import { enableSongStats, disableSongStats, songStatsEnabled } from '../utils/voteCounts.js'
 import { enableGreetingMessages, disableGreetingMessages, greetingMessagesEnabled } from './userJoined.js'
-import { getCurrentDJ } from '../libs/bot.js'
+import { getCurrentDJ, readRecentSongs } from '../libs/bot.js'
 import { resetCurrentQuestion } from './triviaData.js'
 import { addTracksToPlaylist, removeTrackFromPlaylist } from '../utils/playlistUpdate.js'
 import {getUserNickname, handleRouletteBet, rouletteGameActive, startRouletteGame } from '../handlers/roulette.js';
@@ -25,7 +25,8 @@ const usersToBeRemoved = {}
 
 // Messages
 export default async (payload, room, state) => {
-  logger.info({ sender: payload.senderName, message: payload.message })
+  console.log('Received message:', payload.message); // Log the full message to check its content
+  logger.info({ sender: payload.senderName, message: payload.message });
   
   // Handle Gifs Sent in Chat
   if (payload.message.type === 'ChatGif') {
@@ -173,6 +174,7 @@ if (
     /// ///////////// Commands Start Here. ////////////////////////
 
   } else if (payload.message.startsWith('/hello')) {
+
       await postMessage({
         room,  
         message: 'Hi!'  
@@ -252,7 +254,52 @@ if (
           message: `Failed to delete the current song: ${error.message}.`
       });
   }
-  
+} else if (payload.message.startsWith('/search')) {
+  console.log("Processing /search command...");
+
+  // Hardcoding the artist and track name for this example
+  const artistName = "Flume";
+  const trackName = "Still Woozy";
+
+  // Call your searchSpotify function
+  const trackDetails = await searchSpotify(artistName, trackName);
+
+  // If track is found, structure the custom data payload
+  if (trackDetails && trackDetails.spotifyUrl) {
+      const spotifyUrl = trackDetails.spotifyUrl;
+
+      // Fetch additional data for the song (optional)
+      const songData = await fetchSongData(spotifyUrl);
+
+      // Transform the song data if needed (to fit the expected structure)
+      const transformedSongData = {
+          ...songData,
+          musicProviders: songData.musicProvidersIds,  // Ensure this matches the expected structure
+          status: "SUCCESS"
+      };
+
+      // Structure the custom data payload for posting the song
+      const customData = {
+          songs: [
+              {
+                  song: transformedSongData
+              }
+          ]
+      };
+
+      // Send the custom data to the room (assuming postMessage is expecting customData)
+      await postMessage({
+          room,
+          message: 'Here is the custom song data:',
+          customData: customData  // Attach custom data here
+      });
+  } else {
+      await postMessage({
+          room,
+          message: `Sorry, I couldn't find "${trackName}" by ${artistName} on Spotify.`
+      });
+  }
+
   } else if (payload.message.startsWith('/test')) {
     await postMessage({
       room,
@@ -429,20 +476,19 @@ if (
     }
   } else if (payload.message.startsWith('/addDJ')) {
     try {
-        const args = payload.message.split(' '); // Split the command into parts
-        const option = args[1]; // Get the second part which will be the option
+        const args = payload.message.split(' ');
+        const option = args[1]; // Check if 'auto' was provided
 
         if (option === 'auto') {
-            await roomBot.enableAutoDJ(); // Call the enableAutoDJ function
+            await roomBot.enableAutoDJ();
             console.log('Auto DJ enabled');
 
-            // Since auto is specified, pass true to addDJ
-            await roomBot.addDJ(true); // Pass true for auto DJ
+            // Now add the bot as DJ
+            await roomBot.addDJ(true);
             console.log('Added Auto DJ');
         } else {
-            // Proceed as normal, without enabling Auto DJ
-            await roomBot.addDJ(); // Call addDJ without any options
-            console.log('DJ added normally');
+            await roomBot.addDJ();
+            //console.log('DJ added normally');
         }
     } catch (error) {
         console.error('Error adding DJ:', error);
@@ -849,12 +895,6 @@ if (payload.message.startsWith('/roulette start')) {
 )) {
   // Use the original payload directly
   await handleRouletteBet(payload); // Handle the user's bet
-} else {
-  // If no roulette game is active, inform the user
-  await postMessage({
-      room: payload.room,
-      message: 'The roulette game is currently inactive. Please wait for the next round!'
-  });
 }
 
 function formatBalance(balance) {
@@ -1791,7 +1831,7 @@ else if (payload.message.startsWith('/settheme')) {
 
       const updatePayload = {
           design: "YACHT",
-          numberOfDjs: 3
+          numberOfDjs: 3,
       };
       await updateRoomInfo(updatePayload);
 
@@ -1806,7 +1846,72 @@ else if (payload.message.startsWith('/settheme')) {
           message: 'An error occurred while removing the theme. Please try again.'
       });
   }
-  
+}
+else if (payload.message.startsWith('/room')) {
+  try {
+      const senderUuid = payload.sender; 
+      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken);
+      if (!isAuthorized) {
+          await postMessage({
+              room,
+              message: 'You need to be a moderator to execute this command.'
+          });
+          return;
+      }
+
+      const theme = payload.message.replace('/room', '').trim();
+      if (!theme) {
+          await postMessage({
+              room,
+              message: 'Please specify a room design. Available options: Barn, Festival, Underground, Tomorrowland, Classic.'
+          });
+          return;
+      }
+
+      const roomLower = theme.toLowerCase();
+      let updatePayload = null;
+      
+      const designMap = {
+          "barn": "BARN",
+          "festival": "FESTIVAL",
+          "underground": "UNDERGROUND",
+          "tomorrowland": "TOMORROWLAND",
+          "classic": "CLUB",
+          "turntable classic": "CLUB",
+          "ferry" : "FERRY_BUILDING",
+          "ferry building" : "FERRY_BUILDING",
+          "stadium" : "STADIUM",
+          "theater" : "THEATER",
+          "lights" : "CHAT_ONLY",
+          "dark" : "CHAT_ONLY"
+      };
+
+      if (designMap[roomLower]) {
+          updatePayload = { design: designMap[roomLower] };
+      } else {
+          await postMessage({
+              room,
+              message: `Invalid room design: ${theme}. Available options: Barn, Festival, Underground, Tomorrowland, Classic.`
+          });
+          return;
+      }
+
+      // Apply the design update
+      await updateRoomInfo(updatePayload);
+
+      await postMessage({
+          room,
+          message: `Room design updated to: ${designMap[roomLower]}`
+      });
+
+  } catch (error) {
+      console.error('Error updating room design:', error);
+      await postMessage({
+          room,
+          message: `Error: ${error.message}`
+      });
+  }
+ 
 } else if (payload.message.startsWith('/addsong')) {
   try {
     // Log the current song's track ID for debugging
@@ -2190,153 +2295,105 @@ else if (payload.message.startsWith('/settheme')) {
         message: audioDetails
       })
     }
-  } else if (payload.message.startsWith('/suggestsong')) {
-    const seedTracks = roomBot.recentSpotifyTrackIds.slice(0, 5);  // Get the last 5 played tracks
-    console.log('Fetching recommendations with seedTracks:', seedTracks);
+  } else if (payload.message.startsWith('/suggestsongs')) {
+    console.log("Processing /suggestsongs command...");
 
-    try {
-      // Fetch Spotify recommendations based on the last 5 tracks
-      const recommendations = await fetchSpotifyRecommendations([], [], seedTracks, 5);
+    const recentSongs = readRecentSongs();
+    console.log("Recent Songs Data:", recentSongs);
 
-      if (recommendations.length > 0) {
-        // Announce to the room that song suggestions are coming
+    if (!recentSongs || recentSongs.length === 0) {
         await postMessage({
-          room,
-          message: 'Based on the last 5 songs played in this room, here are some suggested songs you might like:'
-        });
-
-        for (const track of recommendations) {
-          try {
-            // Create Spotify URL for the track
-            const spotifyUrl = `https://open.spotify.com/track/${track.id}`;
-
-            // Fetch additional data for the song
-            const songData = await fetchSongData(spotifyUrl);
-
-            // Transform the song data if needed (to fit the expected structure)
-            const transformedSongData = {
-              ...songData,
-              musicProviders: songData.musicProvidersIds,
-              status: "SUCCESS"
-            };
-
-            // Structure the custom data payload for posting the song
-            const customData = {
-              songs: [
-                {
-                  song: transformedSongData
-                }
-              ]
-            };
-
-            // Post the song data as a custom message to the room
-            await postMessage({
-              room,
-              customData: customData
-            });
-
-            // Add a slight delay between each message to avoid spamming the room too quickly
-            await new Promise(resolve => setTimeout(resolve, 500)); 
-
-          } catch (songError) {
-            console.error(`Error fetching song data for track ${track.id}:`, songError);           
-          }
-        }
-      } else {
-        // Notify the room if no recommendations are available
-        await postMessage({
-          room,
-          message: 'Spotify sucks and stopped letting us use their song recommendations...sorry'
-        });
-      }
-    } catch (error) {
-      console.error('Error in /suggestsong command:', error);
-
-      // Notify the room if an error occurs during the recommendation fetch
-      await postMessage({
-        room,
-        message: 'Spotify sucks and stopped letting us use their song recommendations...sorry'
-      });
-    }    
-  } else if (payload.message.startsWith('/suggest')) {
-    const currentSongId = roomBot.currentSong?.spotifyUrl?.split('/track/')[1]; // Extract the current song's Spotify ID
-
-    if (!currentSongId) {
-        await postMessage({
-          room,
-          message: 'Spotify sucks and stopped letting us use their song recommendations...sorry'
+            room,
+            message: "I don't have any recent songs to suggest right now."
         });
         return;
     }
 
-    console.log('Fetching recommendations based on the current song:', currentSongId);
+    // Format song details for the AI question
+    const songList = recentSongs.map(song => {
+        return `Track: *${song.trackName}* | Artist: *${song.artistName}*`;
+    }).join('\n');
+    console.log("Formatted Song List for AI:", songList);
 
-    try {
-      // Fetch Spotify recommendations using only the current song's ID as the seed track
-      const recommendations = await fetchSpotifyRecommendations([], [], [currentSongId], 5);
+    // Create a question prompt for the AI
+    const question = `Here is a list of songs i've listened to recently. \n ${songList}. Can you suggest about 5 similar songs that you think I may enjoy? Please follow this format strictly:\n\nTrack: <Track Name> | Artist: <Artist Name>\n\nFor each song suggestion, use a new line, and do not include any extra commentary or notes outside of this format.`;
 
-      if (recommendations.length > 0) {
-        // Announce to the room that song suggestions are coming
-        await postMessage({
-          room,
-          message: 'Based on the current song playing, here are a few songs you might like:'
-        });
+    console.log("AI Question:", question);
 
-        for (const track of recommendations) {
-          try {
-            // Create Spotify URL for the track
-            const spotifyUrl = `https://open.spotify.com/track/${track.id}`;
+    // Get AI's response
+    const aiResponse = await askQuestion(question);
+    console.log("AI Response:", aiResponse);
 
-            // Fetch additional data for the song
-            const songData = await fetchSongData(spotifyUrl);
+    // Clean up and split the response
+    const songSuggestions = aiResponse.split("\n").map(item => {
+        const parts = item.split("|"); // Split by " | "
 
-            // Transform the song data if needed (to fit the expected structure)
-            const transformedSongData = {
-              ...songData,
-              musicProviders: songData.musicProvidersIds,
-              status: "SUCCESS"
-            };
+        // If the response is in the right format
+        if (parts.length === 2) {
+            let trackName = parts[0].replace('Track: ', '').trim(); // Remove 'Track: ' from the front
+            let artistName = parts[1].replace('Artist: ', '').trim(); // Remove 'Artist: ' from the front
 
-            // Structure the custom data payload for posting the song
-            const customData = {
-              songs: [
-                {
-                  song: transformedSongData
-                }
-              ]
-            };
+            // Clean up track and artist names (removing extra spaces or characters)
+            trackName = cleanName(trackName);
+            artistName = cleanName(artistName);
 
-            // Post the song data as a custom message to the room
-            await postMessage({
-              room,
-              customData: customData
-            });
-
-            // Add a slight delay between each message to avoid spamming the room too quickly
-            await new Promise(resolve => setTimeout(resolve, 500)); 
-
-          } catch (songError) {
-            console.error(`Error fetching song data for track ${track.id}:`, songError);
-          }
+            console.log(`Parsed track: ${trackName}, artist: ${artistName}`);
+            return { trackName, artistName };
         }
-      } else {
-        // Notify the room if no recommendations are available
-        await postMessage({
-          room,
-          message: 'Spotify sucks and stopped letting us use their song recommendations...sorry'
-        });
-      }
-    } catch (error) {
-      console.error('Error in /suggest command:', error);
+        return null;  // Handle malformed lines
+    }).filter(Boolean);  // Remove null values from malformed lines
 
-      // Notify the room if an error occurs during the recommendation fetch
-      await postMessage({
-        room,
-        message: 'Spotify sucks and stopped letting us use their song recommendations...sorry'
-      });
-    }  
-    if (payload.message.includes('song feature')) {
-        await handleSongFeature(room);
+    // Clean function to remove unwanted characters
+    function cleanName(name) {
+        return name.replace(/[^a-zA-Z0-9\s&'\-]/g, '').trim();  // Allow spaces, letters, numbers, and simple punctuation
+    }
+
+    // Create an array to hold the custom data payload
+    const customDataSongs = [];
+
+    // Search Spotify for each song suggestion
+    for (let suggestion of songSuggestions) {
+        const { trackName, artistName } = suggestion;
+
+        if (trackName && artistName) {
+            const trackDetails = await searchSpotify(artistName, trackName);
+
+            if (trackDetails && trackDetails.spotifyUrl) {
+                // Fetch additional data for the song
+                const songData = await fetchSongData(trackDetails.spotifyUrl);
+
+                // Transform the song data
+                const transformedSongData = {
+                    ...songData,
+                    musicProviders: songData.musicProvidersIds, // Ensure this matches the expected structure
+                    status: "SUCCESS"
+                };
+
+                // Push the transformed song data to the customData array
+                customDataSongs.push({
+                    song: transformedSongData
+                });
+            }
+        }
+    }
+
+    // If we have custom data songs, send them
+    if (customDataSongs.length > 0) {
+        const customData = {
+            songs: customDataSongs
+        };
+
+        // Send the custom data to the room
+        await postMessage({
+            room,
+            message: 'Here are some song suggestions:',
+            customData: customData  // Attach custom data here
+        });
+    } else {
+        await postMessage({
+            room,
+            message: 'Sorry, I couldn\'t find any song suggestions.'
+        });
     }
 
     ////////////////// SPECIAL //////////////////////////

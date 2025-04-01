@@ -1,0 +1,44 @@
+{
+  "songs": [
+    {
+      "trackName": "Pumped Up Kicks",
+      "artistName": "Foster The People",
+      "albumName": "Torches",
+      "releaseDate": "2011-05-23",
+      "spotifyUrl": "https://open.spotify.com/track/7w87IxuO7BDcJ3YUqCyMTT",
+      "popularity": 86
+    },
+    {
+      "trackName": "Bambi",
+      "artistName": "Hippo Campus",
+      "albumName": "Bambi",
+      "releaseDate": "2018-09-28",
+      "spotifyUrl": "https://open.spotify.com/track/5dmPNuHmRRJuHmJTDa7NuJ",
+      "popularity": 52
+    },
+    {
+      "trackName": "Bambi",
+      "artistName": "Hippo Campus",
+      "albumName": "Bambi",
+      "releaseDate": "2018-09-28",
+      "spotifyUrl": "https://open.spotify.com/track/5dmPNuHmRRJuHmJTDa7NuJ",
+      "popularity": 52
+    },
+    {
+      "trackName": "baseball",
+      "artistName": "Hippo Campus",
+      "albumName": "warm glow",
+      "releaseDate": "2017-09-12",
+      "spotifyUrl": "https://open.spotify.com/track/5lO1htX1UPjwyItDLurhR5",
+      "popularity": 53
+    },
+    {
+      "trackName": "baseball",
+      "artistName": "Hippo Campus",
+      "albumName": "warm glow",
+      "releaseDate": "2017-09-12",
+      "spotifyUrl": "https://open.spotify.com/track/5lO1htX1UPjwyItDLurhR5",
+      "popularity": 53
+    }
+  ]
+}

@@ -35,19 +35,20 @@
   "devDependencies": {
     "chai": "^4.3.6",
     "mocha": "^10.0.0",
-    "nodemon": "^2.0.19",
+    "nodemon": "^3.1.9",
     "nyc": "^15.1.0",
     "standard": "^17.0.0"
   },
   "dependencies": {
-    "@cometchat-pro/chat": "^3.0.11",
+    "@cometchat/chat-sdk-javascript": "^4.0.10",
+    "@google/generative-ai": "^0.22.0",
     "bard-ai": "^2.0.3",
     "bard-api-node": "^2.1.0",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "fast-json-patch": "^3.1.1",
     "node-fetch": "^3.2.10",
-    "openai": "^3.3.0",
+    "openai": "^4.90.0",
     "redis": "^4.6.7",
     "remove-markdown": "^0.5.0",
     "repeat": "^2.0.4",
@@ -59,8 +60,8 @@
   },
   "nodemonConfig": {
     "ignore": [
-      "src/libs/wallets.json", 
-      "*.json"  
+      "src/libs/wallets.json",
+      "*.json"
     ]
   }
 }

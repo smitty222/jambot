@@ -14,6 +14,7 @@ const headers = {
 
 // Updated postMessage function with support for direct messages
 export const postMessage = async (options) => {
+  
   headers.appid = process.env.CHAT_API_KEY;
   const paths = ['v3.0', 'messages'];
 
@@ -65,29 +66,29 @@ export const postMessage = async (options) => {
   const receiver = receiverType === 'user' ? options.receiver : options.room;
 
   const payload = {
-    type: 'ChatMessage',
+    type: 'text',
     receiverType: receiverType === 'user' ? 'user' : 'group',
-    category: 'custom',
+    category: 'message',
     data: {
-      customData,
+      text: options.message || '', // The actual message content
       metadata: {
-        incrementUnreadCount: false
+        chatMessage: customData // Store extra data inside metadata
       }
-    },
-    metadata: {
-      incrementUnreadCount: false
     },
     receiver
   };
 
+
   const url = buildUrl(`${process.env.CHAT_API_KEY}.apiclient-us.cometchat.io`, paths);
   const messageResponse = await makeRequest(url, { method: 'POST', body: JSON.stringify(payload) }, headers);
 
+  
   return {
     message: options.message,
     messageResponse
   };
 };
+
 
 // Function to send a direct message to a specific user
 export const sendDirectMessage = async (receiverUUID, message) => {
@@ -99,7 +100,7 @@ export const sendDirectMessage = async (receiverUUID, message) => {
     };
     return await postMessage(options); // Use the modified postMessage function
   } catch (error) {
-    logger.error(`Failed to send direct message to ${receiverUUID}: ${error.message}`);
+    console.error(`Failed to send direct message to ${receiverUUID}: ${error.message}`);
   }
 };
 
@@ -121,7 +122,6 @@ export const getMessages = async (roomOrUserId, fromTimestamp = startTimeStamp, 
     ['per_page', messageLimit],
     ['hideMessagesFromBlockedUsers', 0],
     ['unread', 0],
-    ['types', 'ChatMessage'],
     ['withTags', 0],
     ['hideDeleted', 0],
     ['sentAt', fromTimestamp],
@@ -142,4 +142,3 @@ export const getMessages = async (roomOrUserId, fromTimestamp = startTimeStamp, 
   // Fetch messages
   return await makeRequest(url, { headers });
 };
-

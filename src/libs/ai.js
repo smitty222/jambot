@@ -1,16 +1,39 @@
-import { BardAPI } from 'bard-api-node'
-const bard = new BardAPI()
+import { GoogleGenerativeAI } from '@google/generative-ai'
 
-// State variable to store the current song details
-let currentSong = {}
+const askQuestion = async (question) => {
+  try {
+    const apiKey = process.env.GEMINI_API_KEY // Use environment variable for the Gemini API key
+    const genAI = new GoogleGenerativeAI(apiKey)
 
-// Function to update the current song state
-const updateCurrentSong = (songDetails) => {
-  currentSong = songDetails
-  console.log(`Updated current song: ${JSON.stringify(currentSong)}`)
+    // Initialize the generative model (e.g., 'gemini-1.5-flash')
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+
+    // Log the received question
+    console.log(`Received question: "${question}"`)
+
+    // Check if the question refers to "this song" and replace if necessary (your custom logic)
+    if (question.toLowerCase().includes('this song')) {
+      question = replaceThisSong(question)  // Your custom replace function
+    }
+
+    // Log the final question being sent to Gemini AI
+    console.log(`Final question sent to Gemini: "${question}"`)
+
+    // Get the generative content response
+    const result = await model.generateContent(question)
+
+    // Log the response from Gemini AI
+    console.log(`AI Response: ${JSON.stringify(result)}`)
+
+    // Return the response text
+    return result.response.text() || 'Sorry, I could not generate a response at the moment.'
+  } catch (error) {
+    console.error('Error:', error)
+    return 'Sorry, something went wrong trying to get a response from Gemini.'
+  }
 }
 
-// Function to replace "this song" in the question with the current song's details
+// Custom function to replace "this song" with current song details
 const replaceThisSong = (question) => {
   if (currentSong && currentSong.artistName && currentSong.trackName) {
     const songDetails = `Artist: ${currentSong.artistName}, Track: ${currentSong.trackName}`
@@ -26,33 +49,14 @@ const replaceThisSong = (question) => {
   }
 }
 
-// Function to ask a question to the Bard API
-const askQuestion = async (question) => {
-  try {
-    const apiKey = process.env.BARD_API_KEY // Use environment variable for the API key
-    bard.initializeChat(apiKey)
+// Function to update the current song state (if needed for your logic)
+let currentSong = {}
 
-    // Log the received question
-    console.log(`Original question: "${question}"`)
-
-    // Check if the question references "this song"
-    if (question.toLowerCase().includes('this song')) {
-      question = replaceThisSong(question)
-    }
-
-    // Log the final question sent to Bard
-    console.log(`Final question sent to AI: "${question}"`)
-
-    // Get a response from Bard
-    const response = await bard.getBardResponse(question)
-    console.log(`AI Response: ${JSON.stringify(response)}`)
-
-    return response?.text || 'Sorry, I could not generate a response at the moment.'
-  } catch (error) {
-    console.error('Error:', error)
-    return 'Sorry, something went wrong trying to get a response for you'
-  }
+// Example of how you might use this in your chat application
+const chatWithBot = async (userMessage) => {
+  const botResponse = await askQuestion(userMessage)
+  console.log(`Bot response: ${botResponse}`)
+  // Here you can handle sending the botResponse back to the chat system
 }
 
-// Export the functions
-export { askQuestion, updateCurrentSong }
+export { askQuestion, chatWithBot }

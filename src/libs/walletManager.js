@@ -66,7 +66,7 @@ async function saveWallets(wallets) {
 
     try {
         await fs.writeFile(walletsFilePath, JSON.stringify(wallets, null, 2)); // Pretty print JSON
-        console.log('Wallets saved successfully:', wallets); // Log successful save
+        console.log('Wallets saved successfully:'); // Log successful save
     } catch (error) {
         console.error('Error writing to wallets file:', error);
     }

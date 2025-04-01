@@ -3,16 +3,16 @@
     "balance": 5
   },
   "210141ad-6b01-4665-84dc-e47ea7c27dcb": {
-    "balance": 4012.3
+    "balance": 5662.1
   },
   "3ea72ae7-77db-4d08-9dc6-ce875890c1b5": {
-    "balance": 168
+    "balance": 178
   },
   "92302b7d-ae5e-466f-975b-d3fee461f13f": {
-    "balance": 7061.9
+    "balance": 8005.5
   },
   "072b0bb3-518e-4422-97fd-13dc53e8ae7e": {
-    "balance": 124055.7
+    "balance": 116801.7
   },
   "df2cd59d-c1ab-4589-98cd-e14f8a400f77": {
     "balance": 142.8
@@ -30,7 +30,7 @@
     "balance": 18
   },
   "887b6c25-6eb6-42ae-a68f-cd84e60d4d5a": {
-    "balance": 174
+    "balance": 246
   },
   "0e1f2a66-0960-497f-befd-94efdd610d6f": {
     "balance": 2
@@ -73,5 +73,26 @@
   },
   "8b6b17d4-6c92-4ee1-a339-7c2c8530e175": {
     "balance": 6
+  },
+  "5e682210-dd0c-4117-ae22-0422d47bb4bb": {
+    "balance": 10
+  },
+  "ded7268d-1535-4e3d-9082-6809703722f8": {
+    "balance": 6
+  },
+  "191bff4d-6e9a-4110-8746-aa8f47befce2": {
+    "balance": 6
+  },
+  "cd75ba14-7067-498b-ab8d-36ce30c5b948": {
+    "balance": 12
+  },
+  "624ae15a-1d7d-45de-9310-8d52e6429f9d": {
+    "balance": 6
+  },
+  "c226c978-3e99-4c7b-817c-982f0eab76d3": {
+    "balance": 6
+  },
+  "39b8f029-cb19-44a8-b4e5-1ccf35b4eebe": {
+    "balance": 4
   }
 }
