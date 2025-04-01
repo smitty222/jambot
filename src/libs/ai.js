@@ -13,7 +13,7 @@ const askQuestion = async (question) => {
 
     // Check if the question refers to "this song" and replace if necessary (your custom logic)
     if (question.toLowerCase().includes('this song')) {
-      question = replaceThisSong(question)  // Your custom replace function
+      question = replaceThisSong(question) // Your custom replace function
     }
 
     // Log the final question being sent to Gemini AI
@@ -50,7 +50,7 @@ const replaceThisSong = (question) => {
 }
 
 // Function to update the current song state (if needed for your logic)
-let currentSong = {}
+const currentSong = {}
 
 // Example of how you might use this in your chat application
 const chatWithBot = async (userMessage) => {

@@ -533,7 +533,7 @@ const triviaData = [
       'D. Michael Johnson\n'
     ],
     correctAnswer: 'A'
-  },  
+  },
   // Entertainment
   {
     category: 'entertainment',
@@ -666,7 +666,7 @@ const triviaData = [
       'D. Stephanie Tyler\n'
     ],
     correctAnswer: 'C'
-  },  
+  },
   {
     category: 'entertainment',
     question: 'Which College Is Elle Applying For In Legally Blonde?',
