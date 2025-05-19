@@ -12,13 +12,12 @@ const headers = {
   sdk: 'javascript@3.0.10'
 }
 
-// Updated postMessage function with support for direct messages
 export const postMessage = async (options) => {
   headers.appid = process.env.CHAT_API_KEY
   const paths = ['v3.0', 'messages']
 
-  // Build the customData object
-  const customData = {
+  // Build the base chat metadata (not for attachments)
+  const chatMessageMetadata = {
     message: options.message || '',
     avatarId: process.env.CHAT_AVATAR_ID,
     userName: process.env.CHAT_NAME,
@@ -29,52 +28,54 @@ export const postMessage = async (options) => {
     id: uuidv4()
   }
 
-  // Handle URL-specific messages
-  if (options.message && options.message.startsWith('https://')) {
-    customData.type = 'URL' // Explicitly specify URL message type
-    customData.url = options.message // Include the URL in the customData
-    customData.interactive = true // Add an interactive flag if needed
-  }
-
-  // Handle images
-  if (options.images) {
-    customData.imageUrls = options.images // Ensure imageUrls is an array of URLs
-  }
-
-  // Handle GIFs
-  if (options.gifs) {
-    customData.gifUrls = options.gifs // For GIFs if needed
-  }
-
-  // Handle mentions
   if (options.mentions) {
-    customData.mentions = options.mentions.map((mention) => ({
+    chatMessageMetadata.mentions = options.mentions.map((mention) => ({
       start: mention.position,
       userNickname: mention.nickname,
       userUuid: mention.userId
     }))
   }
 
-  // If song data is provided in the options, include it in the customData
   if (options.customData && options.customData.songs) {
-    customData.songs = options.customData.songs
+    chatMessageMetadata.songs = options.customData.songs
   }
 
-  // Determine if the message is for a group or a user
-  const receiverType = options.receiverType === 'user' ? 'user' : 'group'
-  const receiver = receiverType === 'user' ? options.receiver : options.room
+  // Determine if this is a media message
+  let type = 'text'
+  const data = {}
+
+  if (options.images || options.gifs) {
+    type = 'image'
+    data.attachments = []
+
+    const mediaUrls = options.images || options.gifs
+    for (const url of mediaUrls) {
+      const filename = url.split('/').pop()
+      const extension = filename.split('.').pop()
+      const mimeType = extension === 'gif' ? 'image/gif' : `image/${extension}`
+
+      data.attachments.push({
+        url,
+        name: filename,
+        mimeType,
+        extension,
+        size: 'unknown' // Optional; fill in if known
+      })
+    }
+  } else {
+    data.text = options.message || ''
+  }
+
+  data.metadata = {
+    chatMessage: chatMessageMetadata
+  }
 
   const payload = {
-    type: 'text',
-    receiverType: receiverType === 'user' ? 'user' : 'group',
+    type,
+    receiverType: options.receiverType === 'user' ? 'user' : 'group',
     category: 'message',
-    data: {
-      text: options.message || '', // The actual message content
-      metadata: {
-        chatMessage: customData // Store extra data inside metadata
-      }
-    },
-    receiver
+    receiver: options.receiverType === 'user' ? options.receiver : options.room,
+    data
   }
 
   const url = buildUrl(`${process.env.CHAT_API_KEY}.apiclient-us.cometchat.io`, paths)
@@ -85,6 +86,7 @@ export const postMessage = async (options) => {
     messageResponse
   }
 }
+
 
 // Function to send a direct message to a specific user
 export const sendDirectMessage = async (receiverUUID, message) => {

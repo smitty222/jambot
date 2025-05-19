@@ -1,22 +1,16 @@
 import { postMessage } from '../libs/cometchat.js'
 import { fetchRecentSongs, fetchUserData } from './API.js'
 import { roomBot } from '../index.js'
+import { logCurrentSong } from '../libs/roomStats.js'
 
 let songStatsEnabled = false
 
-async function postVoteCountsForLastSong (room) {
+async function postVoteCountsForLastSong(room) {
   try {
-    if (!songStatsEnabled) {
-      return
-    }
-
     const recentSongs = await fetchRecentSongs()
 
     if (!recentSongs || recentSongs.length === 0) {
-      await postMessage({
-        room,
-        message: 'No recent songs found.'
-      })
+      console.log('No recent songs found.')
       return
     }
 
@@ -24,22 +18,20 @@ async function postVoteCountsForLastSong (room) {
     const lastSong = recentSongs[0]
 
     if (!lastSong) {
-      await postMessage({
-        room,
-        message: 'No previous song found.'
-      })
+      console.log('No previous song found.')
       return
     }
 
     const { song, voteCounts, djUuid } = lastSong
-    const { artistName, trackName } = song
+   
+    const songDuration = song.duration || null
+    song.songDuration = songDuration
+
+    const { artistName, trackName, songId } = song
 
     // Check if djUuid is available
     if (!djUuid) {
-      await postMessage({
-        room,
-        message: 'No DJ found.'
-      })
+      console.log('No DJ found.')
       return
     }
 
@@ -47,7 +39,6 @@ async function postVoteCountsForLastSong (room) {
     let djNickname = 'Unknown DJ' // Default to 'Unknown DJ'
     try {
       const userData = await fetchUserData([djUuid]) // Fetch user data
-      // Check if userData returned and extract the nickname
       if (userData.length > 0 && userData[0].userProfile) {
         djNickname = userData[0].userProfile.nickname // Access nickname from userProfile
       }
@@ -59,18 +50,29 @@ async function postVoteCountsForLastSong (room) {
 
     const { likes = 0, dislikes = 0, stars = 0 } = voteCounts // Provide default values if not available
 
-    const message = `${trackName} by ${artistName}\n 🎧 Played By: ${djNickname}\n 👍: ${likes}\n 👎: ${dislikes}\n ⭐: ${stars}\n Popularity Score: ${popularity} out of 100\n______________________________________________________`
+    // Log the song stats (this will always happen)
+    await logCurrentSong(song, likes, dislikes, stars)
+    console.log(`Logged stats for ${trackName} by ${artistName}: 👍 ${likes}, 👎 ${dislikes}, ⭐ ${stars}`)
 
-    await postMessage({
-      room,
-      message
-    })
+    // If songStatsEnabled is true, post the message
+    if (songStatsEnabled) {
+      const message = `${trackName} by ${artistName}\n 🎧 Played By: ${djNickname}\n 👍: ${likes}\n 👎: ${dislikes}\n ⭐: ${stars}\n Popularity Score: ${popularity} out of 100\n______________________________________________________`
+
+      await postMessage({
+        room,
+        message
+      })
+    } else {
+      console.log('Posting song stats is disabled.')
+    }
   } catch (error) {
     console.error('Error in postVoteCountsForLastSong:', error.message)
-    // Handle errors appropriately, such as notifying the user or logging the issue
   }
 }
 
+function isSongStatsEnabled () {
+  return songStatsEnabled
+}
 // Command to turn on song stats
 async function enableSongStats () {
   songStatsEnabled = true
@@ -81,4 +83,4 @@ async function disableSongStats () {
   songStatsEnabled = false
 }
 
-export { postVoteCountsForLastSong, enableSongStats, disableSongStats, songStatsEnabled }
+export { postVoteCountsForLastSong, enableSongStats, disableSongStats, isSongStatsEnabled }

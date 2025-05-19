@@ -63,6 +63,16 @@ function getRouletteColor (number) {
     return 'unknown' // Handle invalid numbers (should not occur in roulette)
   }
 }
+
+function getDozenRange(dozen) {
+  switch (dozen) {
+    case 1: return Array.from({ length: 12 }, (_, i) => i + 1)     // 1–12
+    case 2: return Array.from({ length: 12 }, (_, i) => i + 13)    // 13–24
+    case 3: return Array.from({ length: 12 }, (_, i) => i + 25)    // 25–36
+    default: return []
+  }
+}
+
 async function logUserBets () {
   const logMessages = []
   for (const [userId, userBets] of Object.entries(bets)) {
@@ -244,7 +254,90 @@ async function closeBets () {
 
   await new Promise(resolve => setTimeout(resolve, 8000)) // Wait for 8 seconds
 
-  await drawWinningNumber() // Draw the winning number here
+  async function drawWinningNumber () {
+    const allNumbers = [...Array(37).keys(), 37] // 0-36 + 37 as 00
+    const resultIndex = Math.floor(Math.random() * allNumbers.length)
+    const winningNumber = allNumbers[resultIndex]
+    const winningColor = getRouletteColor(winningNumber === 37 ? '00' : winningNumber)
+  
+    await postMessage({
+      room,
+      message: `🎯 The wheel landed on ${winningNumber === 37 ? '00' : winningNumber} (${winningColor})!`
+    })
+  
+    const wallets = await loadWallets()
+  
+    for (const [user, userBets] of Object.entries(bets)) {
+      let totalWinnings = 0
+  
+      for (const bet of userBets) {
+        const amount = bet.amount
+  
+        switch (bet.type) {
+          case 'red':
+          case 'black':
+          case 'green':
+            if (bet.type === winningColor) totalWinnings += amount * 2
+            break
+  
+          case 'odd':
+            if (winningNumber !== 0 && winningNumber !== 37 && winningNumber % 2 === 1)
+              totalWinnings += amount * 2
+            break
+  
+          case 'even':
+            if (winningNumber !== 0 && winningNumber !== 37 && winningNumber % 2 === 0)
+              totalWinnings += amount * 2
+            break
+  
+          case 'high':
+            if (winningNumber >= 19 && winningNumber <= 36)
+              totalWinnings += amount * 2
+            break
+  
+          case 'low':
+            if (winningNumber >= 1 && winningNumber <= 18)
+              totalWinnings += amount * 2
+            break
+  
+          case 'number':
+            if (bet.number === winningNumber)
+              totalWinnings += amount * 36
+            break
+  
+          case 'dozen':
+            const dozenRange = getDozenRange(bet.dozen)
+            if (dozenRange.includes(winningNumber))
+              totalWinnings += amount * 3
+            break
+        }
+      }
+  
+      if (totalWinnings > 0) {
+        wallets[user].balance += totalWinnings
+        await postMessage({
+          room,
+          message: `💰 @${await getUserNickname(user)} won $${totalWinnings}! New balance: $${wallets[user].balance}`
+        })
+      } else {
+        await postMessage({
+          room,
+          message: `😢 @${await getUserNickname(user)} did not win this round.`
+        })
+      }
+    }
+  
+    await saveWallets(wallets)
+  
+    // Reset state
+    Object.keys(bets).forEach(key => delete bets[key])
+    rouletteGameActive = false
+  }
+
+  setTimeout(async () => {
+    await drawWinningNumber()
+  }, 5000)
+  
 }
 
 async function handleRouletteBet (payload) {
@@ -322,19 +415,6 @@ async function handleRouletteBet (payload) {
   })
 }
 
-function getDozenRange (dozenNumber) {
-  switch (dozenNumber) {
-    case '1':
-      return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-    case '2':
-      return [13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
-    case '3':
-      return [25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36]
-    default:
-      return []
-  }
-}
-
 // Function to place a bet for a user
 async function placeBet (user, betType, amount, additionalParams = {}) {
   const currentBalance = await initializeWallet(user)
@@ -366,135 +446,6 @@ async function placeBet (user, betType, amount, additionalParams = {}) {
 
   // Optional: Log the successful bet placement
   console.log(`User ${user} placed a bet of $${amount} on ${betType}.`)
-}
-
-async function drawWinningNumber () {
-  logUserBets()
-  if (!rouletteGameActive) {
-    await postMessage({
-      room: process.env.ROOM_UUID,
-      message: 'Roulette Game Inactive'
-    })
-    return
-  }
-
-  const winningNumber = Math.floor(Math.random() * 37)
-  const winningColor = getRouletteColor(winningNumber)
-
-  console.log(`Winning Number: ${winningNumber}, Winning Color: ${winningColor}`)
-
-  const colorEmoji = winningColor === 'red' ? '🟥' : winningColor === 'black' ? '⬛' : '🟩'
-
-  await postMessage({
-    room: process.env.ROOM_UUID,
-    message: `The ball landed on ${winningNumber} ${colorEmoji} (${winningColor.toUpperCase()}) !`
-  })
-
-  const userWinnings = {} // Object to store each user's total winnings and total bets
-
-  for (const [user, userBets] of Object.entries(bets)) {
-    const nickname = await getUserNickname(user)
-    let totalWinAmount = 0
-    let totalBetAmount = 0 // Track the total bet amount
-
-    for (const bet of userBets) {
-      let winAmount = 0
-      totalBetAmount += bet.amount // Accumulate total bet amount for this user
-
-      switch (bet.type) {
-        case 'red':
-        case 'black':
-          if (bet.type === winningColor) {
-            winAmount += bet.amount * 2 // 2x payout for correct color
-          }
-          break
-        case 'green':
-          if (bet.type === winningColor) {
-            winAmount += bet.amount * 35 // 35x payout for green
-          }
-          break
-        case 'odd':
-          if (winningNumber % 2 !== 0 && winningNumber !== 0) {
-            winAmount += bet.amount * 2 // 2x payout for odd number
-          }
-          break
-        case 'even':
-          if (winningNumber % 2 === 0 && winningNumber !== 0) {
-            winAmount += bet.amount * 2 // 2x payout for even number
-          }
-          break
-        case 'number':
-          if (bet.number === winningNumber) {
-            winAmount += bet.amount * 35 // 35x payout for exact number
-          }
-          break
-        case 'dozen':
-          const dozenRange = getDozenRange(bet.dozen)
-          if (dozenRange.length > 0 && dozenRange.includes(winningNumber)) {
-            winAmount += bet.amount * 3 // 3x payout for correct dozen
-          }
-          break
-        case 'high':
-          if (winningNumber >= 19 && winningNumber <= 36) {
-            winAmount += bet.amount * 2 // 2x payout for high numbers
-          }
-          break
-        case 'low':
-          if (winningNumber >= 1 && winningNumber <= 18) {
-            winAmount += bet.amount * 2 // 2x payout for low numbers
-          }
-          break
-        default:
-          console.error(`Unknown bet type: ${bet.type}`)
-      }
-
-      totalWinAmount += winAmount // Add current bet winnings to the user's total winnings
-    }
-
-    // Record user total bets and winnings
-    userWinnings[user] = {
-      totalWin: totalWinAmount,
-      totalBet: totalBetAmount,
-      nickname
-    }
-  }
-
-  let hasWinners = false // Flag to track if there are winners
-  let outcomeMessage = '\n' // Initialize outcome message
-
-  for (const [user, winnings] of Object.entries(userWinnings)) {
-    const netOutcome = winnings.totalWin - winnings.totalBet // Calculate net outcome
-    const nickname = winnings.nickname
-
-    // Fetch the user's current balance before updating
-    const currentBalance = await getUserWallet(user)
-
-    if (netOutcome > 0) {
-      hasWinners = true
-      outcomeMessage += `🎉 ${nickname} is a Winner! +$${netOutcome} 🎉\nWin: +$${winnings.totalWin}\nBets: $${winnings.totalBet}\nCurrent Balance Before Payout: $${currentBalance}\n`
-
-      try {
-        await addToUserWallet(user, winnings.totalWin)
-        const updatedBalance = await getUserWallet(user) // Fetch updated balance after payout
-        outcomeMessage += `Updated Balance: $${updatedBalance}\n\n`
-      } catch (error) {
-        console.error(`Error updating wallet for @${nickname}: ${error}`)
-      }
-    } else {
-      outcomeMessage += `😢 ${nickname} loses. Loss: -$${winnings.totalBet}\nCurrent Balance: $${currentBalance}\n\n`
-    }
-  }
-
-  if (!hasWinners) {
-    outcomeMessage += 'No winners this round. Better luck next time!'
-  }
-
-  console.log(outcomeMessage)
-
-  await postMessage({
-    room: process.env.ROOM_UUID,
-    message: outcomeMessage
-  })
 }
 
 // Main handler function to route commands

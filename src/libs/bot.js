@@ -4,8 +4,8 @@ import { joinChat, getMessages } from './cometchat.js'
 import { logger } from '../utils/logging.js'
 import { handlers } from '../handlers/index.js'
 import { fetchSpotifyPlaylistTracks, fetchCurrentUsers, spotifyTrackInfo, fetchCurrentlyPlayingSong, fetchSongData } from '../utils/API.js'
-import { postVoteCountsForLastSong, songStatsEnabled } from '../utils/voteCounts.js'
-import { usersToBeRemoved } from '../handlers/message.js'
+import { postVoteCountsForLastSong } from '../utils/voteCounts.js'
+import { usersToBeRemoved, userstagedive } from '../handlers/message.js'
 import { escortUserFromDJStand } from '../utils/escortDJ.js'
 import handleUserJoinedWithStatePatch from '../handlers/userJoined.js'
 import { handleAlbumTheme, handleCoversTheme } from '../handlers/playedSong.js'
@@ -100,9 +100,9 @@ export class Bot {
     this.recentSpotifyTrackIds = []
     this.currentSong = {
       trackName: 'Unknown',
-      spotifyTrackId: null,
-      songId: null,
-      spotifyUrl: null,
+      spotifyTrackId: '',
+      songId: '',
+      spotifyUrl: '',
       artistName: 'Unknown',
       albumName: 'Unknown',
       releaseDate: 'Unknown',
@@ -247,12 +247,12 @@ export class Bot {
           let songId = null
 
           try {
-            const currentlyPlaying = await fetchCurrentlyPlayingSong() // Fetch both songID and Spotify track ID
-            spotifyTrackId = currentlyPlaying.spotifyTrackId // Extract the Spotify track ID
-            songId = currentlyPlaying.songId // Extract the songID
-          } catch (fetchError) {
-            console.error('Error fetching currently playing song', fetchError.message)
-          }
+            const currentlyPlaying = await fetchCurrentlyPlayingSong()
+              spotifyTrackId = currentlyPlaying.spotifyTrackId
+              songId = currentlyPlaying.songId
+               } catch (error) {
+              console.error(error)
+                }       
           // Fetch additional track details using the Spotify Track ID
           if (spotifyTrackId) {
             const trackInfo = await spotifyTrackInfo(spotifyTrackId)
@@ -305,9 +305,7 @@ export class Bot {
 
           self.scheduleLikeSong(process.env.ROOM_UUID, process.env.BOT_USER_UUID)
           setTimeout(() => {
-            if (songStatsEnabled) {
               postVoteCountsForLastSong(process.env.ROOM_UUID)
-            }
           }, 9500)
         } catch (error) {
           logger.error('Error handling playedSong event:', error)
@@ -324,13 +322,14 @@ export class Bot {
           delete usersToBeRemoved[currentDJ]
           console.log(`User ${currentDJ} removed from DJ stand after their song ended.`)
         }
-
+     
         await songPayment()
 
-        setTimeout(() => {
+        /*setTimeout(() => {
           console.log(`Checking artist match for: ${self.currentSong.artistName}`)
           checkArtistAndNotify(self.state, self.currentSong)
-        }, 10000)
+        }, 10000)*/
+
       }
     })
   }

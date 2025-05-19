@@ -49,8 +49,12 @@ const replaceThisSong = (question) => {
   }
 }
 
-// Function to update the current song state (if needed for your logic)
-const currentSong = {}
+let currentSong = null
+
+const setCurrentSong = (song) => {
+  currentSong = song
+}
+
 
 // Example of how you might use this in your chat application
 const chatWithBot = async (userMessage) => {
@@ -59,4 +63,4 @@ const chatWithBot = async (userMessage) => {
   // Here you can handle sending the botResponse back to the chat system
 }
 
-export { askQuestion, chatWithBot }
+export { askQuestion, chatWithBot, setCurrentSong }

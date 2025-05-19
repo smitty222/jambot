@@ -53,6 +53,7 @@
     "remove-markdown": "^0.5.0",
     "repeat": "^2.0.4",
     "socket.io-client": "^4.5.2",
+    "string-similarity": "^4.0.4",
     "ttfm-socket": "^0.2.6",
     "uuid": "^9.0.0",
     "winston": "^3.8.2",

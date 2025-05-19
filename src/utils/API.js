@@ -349,7 +349,7 @@ export async function extractTrackId (input) {
 
 async function fetchCurrentlyPlayingSong () {
   const token = process.env.TTL_USER_TOKEN
-  const roomUUID = process.env.ROOM_UUID // Replace with your room UUID
+  const roomUUID = process.env.ROOM_UUID
 
   try {
     const response = await fetch(`https://gateway.prod.tt.fm/api/room-service/rooms/uuid/${roomUUID}`, {
@@ -367,10 +367,10 @@ async function fetchCurrentlyPlayingSong () {
     const song = data.song
 
     if (song && song.musicProviders && song.musicProviders.spotify) {
-      const spotifyTrackId = song.musicProviders.spotify // This contains the Spotify track ID
-      const songId = song.id // Assuming song.id exists in the response
+      const spotifyTrackId = song.musicProviders.spotify
+      const songId = song.songId // ✅ FIXED HERE
 
-      return { spotifyTrackId, songId } // Return both spotifyTrackId and songId
+      return { spotifyTrackId, songId }
     } else {
       throw new Error('Spotify track info not found in the current song')
     }
@@ -379,6 +379,23 @@ async function fetchCurrentlyPlayingSong () {
   }
 }
 
+export async function updateUserAvatar(userToken, avatarId, color) {
+  const response = await fetch('https://gateway.prod.tt.fm/api/user-service/users/profile', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${userToken}`
+    },
+    body: JSON.stringify({ avatarId, color })
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json()
+    throw new Error(errorData.message || 'Unknown error')
+  }
+
+  return response.json()
+}
 async function fetchAllUserQueueSongIDsWithUUID (userToken) {
   if (!userToken) {
     throw new Error('User token is required for fetching queue songs.')
@@ -495,19 +512,19 @@ async function fetchCurrentUsers () {
   }
 }
 
-export async function fetchUserData (userUUIDs) {
-  const token = process.env.TTL_USER_TOKEN
+export async function fetchUserData(userUUIDs) {
+  const token = process.env.TTL_USER_TOKEN;
   if (!userUUIDs || userUUIDs.length === 0) {
-    console.error('No user UUIDs provided')
-    throw new Error('No user UUIDs provided')
+    console.error('No user UUIDs provided');
+    throw new Error('No user UUIDs provided');
   }
 
-  const queryString = userUUIDs.map(uuid => `users=${uuid}`).join('&') // Correct query format
-  const endpoint = `https://gateway.prod.tt.fm/api/user-service/users/profiles?${queryString}`
+  const queryString = userUUIDs.map(uuid => `users=${uuid}`).join('&'); // Correct query format
+  const endpoint = `https://gateway.prod.tt.fm/api/user-service/users/profiles?${queryString}`;
 
   if (!token) {
-    console.error('TTL_USER_TOKEN is not set')
-    throw new Error('TTL_USER_TOKEN is not set')
+    console.error('TTL_USER_TOKEN is not set');
+    throw new Error('TTL_USER_TOKEN is not set');
   }
 
   const response = await fetch(endpoint, {
@@ -515,16 +532,37 @@ export async function fetchUserData (userUUIDs) {
       Authorization: `Bearer ${token}`,
       accept: 'application/json'
     }
-  })
+  });
 
   if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(`Failed to fetch user data: ${response.statusText} - ${errorText}`)
+    const errorText = await response.text(); // Only call text() once
+    throw new Error(`Failed to fetch user data: ${response.statusText} - ${errorText}`);
   }
 
-  const userData = await response.json()
-  return userData // Return the array of user profiles
+  // Consume the response body only once
+  const userData = await response.json();
+  return userData; // Return the array of user profiles
 }
+
+
+async function getSenderNickname(senderUuid) {
+  try {
+    // Fetch user data for the sender using their UUID
+    const senderData = await fetchUserData([senderUuid]);
+
+    // Ensure the sender data exists and extract the nickname from the userProfile object
+    const senderNickname = senderData.length > 0 && senderData[0].userProfile && senderData[0].userProfile.nickname
+      ? senderData[0].userProfile.nickname
+      : 'Unknown User';  // Default to 'Unknown User' if no nickname is found
+
+    return senderNickname;  // Return the sender's nickname
+  } catch (error) {
+    console.error('Error fetching sender nickname:', error);
+    return 'Unknown User';  // Return a default name in case of an error
+  }
+}
+
+
 
 const USER_ROLES_URL = 'https://gateway.prod.tt.fm/api/room-service/roomUserRoles/just-jams' // Adjusted URL with room slug
 
@@ -689,5 +727,164 @@ async function searchSpotify (artistName, trackName) {
     return null // Return null in case of an error
   }
 }
+//////////////////////   MLB   ////////////////////////////////////
+export async function getMLBScores() {
+  const url = 'https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard';
+  const response = await fetch(url);
+  const data = await response.json();
 
-export { getAccessToken, currentsongduration, spotifyTrackInfo, fetchTrackDetails, isUserAuthorized, fetchUserRoles, fetchRecentSongs, fetchCurrentUsers, fetchSpotifyPlaylistTracks, fetchCurrentlyPlayingSong, fetchSongData, DeleteQueueSong, fetchAllUserQueueSongIDsWithUUID, searchSpotify }
+  const games = data.events;
+
+  // Sort games based on the inning or the period (furthest along first)
+  games.sort((a, b) => {
+    const inningA = a.competitions[0].status.period || 0; // Use 0 if the game is not in progress
+    const inningB = b.competitions[0].status.period || 0; // Use 0 if the game is not in progress
+    return inningB - inningA; // Sort by highest inning first
+  });
+
+  let result = 'MLB Scores:\n'; // Start with a header
+
+  games.forEach(game => {
+    const home = game.competitions[0].competitors.find(c => c.homeAway === 'home');
+    const away = game.competitions[0].competitors.find(c => c.homeAway === 'away');
+    const status = game.status.type.description;
+
+    // Extract the team names (just the last part of the name)
+    const homeTeamName = home.team.displayName.split(' ').slice(-1).join(' '); // Take the last word (team name)
+    const awayTeamName = away.team.displayName.split(' ').slice(-1).join(' '); // Take the last word (team name)
+
+    let statusMessage = '';
+    
+    if (status === 'In Progress') {
+      const inning = game.competitions[0].status.period;
+      statusMessage = `Inning ${inning}`;
+    } else if (status === 'Scheduled') {
+      statusMessage = 'Scheduled';
+    } else {
+      statusMessage = status; // For completed games or others, keep the default status
+    }
+
+    result += `${awayTeamName} ${away.score} @ ${homeTeamName} ${home.score} (${statusMessage})\n`;
+  });
+
+  return result; // Return the formatted string
+}
+
+export async function getTopHomeRunLeaders() {
+  const url = 'https://site.api.espn.com/apis/common/v3/sports/baseball/mlb/statistics/byathlete?category=batting&sort=batting.homeRuns&limit=50';
+  const response = await fetch(url);
+  const data = await response.json();
+
+  const players = data.athletes;
+
+  const leaderLines = players.map((player, i) => {
+    const name = player.athlete.displayName ?? 'Unknown player';
+    const team = player.athlete.teamShortName ?? (player.athlete.teams?.[0]?.abbreviation ?? 'unknown team');
+
+    // Find the batting category and get HRs from index 7
+    const batting = player.categories?.find(c => c.name === 'batting');
+    const homeRuns = batting?.totals?.[7] ?? '?';
+
+    return `${i + 1}. ${name} (${team}) - ${homeRuns} HR`;
+  });
+
+  return `Top 50 Home Run Leaders:\n\n${leaderLines.join('\n')}`;
+}
+
+
+
+
+//////////////////////   NHL   ////////////////////////////////////
+export async function getNHLScores() {
+  const url = 'https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard';
+  const response = await fetch(url);
+  const data = await response.json();
+
+  const games = data.events;
+
+  // Sort games based on the period or the game state (furthest along first)
+  games.sort((a, b) => {
+    const periodA = a.competitions[0].status.period || 0; // Use 0 if the game is not in progress
+    const periodB = b.competitions[0].status.period || 0; // Use 0 if the game is not in progress
+    return periodB - periodA; // Sort by the highest period (most advanced game) first
+  });
+
+  let result = 'NHL Scores:\n'; // Start with a header
+
+  games.forEach(game => {
+    const home = game.competitions[0].competitors.find(c => c.homeAway === 'home');
+    const away = game.competitions[0].competitors.find(c => c.homeAway === 'away');
+    const status = game.status.type.description;
+
+    // Extract the team names (just the last part of the name)
+    const homeTeamName = home.team.displayName.split(' ').slice(-1).join(' '); // Take the last word (team name)
+    const awayTeamName = away.team.displayName.split(' ').slice(-1).join(' '); // Take the last word (team name)
+
+    let statusMessage = '';
+    
+    if (status === 'In Progress') {
+      const period = game.competitions[0].status.period;
+      statusMessage = `Period ${period}`;
+    } else if (status === 'Scheduled') {
+      statusMessage = 'Scheduled';
+    } else {
+      statusMessage = status; // For completed games or others, keep the default status
+    }
+
+    result += `${awayTeamName} ${away.score} @ ${homeTeamName} ${home.score} (${statusMessage})\n`;
+  });
+
+  return result; // Return the formatted string
+}
+//////////////////////   NBA   ////////////////////////////////////
+export async function getNBAScores() {
+  const url = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard';
+  const response = await fetch(url);
+  const data = await response.json();
+
+  const games = data.events;
+
+  // Sort games based on the quarter or game state (furthest along first)
+  games.sort((a, b) => {
+    const quarterA = a.competitions[0].status.period || 0; // Use 0 if the game is not in progress
+    const quarterB = b.competitions[0].status.period || 0; // Use 0 if the game is not in progress
+    return quarterB - quarterA; // Sort by the highest period (most advanced game) first
+  });
+
+  let result = 'NBA Scores:\n'; // Start with a header
+
+  games.forEach(game => {
+    const home = game.competitions[0].competitors.find(c => c.homeAway === 'home');
+    const away = game.competitions[0].competitors.find(c => c.homeAway === 'away');
+    const status = game.status.type.description;
+
+    // Extract the team names (just the last part of the name)
+    const homeTeamName = home.team.displayName.split(' ').slice(-1).join(' '); // Take the last word (team name)
+    const awayTeamName = away.team.displayName.split(' ').slice(-1).join(' '); // Take the last word (team name)
+
+    let statusMessage = '';
+    
+    if (status === 'In Progress') {
+      const quarter = game.competitions[0].status.period;
+      statusMessage = `Quarter ${quarter}`;
+    } else if (status === 'Scheduled') {
+      // Check if a valid scheduled time is available
+      const scheduledDate = game.status.startDate ? new Date(game.status.startDate) : null;
+      if (scheduledDate && !isNaN(scheduledDate)) {
+        // Format the scheduled time if it's a valid date
+        const scheduledTime = scheduledDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        statusMessage = `Scheduled at ${scheduledTime}`;
+      } else {
+        statusMessage = 'Scheduled'; // No specific time available
+      }
+    } else {
+      statusMessage = status; // For completed games or others, keep the default status
+    }
+
+    result += `${awayTeamName} ${away.score} @ ${homeTeamName} ${home.score} (${statusMessage})\n`;
+  });
+
+  return result; // Return the formatted string
+}
+
+export { getAccessToken, currentsongduration, spotifyTrackInfo, fetchTrackDetails, isUserAuthorized, fetchUserRoles, fetchRecentSongs, fetchCurrentUsers, fetchSpotifyPlaylistTracks, fetchCurrentlyPlayingSong, fetchSongData, DeleteQueueSong, fetchAllUserQueueSongIDsWithUUID, searchSpotify, getSenderNickname }

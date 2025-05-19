@@ -1,12 +1,12 @@
 // message.js
 import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
-import { askQuestion } from '../libs/ai.js'
+import { askQuestion, setCurrentSong } from '../libs/ai.js'
 import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, totalPoints } from '../handlers/triviaCommands.js'
 import { logger } from '../utils/logging.js'
 import { roomBot } from '../index.js'
-import { fetchCurrentlyPlayingSong, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSongData, updateRoomInfo, isUserOwner, DeleteQueueSong, fetchAllUserQueueSongIDsWithUUID, searchSpotify } from '../utils/API.js'
+import { fetchCurrentlyPlayingSong, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSongData, updateRoomInfo, isUserOwner, DeleteQueueSong, fetchAllUserQueueSongIDsWithUUID, searchSpotify, getSenderNickname, getMLBScores, getNHLScores, getNBAScores, getTopHomeRunLeaders, updateUserAvatar} from '../utils/API.js'
 import { handleLotteryCommand, handleLotteryNumber, LotteryGameActive, getLotteryWinners } from '../utils/lotteryGame.js'
-import { enableSongStats, disableSongStats, songStatsEnabled } from '../utils/voteCounts.js'
+import { enableSongStats, disableSongStats, isSongStatsEnabled } from '../utils/voteCounts.js'
 import { enableGreetingMessages, disableGreetingMessages, greetingMessagesEnabled } from './userJoined.js'
 import { getCurrentDJ, readRecentSongs } from '../libs/bot.js'
 import { resetCurrentQuestion } from './triviaData.js'
@@ -16,15 +16,57 @@ import { getBalanceByNickname, getNicknamesFromWallets, addDollarsByNickname, lo
 import { getJackpotValue, handleSlotsCommand } from './slots.js'
 import { handleBlackjackBet, handleHit, handleStand, joinTable, getBlackjackGameActive, setBlackjackGameActive, tableUsers, preventFurtherJoins } from '../handlers/blackJack.js'
 import { updateAfkStatus, isUserAfkAuthorized, userTokens } from './afk.js'
+import { generateDerbyTeamsJSON, updateDerbyTeamsFromJSON, getDerbyStandings } from '../utils/homerunDerby.js'
+import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand } from './avatarCommands.js'
+import path from 'path'
+import fs from 'fs'
+
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
 export const roomThemes = {}
 const usersToBeRemoved = {}
+const userstagedive = {}
+
+const getSportAndTeamFromQuestion = (question) => {
+  // Match common team names for MLB, NBA, and NHL. Expand this list as needed.
+  const teams = {
+    MLB: [
+      "Angels", "Astros", "Athletics", "Blue Jays", "Braves", "Brewers",
+      "Cardinals", "Cubs", "Diamondbacks", "Dodgers", "Giants", "Guardians",
+      "Mariners", "Marlins", "Mets", "Nationals", "Orioles", "Padres",
+      "Phillies", "Pirates", "Rangers", "Rays", "Red Sox", "Reds",
+      "Rockies", "Royals", "Tigers", "Twins", "White Sox", "Yankees"
+    ],
+    NBA: [
+      "Hawks", "Celtics", "Nets", "Hornets", "Bulls", "Cavaliers", "Mavericks",
+      "Nuggets", "Pistons", "Warriors", "Rockets", "Pacers", "Clippers",
+      "Lakers", "Grizzlies", "Heat", "Bucks", "Timberwolves", "Pelicans",
+      "Knicks", "Thunder", "Magic", "76ers", "Suns", "Trail Blazers",
+      "Kings", "Spurs", "Raptors", "Jazz", "Wizards"
+    ]
+    ,   
+    NHL: [
+      "Ducks", "Coyotes", "Bruins", "Sabres", "Flames", "Hurricanes",
+      "Blackhawks", "Avalanche", "Blue Jackets", "Stars", "Red Wings",
+      "Oilers", "Panthers", "Kings", "Wild", "Canadiens", "Predators",
+      "Devils", "Islanders", "Rangers", "Senators", "Flyers", "Penguins",
+      "Sharks", "Kraken", "Blues", "Lightning", "Maple Leafs", "Canucks", "Golden Knights", "Capitals", "Jets"
+    ] 
+  };
+
+  for (const sport in teams) {
+    for (const team of teams[sport]) {
+      if (question.toLowerCase().includes(team.toLowerCase())) {
+        return { sport, team };
+      }
+    }
+  }
+  return null;
+}
 
 // Messages
 export default async (payload, room, state) => {
-  console.log('Received message:', payload.message) // Log the full message to check its content
-  logger.info({ sender: payload.senderName, message: payload.message })
+  logger.info({ sender: payload.sender, message: payload.message })
 
   // Handle Gifs Sent in Chat
   if (payload.message.type === 'ChatGif') {
@@ -33,20 +75,31 @@ export default async (payload, room, state) => {
   }
 
   // AI Chat Stuff
+  const isMentioned = (message) => {
+    if (typeof message !== 'string') return false
+    return (
+      message.includes(`<@uid:${process.env.BOT_USER_UUID}>`) || // new format (mobile + future desktop)
+      message.includes(`@${process.env.CHAT_NAME}`)              // legacy format (desktop for now)
+    )
+  }
+
   if (
-    typeof payload.message === 'string' &&
-  payload.message.includes(`@${process.env.CHAT_NAME}`) &&
-  payload.senderName &&
-  !payload.senderName.startsWith(`@${process.env.BOT_USER_UUID}`) &&
+    isMentioned(payload.message) &&
+  payload.sender &&
+  !payload.sender.startsWith(`@${process.env.BOT_USER_UUID}`) &&
   !payload.message.includes('played')
   ) {
     try {
-      const question = payload.message.replace(`@${process.env.CHAT_NAME}`, '').trim().toLowerCase()
+      const question = payload.message
+      .replace(`<@uid:${process.env.BOT_USER_UUID}>`, '')
+      .replace(`@${process.env.CHAT_NAME}`, '')
+      .trim()
+      .toLowerCase()
       console.log(`Received question: "${question}"`)
-      logger.info(`Received question: "${question}" from ${payload.senderName}`)
+      logger.info(`Received question: "${question}" from ${payload.sender}`)
 
       let context = question
-
+      
       // Directly handle the "you good?" question
       if (question === 'you good?') {
         await postMessage({
@@ -55,6 +108,22 @@ export default async (payload, room, state) => {
         })
         return // Exit early to avoid processing further
       }
+      if (question === 'hide') {
+        if (question === 'hide') {
+          try {
+            // Call your bot random avatar command handler
+            await handleBotRandomAvatarCommand(room, postMessage, process.env.TTL_USER_TOKEN);
+          } catch (error) {
+            console.error('Error updating bot avatar for hide command:', error);
+            await postMessage({
+              room,
+              message: "I tried to hide but tripped over my own code. 🤕"
+            });
+          }
+        
+          return; // Exit early to avoid processing further
+        }
+      }        
       if (question.includes('dj with us') || question.includes('dj with me')) {
         await postMessage({
           room,
@@ -84,30 +153,26 @@ export default async (payload, room, state) => {
           room,
           message: 'I am not'
         })
-        return // Exit early to avoid processing further
+        return 
       }
       if (question.includes('spin the wheel') || question.includes('spin that wheel')) {
         await startRouletteGame(payload)
         return // Exit early to avoid processing further
       }
 
-      if (question.includes('song is this') || question.includes('this song') || question.includes('song is playing') || question.includes('this')) {
+      if (question.includes('song is this') || question.includes('this song') || question.includes('song is playing')) {
         const currentSong = roomBot.currentSong
-
         if (currentSong) {
           console.log(`Current song details: ${JSON.stringify(currentSong)}`)
           logger.info(`Current song details: ${JSON.stringify(currentSong)}`)
-
-          const artistText = currentSong.artistName ? `by ${currentSong.artistName}` : ''
-          context = `The current song is "${currentSong.trackName}" ${artistText}. ${question} briefly`
+      
+          setCurrentSong(currentSong) // 🔥 This is the key line!
+      
+          const aiReply = await askQuestion(question)
+          await postMessage({ room, message: aiReply })
+          return
         } else {
-          console.warn('No song is currently playing or trackName is missing.')
-          logger.warn('No song is currently playing or trackName is missing.')
-
-          await postMessage({
-            room,
-            message: 'No song is currently playing.'
-          })
+          await postMessage({ room, message: 'No song is currently playing.' })
           return
         }
       }
@@ -119,7 +184,16 @@ export default async (payload, room, state) => {
       Generally speaking, songs that are being played a lot now will have a higher popularity than songs that were played a lot in the past. Duplicate tracks (e.g., the same track from a single and an album) are rated independently. Artist and album popularity is derived mathematically from track popularity. Note: the popularity value may lag actual popularity by a few days: the value is not updated in real time. ${question}`
       }
 
+      if (question.includes('yankees')) {
+        await postMessage({
+          room,
+          message: "Who cares?"
+        })
+        return; // Exit early to avoid further processing
+      }
+
       if (context) {
+
         console.log(`Context passed to AI: "${context}"`)
         logger.info(`Context passed to AI: "${context}"`)
 
@@ -148,6 +222,12 @@ export default async (payload, room, state) => {
       })
     }
 
+  } else if (payload.message.startsWith('/hello')) {
+    await postMessage({
+      room,
+      message: 'Hi!'
+    })
+
     /// //////////// LOTTERY GAME ////////////////////////////////////////////
   } else if (payload.message.startsWith('/lottery')) {
     try {
@@ -169,12 +249,122 @@ export default async (payload, room, state) => {
     await handleLotteryNumber(payload)
 
     /// ///////////// Commands Start Here. ////////////////////////
-  } else if (payload.message.startsWith('/hello')) {
-    await postMessage({
-      room,
-      message: 'Hi!'
-    })
 
+  /////////////// YAY SPORTS!! ////////////////////////
+  } else if (payload.message.startsWith('/MLB')) {
+    const parts = payload.message.trim().split(' ');
+    const requestedDate = parts[1]; // optional, format: YYYY-MM-DD
+  
+    try {
+      // Ensure getMLBScores is properly called and returns a response
+      const response = await getMLBScores(requestedDate);
+      await postMessage({
+        room,
+        message: response // Send the response here
+      });
+    } catch (err) {
+      console.error('Error fetching MLB scores:', err);
+      await postMessage({
+        room,
+        message: 'There was an error fetching MLB scores. Please try again later.'
+      });
+    }  
+  } else if (payload.message.startsWith('/homerun')) {
+    try {
+      const response = await getTopHomeRunLeaders();
+      await postMessage({
+        room,
+        message: response
+      });
+    } catch (err) {
+      console.error('Error fetching home run leaders:', err);
+      await postMessage({
+        room,
+        message: 'There was an error fetching home run leaders. Please try again later.'
+      });
+    }  
+  } else if (payload.message.startsWith('/derby-create')) {
+    try {
+      await generateDerbyTeamsJSON();
+      await postMessage({
+        room,
+        message: '🏟️ Home Run Derby teams have been created and saved!'
+      });
+    } catch (err) {
+      console.error('Error creating derby teams:', err);
+      await postMessage({
+        room,
+        message: '⚠️ Error creating derby teams. Please try again later.'
+      });
+    }
+  } else if (payload.message.startsWith('/derby-update')) {
+    try {
+      await updateDerbyTeamsFromJSON();
+      await postMessage({
+        room,
+        message: '📈 Derby teams updated with the latest home run totals!'
+      });
+    } catch (err) {
+      console.error('Error updating derby teams:', err);
+      await postMessage({
+        room,
+        message: '⚠️ Error updating derby teams. Make sure they are created first.'
+      });
+    }
+  } else if (payload.message.startsWith('/derby-standings')) {
+    try {
+      const standingsMessage = await getDerbyStandings();
+      await postMessage({
+        room,
+        message: standingsMessage
+      });
+    } catch (err) {
+      console.error('Error getting derby standings:', err);
+      await postMessage({
+        room,
+        message: '⚠️ Could not retrieve derby standings. Make sure teams are created first.'
+      });
+    }
+  
+  
+    
+  } else if (payload.message.startsWith('/NHL')) {
+    const parts = payload.message.trim().split(' ');
+    const requestedDate = parts[1]; // optional, format: YYYY-MM-DD
+  
+    try {
+      // Ensure getNHLscores is properly called and returns a response
+      const response = await getNHLScores(requestedDate);
+      await postMessage({
+        room,
+        message: response // Send the response here
+      });
+    } catch (err) {
+      console.error('Error fetching NHL scores:', err);
+      await postMessage({
+        room,
+        message: 'There was an error fetching NHL scores. Please try again later.'
+      });
+    }  
+  } else if (payload.message.startsWith('/NBA')) {
+    const parts = payload.message.trim().split(' ');
+    const requestedDate = parts[1]; // optional, format: YYYY-MM-DD
+  
+    try {
+      // Ensure getNBAscores is properly called and returns a response
+      const response = await getNBAScores(requestedDate);
+      await postMessage({
+        room,
+        message: response // Send the response here
+      });
+    } catch (err) {
+      console.error('Error fetching NBA scores:', err);
+      await postMessage({
+        room,
+        message: 'There was an error fetching NBA scores. Please try again later.'
+      });
+    }  
+  
   // Command for deleting the current song
   } else if (payload.message.startsWith('/delete')) {
     console.log('Delete command received.')
@@ -335,7 +525,8 @@ export default async (payload, room, state) => {
     }
   } else if (payload.message.startsWith('/djbeers')) {
     try {
-      const senderName = payload.senderName
+      const senderUUID = payload.sender
+      const senderName = await getSenderNickname(senderUUID)
       const currentDJUuid = getCurrentDJ(state)
 
       if (!currentDJUuid) {
@@ -372,7 +563,8 @@ export default async (payload, room, state) => {
     }
   } else if (payload.message.startsWith('/djbeer')) {
     try {
-      const senderName = payload.senderName
+      const senderUUID = payload.sender
+      const senderName = await getSenderNickname(senderUUID)
       const currentDJUuid = getCurrentDJ(state)
 
       if (!currentDJUuid) {
@@ -411,7 +603,8 @@ export default async (payload, room, state) => {
     }
   } else if (payload.message.startsWith('/getdjdrunk')) {
     try {
-      const senderName = payload.senderName
+      const senderUUID = payload.sender
+      const senderName = await getSenderNickname(senderUUID)
       const currentDJUuid = getCurrentDJ(state)
 
       if (!currentDJUuid) {
@@ -497,18 +690,44 @@ export default async (payload, room, state) => {
   } else if (payload.message.startsWith('/dive')) {
     try {
       const userUuid = payload.sender
-      await roomBot.removeDJ(userUuid)
+      const senderName = await getSenderNickname(userUuid)
+  
+      // Get the UUID of the DJ currently playing a song
+      const currentDJ = getCurrentDJ(state) // This returns a UUID
+  
+      if (userUuid === currentDJ) {
+        // They're playing the current song, queue them for removal after it ends
+        if (userstagedive[userUuid]) {
+          await postMessage({
+            room,
+            message: `${senderName}, you're already set to dive after your current song. 🫧`
+          })
+        } else {
+          userstagedive[userUuid] = true
+  
+          await postMessage({
+            room,
+            message: `${senderName}, you'll dive off stage after this track. 🌊`
+          })
+        }
+      } else {
+        // They're not playing right now, remove them immediately
+        await roomBot.removeDJ(userUuid)
+      }
     } catch (error) {
-      console.error('Error removing user from DJ:', error)
+      console.error('Error handling /dive command:', error)
     }
+    
   } else if (payload.message.startsWith('/escortme')) {
     try {
+      const senderUUID = payload.sender
+      const senderName = await getSenderNickname(senderUUID)
       const userUuid = payload.sender
 
       if (usersToBeRemoved[userUuid]) {
         await postMessage({
           room,
-          message: `${payload.senderName}, you're already set to be removed after your current song.`
+          message: `${senderName}, you're already set to be removed after your current song.`
         })
         return
       }
@@ -516,16 +735,26 @@ export default async (payload, room, state) => {
 
       await postMessage({
         room,
-        message: `${payload.senderName}, you will be removed from the stage after your next song ends.`
+        message: `${senderName}, you will be removed from the stage after your next song ends.`
       })
     } catch (error) {
       console.error('Error handling /escortme command:', error)
     }
   /// /////////////// Secret Commands /////////////////////
   } else if (payload.message.startsWith('/secret')) {
+    const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken)
+      if (!isAuthorized) {
+        await postMessage({
+          room,
+          message: 'I cant reveal my secrets to you. I dont make the rules. Talk to Rsmitty'
+        })
+        return
+      }
+    const secretmessage = 'Sssshhhhhh be very quiet. These are top secret\n- /bark\n- /barkbark\n- /djbeers\n- /getdjdrunk\n- /jam\n- /ass\n- /azz\n- /cam\n- /shirley\n- /berad\n- /ello\n- /art\n- /ello\n- /allen\n- /art'
+    await sendDirectMessage(payload.sender,secretmessage)
     await postMessage({
       room,
-      message: 'Sssshhhhhh be very quiet. These are top secret\n- /bark\n- /barkbark\n- /djbeers\n- /getdjdrunk\n- /jam\n- /ass\n- /azz\n- /cam\n- /shirley\n- /berad\n- /ello\n- /art\n- /ello\n- /allen\n- /art'
+      message: '🕵️‍♂️ Psst… look in your messages.'
     })
   } else if (payload.message.startsWith('/barkbark')) {
     await postMessage({
@@ -837,58 +1066,59 @@ export default async (payload, room, state) => {
   /// //////////////////// VIRTUAL CASINO ////////////////////////
 
   /// //////////////////// ROULETTE ///////////////////////////////
-  if (payload.message.startsWith('/roulette start')) {
+
+if (payload.message.startsWith('/roulette start')) {
   // Check if the roulette game is already active
-    if (!rouletteGameActive) {
-      await startRouletteGame(payload) // Start the roulette game
-    } else {
-      await postMessage({
-        room,
-        message: 'A roulette game is already active! Please wait for it to finish before starting a new one.'
-      })
-    }
-  } else if (payload.message.startsWith('/roulette')) {
-  // Send detailed instructions for the roulette game
+  if (!rouletteGameActive) {
+    await startRouletteGame(payload) // Start the roulette game
+  } else {
     await postMessage({
       room,
-      message: 'Welcome to Roulette! Use `/roulette start` to begin the game.\n' +
-               'To place a bet, use one of the following commands:\n' +
-               '- `/red <amount>`: Bet on red numbers.\n' +
-               '- `/black <amount>`: Bet on black numbers.\n' +
-               '- `/odd <amount>`: Bet on odd numbers.\n' +
-               '- `/even <amount>`: Bet on even numbers.\n' +
-               '- `/high <amount>`: Bet on high numbers (19-36).\n' +
-               '- `/low <amount>`: Bet on low numbers (1-18).\n' +
-               '- `/number <number> <amount>`: Bet on a specific number (0-36).\n' +
-               '- `/dozen <1|2|3> <amount>`: Bet on the first (1), second (2), or third dozen of numbers.\n' +
-               '- `/column <1|2|3> <amount>`: Bet on one of the three vertical columns of numbers.\n\n' +
-               'The `<amount>` specifies how much you want to wager from your balance. Use `/balance` to check your wallet balance.'
+      message: 'A roulette game is already active! Please wait for it to finish before starting a new one.'
     })
-  } else if (rouletteGameActive && (
-    payload.message.startsWith('/red') ||
+  }
+} else if (payload.message.startsWith('/roulette')) {
+  // Send detailed instructions for the roulette game
+  await postMessage({
+    room,
+    message: 'Welcome to Roulette! Use `/roulette start` to begin the game.\n' +
+             'To place a bet, use one of the following commands:\n' +
+             '- `/red <amount>`: Bet on red numbers.\n' +
+             '- `/black <amount>`: Bet on black numbers.\n' +
+             '- `/odd <amount>`: Bet on odd numbers.\n' +
+             '- `/even <amount>`: Bet on even numbers.\n' +
+             '- `/high <amount>`: Bet on high numbers (19-36).\n' +
+             '- `/low <amount>`: Bet on low numbers (1-18).\n' +
+             '- `/number <number> <amount>`: Bet on a specific number (0-36).\n' +
+             '- `/dozen <1|2|3> <amount>`: Bet on the first (1), second (2), or third dozen of numbers.\n' +
+             '- `/column <1|2|3> <amount>`: Bet on one of the three vertical columns of numbers.\n\n' +
+             'The `<amount>` specifies how much you want to wager from your balance. Use `/balance` to check your wallet balance.'
+  })
+} else if (rouletteGameActive && (
+  payload.message.startsWith('/red') ||
   payload.message.startsWith('/black') ||
   payload.message.startsWith('/green') ||
   payload.message.startsWith('/odd') ||
   payload.message.startsWith('/even') ||
   payload.message.startsWith('/high') ||
   payload.message.startsWith('/low') ||
-  payload.message.startsWith('/number') || // Still support /number
-  (!isNaN(payload.message.split(' ')[0].substring(1)) && parseInt(payload.message.split(' ')[0].substring(1), 10) >= 0 && parseInt(payload.message.split(' ')[0].substring(1), 10) <= 36) || // Handle /25 (number bet directly)
+  payload.message.startsWith('/number') ||
+  (!isNaN(payload.message.split(' ')[0].substring(1)) && parseInt(payload.message.split(' ')[0].substring(1), 10) >= 0 && parseInt(payload.message.split(' ')[0].substring(1), 10) <= 36) ||
   payload.message.startsWith('/dozen') ||
   payload.message.startsWith('/column') ||
-  payload.message.startsWith('/two') || // Include two numbers
-  payload.message.startsWith('/three') || // Include three numbers
-  payload.message.startsWith('/four') || // Include four numbers
-  payload.message.startsWith('/five') || // Include five numbers
-  payload.message.startsWith('/six') // Include six numbers
-  )) {
+  payload.message.startsWith('/two') ||
+  payload.message.startsWith('/three') ||
+  payload.message.startsWith('/four') ||
+  payload.message.startsWith('/five') ||
+  payload.message.startsWith('/six')
+)) {
   // Use the original payload directly
-    await handleRouletteBet(payload) // Handle the user's bet
-  }
+  await handleRouletteBet(payload) // Handle the user's bet
+}
 
-  function formatBalance (balance) {
-    return balance > 999 ? balance.toLocaleString() : balance.toString()
-  }
+function formatBalance(balance) {
+  return balance > 999 ? balance.toLocaleString() : balance.toString()
+}
 
   if (payload.message.startsWith('/balance')) {
     const userId = payload.sender // Get the user's ID from the payload
@@ -1133,7 +1363,9 @@ export default async (payload, room, state) => {
   /// ////////////////// BLACKJACK /////////////////////////
   if (payload.message.startsWith('/blackjack')) {
     const userUUID = payload.sender
-    const nickname = payload.senderName
+    const senderUUID = payload.sender
+    const senderName = await getSenderNickname(senderUUID)
+    const nickname = senderName
     const room = process.env.ROOM_UUID
 
     if (getBlackjackGameActive()) {
@@ -1156,8 +1388,10 @@ export default async (payload, room, state) => {
   }
 
   if (payload.message.startsWith('/bet')) {
+    const senderUUID = payload.sender
+    const senderName = await getSenderNickname(senderUUID)
     const userUUID = payload.sender
-    const nickname = payload.senderName // Get the user's nickname
+    const nickname = senderName // Get the user's nickname
     const betAmount = parseInt(payload.message.split(' ')[1], 10)
     const room = process.env.ROOM_UUID
 
@@ -1210,8 +1444,10 @@ export default async (payload, room, state) => {
 
   // Player hits
   if (payload.message.startsWith('/hit')) {
+    const senderUUID = payload.sender
+    const senderName = await getSenderNickname(senderUUID)
     const userUUID = payload.sender
-    const nickname = payload.senderName // Get the user's nickname
+    const nickname = senderName // Get the user's nickname
     const room = process.env.ROOM_UUID
 
     // Check if user is at the table
@@ -1227,8 +1463,10 @@ export default async (payload, room, state) => {
 
   // Player stands
   if (payload.message.startsWith('/stand')) {
+    const senderUUID = payload.sender
+    const senderName = await getSenderNickname(senderUUID)
     const userId = payload.sender
-    const nickname = payload.senderName // Get the user's nickname
+    const nickname = senderName // Get the user's nickname
     const room = process.env.ROOM_UUID
 
     // Check if user is at the table
@@ -1242,8 +1480,10 @@ export default async (payload, room, state) => {
   }
 
   if (payload.message.startsWith('/join')) {
+    const senderUUID = payload.sender
+    const senderName = await getSenderNickname(senderUUID)
     const userId = payload.sender
-    const nickname = payload.senderName // Get the user's nickname
+    const nickname = senderName // Get the user's nickname
     const room = process.env.ROOM_UUID
 
     if (!getBlackjackGameActive()) {
@@ -1257,11 +1497,26 @@ export default async (payload, room, state) => {
 
   /// ////////////// MOD Commands ///////////////////////////
   if (payload.message.startsWith('/mod')) {
-    await postMessage({
-      room,
-      message: 'Moderator commands are:\n- /settheme: Set room theme\n----- Albums\n----- Covers\n----- Rock\n----- Country\n----- Rap\n- /removetheme: Remove room theme\n- /addsong: Add current song to bot playlist\n- /removesong: Remove song from bot playlist\n- /addDJ: Bot DJs from main playlist\n- /addDJ auto: Bot DJs from Spotify Recs\n- /removeDJ: Remove bot as DJ\n\n ----- BOT TOGGLES -----\n- /status: Shows bot toggles status\n- /songstatson: Turns song stats on\n- /songstatsoff: Turns song stats off\n\n- /bopoff: Turns bot auto like off\n- /bopon: Turns bot auto like back on\n\n- /autodjoff: Turns off auto DJ\n- /autodjon: Turns on auto DJ\n\n- /greeton: Turns on expanded user greeting\n- /greetoff: Turns off expanded user greeting\n\n -/audiostatson: Turns on audio stats\n -/audiostatsoff: Turns off audio stats'
-    })
-  }
+    const isAuthorized = await isUserAuthorized(payload.sender, ttlUserToken)
+      if (!isAuthorized) {
+        await postMessage({
+          room,
+          message: 'You need to be a moderator to execute this command.'
+        })
+        return
+      }
+      const modMessage = 'Moderator commands are:\n ----- Room Updates -----\n- /room classic\n- /room ferry\n- /room barn\n- /room yacht\n- /room festival\n- /room stadium\n- /room theater\n- /room dark\n\n ----- Room Theme ----- \n- /settheme Albums\n- /settheme Covers\n- /settheme Rock\n- /settheme Country\n- /settheme Rap\n- /removetheme: Remove room theme\n\n- /addDJ: Bot DJs from AI recommendations\n- /removeDJ: Remove bot as DJ\n\n ----- Avatar Updates -----\n\n --- Bot --\n- /bot1\n- /bot1\n- /botduck\n- /botdino\n- /botpenguin\n-/botpenguin\n- /botwalrus\n- /botalien1\n- /botalien2\n- /botrandom\n\n ---USER ---\n- /randomavatar\n- /walrus\n- /dino\n- /spacebear\n- /duck\n\n ----- BOT TOGGLES -----\n- /status: Shows bot toggles status\n- /songstatson: Turns song stats on\n- /songstatsoff: Turns song stats off\n\n- /bopoff: Turns bot auto like off\n- /bopon: Turns bot auto like back on\n\n- /greeton: Turns on expanded user greeting\n- /greetoff: Turns off expanded user greeting'
+    
+      sendDirectMessage(payload.sender, modMessage)
+      if (isAuthorized) {
+        await postMessage({
+          room,
+          message: 'Mod Commands sent via DM'
+        })
+        return
+      }
+    }
+
   if (payload.message.startsWith('/addmoney')) {
     const senderUuid = payload.sender
     const userIsOwner = await isUserOwner(senderUuid, ttlUserToken) // Renamed variable
@@ -1304,409 +1559,50 @@ export default async (payload, room, state) => {
       room,
       message: `Added $${amount} to ${nickname}'s wallet.`
     })
-  }
+  
   /// ///////////////// BOT PROFILE UPDATES //////////////////////
-  else if (payload.message.startsWith('/bot1')) {
-    try {
-      const senderUuid = payload.sender
-      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken)
+} else if (payload.message.startsWith('/bot1')) {
+  await handleBot1Command(room, postMessage, isUserAuthorized, payload.sender, ttlUserToken)
 
-      if (!isAuthorized) {
-        await postMessage({
-          room,
-          message: 'You need to be a moderator to execute this command.'
-        })
-        return
-      }
+} else if (payload.message.startsWith('/bot2')) {
+  await handleBot2Command(room, postMessage, isUserAuthorized, payload.sender, ttlUserToken)
 
-      // Define the request body for the POST request
-      const requestBody = {
-        color: '#04D9FF',
-        avatarId: 'bot-01'
-      }
-
-      // Make the POST request to the endpoint
-      const response = await fetch('https://gateway.prod.tt.fm/api/user-service/users/profile', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${ttlUserToken}` // Assuming you have a token to include
-        },
-        body: JSON.stringify(requestBody)
-      })
-
-      // Handle the response
-      if (response.ok) {
-        const data = await response.json()
-        await postMessage({
-          room,
-          message: 'Bot profile updating!'
-        })
-      } else {
-        const errorData = await response.json()
-        await postMessage({
-          room,
-          message: `Failed to update bot profile: ${errorData.message || 'Unknown error'}`
-        })
-      }
-    } catch (error) {
-      console.error('Error in /bot1 command:', error)
-      await postMessage({
-        room,
-        message: 'There was an error processing the command. Please try again later.'
-      })
-    }
-  } else if (payload.message.startsWith('/bot2')) {
-    try {
-      const senderUuid = payload.sender
-      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken)
-
-      if (!isAuthorized) {
-        await postMessage({
-          room,
-          message: 'You need to be a moderator to execute this command.'
-        })
-        return
-      }
-
-      // Define the request body for the POST request
-      const requestBody = {
-        color: '#FF5F1F',
-        avatarId: 'bot-2'
-      }
-
-      // Make the POST request to the endpoint
-      const response = await fetch('https://gateway.prod.tt.fm/api/user-service/users/profile', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${ttlUserToken}` // Assuming you have a token to include
-        },
-        body: JSON.stringify(requestBody)
-      })
-
-      // Handle the response
-      if (response.ok) {
-        const data = await response.json()
-        await postMessage({
-          room,
-          message: 'Bot profile updating!'
-        })
-      } else {
-        const errorData = await response.json()
-        await postMessage({
-          room,
-          message: `Failed to update bot profile: ${errorData.message || 'Unknown error'}`
-        })
-      }
-    } catch (error) {
-      console.error('Error in /bot2 command:', error)
-      await postMessage({
-        room,
-        message: 'There was an error processing the command. Please try again later.'
-      })
-    }
   } else if (payload.message.startsWith('/botpenguin')) {
-    try {
-      const senderUuid = payload.sender
-      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken)
-
-      if (!isAuthorized) {
-        await postMessage({
-          room,
-          message: 'You need to be a moderator to execute this command.'
-        })
-        return
-      }
-
-      // Define the request body for the POST request
-      const requestBody = {
-        color: '#B026FF',
-        avatarId: 'pinguclub-03'
-      }
-
-      // Make the POST request to the endpoint
-      const response = await fetch('https://gateway.prod.tt.fm/api/user-service/users/profile', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${ttlUserToken}` // Assuming you have a token to include
-        },
-        body: JSON.stringify(requestBody)
-      })
-
-      // Handle the response
-      if (response.ok) {
-        const data = await response.json()
-        await postMessage({
-          room,
-          message: 'Bot profile updating!'
-        })
-      } else {
-        const errorData = await response.json()
-        await postMessage({
-          room,
-          message: `Failed to update bot profile: ${errorData.message || 'Unknown error'}`
-        })
-      }
-    } catch (error) {
-      console.error('Error in /botpenguin command:', error)
-      await postMessage({
-        room,
-        message: 'There was an error processing the command. Please try again later.'
-      })
-    }
+    await handleBotPenguinCommand(room, postMessage, isUserAuthorized, payload.sender, ttlUserToken)
+  
   } else if (payload.message.startsWith('/botwalrus')) {
-    try {
-      const senderUuid = payload.sender
-      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken)
-
-      if (!isAuthorized) {
-        await postMessage({
-          room,
-          message: 'You need to be a moderator to execute this command.'
-        })
-        return
-      }
-
-      // Define the request body for the POST request
-      const requestBody = {
-        color: '#8de2ff',
-        avatarId: 'winter-07'
-      }
-
-      // Make the POST request to the endpoint
-      const response = await fetch('https://gateway.prod.tt.fm/api/user-service/users/profile', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${ttlUserToken}` // Assuming you have a token to include
-        },
-        body: JSON.stringify(requestBody)
-      })
-
-      // Handle the response
-      if (response.ok) {
-        const data = await response.json()
-        await postMessage({
-          room,
-          message: 'Bot profile updating!'
-        })
-      } else {
-        const errorData = await response.json()
-        await postMessage({
-          room,
-          message: `Failed to update bot profile: ${errorData.message || 'Unknown error'}`
-        })
-      }
-    } catch (error) {
-      console.error('Error in /botwalrus command:', error)
-      await postMessage({
-        room,
-        message: 'There was an error processing the command. Please try again later.'
-      })
-    }
+    await handleBotWalrusCommand(room, postMessage, isUserAuthorized, payload.sender, ttlUserToken)
+  
   } else if (payload.message.startsWith('/botalien2')) {
-    try {
-      const senderUuid = payload.sender
-      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken)
-
-      if (!isAuthorized) {
-        await postMessage({
-          room,
-          message: 'You need to be a moderator to execute this command.'
-        })
-        return
-      }
-
-      // Define the request body for the POST request
-      const requestBody = {
-        color: '#39FF14',
-        avatarId: 'stadiumseason-01'
-      }
-
-      // Make the POST request to the endpoint
-      const response = await fetch('https://gateway.prod.tt.fm/api/user-service/users/profile', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${ttlUserToken}` // Assuming you have a token to include
-        },
-        body: JSON.stringify(requestBody)
-      })
-
-      // Handle the response
-      if (response.ok) {
-        const data = await response.json()
-        await postMessage({
-          room,
-          message: 'Bot profile updating!'
-        })
-      } else {
-        const errorData = await response.json()
-        await postMessage({
-          room,
-          message: `Failed to update bot profile: ${errorData.message || 'Unknown error'}`
-        })
-      }
-    } catch (error) {
-      console.error('Error in /botalien2 command:', error)
-      await postMessage({
-        room,
-        message: 'There was an error processing the command. Please try again later.'
-      })
-    }
+    await handleBotAlien2Command(room, postMessage, isUserAuthorized, payload.sender, ttlUserToken)
+  
   } else if (payload.message.startsWith('/botalien1')) {
-    try {
-      const senderUuid = payload.sender
-      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken)
-
-      if (!isAuthorized) {
-        await postMessage({
-          room,
-          message: 'You need to be a moderator to execute this command.'
-        })
-        return
-      }
-
-      // Define the request body for the POST request
-      const requestBody = {
-        color: '#39FF14',
-        avatarId: 'season-0001-underground-thehuman'
-      }
-
-      // Make the POST request to the endpoint
-      const response = await fetch('https://gateway.prod.tt.fm/api/user-service/users/profile', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${ttlUserToken}` // Assuming you have a token to include
-        },
-        body: JSON.stringify(requestBody)
-      })
-
-      // Handle the response
-      if (response.ok) {
-        const data = await response.json()
-        await postMessage({
-          room,
-          message: 'Bot profile updating!'
-        })
-      } else {
-        const errorData = await response.json()
-        await postMessage({
-          room,
-          message: `Failed to update bot profile: ${errorData.message || 'Unknown error'}`
-        })
-      }
-    } catch (error) {
-      console.error('Error in /botalien1 command:', error)
-      await postMessage({
-        room,
-        message: 'There was an error processing the command. Please try again later.'
-      })
-    }
+    await handleBotAlienCommand(room, postMessage, isUserAuthorized, payload.sender, ttlUserToken)
+  
   } else if (payload.message.startsWith('/botduck')) {
-    try {
-      const senderUuid = payload.sender
-      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken)
-
-      if (!isAuthorized) {
-        await postMessage({
-          room,
-          message: 'You need to be a moderator to execute this command.'
-        })
-        return
-      }
-
-      // Define the request body for the POST request
-      const requestBody = {
-        color: '#FFDE21',
-        avatarId: 'stadiumseason-02'
-      }
-
-      // Make the POST request to the endpoint
-      const response = await fetch('https://gateway.prod.tt.fm/api/user-service/users/profile', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${ttlUserToken}` // Assuming you have a token to include
-        },
-        body: JSON.stringify(requestBody)
-      })
-
-      // Handle the response
-      if (response.ok) {
-        const data = await response.json()
-        await postMessage({
-          room,
-          message: 'Bot profile updating!'
-        })
-      } else {
-        const errorData = await response.json()
-        await postMessage({
-          room,
-          message: `Failed to update bot profile: ${errorData.message || 'Unknown error'}`
-        })
-      }
-    } catch (error) {
-      console.error('Error in /botduck command:', error)
-      await postMessage({
-        room,
-        message: 'There was an error processing the command. Please try again later.'
-      })
-    }
+    await handleBotDuckCommand(room, postMessage, isUserAuthorized, payload.sender, ttlUserToken)
+  
   } else if (payload.message.startsWith('/botdino')) {
-    try {
-      const senderUuid = payload.sender
-      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken)
-
-      if (!isAuthorized) {
-        await postMessage({
-          room,
-          message: 'You need to be a moderator to execute this command.'
-        })
-        return
-      }
-
-      // Define the request body for the POST request
-      const requestBody = {
-        color: '#8B6C5C',
-        avatarId: 'jurassic-05'
-      }
-
-      // Make the POST request to the endpoint
-      const response = await fetch('https://gateway.prod.tt.fm/api/user-service/users/profile', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${ttlUserToken}` // Assuming you have a token to include
-        },
-        body: JSON.stringify(requestBody)
-      })
-
-      // Handle the response
-      if (response.ok) {
-        const data = await response.json()
-        await postMessage({
-          room,
-          message: 'Bot profile updating!'
-        })
-      } else {
-        const errorData = await response.json()
-        await postMessage({
-          room,
-          message: `Failed to update bot profile: ${errorData.message || 'Unknown error'}`
-        })
-      }
-    } catch (error) {
-      console.error('Error in /botdino command:', error)
-      await postMessage({
-        room,
-        message: 'There was an error processing the command. Please try again later.'
-      })
+      await handleBotDinoCommand(room, postMessage, isUserAuthorized, payload.sender, ttlUserToken)
     }
+
+  else if (payload.message.startsWith('/dino')) {
+    await handleDinoCommand(payload.sender, room, postMessage)
   }
+  else if (payload.message.startsWith('/walrus')) {
+    await handleWalrusCommand(payload.sender, room, postMessage)
+  }
+  else if (payload.message.startsWith('/duck')) {
+    await handleDuckCommand(payload.sender, room, postMessage)
+  }
+
+  else if (payload.message.startsWith('/spacebear')) {
+    await handleSpaceBearCommand(payload.sender, room, postMessage)
+  }
+
+else if (payload.message.startsWith('/randomavatar')) {
+  await handleRandomAvatarCommand(payload.sender, room, postMessage)
+}
 
   /// ////////////////////// Themes ////////////////////////////////////
   else if (payload.message.startsWith('/settheme')) {
@@ -1830,6 +1726,7 @@ export default async (payload, room, state) => {
       let updatePayload = null
 
       const designMap = {
+        yacht: 'YACHT',
         barn: 'BARN',
         festival: 'FESTIVAL',
         underground: 'UNDERGROUND',
@@ -1849,7 +1746,7 @@ export default async (payload, room, state) => {
       } else {
         await postMessage({
           room,
-          message: `Invalid room design: ${theme}. Available options: Barn, Festival, Underground, Tomorrowland, Classic.`
+          message: `Invalid room design: ${theme}. Available options: Yacht, Barn, Festival, Underground, Tomorrowland, Classic, Ferry, Stadium, Theater, or Dark.`
         })
         return
       }
@@ -1965,7 +1862,7 @@ export default async (payload, room, state) => {
     try {
       const autobopStatus = roomBot.autobop ? 'enabled' : 'disabled'
       const autoDJStatus = roomBot.autoDJ ? 'enabled' : 'disabled'
-      const songStatsStatus = songStatsEnabled ? 'enabled' : 'disabled'
+      const songStatsStatus = isSongStatsEnabled() ? 'enabled' : 'disabled'
       const greetUserStatus = greetingMessagesEnabled ? 'enabled' : 'disabled'
       const audioStatsStatus = roomBot.audioStatsEnabled ? 'enabled' : 'disabled'
       const statusMessage = `Bot Mod Toggles:\n- Autobop: ${autobopStatus}\n- Auto DJ: ${autoDJStatus}\n- Song stats: ${songStatsStatus}\n- Greet users: ${greetUserStatus}\n- Audio Stats: ${audioStatsStatus}`
@@ -2184,10 +2081,140 @@ export default async (payload, room, state) => {
         message: 'No song is currently playing or trackName is missing.'
       })
     }
+  } else if (payload.message.startsWith('/stats')) {
+    const currentSong = roomBot.currentSong
+    if (!currentSong || !currentSong.songId) {
+      await postMessage({
+        room,
+        message: 'No song is currently playing or missing songId.'
+      })
+      return
+    }
+  
+    const statsFilePath = path.join(process.cwd(), 'src/libs/roomStats.json')
+  
+    try {
+      const content = await fs.promises.readFile(statsFilePath, 'utf8')
+      const history = JSON.parse(content)
+      const songStats = history.find(s => s.songId === currentSong.songId)
+  
+      if (songStats) {
+        const message = `📊 Stats for "${songStats.trackName}" by ${songStats.artistName}\n\n` +
+          `🟢 Plays: ${songStats.playCount}\n` +
+          `👍 Likes: ${songStats.likes}\n` +
+          `👎 Dislikes: ${songStats.dislikes}\n` +
+          `⭐ Stars: ${songStats.stars || 0}\n` +
+          `🕒 Last Played: ${new Date(songStats.lastPlayed).toLocaleString()}`
+  
+        await postMessage({ room, message })
+      } else {
+        await postMessage({
+          room,
+          message: 'No stats found for this song yet.'
+        })
+      }
+    } catch (error) {
+      console.error('Error reading stats file:', error.message)
+      await postMessage({
+        room,
+        message: 'Error retrieving song stats.'
+      })
+    }  
+  } else if (payload.message.startsWith('/mostplayed')) {
+    const statsFilePath = path.join(process.cwd(), 'src/libs/roomStats.json')
+  
+    try {
+      const content = await fs.promises.readFile(statsFilePath, 'utf8')
+      const history = JSON.parse(content)
+  
+      const topPlayed = history
+        .sort((a, b) => b.playCount - a.playCount)
+        .slice(0, 5)
+  
+      if (topPlayed.length === 0) {
+        await postMessage({ room, message: 'No play history found.' })
+        return
+      }
+  
+      const message = `📈 Most Played Songs:\n\n` + topPlayed.map((song, i) =>
+        `${i + 1}. "${song.trackName}" by ${song.artistName} — ${song.playCount} plays`
+      ).join('\n')
+  
+      await postMessage({ room, message })
+    } catch (error) {
+      console.error('Error reading stats file:', error.message)
+      await postMessage({
+        room,
+        message: 'Error retrieving play count stats.'
+      })
+    }
+  } else if (payload.message.startsWith('/topliked')) {
+    const statsFilePath = path.join(process.cwd(), 'src/libs/roomStats.json')
+  
+    try {
+      const content = await fs.promises.readFile(statsFilePath, 'utf8')
+      const history = JSON.parse(content)
+  
+      const topLiked = history
+        .sort((a, b) => b.likes - a.likes)
+        .slice(0, 5)
+  
+      if (topLiked.length === 0) {
+        await postMessage({ room, message: 'No like history found.' })
+        return
+      }
+  
+      const message = `❤️ Top Liked Songs:\n\n` + topLiked.map((song, i) =>
+        `${i + 1}. "${song.trackName}" by ${song.artistName} — 👍 ${song.likes}`
+      ).join('\n')
+  
+      await postMessage({ room, message })
+    } catch (error) {
+      console.error('Error reading stats file:', error.message)
+      await postMessage({
+        room,
+        message: 'Error retrieving like stats.'
+      })
+    }
+  } else if (payload.message.startsWith('/playtime')) {
+    const statsFilePath = path.join(process.cwd(), 'src/libs/roomStats.json')
+  
+    try {
+      const content = await fs.promises.readFile(statsFilePath, 'utf8')
+      const history = JSON.parse(content)
+  
+      if (!history || history.length === 0) {
+        await postMessage({ room, message: 'No play history found.' })
+        return
+      }
+  
+      // Sum total seconds
+      const totalSeconds = history.reduce((acc, song) => {
+        const duration = song.songDuration || 0
+        const plays = song.playCount || 0
+        return acc + (duration * plays)
+      }, 0)
+  
+      // Convert to HH:MM:SS
+      const hours = Math.floor(totalSeconds / 3600)
+      const minutes = Math.floor((totalSeconds % 3600) / 60)
+      const seconds = totalSeconds % 60
+  
+      const formatted = `${hours}h ${minutes}m ${seconds}s`
+      const message = `⏱️ Total Room Playtime: ${formatted}`
+  
+      await postMessage({ room, message })
+    } catch (error) {
+      console.error('Error reading stats file:', error.message)
+      await postMessage({
+        room,
+        message: 'Error calculating total playtime.'
+      })
+    }  
   } else if (payload.message.startsWith('/album')) {
     const currentSong = roomBot.currentSong
     if (currentSong && currentSong.trackName) {
-      const albumDetails = `Album Name: ${currentSong.albumName}\nArtist Name: ${currentSong.artistName}\nTrack Name: ${currentSong.trackName}\nTrack ${currentSong.trackNumber} of ${currentSong.totalTracks}`
+      const albumDetails = `Album Art: ${currentSong.albumArt}\nAlbum Name: ${currentSong.albumName}\nArtist Name: ${currentSong.artistName}\nTrack Name: ${currentSong.trackName}\nTrack ${currentSong.trackNumber} of ${currentSong.totalTracks}`
       const albumArtUrl = currentSong.albumArt
       const images = albumArtUrl ? [albumArtUrl] : []
       await postMessage({
@@ -2380,7 +2407,53 @@ export default async (payload, room, state) => {
         message: 'AFK status is now OFF.'
       })
     }
+    ////////////////// BLACKLIST  //////////////////////////////
 
+  } else if (payload.message.startsWith('/blacklist+')) {
+    try {
+      const currentSong = roomBot.currentSong
+  
+      if (!currentSong || !currentSong.trackName || !currentSong.artistName) {
+        await postMessage({
+          room,
+          message: '⚠️ No current song playing or track data unavailable.'
+        })
+        return
+      }
+  
+      const fs = await import('fs')
+      const path = await import('path')
+      const blacklistPath = path.join(process.cwd(), 'src/libs/songBlacklist.json')
+  
+      const fullName = `${currentSong.artistName} - ${currentSong.trackName}`
+  
+      let blacklist = []
+      if (fs.existsSync(blacklistPath)) {
+        const raw = fs.readFileSync(blacklistPath, 'utf8')
+        blacklist = JSON.parse(raw)
+      }
+  
+      if (blacklist.includes(fullName)) {
+        await postMessage({
+          room,
+          message: `⛔️ "${fullName}" is already on the blacklist.`
+        })
+      } else {
+        blacklist.push(fullName)
+        fs.writeFileSync(blacklistPath, JSON.stringify(blacklist, null, 2))
+        await postMessage({
+          room,
+          message: `✅ Added "${fullName}" to the blacklist.`
+        })
+      }
+    } catch (err) {
+      console.error('Error adding to blacklist:', err)
+      await postMessage({
+        room,
+        message: '🚫 Failed to update blacklist.'
+      })
+    }
+    
     /// /////////////  Trivia Stuff /////////////////////////////
   } else if (payload.message.startsWith('/triviastart')) {
     await handleTriviaStart(room)
@@ -2398,4 +2471,4 @@ export default async (payload, room, state) => {
     })
   }
 }
-export { usersToBeRemoved }
+export { usersToBeRemoved, userstagedive }
