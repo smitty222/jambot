@@ -73,14 +73,15 @@ async function drawWinningNumber () {
   const winningNumber = generateRandomNumber(MIN_NUMBER, MAX_NUMBER)
 
   // Track number win frequency
-try {
   let numberStats = {}
   try {
     const statsData = await fs.readFile(numberStatsPath, 'utf8')
-    numberStats = JSON.parse(statsData)
-  } catch (error) {
-    console.warn('Stats file not found or unreadable. Initializing new stats log.')
-  }
+    const parsed = JSON.parse(statsData)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      numberStats = parsed
+    } else {
+      console.warn('Invalid format in lottoBalls.json, reinitializing.')
+    }
 
   // Increment the count for the winning number
   const currentCount = numberStats[winningNumber] || 0
