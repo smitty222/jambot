@@ -13,6 +13,7 @@ import { handleAlbumTheme, handleCoversTheme } from '../handlers/playedSong.js'
 import { songPayment } from './walletManager.js'
 import { checkArtistAndNotify } from '../handlers/artistChecker.js'
 import { getPopularSpotifyTrackID } from '../utils/autoDJ.js'
+import { getMarkedUser, unmarkUser } from '../utils/removalQueue.js'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import fs from 'fs'
@@ -322,7 +323,18 @@ export class Bot {
           delete usersToBeRemoved[currentDJ]
           console.log(`User ${currentDJ} removed from DJ stand after their song ended.`)
         }
-     
+        
+        const markedUUID = getMarkedUser()
+    if (markedUUID) {
+      console.log(`Removing marked DJ after song end: ${markedUUID}`)
+
+      // Remove the DJ from the stage
+      await this.removeDJ(markedUUID)
+
+      // Clear the mark so it doesn't remove again
+      unmarkUser()
+    }
+
         await songPayment()
 
         /*setTimeout(() => {

@@ -18,6 +18,7 @@ import { handleBlackjackBet, handleHit, handleStand, joinTable, getBlackjackGame
 import { updateAfkStatus, isUserAfkAuthorized, userTokens } from './afk.js'
 import { generateDerbyTeamsJSON, updateDerbyTeamsFromJSON, getDerbyStandings } from '../utils/homerunDerby.js'
 import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand } from './avatarCommands.js'
+import { markUser, getMarkedUser} from '../utils/removalQueue.js'
 import path from 'path'
 import fs from 'fs'
 
@@ -687,36 +688,37 @@ export default async (payload, room, state) => {
     } catch (error) {
       console.error('Error removing DJ:', error)
     }
-  } else if (payload.message.startsWith('/dive')) {
-    try {
-      const userUuid = payload.sender
-      const senderName = await getSenderNickname(userUuid)
-  
-      // Get the UUID of the DJ currently playing a song
-      const currentDJ = getCurrentDJ(state) // This returns a UUID
-  
-      if (userUuid === currentDJ) {
-        // They're playing the current song, queue them for removal after it ends
-        if (userstagedive[userUuid]) {
-          await postMessage({
-            room,
-            message: `${senderName}, you're already set to dive after your current song. 🫧`
-          })
+    
+    } else if (payload.message.startsWith('/dive')) {
+      try {
+        const userUuid = payload.sender
+        const senderName = await getSenderNickname(userUuid)
+    
+        // Get the UUID of the DJ currently playing a song
+        const currentDJ = getCurrentDJ(state) // This returns a UUID
+    
+        if (userUuid === currentDJ) {
+          // They're playing the current song, mark them for removal after it ends
+          if (getMarkedUser() === userUuid) {
+            await postMessage({
+              room,
+              message: `${senderName}, you're already set to dive after your current song. 🫧`
+            })
+          } else {
+            markUser(userUuid)  // Store UUID for post-song removal
+    
+            await postMessage({
+              room,
+              message: `${senderName}, you'll dive off stage after this track. 🌊`
+            })
+          }
         } else {
-          userstagedive[userUuid] = true
-  
-          await postMessage({
-            room,
-            message: `${senderName}, you'll dive off stage after this track. 🌊`
-          })
+          // They're not playing right now, remove them immediately
+          await roomBot.removeDJ(userUuid)
         }
-      } else {
-        // They're not playing right now, remove them immediately
-        await roomBot.removeDJ(userUuid)
+      } catch (error) {
+        console.error('Error handling /dive command:', error)
       }
-    } catch (error) {
-      console.error('Error handling /dive command:', error)
-    }
     
   } else if (payload.message.startsWith('/escortme')) {
     try {

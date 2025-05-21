@@ -224,11 +224,11 @@
     "artistName": "JJ Grey & Mofro",
     "songId": "3389136",
     "songDuration": 281,
-    "playCount": 1,
+    "playCount": 2,
     "likes": 1,
     "dislikes": 0,
     "stars": 0,
-    "lastPlayed": "2025-05-09T21:11:07.815Z"
+    "lastPlayed": "2025-05-21T00:08:48.738Z"
   },
   {
     "trackName": "Disco Man",
@@ -1423,11 +1423,11 @@
     "artistName": "Still Woozy",
     "songId": "3390016",
     "songDuration": 139,
-    "playCount": 3,
-    "likes": 3,
+    "playCount": 4,
+    "likes": 4,
     "dislikes": 0,
     "stars": 0,
-    "lastPlayed": "2025-05-20T20:37:25.343Z"
+    "lastPlayed": "2025-05-21T00:14:07.902Z"
   },
   {
     "trackName": "Small Worlds",
@@ -3870,5 +3870,38 @@
     "dislikes": 0,
     "stars": 0,
     "lastPlayed": "2025-05-21T00:04:25.654Z"
+  },
+  {
+    "trackName": "Something Like Olivia (Album Version)",
+    "artistName": "John Mayer",
+    "songId": "3850589",
+    "songDuration": 180,
+    "playCount": 1,
+    "likes": 1,
+    "dislikes": 0,
+    "stars": 0,
+    "lastPlayed": "2025-05-21T00:11:49.078Z"
+  },
+  {
+    "trackName": "So Many Ways to Get Downtown",
+    "artistName": "Próxima Parada",
+    "songId": "32197635",
+    "songDuration": 282,
+    "playCount": 4,
+    "likes": 0,
+    "dislikes": 0,
+    "stars": 0,
+    "lastPlayed": "2025-05-21T00:19:37.718Z"
+  },
+  {
+    "trackName": "Feels Right",
+    "artistName": "Danny's Dead",
+    "songId": "519965",
+    "songDuration": 174,
+    "playCount": 2,
+    "likes": 0,
+    "dislikes": 0,
+    "stars": 0,
+    "lastPlayed": "2025-05-21T00:23:02.674Z"
   }
 ]
