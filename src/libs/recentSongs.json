@@ -1,44 +1,44 @@
 {
   "songs": [
     {
-      "trackName": "Say You Love Me",
-      "artistName": "Fleetwood Mac",
-      "albumName": "Fleetwood Mac",
-      "releaseDate": "1975-07-11",
-      "spotifyUrl": "https://open.spotify.com/track/6lrQo6KAYvb92MGk6ZuZlt",
-      "popularity": 73
+      "trackName": "Sexy Villain",
+      "artistName": "Remi Wolf",
+      "albumName": "Juno",
+      "releaseDate": "2021-10-15",
+      "spotifyUrl": "https://open.spotify.com/track/27sBcXtgTBSJRdUxei1a7J",
+      "popularity": 64
     },
     {
-      "trackName": "Born On The Bayou",
-      "artistName": "Creedence Clearwater Revival",
-      "albumName": "Bayou Country",
-      "releaseDate": "1969-01-05",
-      "spotifyUrl": "https://open.spotify.com/track/5bUlFE9dGh7pX93PUEVAue",
-      "popularity": 52
+      "trackName": "Sexy Villain",
+      "artistName": "Remi Wolf",
+      "albumName": "Juno",
+      "releaseDate": "2021-10-15",
+      "spotifyUrl": "https://open.spotify.com/track/27sBcXtgTBSJRdUxei1a7J",
+      "popularity": 64
     },
     {
-      "trackName": "Bad, Bad Leroy Brown",
-      "artistName": "Jim Croce",
-      "albumName": "Life And Times",
-      "releaseDate": "1973-01-01",
-      "spotifyUrl": "https://open.spotify.com/track/14nBn3kUcfhDnGyKRUrVHr",
+      "trackName": "Loving Is Easy",
+      "artistName": "Rex Orange County, Benny Sings",
+      "albumName": "Loving is Easy",
+      "releaseDate": "2017-10-11",
+      "spotifyUrl": "https://open.spotify.com/track/7ASFZh1D0DPZro7UXUKGmd",
+      "popularity": 72
+    },
+    {
+      "trackName": "Unknown",
+      "artistName": "Unknown",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
       "popularity": 0
     },
     {
-      "trackName": "Pastime Paradise",
-      "artistName": "Stevie Wonder",
-      "albumName": "Songs In The Key Of Life",
-      "releaseDate": "1976-09-28",
-      "spotifyUrl": "https://open.spotify.com/track/4Gn4b1qJ12rowCNRw5DHM9",
-      "popularity": 57
-    },
-    {
-      "trackName": "Pastime Paradise",
-      "artistName": "Stevie Wonder",
-      "albumName": "Songs In The Key Of Life",
-      "releaseDate": "1976-09-28",
-      "spotifyUrl": "https://open.spotify.com/track/4Gn4b1qJ12rowCNRw5DHM9",
-      "popularity": 57
+      "trackName": "The Kiss Of Venus (Dominic Fike)",
+      "artistName": "Paul McCartney, Dominic Fike",
+      "albumName": "McCartney III Imagined",
+      "releaseDate": "2021-04-16",
+      "spotifyUrl": "https://open.spotify.com/track/28kOGtTZzbfQ8fMmTwjRFq",
+      "popularity": 61
     }
   ]
 }
