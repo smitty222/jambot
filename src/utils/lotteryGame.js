@@ -4,6 +4,8 @@ import { addToUserWallet, loadUsers } from '../libs/walletManager.js' // Import 
 import fs from 'fs/promises' // Use the fs/promises module for async operations
 import path from 'path' // For handling file paths
 
+const numberStatsPath = path.join(process.cwd(), 'src/libs/lottoBalls.json')
+
 // Global variables
 const MAX_NUMBER = 100
 const MIN_NUMBER = 1
@@ -12,6 +14,8 @@ const DRAWING_DELAY = 5000 // 5 seconds delay before drawing
 const lotteryEntries = {}
 let LotteryGameActive = false
 const LOTTERY_WIN_AMOUNT = 100000 // Amount to add to the winner's wallet
+
+
 
 // Path to the lottery winners file
 const winnersFilePath = path.join(process.cwd(), 'src/libs/lotteryWinners.json')
@@ -67,6 +71,28 @@ async function handleLotteryNumber (payload) {
 
 async function drawWinningNumber () {
   const winningNumber = generateRandomNumber(MIN_NUMBER, MAX_NUMBER)
+
+  // Track number win frequency
+try {
+  let numberStats = {}
+  try {
+    const statsData = await fs.readFile(numberStatsPath, 'utf8')
+    numberStats = JSON.parse(statsData)
+  } catch (error) {
+    console.warn('Stats file not found or unreadable. Initializing new stats log.')
+  }
+
+  // Increment the count for the winning number
+  const currentCount = numberStats[winningNumber] || 0
+  numberStats[winningNumber] = currentCount + 1
+
+  // Save the updated stats
+  await fs.writeFile(numberStatsPath, JSON.stringify(numberStats, null, 2))
+  console.log(`Updated win count for number ${winningNumber}: ${numberStats[winningNumber]}`)
+} catch (error) {
+  console.error('Error updating lotteryNumberStats.json:', error)
+}
+
   const winners = []
   for (const sender in lotteryEntries) {
     if (lotteryEntries[sender] === winningNumber) {
@@ -161,4 +187,16 @@ async function getLotteryWinners () {
   }
 }
 
-export { handleLotteryCommand, handleLotteryNumber, LotteryGameActive, getLotteryWinners }
+async function getLotteryNumberStats () {
+  try {
+    const data = await fs.readFile(numberStatsPath, 'utf8')
+    const stats = JSON.parse(data)
+    return stats
+  } catch (error) {
+    console.error('Error reading lotteryNumberStats.json:', error)
+    return {}
+  }
+}
+
+
+export { handleLotteryCommand, handleLotteryNumber, getLotteryNumberStats, LotteryGameActive, getLotteryWinners }
