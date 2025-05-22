@@ -13,115 +13,120 @@ const formatDate = (dateString) => {
 }
 
 const handleAlbumTheme = async (payload) => {
+  const room = process.env.ROOM_UUID
+  const theme = (roomThemes[room] || '').toLowerCase()
+  const albumThemes = ['album monday', 'albums', 'album day']
+
+  if (!albumThemes.includes(theme)) return
+
+  const currentSong = roomBot.currentSong
+  if (!currentSong || !currentSong.spotifyTrackId) {
+    console.log('No song is currently playing or missing Spotify Track ID.')
+    return
+  }
+
   try {
-    const room = process.env.ROOM_UUID
-    const theme = (roomThemes[room] || '').toLowerCase() // Convert to lowercase for case-insensitive comparison
-
-    const albumThemes = ['album monday', 'albums', 'album day']
-    if (!albumThemes.includes(theme)) {
+    const songData = await spotifyTrackInfo(currentSong.spotifyTrackId)
+    if (!songData) {
+      console.log('No song data returned from Spotify.')
       return
     }
 
-    // Extract the current song information from the payload
-    const currentSong = roomBot.currentSong
-    if (!currentSong || !currentSong.spotifyTrackId) {
-      console.log('No song is currently playing or Spotify URL is missing.')
-      return
+    const {
+      spotifyTrackNumber,
+      spotifyTotalTracks: trackCount,
+      spotifyDuration,
+      spotifyAlbumName: albumName,
+      spotifyArtistName: artistName,
+      spotifyReleaseDate: releaseDate,
+      spotifyTrackName: trackName,
+      spotifyAlbumArt: albumArt, 
+      spotifyAlbumID: albumID
+    } = songData
+
+    const songDuration = parseDuration(spotifyDuration)
+    const formattedReleaseDate = releaseDate ? formatDate(releaseDate) : 'N/A'
+
+    console.log(`Track debug — Track #: ${spotifyTrackNumber}, Track Count: ${trackCount}, Album: ${albumName}`)
+
+    // === First Track ===
+    if (spotifyTrackNumber === 1) {
+      const currentDJUuid = getCurrentDJUUIDs(roomBot.state)[0]
+      const currentDJName = await getUserNickname(currentDJUuid)
+
+      roomBot.currentAlbum = {
+        albumId: albumID,  
+        albumName,
+        artistName,
+        trackCount
+      }
+
+      await postMessage({
+        room,
+        message: ``,
+        images: [albumArt]
+      })
+      await postMessage({
+        room,
+        message: `@${currentDJName} is starting an Album!\n\nAlbum: ${albumName}\nArtist: ${artistName}\nRelease Date: ${formattedReleaseDate}\nTrack Number: ${spotifyTrackNumber} of ${trackCount}`,
+      })
     }
 
-    try {
-      // Fetch additional song data using Spotify Track ID
-      const songData = await spotifyTrackInfo(currentSong.spotifyTrackId)
-      console.log('Song data:', songData)
+    // === Halfway Point ===
+    if (spotifyTrackNumber === Math.floor(trackCount / 2)) {
+      await postMessage({
+        room,
+        message: `This is the halfway point in ${artistName}'s album, *${albumName}*.\n\nTrack: ${trackName}\nRelease Date: ${formattedReleaseDate}\nTrack ${spotifyTrackNumber} of ${trackCount}`
+      })
+    }
 
-      // Extract relevant data from the Spotify response
-      const spotifyTrackNumber = songData.spotifyTrackNumber // Spotify track number
-      const trackCount = songData.spotifyTotalTracks // Total number of tracks in the album
-      const songDuration = parseDuration(songData.spotifyDuration) // Convert duration to milliseconds
-      const albumName = songData.spotifyAlbumName // Album name
-      const artistName = songData.spotifyArtistName // Primary artist name (first artist in the list)
-      const releaseDate = songData.spotifyReleaseDate // Album release date
-      const trackName = songData.spotifyTrackName
-      const albumArt = songData.spotifyAlbumArt // Album art URL
-      const popularity = songData.spotifyPopularity
+    // === Last Track ===
+    if (spotifyTrackNumber === trackCount) {
+      const currentDJUuid = getCurrentDJUUIDs(roomBot.state)[0]
+      const currentDJName = await getUserNickname(currentDJUuid)
 
-      const formattedReleaseDate = releaseDate ? formatDate(releaseDate) : 'N/A'
+      await postMessage({
+        room,
+        message: ``,
+        images: [albumArt]
+      })
+      await postMessage({
+        room,
+        message: `${trackName}\nTrack ${spotifyTrackNumber} of ${trackCount}\n\nThis is the last song of the album. Thanks @${currentDJName} for the tunes! You will be removed from the stage when this song ends.`,
+      })
+      await postMessage({
+        room,
+        message: `Make sure to leave your review of the album! Use /reviewhelp for more info`,
+      })
+     
 
-      console.log(`Spotify Track Number: ${spotifyTrackNumber}, Track Count: ${trackCount}, Duration: ${songDuration}ms`)
+      if (currentDJUuid) {
+        const adjustedDuration = Math.max(0, songDuration - 5000)
+        console.log(`Waiting ${adjustedDuration}ms to remove DJ ${currentDJUuid}`)
 
-      // Post album information at the start of the album, only if spotifyTrackNumber is 1
-      if (spotifyTrackNumber === 1) {
-        const currentDJUuid = getCurrentDJUUIDs(roomBot.state)
-        const currentDJName = await getUserNickname(currentDJUuid)
-
-        // Post the album art as an image along with the album details
-        await postMessage({
-          room,
-          message: `@${currentDJName} is starting an Album!\n\nAlbum: ${albumName}\nArtist: ${artistName}\nRelease Date: ${formattedReleaseDate}\nTrack Number: ${spotifyTrackNumber} of ${trackCount || 'N/A'}`,
-          images: [albumArt] // Add the album art to the images array for posting
-        })
+        setTimeout(async () => {
+          await roomBot.removeDJ(currentDJUuid)
+          console.log(`DJ ${currentDJUuid} removed from stage after final track.`)
+        }, adjustedDuration)
       }
+    }
 
-      // Post a message when halfway through the album
-      if (spotifyTrackNumber === Math.floor(trackCount / 2)) {
-        await postMessage({
-          room,
-          message: `This is the halfway point in ${artistName}'s\n album, ${albumName}.\n\n Track Name: ${trackName} \nRelease Date: ${formattedReleaseDate}\nTrack Number: ${spotifyTrackNumber} of ${trackCount || 'N/A'}`
-        })
-      }
-
-      // Handle the last song in the album
-      if (spotifyTrackNumber === trackCount) {
-        console.log('Now playing the last track in the album.')
-
-        const state = payload.state || {}
-        console.log('State data:', state)
-
-        const currentDJUUIDs = getCurrentDJUUIDs(roomBot.state)
-        const currentDJUuid = currentDJUUIDs.length > 0 ? currentDJUUIDs[0] : null
-
-        console.log('Current DJ UUID:', currentDJUuid)
-
-        if (currentDJUuid) {
-          console.log(`Waiting ${songDuration} milliseconds before removing the DJ...`)
-          const adjustedSongDuration = songDuration - 5000
-          // Remove the DJ after the last song's duration
-          setTimeout(async () => {
-            await roomBot.removeDJ(currentDJUuid) // Call removeDJ with the current DJ's UUID
-            console.log(`DJ ${currentDJUuid} removed from the stage after the final track.`)
-          }, adjustedSongDuration) // Wait for the duration of the song
-
-          const currentDJName = await getUserNickname(currentDJUuid)
-
-          // Post a thank-you message to the DJ
-          await postMessage({
-            room,
-            message: `${trackName}\nTrack ${spotifyTrackNumber} of ${trackCount}\n\nThis is the last song of the album. Thanks @${currentDJName} for the tunes! You will be removed from the stage when this song ends.`,
-            images: [albumArt]
-          })
-        } else {
-          console.log('No DJ found to remove, or this is not the last track in the album.')
-        }
-      } else {
-        // Post "test" message if spotifyTrackNumber is neither 1 nor halfway nor the last track
-        if (spotifyTrackNumber !== 1 && spotifyTrackNumber !== Math.floor(trackCount / 2)) {
-          await postMessage({
-            room,
-            message: `${trackName}\nTrack ${spotifyTrackNumber} of ${trackCount} `
-          })
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching song data:', error)
+    // === Any Other Track ===
+    if (
+      spotifyTrackNumber !== 1 &&
+      spotifyTrackNumber !== Math.floor(trackCount / 2) &&
+      spotifyTrackNumber !== trackCount
+    ) {
+      await postMessage({
+        room,
+        message: `${trackName}\nTrack ${spotifyTrackNumber} of ${trackCount}`
+      })
     }
   } catch (error) {
-    console.error('Error handling album theme event:', error.message)
-    await postMessage({
-      room,
-      message: 'There was an error processing the album theme event.'
-    })
+    
   }
 }
+
 
 // Helper function to convert duration string to milliseconds
 const parseDuration = (durationStr) => {

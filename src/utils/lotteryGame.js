@@ -1,10 +1,16 @@
 import { postMessage } from '../libs/cometchat.js'
 import { getUserNickname } from '../handlers/roulette.js'
-import { addToUserWallet, loadUsers } from '../libs/walletManager.js' // Import the wallet management function
+import { addToUserWallet, loadUsers, getUserWallet, removeFromUserWallet } from '../libs/walletManager.js' // Import the wallet management function
+import { findUserIdAndNickname } from './regex.js'
+import { storeItems } from '../libs/jamflowStore.js'
+import lotteryWinners from '../libs/lotteryWinners.json' assert { type: 'json' }
 import fs from 'fs/promises' // Use the fs/promises module for async operations
 import path from 'path' // For handling file paths
 
 const numberStatsPath = path.join(process.cwd(), 'src/libs/lottoBalls.json')
+const room = process.env.ROOM_UUID
+
+const { cost } = storeItems['/lottery'];
 
 // Global variables
 const MAX_NUMBER = 100
@@ -36,7 +42,7 @@ async function handleLotteryCommand (payload) {
 
   await postMessage({
     room: process.env.ROOM_UUID,
-    message: 'Send a number 1-100 in the chat to play!'
+    message: `Send a number 1–100 in the chat to play! 💸 Entry cost: $${cost}`
   })
 
   // Set a timeout to remind users after 15 seconds
@@ -60,39 +66,68 @@ async function handleLotteryCommand (payload) {
   }, TIMEOUT_DURATION)
 }
 
-async function handleLotteryNumber (payload) {
-  if (LotteryGameActive) {
-    if (!isNaN(payload.message) && parseInt(payload.message) >= MIN_NUMBER && parseInt(payload.message) <= MAX_NUMBER) {
-      const number = parseInt(payload.message)
-      lotteryEntries[payload.sender] = number
-    }
+async function handleLotteryNumber(payload) {
+  if (!LotteryGameActive) return
+
+  const number = parseInt(payload.message)
+  const userId = payload.sender
+  const nickname = await getUserNickname(userId)
+
+  if (isNaN(number) || number < MIN_NUMBER || number > MAX_NUMBER) return
+
+  // Check if user already entered
+  if (lotteryEntries[userId]) {
+    await postMessage({
+      room,
+      message: `@${nickname} you've already entered the lottery with number ${lotteryEntries[userId]}.`
+    })
+    return
   }
+
+  // Check balance
+  const balance = await getUserWallet(userId)
+  if (balance < cost) {
+    await postMessage({
+      room,
+      message: `@${nickname} You need $${cost} for a lottery ticket, but you only have $${balance}. Check your balance with /balance & play some songs to get some cash.`
+    })
+    return
+  }
+
+  // Deduct cost
+  const deducted = await removeFromUserWallet(userId, cost)
+  if (!deducted) {
+    await postMessage({
+      room,
+      message: `@${nickname} There was an error charging you. Please try again later.`
+    })
+    return
+  }
+
+  // Save entry and confirm
+  lotteryEntries[userId] = number
+
+  await postMessage({
+    room,
+    message: `@${nickname} You entered the lottery with number ${number}. Good luck! 💸 (Cost: $${cost})`
+  })
 }
+
 
 async function drawWinningNumber () {
   const winningNumber = generateRandomNumber(MIN_NUMBER, MAX_NUMBER)
 
+  
   // Track number win frequency
   let numberStats = {}
   try {
     const statsData = await fs.readFile(numberStatsPath, 'utf8')
-    const parsed = JSON.parse(statsData)
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      numberStats = parsed
-    } else {
-      console.warn('Invalid format in lottoBalls.json, reinitializing.')
-    }
-
-  // Increment the count for the winning number
-  const currentCount = numberStats[winningNumber] || 0
-  numberStats[winningNumber] = currentCount + 1
-
-  // Save the updated stats
+    numberStats = JSON.parse(statsData)
+  } catch {
+    numberStats = {}
+  }
+  numberStats[String(winningNumber)] = (numberStats[String(winningNumber)] || 0) + 1
   await fs.writeFile(numberStatsPath, JSON.stringify(numberStats, null, 2))
-  console.log(`Updated win count for number ${winningNumber}: ${numberStats[winningNumber]}`)
-} catch (error) {
-  console.error('Error updating lotteryNumberStats.json:', error)
-}
 
   const winners = []
   for (const sender in lotteryEntries) {
@@ -115,6 +150,7 @@ async function drawWinningNumber () {
           userId: winner,
           nickname,
           winningNumber,
+          amountWon: LOTTERY_WIN_AMOUNT,
           timestamp: new Date().toISOString()
         }
 
@@ -153,6 +189,16 @@ async function drawWinningNumber () {
     room: process.env.ROOM_UUID,
     message
   })
+  // 🎉 Easter egg: Respond with a GIF if the winning number is 69
+  if (winningNumber === 69) {
+    const GifUrl = 'https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExZTk1cWU1bDh3eDB6cWd2ajI0Z3c3dHRqdGZqcDBsM2x4NGxwZWlxNyZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/3i4Prsb5uTZArI7fI4/giphy.gif'
+    await postMessage({
+      room: process.env.ROOM_UUID,
+      receiverType: 'group',
+      message: '',
+      images: [GifUrl]
+   })
+  }
 
   // Clear the lottery entries for the next game
   for (const key in lotteryEntries) {
@@ -199,5 +245,89 @@ async function getLotteryNumberStats () {
   }
 }
 
+async function handleTopLotteryStatsCommand(room) {
+  const stats = await getLotteryNumberStats()
 
-export { handleLotteryCommand, handleLotteryNumber, getLotteryNumberStats, LotteryGameActive, getLotteryWinners }
+  const sorted = Object.entries(stats)
+    .sort((a, b) => b[1] - a[1]) // Sort by frequency
+    .slice(0, 5)
+
+  if (sorted.length === 0) {
+    return postMessage({ room, message: 'No lottery data yet! 🎲 Be the first to win!' })
+  }
+
+  const message = sorted
+    .map(([num, count]) => `#${num} → ${count}x`)
+    .join('\n')
+
+  await postMessage({
+    room,
+    message: `🎯 Most drawn numbers so far:\n${message}`
+  })
+}
+async function handleSingleNumberQuery(room, message) {
+  const stats = await getLotteryNumberStats()
+  console.log('Loaded stats:', stats)
+
+  const match = message.match(/\/lotto\s+#?(\d{1,3})/)
+  console.log('Regex match:', match)
+
+  if (!match) return
+
+  const number = parseInt(match[1])
+  console.log('Parsed number:', number)
+
+  if (number < 1 || number > 100) {
+    await postMessage({ room, message: 'Please pick a number between 1 and 100! 🔢' })
+    return
+  }
+
+  const count = stats[String(number)] || 0
+  console.log(`Count for #${number}:`, count)
+
+  const response = count > 0
+    ? `🎯 #${number} has been drawn ${count} time${count === 1 ? '' : 's'}!`
+    : `🤞 #${number} has never been drawn yet. Maybe you're the lucky one?`
+
+  await postMessage({ room, message: response })
+}
+
+async function handleLotteryCheck(room, userCandidate) {
+  // If userCandidate has userId, we can use it directly
+  if (userCandidate.userId) {
+    const hasWon = lotteryWinners.some(winner => winner.userId === userCandidate.userId);
+
+    if (hasWon) {
+      await postMessage({
+        room,
+        message: `💥 HELL YEAH! ${userCandidate.nickname} HAS WON THE LOTTERY BEFORE! Number: ${winner.number} — ${new Date(winner.timestamp).toLocaleString()} 🔥💰`
+      });
+    } else {
+      await postMessage({ room, message: `no` });
+    }
+    return;
+  }
+
+  // Else, try to find user by nickname:
+  const user = findUserIdAndNickname(userCandidate.nickname);
+  if (!user) {
+    await postMessage({ room, message: `I don't know anyone named ${userCandidate.nickname}.` });
+    return;
+  }
+
+  const hasWon = lotteryWinners.some(winner => winner.userId === user.userId);
+
+  if (hasWon) {
+    await postMessage({
+      room,
+      message: `🎉🔥 OMG YES! ${user.nickname} HAS WON THE LOTTERY! 💰💥 LET'S CELEBRATE! 🎉🎉🎉`
+    });
+  } else {
+    await postMessage({ room, message: `no` });
+  }
+}
+
+
+
+
+export { handleLotteryCommand, handleLotteryNumber, handleLotteryCheck, handleSingleNumberQuery, handleTopLotteryStatsCommand, getLotteryNumberStats, LotteryGameActive, getLotteryWinners }

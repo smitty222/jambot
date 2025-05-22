@@ -233,3 +233,33 @@ const userTokenMap = {
       await postMessage({ room, message: `Failed to update avatar` })
     }
   }
+
+  export async function handleRandomCyberCommand(senderUuid, room, postMessage) {
+    const userToken = userTokenMap[senderUuid];
+    if (!userToken) {
+      await postMessage({ room, message: 'Sorry, this command is only available to authorized users 🎭.' });
+      return;
+    }
+  
+    // ✅ Define your allowed avatar slugs
+    const allowedSlugs = ['cyber-bear-visor', 'cyber-bear-angry', 'cyber-girl', 'cyber-gorilla', 'cyber-guy', 'cyber-helmet', 'cyber-hood-purple', 'cyber-hood-yellow']; // Replace with your chosen avatar slugs
+  
+    // ✅ Find avatar objects that match only those slugs
+    const filteredAvatars = avatars.filter(avatar => allowedSlugs.includes(avatar.slug));
+  
+    if (filteredAvatars.length === 0) {
+      await postMessage({ room, message: 'No avatars found in your allowed list. 🫤' });
+      return;
+    }
+  
+    const randomAvatar = filteredAvatars[Math.floor(Math.random() * filteredAvatars.length)].slug;
+    const randomColor = randomColors[Math.floor(Math.random() * randomColors.length)];
+  
+    try {
+      await updateUserAvatar(userToken, randomAvatar, randomColor);
+      await postMessage({ room, message: '⚡ You’ve been cyber-ized. Welcome to the grid.' });
+    } catch (error) {
+      await postMessage({ room, message: `Failed to update avatar 😞` });
+    }
+  }
+  

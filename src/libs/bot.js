@@ -5,7 +5,7 @@ import { logger } from '../utils/logging.js'
 import { handlers } from '../handlers/index.js'
 import { fetchSpotifyPlaylistTracks, fetchCurrentUsers, spotifyTrackInfo, fetchCurrentlyPlayingSong, fetchSongData } from '../utils/API.js'
 import { postVoteCountsForLastSong } from '../utils/voteCounts.js'
-import { usersToBeRemoved, userstagedive } from '../handlers/message.js'
+import { usersToBeRemoved, roomThemes } from '../handlers/message.js'
 import { escortUserFromDJStand } from '../utils/escortDJ.js'
 import handleUserJoinedWithStatePatch from '../handlers/userJoined.js'
 import { handleAlbumTheme, handleCoversTheme } from '../handlers/playedSong.js'
@@ -17,6 +17,7 @@ import { getMarkedUser, unmarkUser } from '../utils/removalQueue.js'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import fs from 'fs'
+import { logCurrentSong } from './roomStats.js'
 
 export function getCurrentDJUUIDs (state) {
   if (!state?.djs) {
@@ -114,20 +115,18 @@ export class Bot {
       albumArt: '',
       popularity: 0,
       previewUrl: '',
-      isrc: 'Unknown'
+      isrc: 'Unknown',
+      albumID: 'Unknown'
     }
-    this.nextSong = {
-      trackName: 'Unknown',
-      spotifyUrl: null,
+    this.currentAlbum = {
+      albumID: 'Unknown',
+      albumName: null,
       artistName: 'Unknown',
-      albumName: 'Unknown',
       releaseDate: 'Unknown',
       albumType: 'Unknown',
       trackNumber: 'Unknown',
       totalTracks: 'Unknown',
-      songDuration: 'Unknown',
       albumArt: '',
-      popularity: 0,
       previewUrl: '',
       isrc: 'Unknown'
     }
@@ -274,10 +273,37 @@ export class Bot {
                 albumArt: trackInfo.spotifyAlbumArt || '',
                 popularity: trackInfo.spotifyPopularity || 0,
                 previewUrl: trackInfo.spotifyPreviewUrl || '',
-                isrc: trackInfo.spotifyIsrc || 'Unknown'
+                isrc: trackInfo.spotifyIsrc || 'Unknown',
+                albumID: trackInfo.spotifyAlbumID || 'Unknown'
+              }
+              if (roomThemes[process.env.ROOM_UUID]?.toLowerCase().includes('album')) {
+                // Check if this is the first track of an album
+                if (
+                  this.currentSong.trackNumber === 1 || 
+                  !this.currentAlbum || 
+                  this.currentAlbum.albumID !== this.currentSong.albumID
+                ) {
+                  this.currentAlbum = {
+                    albumId: trackInfo.spotifyAlbumID,
+                    albumName: trackInfo.spotifyAlbumName,
+                    artistName: trackInfo.spotifyArtistName,
+                    trackCount: trackInfo.spotifyTotalTracks
+                  }
+              
+                  console.log('Set new album review data:', this.currentAlbum)
+                }
               }
             }
           }
+
+          
+          try {
+            await logCurrentSong(this.currentSong, 0, 0, 0)
+            console.log(`Logged song to roomStats.json: ${this.currentSong.trackName} by ${this.currentSong.artistName}`)
+          } catch (error) {
+            console.error('Error logging current song to roomStats.json:', error)
+          }
+
 
           try {
             const newSong = {

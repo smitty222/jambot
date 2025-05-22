@@ -2,6 +2,10 @@ import { postMessage } from '../libs/cometchat.js'
 import { fetchRecentSongs, fetchUserData } from './API.js'
 import { roomBot } from '../index.js'
 import { logCurrentSong } from '../libs/roomStats.js'
+import fs from 'fs/promises'
+import path from 'path'
+
+const statsPath = path.join(process.cwd(), 'src/libs/roomStats.json')
 
 let songStatsEnabled = false
 
@@ -69,6 +73,74 @@ async function postVoteCountsForLastSong(room) {
     console.error('Error in postVoteCountsForLastSong:', error.message)
   }
 }
+
+export async function saveSongReview({ currentSong, rating, sender }) {
+  try {
+    const content = await fs.readFile(statsPath, 'utf8')
+    const stats = JSON.parse(content)
+
+    const songIndex = stats.findIndex(s =>
+      (currentSong.songId && s.songId === currentSong.songId) ||
+      (!currentSong.songId &&
+        s.trackName === currentSong.trackName &&
+        s.artistName === currentSong.artistName)
+    )
+
+    if (songIndex === -1) return { success: false, reason: 'not_found' }
+
+    const songStats = stats[songIndex]
+    songStats.reviews = songStats.reviews || []
+
+    // Update or add the user's review
+    const existingReview = songStats.reviews.find(r => r.userId === sender)
+    if (existingReview) {
+      existingReview.rating = rating
+    } else {
+      songStats.reviews.push({ userId: sender, rating })
+    }
+
+    // Recalculate average
+    const total = songStats.reviews.reduce((sum, r) => sum + r.rating, 0)
+    songStats.averageReview = parseFloat((total / songStats.reviews.length).toFixed(2))
+
+    await fs.writeFile(statsPath, JSON.stringify(stats, null, 2))
+
+    return { success: true }
+  } catch (err) {
+    console.error('Error in saveSongReview:', err)
+    return { success: false, reason: 'error' }
+  }
+}
+
+export async function getAverageRating(currentSong) {
+  try {
+    const content = await fs.readFile(statsPath, 'utf8')
+    const stats = JSON.parse(content)
+
+    const song = stats.find(s =>
+      (currentSong.songId && s.songId === currentSong.songId) ||
+      (!currentSong.songId &&
+        s.trackName === currentSong.trackName &&
+        s.artistName === currentSong.artistName)
+    )
+
+    if (!song || !song.reviews || song.reviews.length === 0) {
+      return { found: false }
+    }
+
+    const avg = parseFloat((song.reviews.reduce((sum, r) => sum + r.rating, 0) / song.reviews.length).toFixed(2))
+
+    return {
+      found: true,
+      average: avg,
+      count: song.reviews.length
+    }
+  } catch (err) {
+    console.error('Error getting average rating:', err)
+    return { found: false }
+  }
+}
+
 
 function isSongStatsEnabled () {
   return songStatsEnabled

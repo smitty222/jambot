@@ -5,8 +5,8 @@ import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, totalPoints } f
 import { logger } from '../utils/logging.js'
 import { roomBot } from '../index.js'
 import { fetchCurrentlyPlayingSong, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSongData, updateRoomInfo, isUserOwner, DeleteQueueSong, fetchAllUserQueueSongIDsWithUUID, searchSpotify, getSenderNickname, getMLBScores, getNHLScores, getNBAScores, getTopHomeRunLeaders, updateUserAvatar} from '../utils/API.js'
-import { handleLotteryCommand, handleLotteryNumber, LotteryGameActive, getLotteryWinners } from '../utils/lotteryGame.js'
-import { enableSongStats, disableSongStats, isSongStatsEnabled } from '../utils/voteCounts.js'
+import { handleLotteryCommand, handleLotteryNumber, LotteryGameActive, getLotteryWinners, handleTopLotteryStatsCommand, handleSingleNumberQuery } from '../utils/lotteryGame.js'
+import { enableSongStats, disableSongStats, isSongStatsEnabled, saveSongReview, getAverageRating} from '../utils/voteCounts.js'
 import { enableGreetingMessages, disableGreetingMessages, greetingMessagesEnabled } from './userJoined.js'
 import { getCurrentDJ, readRecentSongs } from '../libs/bot.js'
 import { resetCurrentQuestion } from './triviaData.js'
@@ -17,10 +17,16 @@ import { getJackpotValue, handleSlotsCommand } from './slots.js'
 import { handleBlackjackBet, handleHit, handleStand, joinTable, getBlackjackGameActive, setBlackjackGameActive, tableUsers, preventFurtherJoins } from '../handlers/blackJack.js'
 import { updateAfkStatus, isUserAfkAuthorized, userTokens } from './afk.js'
 import { generateDerbyTeamsJSON, updateDerbyTeamsFromJSON, getDerbyStandings } from '../utils/homerunDerby.js'
-import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand } from './avatarCommands.js'
+import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand, handleRandomCyberCommand } from './avatarCommands.js'
 import { markUser, getMarkedUser} from '../utils/removalQueue.js'
+import { handleLotteryCheck } from '../utils/lotteryGame.js'
+import {extractUserFromText, isLotteryQuestion} from '../utils/regex.js'
+import { askMagic8Ball } from './magic8Ball.js'
+import { storeItems } from '../libs/jamflowStore.js'
+import { saveAlbumReview } from '../utils/albumVotes.js'
 import path from 'path'
-import fs from 'fs'
+import fs from 'fs/promises'
+
 
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
@@ -156,6 +162,18 @@ export default async (payload, room, state) => {
         })
         return 
       }
+      if (isLotteryQuestion(question)) {
+        const userInput = extractUserFromText(question);
+        if (userInput) {
+          // userInput is already an object { userId, nickname }
+          await handleLotteryCheck(room, userInput);
+          return;
+        } else {
+          await postMessage({ room, message: "Who do you want me to check?" });
+        }
+      }
+    
+      
       if (question.includes('spin the wheel') || question.includes('spin that wheel')) {
         await startRouletteGame(payload)
         return // Exit early to avoid processing further
@@ -249,6 +267,13 @@ export default async (payload, room, state) => {
   } else if (LotteryGameActive) {
     await handleLotteryNumber(payload)
 
+  } else if (payload.message.startsWith('/lottostats')) {
+      await handleTopLotteryStatsCommand(room)
+
+  } else if (/^\/lotto\s+#?\d{1,3}/.test(payload.message)) {
+     console.log('Routing to handleSingleNumberQuery with message:', payload.message)
+    await handleSingleNumberQuery(room, payload.message)
+    
     /// ///////////// Commands Start Here. ////////////////////////
 
   /////////////// YAY SPORTS!! ////////////////////////
@@ -495,13 +520,13 @@ export default async (payload, room, state) => {
   } else if (payload.message.startsWith('/commands')) {
     await postMessage({
       room,
-      message: 'General commands are:\n- /theme: Checks the current room theme\n- /games: List of games to play\n- /escortme: Stagedive after your next song\n- /djbeer: Gives the DJ a beer\n- /album: Display album info for current song\n- /score: Spotify popularity score\n- /bankroll: Lists top wallet leaders\n- /lottowinners: Lists all lottery ball winners\n- /gifs: Bot will list all GIF commands\n- /mod: Bot will list all Mod commands'
+      message: 'General commands are:\n- /theme: Checks the current room theme\n- /games: List of games to play\n- /escortme: Stagedive after your next song\n- /djbeer: Gives the DJ a beer\n- /album: Display album info for current song\n- /score: Spotify popularity score\n- /bankroll: Lists top wallet leaders\n -/reviewhelp: Lists song revew instructions\n- /lottowinners: Lists all lottery ball winners\n- /gifs: Bot will list all GIF commands\n- /mod: Bot will list all Mod commands'
     })
     /// /////////////// General Commands ////////////////
   } else if (payload.message.startsWith('/games')) {
     await postMessage({
       room,
-      message: 'Games:\n- /trivia: Play Trivia\n- /lottery: Play the Lottery\n- /roulette: Play Roulette\n- /slots: Play Slots\n- /blackjack: Play Blackjack\n- /slotinfo: Display slots payout info\n- /jackpot: Slots progressive jackpot value'
+      message: 'Games:\n- /trivia: Play Trivia\n- /lottery: Play the Lottery\n- /roulette: Play Roulette\n- /slots: Play Slots\n- /blackjack: Play Blackjack\n- /slotinfo: Display slots payout info\n- /lotto (#):Insert number to get amount of times won\n- /lottostats: Get most won lottery numbers \n- /jackpot: Slots progressive jackpot value'
     })
   } else if (payload.message.startsWith('/theme')) {
     try {
@@ -1507,7 +1532,7 @@ function formatBalance(balance) {
         })
         return
       }
-      const modMessage = 'Moderator commands are:\n ----- Room Updates -----\n- /room classic\n- /room ferry\n- /room barn\n- /room yacht\n- /room festival\n- /room stadium\n- /room theater\n- /room dark\n\n ----- Room Theme ----- \n- /settheme Albums\n- /settheme Covers\n- /settheme Rock\n- /settheme Country\n- /settheme Rap\n- /removetheme: Remove room theme\n\n- /addDJ: Bot DJs from AI recommendations\n- /removeDJ: Remove bot as DJ\n\n ----- Avatar Updates -----\n\n --- Bot --\n- /bot1\n- /bot1\n- /botduck\n- /botdino\n- /botpenguin\n-/botpenguin\n- /botwalrus\n- /botalien1\n- /botalien2\n- /botrandom\n\n ---USER ---\n- /randomavatar\n- /walrus\n- /dino\n- /spacebear\n- /duck\n\n ----- BOT TOGGLES -----\n- /status: Shows bot toggles status\n- /songstatson: Turns song stats on\n- /songstatsoff: Turns song stats off\n\n- /bopoff: Turns bot auto like off\n- /bopon: Turns bot auto like back on\n\n- /greeton: Turns on expanded user greeting\n- /greetoff: Turns off expanded user greeting'
+      const modMessage = 'Moderator commands are:\n ----- Room Updates -----\n- /room classic\n- /room ferry\n- /room barn\n- /room yacht\n- /room festival\n- /room stadium\n- /room theater\n- /room dark\n\n ----- Room Theme ----- \n- /settheme Albums\n- /settheme Covers\n- /settheme Rock\n- /settheme Country\n- /settheme Rap\n- /removetheme: Remove room theme\n\n- /addDJ: Bot DJs from AI recommendations\n- /removeDJ: Remove bot as DJ\n\n ----- Avatar Updates -----\n\n --- Bot --\n- /bot1\n- /bot1\n- /botduck\n- /botdino\n- /botpenguin\n-/botpenguin\n- /botwalrus\n- /botalien1\n- /botalien2\n- /botrandom\n\n ---USER ---\n- /randomavatar\n- /walrus\n- /dino\n- /spacebear\n- /duck\n- /cyber\n\n ----- BOT TOGGLES -----\n- /status: Shows bot toggles status\n- /songstatson: Turns song stats on\n- /songstatsoff: Turns song stats off\n\n- /bopoff: Turns bot auto like off\n- /bopon: Turns bot auto like back on\n\n- /greeton: Turns on expanded user greeting\n- /greetoff: Turns off expanded user greeting'
     
       sendDirectMessage(payload.sender, modMessage)
       if (isAuthorized) {
@@ -1601,6 +1626,9 @@ function formatBalance(balance) {
   else if (payload.message.startsWith('/spacebear')) {
     await handleSpaceBearCommand(payload.sender, room, postMessage)
   }
+  else if (payload.message.startsWith('/cyber')) {
+    await handleRandomCyberCommand(payload.sender, room, postMessage)
+  }
 
 else if (payload.message.startsWith('/randomavatar')) {
   await handleRandomAvatarCommand(payload.sender, room, postMessage)
@@ -1630,6 +1658,13 @@ else if (payload.message.startsWith('/randomavatar')) {
           design: 'FERRY_BUILDING',
           numberOfDjs: 1
         }
+        if (['albums', 'album monday', 'album day'].includes(themeLower)) {
+          updatePayload = {
+            design: 'FERRY_BUILDING',
+            numberOfDjs: 1
+          };
+        }
+        
       } else if (['covers', 'cover friday'].includes(themeLower)) {
         updatePayload = {
           design: 'FESTIVAL',
@@ -1702,8 +1737,195 @@ else if (payload.message.startsWith('/randomavatar')) {
         room,
         message: 'An error occurred while removing the theme. Please try again.'
       })
+    
     }
-  } else if (payload.message.startsWith('/room')) {
+  }
+
+  else if (payload.message.startsWith('/review')) {
+    const rating = parseInt(payload.message.replace('/review', '').trim())
+    const sender = payload.sender
+  
+    if (isNaN(rating) || rating < 1 || rating > 6) {
+      await postMessage({
+        room,
+        message: `@${await getUserNickname(sender)} please enter a number between 1 and 6 to review the song.`
+      })
+      return
+    }
+  
+    const currentSong = roomBot.currentSong
+    if (!currentSong || !currentSong.trackName || !currentSong.artistName) {
+      await postMessage({
+        room,
+        message: `No song is currently playing. Try again in a moment.`
+      })
+      return
+    }
+  
+    const result = await saveSongReview({ currentSong, rating, sender })
+  
+    if (result.success) {
+      await postMessage({
+        room,
+        message: `@${await getUserNickname(sender)} thanks! Your ${rating}/6 review has been saved.`
+      })
+    } else if (result.reason === 'duplicate') {
+      await postMessage({
+        room,
+        message: `@${await getUserNickname(sender)} you've already reviewed this song.`
+      })
+    } else if (result.reason === 'not_found') {
+      await postMessage({
+        room,
+        message: `Song not found in stats.`
+      })
+    } else {
+      await postMessage({
+        room,
+        message: `Oops! Couldn't save your review. Try again later.`
+      })
+    }
+  }  
+
+ else if (payload.message.startsWith('/topreviews')) {
+  const statsPath = path.join(process.cwd(), 'src/libs/roomStats.json')
+  let stats = []
+
+  try {
+    const content = await fs.readFile(statsPath, 'utf8')
+    stats = JSON.parse(content)
+  } catch (err) {
+    console.error('Error reading stats:', err)
+    await postMessage({
+      room,
+      message: `Oops! Couldn't load song stats.`
+    })
+    return
+  }
+
+  // Filter songs with at least one review and sort by averageReview descending
+  const topSongs = stats
+    .filter(song => song.averageReview && song.reviews?.length > 0)
+    .sort((a, b) => b.averageReview - a.averageReview)
+    .slice(0, 5)
+
+  if (topSongs.length === 0) {
+    await postMessage({
+      room,
+      message: 'No reviewed songs found yet.'
+    })
+    return
+  }
+
+  const formatted = topSongs.map((song, index) => {
+    return `#${index + 1}: ${song.trackName} by ${song.artistName} — Avg: ${song.averageReview}/6 (${song.reviews.length} review${song.reviews.length > 1 ? 's' : ''})`
+  }).join('\n')
+
+  await postMessage({
+    room,
+    message: `🎵 Top 5 Reviewed Songs:\n\n${formatted}`
+  })
+}
+
+  else if (payload.message === '/rating') {
+    const currentSong = roomBot.currentSong
+    if (!currentSong || !currentSong.trackName || !currentSong.artistName) {
+      await postMessage({
+        room,
+        message: `No song is currently playing. Try again in a moment.`
+      })
+      return
+    }
+  
+    const ratingInfo = await getAverageRating(currentSong)
+  
+    if (!ratingInfo.found) {
+      await postMessage({
+        room,
+        message: `No reviews for "${currentSong.trackName}" by ${currentSong.artistName} yet.`
+      })
+    } else {
+      await postMessage({
+        room,
+        message: `"${currentSong.trackName}" by ${currentSong.artistName} has an average rating of ${ratingInfo.average}/6 from ${ratingInfo.count} review${ratingInfo.count === 1 ? '' : 's'}.`
+      })
+    }
+  }
+
+  else if (payload.message === '/reviewhelp') {
+    const helpMessage = `🎧 **How Reviews Work**  
+  You can rate each song from **1 to 6** while it plays. 
+  Each number has a specific meaning:
+  
+  1️⃣ – **Terrible**: Actively disliked it  
+  2️⃣ – **Bad**: Not for me  
+  3️⃣ – **Okay**: Meh, it's fine  
+  4️⃣ – **Good**: I liked it  
+  5️⃣ – **Great**: Really enjoyed it  
+  6️⃣ – **Banger**: Loved it, elite track
+  
+  📝 **Commands**:  
+  /review <1-6> – Submit a review for the current song  
+  /rating – See the average rating from all users  
+  /topreviews – See the top 5 highest rated songs 
+  /reviewhelp – Show this review guide  
+  /albumreview <1-6> – Submit a review for the Album
+  
+  Reviews contribute to the song’s overall score in the stats. Thanks for sharing your taste! 🎶`
+  
+    await postMessage({
+      room,
+      message: helpMessage
+    })
+  }
+  
+  else if (payload.message.startsWith ('/albumreview')) {
+    const rating = parseInt(payload.message.replace('/albumreview', '').trim())
+    const sender = payload.sender
+  
+    if (isNaN(rating) || rating < 1 || rating > 6) {
+      await postMessage({
+        room,
+        message: `@${await getUserNickname(sender)} please enter a number between 1 and 6 to rate the album.`
+      })
+      return
+    }
+    
+
+    const albumData = roomBot.currentAlbum // you'll set this when album starts (see below)
+    console.log('Current album data:', albumData);
+    if (!albumData || !albumData.albumId) {
+      await postMessage({
+        room,
+        message: `No album info is available to rate. Wait until the next album starts.`
+      })
+      return
+    }
+  
+    const result = await saveAlbumReview({
+      albumId: albumData.albumId,
+      albumName: albumData.albumName,
+      artistName: albumData.artistName,
+      trackCount: albumData.trackCount,
+      userId: sender,
+      rating
+    })
+  
+    if (result.success) {
+      await postMessage({
+        room,
+        message: `@${await getUserNickname(sender)} thanks! Your album review (${rating}/6) was saved. Current avg: ${result.average}/6.`
+      })
+    } else {
+      await postMessage({
+        room,
+        message: `Something went wrong saving your album review. Try again later.`
+      })
+    }
+  }  
+
+      
+   else if (payload.message.startsWith('/room')) {
     try {
       const senderUuid = payload.sender
       const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken)
@@ -2213,7 +2435,7 @@ else if (payload.message.startsWith('/randomavatar')) {
         message: 'Error calculating total playtime.'
       })
     }  
-  } else if (payload.message.startsWith('/album')) {
+  } else if (payload.message === ('/album')) {
     const currentSong = roomBot.currentSong
     if (currentSong && currentSong.trackName) {
       const albumDetails = `Album Art: ${currentSong.albumArt}\nAlbum Name: ${currentSong.albumName}\nArtist Name: ${currentSong.artistName}\nTrack Name: ${currentSong.trackName}\nTrack ${currentSong.trackNumber} of ${currentSong.totalTracks}`
@@ -2471,6 +2693,62 @@ else if (payload.message.startsWith('/randomavatar')) {
       room,
       message: 'To start a trivia game you can use /triviastart. To submit your answer you can use /a, /b, /c, or /d. The points will tally up and the game will continue on until you use /triviaend.'
     })
+  
+
+////////////////////////////////// JAMFLOW STORE ///////////////////////////////////
+
+} else if (payload.message.startsWith('/store')) {
+  let storeMessage = '🛒 Welcome to the JamFlow Store 🛒\n\nHere’s what you can spend your hard earned dollars on today:\n\n'
+
+  for (const [command, { cost, desc }] of Object.entries(storeItems)) {
+    storeMessage += `${command} — ${desc} ($${cost})\n`
   }
+
+  storeMessage += '\nType any command to get started.'
+
+  await postMessage({ room, message: storeMessage })
+} else if (payload.message.startsWith('/8ball')) {
+  const input = payload.message.trim();
+  const args = input.split(' ').slice(1).join(' ').trim(); // get everything after '/8ball'
+
+  if (!args) {
+    // User typed only '/8ball' with no question
+    await postMessage({
+      room,
+      message: `🎱 You need to ask a question after the command! Try: /8ball Will I win today?`
+    });
+    return; // Do NOT charge
+  }
+
+  const { cost } = storeItems['/8ball'];
+  const uuid = payload.sender;
+
+  // Check balance
+  const balance = await getUserWallet(uuid);
+  if (balance < cost) {
+    await postMessage({
+      room,
+      message: `💸 Not enough funds! You need $${cost}, but you only have $${balance}.`
+    });
+    return;
+  }
+
+  // Deduct cost
+  await removeFromUserWallet(uuid, cost);
+
+  // Get nickname and answer
+  const nickname = await getUserNickname(uuid);
+  const answer = await askMagic8Ball(uuid, args);
+
+  await postMessage({
+    room,
+    message: `🎱 @${nickname} \nMagic 8-Ball says: *${answer}*(Cost: $${cost})`
+  });
 }
+
+
+
+
+}
+
 export { usersToBeRemoved, userstagedive }

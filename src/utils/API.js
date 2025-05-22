@@ -168,7 +168,8 @@ async function spotifyTrackInfo (trackId) {
       spotifyPreviewUrl: trackInfo.preview_url || '',
       spotifySpotifyUrl: trackInfo.external_urls.spotify || '',
       spotifyIsrc: trackInfo.external_ids.isrc || 'Unknown',
-      spotifyTrackUri: trackInfo.uri || 'Unknown'
+      spotifyTrackUri: trackInfo.uri || 'Unknown',
+      spotifyAlbumID: trackInfo.album.id || 'Unknown'
     }
 
     return spotifyTrackDetails
