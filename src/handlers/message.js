@@ -23,7 +23,9 @@ import { handleLotteryCheck } from '../utils/lotteryGame.js'
 import {extractUserFromText, isLotteryQuestion} from '../utils/regex.js'
 import { askMagic8Ball } from './magic8Ball.js'
 import { storeItems } from '../libs/jamflowStore.js'
-import { saveAlbumReview } from '../utils/albumVotes.js'
+import { saveAlbumReview, getTopAlbumReviews } from '../utils/albumVotes.js'
+import { setTheme } from '../utils/themeManager.js'
+import * as themeManager from '../utils/themeManager.js'
 import path from 'path'
 import fs from 'fs/promises'
 
@@ -1646,25 +1648,32 @@ else if (payload.message.startsWith('/randomavatar')) {
         })
         return
       }
-
-      const theme = payload.message.replace('/settheme', '').trim()
-      roomThemes[room] = theme
-
+  
+      const rawTheme = payload.message.replace('/settheme', '').trim()
+  
+      // Convert to Title Case
+      const toTitleCase = (str) =>
+        str.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.slice(1).toLowerCase())
+  
+      const theme = toTitleCase(rawTheme)
+  
+      // Update in-memory state
+      roomBot.currentTheme = theme
+      roomThemes[roomBot.roomUUID] = theme
+  
+      // Persist to disk
+      themeManager.setTheme(roomBot.roomUUID, theme)
+  
       let updatePayload = null
       const themeLower = theme.toLowerCase()
-
+  
+      setTheme(room, theme) // <-- save title case
+  
       if (['albums', 'album monday', 'album day'].includes(themeLower)) {
         updatePayload = {
           design: 'FERRY_BUILDING',
           numberOfDjs: 1
         }
-        if (['albums', 'album monday', 'album day'].includes(themeLower)) {
-          updatePayload = {
-            design: 'FERRY_BUILDING',
-            numberOfDjs: 1
-          };
-        }
-        
       } else if (['covers', 'cover friday'].includes(themeLower)) {
         updatePayload = {
           design: 'FESTIVAL',
@@ -1691,11 +1700,11 @@ else if (payload.message.startsWith('/randomavatar')) {
           numberOfDjs: 4
         }
       }
-
+  
       if (updatePayload) {
         await updateRoomInfo(updatePayload)
       }
-
+  
       await postMessage({
         room,
         message: `Theme set to: ${theme}`
@@ -1707,38 +1716,71 @@ else if (payload.message.startsWith('/randomavatar')) {
         message: `Error: ${error.message}`
       })
     }
+    
   } else if (payload.message.startsWith('/removetheme')) {
     try {
-      const senderUuid = payload.sender
-      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken)
+      const senderUuid = payload.sender;
+      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken);
       if (!isAuthorized) {
         await postMessage({
           room,
           message: 'You need to be a moderator or owner to execute this command.'
-        })
-        return
+        });
+        return;
       }
-
-      delete roomThemes[room]
-
+  
+      // Reset to default theme "Just Jam"
+      const defaultTheme = 'Just Jam';
+      roomThemes[room] = defaultTheme;
+      roomBot.currentTheme = defaultTheme;
+      themeManager.setTheme(room, defaultTheme);
+  
+      // Optionally reset the room layout to a default design
       const updatePayload = {
         design: 'YACHT',
         numberOfDjs: 3
-      }
-      await updateRoomInfo(updatePayload)
-
+      };
+      await updateRoomInfo(updatePayload);
+  
       await postMessage({
         room,
-        message: 'Theme removed and room info updated.'
-      })
+        message: `Theme has been reset to: ${defaultTheme}`
+      });
     } catch (error) {
-      console.error('Error removing theme:', error)
+      console.error('Error resetting theme:', error);
       await postMessage({
         room,
-        message: 'An error occurred while removing the theme. Please try again.'
-      })
-    
+        message: 'An error occurred while resetting the theme. Please try again.'
+      });
     }
+    
+  }
+  else if (payload.message === '/reviewhelp') {
+    const helpMessage = `🎧 **How Reviews Work**  
+  You can rate each song from **1 to 6** while it plays. 
+  Each number has a specific meaning:
+  
+  1️⃣ – **Terrible**: Actively disliked it  
+  2️⃣ – **Bad**: Not for me  
+  3️⃣ – **Okay**: Meh, it's fine  
+  4️⃣ – **Good**: I liked it  
+  5️⃣ – **Great**: Really enjoyed it  
+  6️⃣ – **Banger**: Loved it, elite track
+  
+  📝 **Commands**:  
+  /review <1-6> – Submit a review for the current song  
+  /rating – See the average rating from all users  
+  /topsongs – See the top 5 highest rated songs 
+  /reviewhelp – Show this review guide  
+  /albumreview <1-6> – Submit a review for the albums
+  /topalbums – See the top 5 highest rated albums 
+  
+  Reviews contribute to the song’s overall score in the stats. Thanks for sharing your taste! 🎶`
+  
+    await postMessage({
+      room,
+      message: helpMessage
+    })
   }
 
   else if (payload.message.startsWith('/review')) {
@@ -1787,45 +1829,137 @@ else if (payload.message.startsWith('/randomavatar')) {
     }
   }  
 
- else if (payload.message.startsWith('/topreviews')) {
-  const statsPath = path.join(process.cwd(), 'src/libs/roomStats.json')
-  let stats = []
+  else if (payload.message.startsWith('/topsongs')) {
+    const statsPath = path.join(process.cwd(), 'src/libs/roomStats.json')
+    let stats = []
+  
+    try {
+      const content = await fs.readFile(statsPath, 'utf8')
+      stats = JSON.parse(content)
+    } catch (err) {
+      console.error('Error reading stats:', err)
+      await postMessage({
+        room,
+        message: `Oops! Couldn't load song stats.`
+      })
+      return
+    }
+  
+    // Filter and sort songs by averageReview
+    const topSongs = stats
+      .filter(song => song.averageReview && song.reviews?.length > 0 && song.spotifyTrackId)
+      .sort((a, b) => b.averageReview - a.averageReview)
+      .slice(0, 5)
+  
+    if (topSongs.length === 0) {
+      await postMessage({
+        room,
+        message: 'No reviewed songs found yet.'
+      })
+      return
+    }
+  
+    const customDataSongs = []
+    const leaderboardLines = []
+  
+    const numberEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣']
+
+for (let i = 0; i < topSongs.length; i++) {
+  const song = topSongs[i]
+  const emoji = numberEmojis[i] || `#${i + 1}`
 
   try {
-    const content = await fs.readFile(statsPath, 'utf8')
-    stats = JSON.parse(content)
+    const songData = await fetchSongData(song.spotifyTrackId)
+
+    const average = song.averageReview.toFixed(1)
+    const reviewCount = song.reviews.length
+    const reviewText = `${average}⭐ from ${reviewCount} review${reviewCount > 1 ? 's' : ''}`
+    const songLabel = `*${song.artistName} – ${song.trackName}*`
+
+    await postMessage({
+      room,
+      message: `${emoji} ${songLabel} (${reviewText})`,
+      customData: {
+        songs: [
+          {
+            song: {
+              ...songData,
+              musicProviders: songData.musicProvidersIds,
+              status: 'SUCCESS'
+            }
+          }
+        ]
+      }
+    })
+
   } catch (err) {
-    console.error('Error reading stats:', err)
-    await postMessage({
-      room,
-      message: `Oops! Couldn't load song stats.`
-    })
-    return
+    console.error(`Failed to fetch song data for ${song.trackName}:`, err.message)
   }
+}
 
-  // Filter songs with at least one review and sort by averageReview descending
-  const topSongs = stats
-    .filter(song => song.averageReview && song.reviews?.length > 0)
-    .sort((a, b) => b.averageReview - a.averageReview)
-    .slice(0, 5)
-
-  if (topSongs.length === 0) {
-    await postMessage({
-      room,
-      message: 'No reviewed songs found yet.'
-    })
-    return
+  
+    const leaderboardMessage = [
+      '🎵 **Top 5 Reviewed Songs:**',
+      ...leaderboardLines
+    ].join('\n')
+  
+    if (customDataSongs.length > 0) {
+      await postMessage({
+        room,
+        message: leaderboardMessage,
+        customData: {
+          songs: customDataSongs
+        }
+      })
+    } else {
+      await postMessage({
+        room,
+        message: 'No valid top songs to display.'
+      })
+    }
   }
+  
 
-  const formatted = topSongs.map((song, index) => {
-    return `#${index + 1}: ${song.trackName} by ${song.artistName} — Avg: ${song.averageReview}/6 (${song.reviews.length} review${song.reviews.length > 1 ? 's' : ''})`
-  }).join('\n')
 
+ else if (payload.message.startsWith('/topalbums')) {
+  const numberEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣']
+
+const topAlbums = await getTopAlbumReviews(5)
+
+if (!topAlbums || topAlbums.length === 0) {
   await postMessage({
     room,
-    message: `🎵 Top 5 Reviewed Songs:\n\n${formatted}`
+    message: `🎵 No album reviews found yet! Start rating albums with /albumreview to get featured here! 🎵`
   })
+  return
 }
+
+const summary = topAlbums
+  .map((album, i) => {
+    const rankEmoji = numberEmojis[i] || `${i + 1}.`
+    const avg = typeof album.averageReview === 'number' ? album.averageReview.toFixed(2) : 'N/A'
+    const reviewCount = album.reviews?.length || 0
+    return `${rankEmoji} *"${album.albumName}"* by *${album.artistName}*\n   ➤ ⭐ Average Rating: ${avg}/6 (${reviewCount} review${reviewCount === 1 ? '' : 's'})`
+  })
+  .join('\n\n')
+
+// Send text summary first
+await postMessage({
+  room,
+  message: `🎶 *Top Album Reviews* 🎶\n\n${summary}`
+})
+
+// Send album art images one by one with captions
+for (const [index, album] of topAlbums.entries()) {
+  if (album.albumArt) {
+    await postMessage({
+      room,
+      message: `🖼️ Cover Art for ${numberEmojis[index] || `#${index + 1}`} — "${album.albumName}"`,
+      images: [album.albumArt]
+    })
+  }
+}
+ }
 
   else if (payload.message === '/rating') {
     const currentSong = roomBot.currentSong
@@ -1852,32 +1986,6 @@ else if (payload.message.startsWith('/randomavatar')) {
     }
   }
 
-  else if (payload.message === '/reviewhelp') {
-    const helpMessage = `🎧 **How Reviews Work**  
-  You can rate each song from **1 to 6** while it plays. 
-  Each number has a specific meaning:
-  
-  1️⃣ – **Terrible**: Actively disliked it  
-  2️⃣ – **Bad**: Not for me  
-  3️⃣ – **Okay**: Meh, it's fine  
-  4️⃣ – **Good**: I liked it  
-  5️⃣ – **Great**: Really enjoyed it  
-  6️⃣ – **Banger**: Loved it, elite track
-  
-  📝 **Commands**:  
-  /review <1-6> – Submit a review for the current song  
-  /rating – See the average rating from all users  
-  /topreviews – See the top 5 highest rated songs 
-  /reviewhelp – Show this review guide  
-  /albumreview <1-6> – Submit a review for the Album
-  
-  Reviews contribute to the song’s overall score in the stats. Thanks for sharing your taste! 🎶`
-  
-    await postMessage({
-      room,
-      message: helpMessage
-    })
-  }
   
   else if (payload.message.startsWith ('/albumreview')) {
     const rating = parseInt(payload.message.replace('/albumreview', '').trim())
@@ -1903,8 +2011,9 @@ else if (payload.message.startsWith('/randomavatar')) {
     }
   
     const result = await saveAlbumReview({
-      albumId: albumData.albumId,
+      albumId: albumData.albumID,
       albumName: albumData.albumName,
+      albumArt:albumData.albumArt,
       artistName: albumData.artistName,
       trackCount: albumData.trackCount,
       userId: sender,
@@ -2566,7 +2675,7 @@ else if (payload.message.startsWith('/randomavatar')) {
 
         if (trackDetails && trackDetails.spotifyUrl) {
           // Fetch additional data for the song
-          const songData = await fetchSongData(trackDetails.spotifyUrl)
+          const songData = await fetchSongData(trackDetails.spotifyTrackID)
 
           // Transform the song data
           const transformedSongData = {

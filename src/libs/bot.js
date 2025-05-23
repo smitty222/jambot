@@ -18,6 +18,7 @@ import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import fs from 'fs'
 import { logCurrentSong } from './roomStats.js'
+import * as themeManager from '../utils/themeManager.js'
 
 export function getCurrentDJUUIDs (state) {
   if (!state?.djs) {
@@ -90,7 +91,7 @@ export class Bot {
     this.tokenRole = process.env.TOKEN_ROLE
     this.userUUID = process.env.BOT_USER_UUID
     this.lastMessageIDs = {}
-    this.currentTheme = ''
+    this.currentTheme = themeManager.getTheme(this.roomUUID) || ''
     this.socket = null // Initialize socket as null
     this.playlistId = process.env.DEFAULT_PLAYLIST_ID // Add default playlist ID
     this.spotifyCredentials = process.env.SPOTIFY_CREDENTIALS
@@ -286,8 +287,10 @@ export class Bot {
                   this.currentAlbum = {
                     albumId: trackInfo.spotifyAlbumID,
                     albumName: trackInfo.spotifyAlbumName,
+                    albumArt: trackInfo.spotifyAlbumArt,
                     artistName: trackInfo.spotifyArtistName,
-                    trackCount: trackInfo.spotifyTotalTracks
+                    trackCount: trackInfo.spotifyTotalTracks,
+                    releaseDate: trackInfo.spotifyReleaseDate
                   }
               
                   console.log('Set new album review data:', this.currentAlbum)

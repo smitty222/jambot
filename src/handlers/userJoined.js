@@ -1,6 +1,7 @@
 import { postMessage } from '../libs/cometchat.js';
 import { logger } from '../utils/logging.js';
 import { roomThemes } from './message.js';
+import * as themeManager from '../utils/themeManager.js'
 
 let greetingMessagesEnabled = true;
 
@@ -28,7 +29,7 @@ const generateWelcomeMessage = (uuid, nickname, room) => {
     return `Welcome to the room, @${nickname}`;
   }
 
-  const theme = roomThemes[room] || 'Just Jam';
+  const theme = themeManager.getTheme(room) || 'Just Jam';
   return `Welcome to the room, @${nickname}\n- Current Theme is: ${theme}\n- Type /commands to see what else I can do!`;
 };
 

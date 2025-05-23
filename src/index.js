@@ -4,6 +4,8 @@ import { Chain } from 'repeat'
 import { Bot, getCurrentDJUUIDs } from './libs/bot.js'
 import { updateCurrentUsers } from './utils/currentUsers.js'
 import { fetchCurrentUsers } from './utils/API.js'
+import * as themeStorage from './utils/themeManager.js'
+import { roomThemes } from './handlers/message.js'
 
 const app = express()
 
@@ -24,6 +26,9 @@ const startupTasks = async () => {
 }
 
 startupTasks()
+
+const savedThemes = themeStorage.loadThemes()
+Object.assign(roomThemes, savedThemes)
 
 const repeatedTasks = new Chain()
   .add(async () => {
