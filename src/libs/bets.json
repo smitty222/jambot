@@ -1,0 +1,15 @@
+{
+  "9c2194da7eb97922202cbab769535cc5": [
+    {
+      "senderUUID": "210141ad-6b01-4665-84dc-e47ea7c27dcb",
+      "gameIndex": 0,
+      "gameId": "9c2194da7eb97922202cbab769535cc5",
+      "sport": "baseball_mlb",
+      "team": "CIN",
+      "odds": 138,
+      "amount": 100,
+      "status": "pending",
+      "type": "ml"
+    }
+  ]
+}

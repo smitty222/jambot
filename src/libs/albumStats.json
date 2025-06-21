@@ -7,6 +7,163 @@
     "reviews": [
       {
         "userId": "210141ad-6b01-4665-84dc-e47ea7c27dcb",
+        "rating": 5
+      }
+    ],
+    "averageReview": 6
+  },
+  {
+    "albumId": "0PMasrHdpaoIRuHuhHp72O",
+    "albumName": "Born In The U.S.A.",
+    "albumArt": "https://i.scdn.co/image/ab67616d0000b273a7865e686c36a4adda6c9978",
+    "artistName": "Bruce Springsteen",
+    "trackCount": 12,
+    "reviews": [
+      {
+        "userId": "210141ad-6b01-4665-84dc-e47ea7c27dcb",
+        "rating": 5
+      }
+    ],
+    "averageReview": 5
+  },
+  {
+    "albumId": "0YA7XxxfkaGwecj3liSTvj",
+    "albumName": "Best Day Ever (5th Anniversary Remastered Edition)",
+    "albumArt": "https://i.scdn.co/image/ab67616d0000b27349a3f56cdc4d1f0da6b3be79",
+    "artistName": "Mac Miller",
+    "trackCount": 16,
+    "reviews": [
+      {
+        "userId": "210141ad-6b01-4665-84dc-e47ea7c27dcb",
+        "rating": 5
+      },
+      {
+        "userId": "072b0bb3-518e-4422-97fd-13dc53e8ae7e",
+        "rating": 5
+      }
+    ],
+    "averageReview": 5
+  },
+  {
+    "albumId": "1K4eQgsqboN5w0xLsQx9lA",
+    "albumName": "Waking up to Sirens",
+    "albumArt": "https://i.scdn.co/image/ab67616d0000b273b86e608c2833b87bdfd67393",
+    "artistName": "Felly",
+    "trackCount": 11,
+    "reviews": [
+      {
+        "userId": "210141ad-6b01-4665-84dc-e47ea7c27dcb",
+        "rating": 3
+      },
+      {
+        "userId": "92302b7d-ae5e-466f-975b-d3fee461f13f",
+        "rating": 4
+      }
+    ],
+    "averageReview": 3.5
+  },
+  {
+    "albumId": "4VFG1DOuTeDMBjBLZT7hCK",
+    "albumName": "Malibu",
+    "albumArt": "https://i.scdn.co/image/ab67616d0000b273f8e77075414234fd77fce32b",
+    "artistName": "Anderson .Paak",
+    "trackCount": 16,
+    "reviews": [
+      {
+        "userId": "210141ad-6b01-4665-84dc-e47ea7c27dcb",
+        "rating": 4
+      },
+      {
+        "userId": "072b0bb3-518e-4422-97fd-13dc53e8ae7e",
+        "rating": 4
+      }
+    ],
+    "averageReview": 4
+  },
+  {
+    "albumId": "0FqUTYrs4FtPbav2Ry2I1M",
+    "albumName": "Heart Of The Congos",
+    "albumArt": "https://i.scdn.co/image/ab67616d0000b27387c38f645c3770d0ab10a26d",
+    "artistName": "The Congos",
+    "trackCount": 10,
+    "reviews": [
+      {
+        "userId": "210141ad-6b01-4665-84dc-e47ea7c27dcb",
+        "rating": 4
+      },
+      {
+        "userId": "072b0bb3-518e-4422-97fd-13dc53e8ae7e",
+        "rating": 4
+      }
+    ],
+    "averageReview": 4
+  },
+  {
+    "albumId": "6GHb9FYG7HnVet0rQs0Dq9",
+    "albumName": "Horizons",
+    "albumArt": "https://i.scdn.co/image/ab67616d0000b27398b3e7c09449393c8b017343",
+    "artistName": "Surfaces",
+    "trackCount": 12,
+    "reviews": [
+      {
+        "userId": "210141ad-6b01-4665-84dc-e47ea7c27dcb",
+        "rating": 6
+      },
+      {
+        "userId": "92302b7d-ae5e-466f-975b-d3fee461f13f",
+        "rating": 5
+      },
+      {
+        "userId": "072b0bb3-518e-4422-97fd-13dc53e8ae7e",
+        "rating": 5
+      }
+    ],
+    "averageReview": 5.33
+  },
+  {
+    "albumId": "05jbNkYoEQdjVDHEHtg1gY",
+    "albumName": "Don't Forget About Me, Demos",
+    "albumArt": "https://i.scdn.co/image/ab67616d0000b2737b1b6f41c1645af9757d5616",
+    "artistName": "Dominic Fike",
+    "trackCount": 8,
+    "reviews": [
+      {
+        "userId": "210141ad-6b01-4665-84dc-e47ea7c27dcb",
+        "rating": 4
+      }
+    ],
+    "averageReview": 4
+  },
+  {
+    "albumId": "71QyofYesSsRMwFOTafnhB",
+    "albumName": "Coloring Book",
+    "albumArt": "https://i.scdn.co/image/ab67616d0000b273e71dd15fc5bdefd5bff70452",
+    "artistName": "Chance the Rapper, Jamila Woods",
+    "trackCount": 14,
+    "reviews": [
+      {
+        "userId": "210141ad-6b01-4665-84dc-e47ea7c27dcb",
+        "rating": 6
+      },
+      {
+        "userId": "92302b7d-ae5e-466f-975b-d3fee461f13f",
+        "rating": 6
+      },
+      {
+        "userId": "072b0bb3-518e-4422-97fd-13dc53e8ae7e",
+        "rating": 6
+      }
+    ],
+    "averageReview": 6
+  },
+  {
+    "albumId": "0Mbg1FWqCSLumCIxpA3zmN",
+    "albumName": "In The Middle",
+    "artistName": "Mt. Joy, Gigi Perez",
+    "trackCount": 1,
+    "reviews": [
+      {
+        "userId": "210141ad-6b01-4665-84dc-e47ea7c27dcb",
         "rating": 4
       }
     ],

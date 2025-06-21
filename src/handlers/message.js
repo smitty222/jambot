@@ -4,7 +4,7 @@ import { askQuestion, setCurrentSong } from '../libs/ai.js'
 import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, totalPoints } from '../handlers/triviaCommands.js'
 import { logger } from '../utils/logging.js'
 import { roomBot } from '../index.js'
-import { fetchCurrentlyPlayingSong, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSongData, updateRoomInfo, isUserOwner, DeleteQueueSong, fetchAllUserQueueSongIDsWithUUID, searchSpotify, getSenderNickname, getMLBScores, getNHLScores, getNBAScores, getTopHomeRunLeaders, updateUserAvatar} from '../utils/API.js'
+import { fetchCurrentlyPlayingSong, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSongData, updateRoomInfo, isUserOwner, searchSpotify, getSenderNickname, getMLBScores, getNHLScores, getNBAScores, getTopHomeRunLeaders, getSimilarTracks, getTopChartTracks} from '../utils/API.js'
 import { handleLotteryCommand, handleLotteryNumber, LotteryGameActive, getLotteryWinners, handleTopLotteryStatsCommand, handleSingleNumberQuery } from '../utils/lotteryGame.js'
 import { enableSongStats, disableSongStats, isSongStatsEnabled, saveSongReview, getAverageRating} from '../utils/voteCounts.js'
 import { enableGreetingMessages, disableGreetingMessages, greetingMessagesEnabled } from './userJoined.js'
@@ -23,9 +23,13 @@ import { handleLotteryCheck } from '../utils/lotteryGame.js'
 import {extractUserFromText, isLotteryQuestion} from '../utils/regex.js'
 import { askMagic8Ball } from './magic8Ball.js'
 import { storeItems } from '../libs/jamflowStore.js'
-import { saveAlbumReview, getTopAlbumReviews } from '../utils/albumVotes.js'
+import { saveAlbumReview, getTopAlbumReviews, getUserAlbumReviews } from '../utils/albumVotes.js'
+import { placeSportsBet, resolveCompletedBets } from '../utils/sportsBet.js'
 import { setTheme } from '../utils/themeManager.js'
 import * as themeManager from '../utils/themeManager.js'
+import { getUserSongReviews } from '../libs/roomStats.js'
+import { fetchOddsForSport, formatOddsMessage } from '../utils/sportsBetAPI.js'
+import { saveOddsForSport, getOddsForSport } from '../utils/bettingOdds.js'
 import path from 'path'
 import fs from 'fs/promises'
 
@@ -277,9 +281,32 @@ export default async (payload, room, state) => {
     await handleSingleNumberQuery(room, payload.message)
     
     /// ///////////// Commands Start Here. ////////////////////////
-
+  } else if (payload.message.startsWith('/commands')) {
+    const commandList = [
+      '**General Commands**',
+      '- `/theme` — Check the current room theme',
+      '- `/games` — List available games to play',
+      '- `/escortme` — Stagedive after your next song',
+      '- `/djbeer` — Give the DJ a beer 🍺',
+      '- `/album` — Display album info for the current song',
+      '- `/score` — Show Spotify popularity score',
+      '- `/bankroll` — View top wallet leaders 💰',
+      '- `/reviewhelp` — See how to review songs ⭐',
+      '- `/suggestsongs` — View songs suggested by Allen',
+      '- `/lottowinners` — List all lottery ball winners 🎱',
+      '- `/gifs` — Show all available GIF commands',
+      '- `/mod` — Show moderator-specific commands'
+    ]
+  
+    const message = commandList.join('\n')
+  
+    await postMessage({
+      room,
+      message
+    })
+    
   /////////////// YAY SPORTS!! ////////////////////////
-  } else if (payload.message.startsWith('/MLB')) {
+  } else if (payload.message===('/MLB')) {
     const parts = payload.message.trim().split(' ');
     const requestedDate = parts[1]; // optional, format: YYYY-MM-DD
   
@@ -392,80 +419,107 @@ export default async (payload, room, state) => {
         message: 'There was an error fetching NBA scores. Please try again later.'
       });
     }  
-  
-  // Command for deleting the current song
-  } else if (payload.message.startsWith('/delete')) {
-    console.log('Delete command received.')
 
-    const userId = payload.sender // Get the user UUID from the payload
-    console.log(`Received delete request from user ID: ${userId}`)
-
-    // Check if the user ID is AFK authorized
-    if (!isUserAfkAuthorized(userId)) {
-      console.log(`User ID: ${userId} is not authorized to delete songs.`)
-      await postMessage({
-        room,
-        message: 'You are not authorized to use this command.'
-      })
-      return // Exit if the user is not authorized
-    }
-    console.log(`User ID: ${userId} is authorized.`)
-
-    // Ensure the current song information is available
-    console.log(`Checking current song: ${JSON.stringify(roomBot.currentSong)}`)
-    if (!roomBot.currentSong || !roomBot.currentSong.songId) {
-      console.log('No song is currently playing or the song ID is unavailable.')
-      await postMessage({
-        room,
-        message: 'No song is currently playing or the song ID is unavailable.'
-      })
-      return
-    }
-
-    // Get the current song's songID
-    const currentSongID = roomBot.currentSong.songId
-    console.log(`Current song ID: ${currentSongID}`)
-
-    // Get the user's token for authorization
-    const userToken = userTokens[userId]
-    console.log(`User token for deletion: ${userToken ? 'Token found' : 'No token found'}`)
-
+    ////////////////////////////// SPORTS ODDS /////////////////////////////
+  } else if (payload.message === '/mlbodds') {
     try {
-      // Fetch the user's queue with the user's token
-      const userQueue = await fetchAllUserQueueSongIDsWithUUID(userToken)
-
-      const matchingSong = userQueue.find(song => song.songID === currentSongID) // Note the corrected property `songID`
-
-      if (!matchingSong) {
-        console.log('No matching song found in user queue.')
-        await postMessage({
-          room,
-          message: 'The currently playing song is not in your queue, so it cannot be deleted.'
-        })
-        return
-      }
-
-      // Extract the corresponding crateSongUUID
-      const crateSongUUID = matchingSong.crateSongUUID
-      console.log(`Found matching song in queue with crateSongUUID: ${crateSongUUID}`)
-
-      // Call the DeleteQueueSong function to remove the song
-      console.log('Attempting to delete the song...')
-      await DeleteQueueSong(crateSongUUID, userToken)
-      console.log(`Successfully deleted the song with crateSongUUID: ${crateSongUUID}`)
-
-      // Provide success feedback
-      await postMessage({
-        room,
-        message: `Successfully deleted the current song from the queue with crateSongUUID: ${crateSongUUID}.`
-      })
+      const sport = 'baseball_mlb';
+      const data = await fetchOddsForSport(sport);
+      if (!data) throw new Error('No data returned');
+  
+      saveOddsForSport(sport, data);
+  
+      const oddsMsg = formatOddsMessage(data, sport);
+      await postMessage({ room, message: oddsMsg });
     } catch (error) {
-      console.error(`Failed to delete the current song: ${error.message}`)
+      console.error('Error fetching or posting MLB odds:', error);
+      console.log(oddsMsg)
+      await postMessage({ room, message: 'Sorry, something went wrong fetching MLB odds.' });
+    }  
+
+  } else if (payload.message.startsWith('/sportsbet')) {
+    const args = payload.message.trim().split(/\s+/);
+    const senderUUID = payload.sender;
+    const nickname = await getSenderNickname(senderUUID);
+    const room = process.env.ROOM_UUID;
+  
+    console.log('⚡ /sportsbet command received');
+    console.log('Arguments:', args);
+  
+    if (args.length < 6) {
       await postMessage({
         room,
-        message: `Failed to delete the current song: ${error.message}.`
-      })
+        message: 'Usage: /sportsbet SPORT INDEX TEAM TYPE AMOUNT\nExample: /sportsbet mlb 2 NYY ml 50'
+      });
+      return;
     }
+  
+    const sportAlias = args[1].toLowerCase();
+    const sportMap = {
+      mlb: 'baseball_mlb',
+      nba: 'basketball_nba',
+      nfl: 'americanfootball_nfl',
+      nhl: 'icehockey_nhl'
+    };
+    const sport = sportMap[sportAlias];
+  
+    if (!sport) {
+      await postMessage({ room, message: 'Unsupported sport. Try: mlb, nba, nfl, nhl' });
+      return;
+    }
+  
+    const rawIndex = parseInt(args[2], 10);
+    const index = rawIndex - 1; // convert to 0-based index
+    const team = args[3];
+    const betType = args[4].toLowerCase(); // 'ml' or 'spread'
+    const amount = parseFloat(args[5]);
+  
+    if (isNaN(index) || !team || isNaN(amount) || amount <= 0) {
+      await postMessage({
+        room,
+        message: 'Please enter a valid command: /sportsbet SPORT INDEX TEAM TYPE AMOUNT\nExample: /sportsbet mlb 2 NYY ml 50'
+      });
+      return;
+    }
+  
+    const oddsData = getOddsForSport(sport);
+    if (!oddsData || index < 0 || index >= oddsData.length) {
+      await postMessage({
+        room,
+        message: 'Invalid game index. Use /odds SPORT to see available games.'
+      });
+      return;
+    }
+  
+    const balance = await getUserWallet(senderUUID);
+    if (amount > balance) {
+      await postMessage({
+        room,
+        message: `Insufficient funds, ${nickname}. Your balance is $${balance}.`
+      });
+      return;
+    }
+  
+    const result = await placeSportsBet(senderUUID, index, team, betType, amount, sport);
+  
+    if (typeof result === 'string' && result.startsWith('✅')) {
+      await removeFromUserWallet(senderUUID, amount);
+    }
+  
+    console.log('Bet Result:', result);
+    await postMessage({ room, message: result });
+
+  } else if (payload.message.startsWith('/resolvebets')) {
+    await resolveCompletedBets();
+    await postMessage({
+      room,
+      message: 'Open bets have been resolved'
+    });
+    return;
+  
+    //////////////////////////// ////////////////////////////
+
+
   } else if (payload.message.startsWith('/search')) {
     console.log('Processing /search command...')
 
@@ -511,19 +565,15 @@ export default async (payload, room, state) => {
         message: `Sorry, I couldn't find "${trackName}" by ${artistName} on Spotify.`
       })
     }
-  } else if (payload.message.startsWith('/test')) {
-    await postMessage({
-      room,
-      message: 'Hello'
-    })
-    // Send a direct message to the sender
-    const senderUUID = payload.sender // Extract sender's UUID
-    await sendDirectMessage(senderUUID, 'This is a private test message just for you!')
-  } else if (payload.message.startsWith('/commands')) {
-    await postMessage({
-      room,
-      message: 'General commands are:\n- /theme: Checks the current room theme\n- /games: List of games to play\n- /escortme: Stagedive after your next song\n- /djbeer: Gives the DJ a beer\n- /album: Display album info for current song\n- /score: Spotify popularity score\n- /bankroll: Lists top wallet leaders\n -/reviewhelp: Lists song revew instructions\n- /lottowinners: Lists all lottery ball winners\n- /gifs: Bot will list all GIF commands\n- /mod: Bot will list all Mod commands'
-    })
+    } else if (payload.message.startsWith('/test')) {
+      const topcharts = await getTopChartTracks(10);  // await the async call, pass limit if you want
+      console.log(topcharts); // logs the resolved array of tracks
+      await postMessage({
+        room,
+        message: `Logged top chart tracks to console.`
+      });
+
+  
     /// /////////////// General Commands ////////////////
   } else if (payload.message.startsWith('/games')) {
     await postMessage({
@@ -1769,12 +1819,13 @@ else if (payload.message.startsWith('/randomavatar')) {
   
   📝 **Commands**:  
   /review <1-6> – Submit a review for the current song  
-  /rating – See the average rating from all users  
+  /rating – See the average rating for the current song
   /topsongs – See the top 5 highest rated songs 
   /reviewhelp – Show this review guide  
   /albumreview <1-6> – Submit a review for the albums
   /topalbums – See the top 5 highest rated albums 
-  
+  /mytopalbums – See your personal top 5 highest rated albums 
+
   Reviews contribute to the song’s overall score in the stats. Thanks for sharing your taste! 🎶`
   
     await postMessage({
@@ -1809,7 +1860,7 @@ else if (payload.message.startsWith('/randomavatar')) {
     if (result.success) {
       await postMessage({
         room,
-        message: `@${await getUserNickname(sender)} thanks! Your ${rating}/6 review has been saved.`
+        message: `@${await getUserNickname(sender)} thanks! Your ${rating}/6 song review has been saved.`
       })
     } else if (result.reason === 'duplicate') {
       await postMessage({
@@ -1919,49 +1970,138 @@ for (let i = 0; i < topSongs.length; i++) {
     }
   }
   
-
-
- else if (payload.message.startsWith('/topalbums')) {
+  else if (payload.message.startsWith('/mytopsongs')) {
+    const userId = payload.sender
+    const topSongs = await getUserSongReviews(userId, 5)
+  
+    if (!topSongs.length) {
+      await postMessage({
+        room,
+        message: `@${await getUserNickname(userId)} you haven't rated any songs yet. Start rating with /songreview! 🎵`
+      })
+      return
+    }
+  
+    const numberEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣']
+    const customDataSongs = []
+  
+    for (let i = 0; i < topSongs.length; i++) {
+      const song = topSongs[i]
+      const emoji = numberEmojis[i] || `#${i + 1}`
+  
+      try {
+        const songData = await fetchSongData(song.spotifyTrackId)
+  
+        const songLabel = `*${song.artistName} – ${song.trackName}*`
+        const ratingText = `Your rating: ${song.rating}/6 ⭐`
+  
+        // Send each song message with custom data
+        await postMessage({
+          room,
+          message: `${emoji} ${songLabel} (${ratingText})`,
+          customData: {
+            songs: [
+              {
+                song: {
+                  ...songData,
+                  musicProviders: songData.musicProvidersIds,
+                  status: 'SUCCESS'
+                }
+              }
+            ]
+          }
+        })
+  
+        // Optionally collect for bulk post later
+        customDataSongs.push({
+          song: {
+            ...songData,
+            musicProviders: songData.musicProvidersIds,
+            status: 'SUCCESS'
+          }
+        })
+  
+      } catch (err) {
+        console.error(`Failed to fetch song data for ${song.trackName}:`, err.message)
+      }
+    }
+  
+  
+  
+} else if (payload.message.startsWith('/topalbums')) {
   const numberEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣']
+  const topAlbums = await getTopAlbumReviews(5)
 
-const topAlbums = await getTopAlbumReviews(5)
+  if (!topAlbums || topAlbums.length === 0) {
+    await postMessage({
+      room,
+      message: `🎵 No album reviews found yet! Start rating albums with /albumreview to get featured here! 🎵`
+    })
+    return
+  }
 
-if (!topAlbums || topAlbums.length === 0) {
   await postMessage({
     room,
-    message: `🎵 No album reviews found yet! Start rating albums with /albumreview to get featured here! 🎵`
+    message: `🎶 *Top Album Reviews* 🎶`
   })
-  return
-}
 
-const summary = topAlbums
-  .map((album, i) => {
+  for (const [i, album] of topAlbums.entries()) {
     const rankEmoji = numberEmojis[i] || `${i + 1}.`
     const avg = typeof album.averageReview === 'number' ? album.averageReview.toFixed(2) : 'N/A'
     const reviewCount = album.reviews?.length || 0
-    return `${rankEmoji} *"${album.albumName}"* by *${album.artistName}*\n   ➤ ⭐ Average Rating: ${avg}/6 (${reviewCount} review${reviewCount === 1 ? '' : 's'})`
-  })
-  .join('\n\n')
 
-// Send text summary first
-await postMessage({
-  room,
-  message: `🎶 *Top Album Reviews* 🎶\n\n${summary}`
-})
-
-// Send album art images one by one with captions
-for (const [index, album] of topAlbums.entries()) {
-  if (album.albumArt) {
     await postMessage({
       room,
-      message: `🖼️ Cover Art for ${numberEmojis[index] || `#${index + 1}`} — "${album.albumName}"`,
-      images: [album.albumArt]
+      message: `${rankEmoji} *"${album.albumName}"* by *${album.artistName}*\n   ➤ ⭐ Average Rating: ${avg}/6 (${reviewCount} review${reviewCount === 1 ? '' : 's'})`
     })
-  }
-}
- }
 
-  else if (payload.message === '/rating') {
+    if (album.albumArt) {
+      await postMessage({
+        room,
+        message: `🖼️ Cover Art for "${album.albumName}"`,
+        images: [album.albumArt]
+      })
+    }
+  }
+
+
+} else if (payload.message.startsWith('/mytopalbums')) {
+  const userId = payload.sender
+  const userAlbums = await getUserAlbumReviews(userId, 5)
+
+  if (!userAlbums || userAlbums.length === 0) {
+    await postMessage({
+      room,
+      message: `🎵 @${await getUserNickname(userId)} you haven't rated any albums yet! Use /albumreview to start rating.`
+    })
+    return
+  }
+
+  await postMessage({
+    room,
+    message: `🎶 *Your Top Album Ratings* 🎶`
+  })
+
+  const numberEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣']
+
+  for (const [i, album] of userAlbums.sort((a, b) => b.rating - a.rating).entries()) {
+    const rankEmoji = numberEmojis[i] || `${i + 1}.`
+    await postMessage({
+      room,
+      message: `${rankEmoji} *"${album.albumName}"* by *${album.artistName}*\n   ➤ ⭐ Your Rating: ${album.rating}/6`
+    })
+
+    if (album.albumArt) {
+      await postMessage({
+        room,
+        message: `🖼️ Cover Art for "${album.albumName}"`,
+        images: [album.albumArt]
+      })
+    }
+  }
+
+
+ } else if (payload.message === '/rating') {
     const currentSong = roomBot.currentSong
     if (!currentSong || !currentSong.trackName || !currentSong.artistName) {
       await postMessage({
@@ -2011,7 +2151,7 @@ for (const [index, album] of topAlbums.entries()) {
     }
   
     const result = await saveAlbumReview({
-      albumId: albumData.albumID,
+      albumId: albumData.albumId,
       albumName: albumData.albumName,
       albumArt:albumData.albumArt,
       artistName: albumData.artistName,
@@ -2611,105 +2751,74 @@ for (const [index, album] of topAlbums.entries()) {
       })
     }
   } else if (payload.message.startsWith('/suggestsongs')) {
-    console.log('Processing /suggestsongs command...')
-
-    const recentSongs = readRecentSongs()
-    console.log('Recent Songs Data:', recentSongs)
-
+  
+    const recentSongs = readRecentSongs();
+  
     if (!recentSongs || recentSongs.length === 0) {
       await postMessage({
         room,
         message: "I don't have any recent songs to suggest right now."
-      })
-      return
+      });
+      return;
     }
-
-    // Format song details for the AI question
-    const songList = recentSongs.map(song => {
-      return `Track: *${song.trackName}* | Artist: *${song.artistName}*`
-    }).join('\n')
-    console.log('Formatted Song List for AI:', songList)
-
-    // Create a question prompt for the AI
-    const question = `Here is a list of songs i've listened to recently. \n ${songList}. Can you suggest about 5 similar songs that you think I may enjoy? Please follow this format strictly:\n\nTrack: <Track Name> | Artist: <Artist Name>\n\nFor each song suggestion, use a new line, and do not include any extra commentary or notes outside of this format.`
-
-    console.log('AI Question:', question)
-
-    // Get AI's response
-    const aiResponse = await askQuestion(question)
-    console.log('AI Response:', aiResponse)
-
-    // Clean up and split the response
-    const songSuggestions = aiResponse.split('\n').map(item => {
-      const parts = item.split('|') // Split by " | "
-
-      // If the response is in the right format
-      if (parts.length === 2) {
-        let trackName = parts[0].replace('Track: ', '').trim() // Remove 'Track: ' from the front
-        let artistName = parts[1].replace('Artist: ', '').trim() // Remove 'Artist: ' from the front
-
-        // Clean up track and artist names (removing extra spaces or characters)
-        trackName = cleanName(trackName)
-        artistName = cleanName(artistName)
-
-        console.log(`Parsed track: ${trackName}, artist: ${artistName}`)
-        return { trackName, artistName }
+  
+    const suggestedTracks = [];
+    const seenArtists = new Set();
+    const seenTracks = new Set();
+  
+    for (const song of recentSongs.slice(0, 5)) {
+      const { artistName, trackName } = song;
+      const similar = await getSimilarTracks(artistName, trackName);
+  
+      for (const suggestion of similar) {
+        const artist = suggestion.artistName.trim().toLowerCase();
+        const track = suggestion.trackName.trim().toLowerCase();
+        const uniqueKey = `${artist} - ${track}`;
+  
+        if (seenArtists.has(artist) || seenTracks.has(uniqueKey)) continue;
+  
+        seenArtists.add(artist);
+        seenTracks.add(uniqueKey);
+        suggestedTracks.push(suggestion);
+  
+        if (suggestedTracks.length >= 5) break;
       }
-      return null // Handle malformed lines
-    }).filter(Boolean) // Remove null values from malformed lines
-
-    // Clean function to remove unwanted characters
-    function cleanName (name) {
-      return name.replace(/[^a-zA-Z0-9\s&'\-]/g, '').trim() // Allow spaces, letters, numbers, and simple punctuation
+  
+      if (suggestedTracks.length >= 5) break;
     }
-
-    // Create an array to hold the custom data payload
-    const customDataSongs = []
-
-    // Search Spotify for each song suggestion
-    for (const suggestion of songSuggestions) {
-      const { trackName, artistName } = suggestion
-
-      if (trackName && artistName) {
-        const trackDetails = await searchSpotify(artistName, trackName)
-
+  
+    const customDataSongs = [];
+  
+    for (const { trackName, artistName } of suggestedTracks) {
+      try {
+        const trackDetails = await searchSpotify(artistName, trackName);
         if (trackDetails && trackDetails.spotifyUrl) {
-          // Fetch additional data for the song
-          const songData = await fetchSongData(trackDetails.spotifyTrackID)
-
-          // Transform the song data
-          const transformedSongData = {
-            ...songData,
-            musicProviders: songData.musicProvidersIds, // Ensure this matches the expected structure
-            status: 'SUCCESS'
-          }
-
-          // Push the transformed song data to the customData array
+          const songData = await fetchSongData(trackDetails.spotifyTrackID);
           customDataSongs.push({
-            song: transformedSongData
-          })
+            song: {
+              ...songData,
+              musicProviders: songData.musicProvidersIds,
+              status: 'SUCCESS'
+            }
+          });
         }
+      } catch (err) {
+        console.warn(`❌ Failed to process ${trackName} by ${artistName}:`, err.message);
       }
     }
-
-    // If we have custom data songs, send them
+  
     if (customDataSongs.length > 0) {
-      const customData = {
-        songs: customDataSongs
-      }
-
-      // Send the custom data to the room
       await postMessage({
         room,
-        message: 'Here are some song suggestions:',
-        customData // Attach custom data here
-      })
+        message: '🎧 Here are 5 new songs you might enjoy:',
+        customData: { songs: customDataSongs }
+      });
     } else {
       await postMessage({
         room,
-        message: 'Sorry, I couldn\'t find any song suggestions.'
-      })
-    }
+        message: "Sorry, I couldn't find any playable suggestions from Last.fm."
+      });
+    }  
 
     /// /////////////// SPECIAL //////////////////////////
   } else if (payload.message.startsWith('/afk')) {

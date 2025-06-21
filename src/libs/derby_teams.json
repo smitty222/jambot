@@ -1,7 +1,7 @@
 [
   {
     "name": "Allen",
-    "totalHR": 84,
+    "totalHR": 90,
     "players": [
       {
         "id": "41292",
@@ -19,7 +19,7 @@
         "id": "39832",
         "name": "Shohei Ohtani",
         "team": "LAD",
-        "homeRuns": 15
+        "homeRuns": 20
       },
       {
         "id": "34923",
@@ -37,7 +37,7 @@
         "id": "42714",
         "name": "Kerry Carpenter",
         "team": "DET",
-        "homeRuns": 9
+        "homeRuns": 10
       },
       {
         "id": "34886",
@@ -61,7 +61,7 @@
   },
   {
     "name": "BeRad",
-    "totalHR": 81,
+    "totalHR": 87,
     "players": [
       {
         "id": "39907",
@@ -79,7 +79,7 @@
         "id": "34967",
         "name": "Kyle Tucker",
         "team": "CHC",
-        "homeRuns": 9
+        "homeRuns": 12
       },
       {
         "id": "33377",
@@ -103,7 +103,7 @@
         "id": "33192",
         "name": "Aaron Judge",
         "team": "NYY",
-        "homeRuns": 15
+        "homeRuns": 18
       },
       {
         "id": "40926",
@@ -121,7 +121,7 @@
   },
   {
     "name": "Noremac",
-    "totalHR": 76,
+    "totalHR": 82,
     "players": [
       {
         "id": "32129",
@@ -151,7 +151,7 @@
         "id": "37498",
         "name": "Pete Alonso",
         "team": "NYM",
-        "homeRuns": 9
+        "homeRuns": 11
       },
       {
         "id": "35578",
@@ -163,7 +163,7 @@
         "id": "4918256",
         "name": "James Wood",
         "team": "WSH",
-        "homeRuns": 10
+        "homeRuns": 14
       },
       {
         "id": "42598",
@@ -181,7 +181,7 @@
   },
   {
     "name": "Chill Duck Lookin MF",
-    "totalHR": 74,
+    "totalHR": 76,
     "players": [
       {
         "id": "4686066",
@@ -211,7 +211,7 @@
         "id": "35983",
         "name": "Fernando Tatis Jr.",
         "team": "SD",
-        "homeRuns": 11
+        "homeRuns": 13
       },
       {
         "id": "34982",
@@ -241,13 +241,13 @@
   },
   {
     "name": "Rsmitty",
-    "totalHR": 68,
+    "totalHR": 74,
     "players": [
       {
         "id": "42179",
         "name": "Riley Greene",
         "team": "DET",
-        "homeRuns": 8
+        "homeRuns": 12
       },
       {
         "id": "32159",
@@ -271,7 +271,7 @@
         "id": "4717833",
         "name": "Pete Crow-Armstrong",
         "team": "CHC",
-        "homeRuns": 12
+        "homeRuns": 14
       },
       {
         "id": "30627",

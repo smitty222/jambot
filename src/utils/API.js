@@ -513,6 +513,34 @@ async function fetchCurrentUsers () {
   }
 }
 
+export async function updateRoomPosterFile(slug, posterFileUrl) {
+  const token = process.env.TTL_USER_TOKEN
+
+  try {
+    const response = await fetch(`https://gateway.prod.tt.fm/api/room-service/rooms/${slug}`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        accept: 'application/json'
+      },
+      body: JSON.stringify({
+        posterFile: posterFileUrl
+      })
+    })
+
+    if (!response.ok) {
+      throw new Error(`Failed to update posterFile: ${response.statusText}`)
+    }
+
+    const data = await response.json()
+    return data
+  } catch (error) {
+    throw new Error(`Error updating room posterFile: ${error.message}`)
+  }
+}
+
+
 export async function fetchUserData(userUUIDs) {
   const token = process.env.TTL_USER_TOKEN;
   if (!userUUIDs || userUUIDs.length === 0) {
@@ -888,4 +916,153 @@ export async function getNBAScores() {
   return result; // Return the formatted string
 }
 
-export { getAccessToken, currentsongduration, spotifyTrackInfo, fetchTrackDetails, isUserAuthorized, fetchUserRoles, fetchRecentSongs, fetchCurrentUsers, fetchSpotifyPlaylistTracks, fetchCurrentlyPlayingSong, fetchSongData, DeleteQueueSong, fetchAllUserQueueSongIDsWithUUID, searchSpotify, getSenderNickname }
+////////////////////////// LAST FM ////////////////////////////////////
+
+export function cleanArtistName(artist) {
+  return artist
+    .split(/feat\.|ft\./i)[0]
+    .split(',')[0]
+    .trim();
+}
+
+export function cleanTrackName(track) {
+  return track.replace(/\(feat\..*?\)|\(ft\..*?\)/gi, '').trim();
+}
+
+async function getSimilarArtists(artist) {
+  const cleanedArtistName = cleanArtistName(artist);
+  const url = `https://ws.audioscrobbler.com/2.0/?method=artist.getsimilar&artist=${encodeURIComponent(cleanedArtistName)}&api_key=${process.env.LASTFM_API_KEY}&format=json`;
+  const res = await fetch(url);
+  const data = await res.json();
+  return data.similarartists?.artist?.map(a => a.name) || [];
+}
+
+export async function getSimilarTracks(artist, track) {
+  const cleanedArtistName = cleanArtistName(artist);
+  const cleanedTrackName = cleanTrackName(track);
+  const url = `https://ws.audioscrobbler.com/2.0/?method=track.getsimilar&artist=${encodeURIComponent(cleanedArtistName)}&track=${encodeURIComponent(cleanedTrackName)}&autocorrect=1&api_key=${process.env.LASTFM_API_KEY}&format=json&limit=10`;
+
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (data.error) {
+      return [];
+    }
+
+    let rawTracks = data.similartracks?.track;
+    if (!rawTracks) return [];
+
+    if (!Array.isArray(rawTracks)) {
+      rawTracks = [rawTracks];
+    }
+
+    return rawTracks
+      .filter(t => t?.name && t?.artist?.name)
+      .map(t => ({
+        trackName: t.name,
+        artistName: t.artist.name
+      }));
+
+  } catch {
+    return [];
+  }
+}
+
+async function getTrackTags(artist, track) {
+  const cleanedArtistName = cleanArtistName(artist);
+  const cleanedTrackName = cleanTrackName(track);
+  const url = `https://ws.audioscrobbler.com/2.0/?method=track.gettoptags&artist=${encodeURIComponent(cleanedArtistName)}&track=${encodeURIComponent(cleanedTrackName)}&api_key=${process.env.LASTFM_API_KEY}&format=json`;
+
+  const res = await fetch(url);
+  const data = await res.json();
+  return data.toptags?.tag?.map(t => t.name.toLowerCase()) || [];
+}
+
+export async function getArtistTags(artistName) {
+  const cleanedArtistName = cleanArtistName(artistName);
+  const url = `https://ws.audioscrobbler.com/2.0/?method=artist.gettoptags&artist=${encodeURIComponent(cleanedArtistName)}&api_key=${process.env.LASTFM_API_KEY}&format=json`;
+
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (data?.toptags?.tag?.length) {
+      return data.toptags.tag
+        .filter(tag => tag.name && !isNaN(parseInt(tag.count)))
+        .sort((a, b) => parseInt(b.count) - parseInt(a.count))
+        .map(tag => tag.name.toLowerCase());
+    }
+
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+export async function getTopChartTracks(limit = 50) {
+  const url = `https://ws.audioscrobbler.com/2.0/?method=chart.gettoptracks&api_key=${process.env.LASTFM_API_KEY}&format=json&limit=${limit}`;
+
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (data?.tracks?.track?.length) {
+      return data.tracks.track.map(track => ({
+        trackName: track.name,
+        artistName: track.artist.name,
+        playcount: parseInt(track.playcount),
+        listeners: parseInt(track.listeners),
+      }));
+    }
+
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+export async function getTopArtistTracks(artist) {
+  const cleanedArtistName = cleanArtistName(artist);
+  const url = `https://ws.audioscrobbler.com/2.0/?method=artist.gettoptracks&artist=${encodeURIComponent(cleanedArtistName)}&api_key=${process.env.LASTFM_API_KEY}&format=json&limit=10`;
+
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (data.toptracks && data.toptracks.track) {
+      return data.toptracks.track.map(t => ({
+        trackName: t.name,
+        playcount: t.playcount ? parseInt(t.playcount, 10) : 0
+      }));
+    }
+
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+export async function getTopTracksByTag(tag, limit = 10) {
+  const url = `https://ws.audioscrobbler.com/2.0/?method=tag.gettoptracks&tag=${encodeURIComponent(tag)}&api_key=${process.env.LASTFM_API_KEY}&format=json&limit=${limit}`
+
+  try {
+    const res = await fetch(url)
+    const data = await res.json()
+
+    if (data?.tracks?.track?.length) {
+      return data.tracks.track.map(track => ({
+        trackName: track.name,
+        artistName: track.artist.name
+      }))
+    }
+
+    return []
+  } catch (error) {
+    console.error(`❌ Error fetching top tracks by tag "${tag}":`, error)
+    return []
+  }
+}
+
+
+export { getAccessToken, getSimilarArtists, getTrackTags, currentsongduration, spotifyTrackInfo, fetchTrackDetails, isUserAuthorized, fetchUserRoles, fetchRecentSongs, fetchCurrentUsers, fetchSpotifyPlaylistTracks, fetchCurrentlyPlayingSong, fetchSongData, DeleteQueueSong, fetchAllUserQueueSongIDsWithUUID, searchSpotify, getSenderNickname }

@@ -67,3 +67,33 @@ export async function logCurrentSong(song, likes = 0, dislikes = 0, stars = 0) {
   }
 }
 
+export async function getUserSongReviews(userId, limit = 5) {
+  try {
+    const file = await fs.readFile(statsFilePath, 'utf-8')
+    const songs = JSON.parse(file)
+
+    const userSongs = songs
+      .map(song => {
+        const userReview = song.reviews?.find(r => r.userId === userId)
+        if (userReview) {
+          return {
+            trackName: song.trackName,
+            artistName: song.artistName,
+            albumName: song.albumName || 'Unknown Album',
+            spotifyTrackId: song.spotifyTrackId,
+            rating: userReview.rating
+          }
+        }
+        return null
+      })
+      .filter(Boolean)
+
+    userSongs.sort((a, b) => b.rating - a.rating)
+
+    return userSongs.slice(0, limit)
+  } catch (err) {
+    console.error('Failed to fetch user song reviews:', err)
+    return []
+  }
+}
+

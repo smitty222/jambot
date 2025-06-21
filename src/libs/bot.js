@@ -3,7 +3,7 @@ import { SocketClient } from 'ttfm-socket'
 import { joinChat, getMessages } from './cometchat.js'
 import { logger } from '../utils/logging.js'
 import { handlers } from '../handlers/index.js'
-import { fetchSpotifyPlaylistTracks, fetchCurrentUsers, spotifyTrackInfo, fetchCurrentlyPlayingSong, fetchSongData } from '../utils/API.js'
+import { fetchSpotifyPlaylistTracks, fetchCurrentUsers, spotifyTrackInfo, fetchCurrentlyPlayingSong, fetchSongData, getSimilarArtists, getSimilarTracks, getArtistTags, getTopArtistTracks } from '../utils/API.js'
 import { postVoteCountsForLastSong } from '../utils/voteCounts.js'
 import { usersToBeRemoved, roomThemes } from '../handlers/message.js'
 import { escortUserFromDJStand } from '../utils/escortDJ.js'
@@ -19,6 +19,8 @@ import { dirname, join } from 'path'
 import fs from 'fs'
 import { logCurrentSong } from './roomStats.js'
 import * as themeManager from '../utils/themeManager.js'
+
+const botUUID = process.env.BOT_USER_UUID
 
 export function getCurrentDJUUIDs (state) {
   if (!state?.djs) {
@@ -36,10 +38,18 @@ export function getCurrentSpotifyUrl () {
   }
 }
 
-export async function isUserDJ (senderUuid, state) {
-  const currentDJs = getCurrentDJUUIDs(state) // Get the list of DJ UUIDs
-  return currentDJs.includes(senderUuid) //
+export function isUserDJ(senderUuid, state) {
+  const currentDJs = getCurrentDJUUIDs(state);
+  return currentDJs.includes(senderUuid);
 }
+
+export function whoIsCurrentDJ(state) {
+  const currentDJUuid = getCurrentDJ(state);
+  return currentDJUuid === process.env.BOT_USER_UUID ? "bot" : "user";
+}
+
+
+
 
 // Function to get the UUID of the current DJ (the one playing the song)
 export function getCurrentDJ (state) {
@@ -64,21 +74,56 @@ export const readRecentSongs = () => {
   }
 }
 
-const updateRecentSongs = (newSong) => {
+const updateRecentSongs = async (newSong) => {
   try {
-    const recentSongs = readRecentSongs() // Read current recent songs
-    recentSongs.unshift(newSong) // Add the new song to the beginning
+    const recentSongs = readRecentSongs();
 
-    if (recentSongs.length > 5) {
-      recentSongs.pop() // Keep only the last 5 songs
+    // === STEP 1: Populate similarTracks ===
+    const similarTracks = await getSimilarTracks(newSong.artistName, newSong.trackName);
+
+    if (similarTracks?.length > 0) {
+      newSong.similarTracks = similarTracks
+        .filter(t => t?.trackName && t?.artistName)
+        .slice(0, 3);
+    } else {
+      const similarArtists = await getSimilarArtists(newSong.artistName);
+      const fallbackTracks = [];
+
+      for (const artistName of similarArtists.slice(0, 3)) {
+        const topTracks = await getTopArtistTracks(artistName);
+        const validTracks = topTracks.filter(t => t?.trackName);
+
+        if (validTracks.length > 0) {
+          const randomIndex = Math.floor(Math.random() * Math.min(10, validTracks.length));
+          fallbackTracks.push({
+            trackName: validTracks[randomIndex].trackName,
+            artistName: artistName
+          });
+        }
+      }
+
+      newSong.similarTracks = fallbackTracks;
     }
 
-    fs.writeFileSync(recentSongsFilePath, JSON.stringify({ songs: recentSongs }, null, 2), 'utf8')
-    console.log('Recent songs updated successfully.')
+    // === STEP 2: Add to recentSongs list ===
+    recentSongs.unshift(newSong);
+
+    if (recentSongs.length > 30) {
+      recentSongs.length = 30;
+    }
+
+    fs.writeFileSync(
+      recentSongsFilePath,
+      JSON.stringify({ songs: recentSongs }, null, 2),
+      'utf8'
+    );
   } catch (error) {
-    console.error('Error updating recent songs:', error)
+    console.error('❌ Error updating recent songs:', error);
   }
-}
+};
+
+
+
 
 export class Bot {
   constructor (clientId, clientSecret, redirectUri) {
@@ -252,7 +297,6 @@ export class Bot {
               spotifyTrackId = currentlyPlaying.spotifyTrackId
               songId = currentlyPlaying.songId
                } catch (error) {
-              console.error(error)
                 }       
           // Fetch additional track details using the Spotify Track ID
           if (spotifyTrackId) {
@@ -306,32 +350,40 @@ export class Bot {
           } catch (error) {
             console.error('Error logging current song to roomStats.json:', error)
           }
+          
+
 
 
           try {
+            const djType = whoIsCurrentDJ(this.state);
             const newSong = {
               trackName: this.currentSong.trackName,
               artistName: this.currentSong.artistName,
               albumName: this.currentSong.albumName,
               releaseDate: this.currentSong.releaseDate,
               spotifyUrl: this.currentSong.spotifyUrl,
-              popularity: this.currentSong.popularity
+              popularity: this.currentSong.popularity,
+              dj: djType
             }
 
-            const currentDJ = getCurrentDJ(this.state)
-            if (currentDJ === process.env.BOT_USER_UUID) { return }
-            updateRecentSongs(newSong)
+            
+            await updateRecentSongs(newSong)
           } catch (error) {
             console.error('Error updating recent songs:', error)
           }
 
-          const currentDJs = getCurrentDJUUIDs(this.state)
-          if (currentDJs.includes(process.env.BOT_USER_UUID)) {
-            console.log('Bot is on stage, updating next song...')
-            await self.updateNextSong(true)
+          const currentDJs = getCurrentDJUUIDs(this.state);
+          const botUUID = process.env.BOT_USER_UUID;
+
+
+          // Check if the bot is 2nd in the lineup
+          const botIndex = currentDJs.indexOf(botUUID);
+
+          if (botIndex === 1) {
+            await self.updateNextSong(true);
           } else {
-            console.log('Bot is not on stage, skipping next song update.')
           }
+
 
           self.scheduleLikeSong(process.env.ROOM_UUID, process.env.BOT_USER_UUID)
           setTimeout(() => {

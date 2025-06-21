@@ -95,8 +95,13 @@ export async function saveSongReview({ currentSong, rating, sender }) {
     const existingReview = songStats.reviews.find(r => r.userId === sender)
     if (existingReview) {
       existingReview.rating = rating
+      existingReview.userPlayCount = (existingReview.userPlayCount || 0) + 1
     } else {
-      songStats.reviews.push({ userId: sender, rating })
+      songStats.reviews.push({
+        userId: sender,
+        rating,
+        userPlayCount: 1
+      })
     }
 
     // Recalculate average
@@ -111,6 +116,7 @@ export async function saveSongReview({ currentSong, rating, sender }) {
     return { success: false, reason: 'error' }
   }
 }
+
 
 export async function getAverageRating(currentSong) {
   try {

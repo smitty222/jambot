@@ -76,4 +76,37 @@ export const getTopAlbumReviews = async (limit = 5) => {
     return []
   }
 }
+export const getUserAlbumReviews = async (userId, limit = 5) => {
+  try {
+    const file = await fs.readFile(albumStatsPath, 'utf-8')
+    const albums = JSON.parse(file)
+
+    // Filter albums reviewed by user and map to include user's rating
+    const userAlbums = albums
+      .map(album => {
+        const userReview = album.reviews?.find(r => r.userId === userId)
+        if (userReview) {
+          return {
+            albumId: album.albumId,
+            albumName: album.albumName,
+            albumArt: album.albumArt,
+            artistName: album.artistName,
+            trackCount: album.trackCount,
+            rating: userReview.rating
+          }
+        }
+        return null
+      })
+      .filter(a => a !== null)
+
+    // Sort by user's rating descending
+    userAlbums.sort((a, b) => b.rating - a.rating)
+
+    // Return top `limit`
+    return userAlbums.slice(0, limit)
+  } catch (err) {
+    console.error('Failed to fetch user album reviews:', err)
+    return []
+  }
+}
 
