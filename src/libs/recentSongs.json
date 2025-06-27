@@ -1,71 +1,666 @@
 {
   "songs": [
     {
-      "trackName": "Song About You",
-      "artistName": "Mike Posner",
-      "albumName": "Song About You",
-      "releaseDate": "2018-09-10",
-      "spotifyUrl": "https://open.spotify.com/track/0Knc89pMAsIZbK8tor7i93",
-      "popularity": 0,
+      "trackName": "TLC",
+      "artistName": "Chiddy Bang",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 9,
       "dj": "user",
       "similarTracks": [
         {
-          "trackName": "Move On",
-          "artistName": "Mike Posner"
+          "trackName": "Both of Us (feat. Taylor Swift)",
+          "artistName": "B.o.B"
         },
         {
-          "trackName": "Mad Love",
-          "artistName": "Sean Paul"
+          "trackName": "Surprise Party (feat. Blackbear)",
+          "artistName": "Hoodie Allen"
         },
         {
-          "trackName": "Dreams",
-          "artistName": "bazzi"
+          "trackName": "Wing$",
+          "artistName": "Macklemore & Ryan Lewis"
         }
       ]
     },
     {
-      "trackName": "Pink Pony Club",
-      "artistName": "Chappell Roan",
-      "albumName": "The Rise and Fall of a Midwest Princess",
-      "releaseDate": "2023-09-22",
-      "spotifyUrl": "https://open.spotify.com/track/1k2pQc5i348DCHwbn5KTdc",
+      "trackName": "Blinding Lights",
+      "artistName": "The Naked And Famous",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 39,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Higher",
+          "artistName": "The Naked and Famous"
+        },
+        {
+          "trackName": "Rolling Waves",
+          "artistName": "The Naked and Famous"
+        },
+        {
+          "trackName": "Do I Wanna Know? (Triple J Like A Version)",
+          "artistName": "CHVRCHES"
+        }
+      ]
+    },
+    {
+      "trackName": "Ty Dolla $ign - Blasé (Louis The Child Remix)",
+      "artistName": "Louis The Child",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 0,
+      "dj": "user",
+      "similarTracks": []
+    },
+    {
+      "trackName": "Real Love Baby",
+      "artistName": "Father John Misty",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 81,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "James Blues",
+          "artistName": "J. Tillman"
+        },
+        {
+          "trackName": "Mykonos",
+          "artistName": "Fleet Foxes"
+        },
+        {
+          "trackName": "The End of the World",
+          "artistName": "Sharon Van Etten"
+        }
+      ]
+    },
+    {
+      "trackName": "Billie Jean",
+      "artistName": "Weezer",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 44,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Stand By Me",
+          "artistName": "Weezer"
+        },
+        {
+          "trackName": "Paranoid",
+          "artistName": "Weezer"
+        },
+        {
+          "trackName": "The Guitar Man",
+          "artistName": "Cake"
+        }
+      ]
+    },
+    {
+      "trackName": "Lithonia",
+      "artistName": "Childish Gambino",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 63,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "the BLACK seminole.",
+          "artistName": "Lil Yachty"
+        },
+        {
+          "trackName": "Houdini",
+          "artistName": "Eminem"
+        },
+        {
+          "trackName": "Steps Beach",
+          "artistName": "Childish Gambino"
+        }
+      ]
+    },
+    {
+      "trackName": "Tropics",
+      "artistName": "Mantaraybryn",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 0,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "California",
+          "artistName": "LaPeer"
+        },
+        {
+          "trackName": "The Overkill",
+          "artistName": "Small Million"
+        },
+        {
+          "trackName": "Campfires on Mars",
+          "artistName": "Daddy NAT"
+        }
+      ]
+    },
+    {
+      "trackName": "You Really Got Me (2015 Remaster)",
+      "artistName": "Van Halen",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 71,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Your Love Is Driving Me Crazy",
+          "artistName": "Sammy Hagar"
+        },
+        {
+          "trackName": "A Lil' Ain't Enough",
+          "artistName": "David Lee Roth"
+        },
+        {
+          "trackName": "Animal",
+          "artistName": "Def Leppard"
+        }
+      ]
+    },
+    {
+      "trackName": "Heat Waves",
+      "artistName": "Glass Animals",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
       "popularity": 90,
-      "dj": "bot",
+      "dj": "user",
       "similarTracks": [
         {
-          "trackName": "Red Wine Supernova",
-          "artistName": "Chappell Roan"
+          "trackName": "Space Ghost Coast to Coast",
+          "artistName": "Glass Animals"
         },
         {
-          "trackName": "HOT TO GO!",
-          "artistName": "Chappell Roan"
+          "trackName": "Waterfalls Coming Out Your Mouth",
+          "artistName": "Glass Animals"
         },
         {
-          "trackName": "Juno",
-          "artistName": "Sabrina Carpenter"
+          "trackName": "Pompeii",
+          "artistName": "Bastille"
         }
       ]
     },
     {
-      "trackName": "Fresh Air",
-      "artistName": "Maasho, Weston Estate",
-      "albumName": "Fresh Air",
-      "releaseDate": "2019-06-21",
-      "spotifyUrl": "https://open.spotify.com/track/1NFNa1nGPnwdmcHO5XQ7Ui",
+      "trackName": "Lit (Bonus) (Bonus [Explicit])",
+      "artistName": "Bas",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 52,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Tribe",
+          "artistName": "Bas & J. Cole"
+        },
+        {
+          "trackName": "Life",
+          "artistName": "Lute"
+        },
+        {
+          "trackName": "Questions",
+          "artistName": "Cozz"
+        }
+      ]
+    },
+    {
+      "trackName": "Baby Blue (feat. Chance the Rapper)",
+      "artistName": "Action Bronson",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 63,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Descendant of the Stars",
+          "artistName": "Action Bronson & The Alchemist"
+        },
+        {
+          "trackName": "Not Enough Words",
+          "artistName": "Action Bronson & Statik Selektah"
+        },
+        {
+          "trackName": "E. Coli (feat. Earl Sweatshirt)",
+          "artistName": "The Alchemist"
+        }
+      ]
+    },
+    {
+      "trackName": "The Monster",
+      "artistName": "Eminem",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 59,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Love The Way You Lie",
+          "artistName": "Eminem"
+        },
+        {
+          "trackName": "Rap God",
+          "artistName": "Eminem"
+        },
+        {
+          "trackName": "Forgot About Dre",
+          "artistName": "Dr. Dre"
+        }
+      ]
+    },
+    {
+      "trackName": "Double Negative (Skeleton Milkshake)",
+      "artistName": "Dominic Fike",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 61,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Good Game",
+          "artistName": "Dominic Fike"
+        },
+        {
+          "trackName": "Cancel Me",
+          "artistName": "Dominic Fike"
+        },
+        {
+          "trackName": "OK",
+          "artistName": "Wallows"
+        }
+      ]
+    },
+    {
+      "trackName": "Luckiest Man",
+      "artistName": "The Wood Brothers",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 60,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Jackson Station",
+          "artistName": "The Band of Heathens"
+        },
+        {
+          "trackName": "The Muse",
+          "artistName": "The Wood Brothers"
+        },
+        {
+          "trackName": "Postcards From Hell",
+          "artistName": "The Wood Brothers"
+        }
+      ]
+    },
+    {
+      "trackName": "The Bee Gees x 50 cent Stayin' Alive In The Club",
+      "artistName": "Ryan Bramley",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 0,
+      "dj": "user",
+      "similarTracks": []
+    },
+    {
+      "trackName": "Colors (Acoustic)",
+      "artistName": "Black Pumas",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 39,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Sweet Water",
+          "artistName": "The Meltdown"
+        },
+        {
+          "trackName": "Can't hide it",
+          "artistName": "Curtis Harding"
+        },
+        {
+          "trackName": "Carry you",
+          "artistName": "The teskey brothers"
+        }
+      ]
+    },
+    {
+      "trackName": "Roses & Money (3LAU Mashup)",
+      "artistName": "Sarah",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
       "popularity": 0,
       "dj": "user",
       "similarTracks": [
         {
-          "trackName": "boyfriend",
-          "artistName": "Maasho"
+          "trackName": "dieci",
+          "artistName": "Annalisa"
         },
         {
-          "trackName": "strange",
-          "artistName": "Maasho"
+          "trackName": "Fino a qui",
+          "artistName": "Alessandra Amoroso"
         },
         {
-          "trackName": "see u dance",
-          "artistName": "Hong Kong Boyfriend"
+          "trackName": "Cercavo Amore",
+          "artistName": "Emma"
+        }
+      ]
+    },
+    {
+      "trackName": "Breathe Deeper (Lil Yachty Remix [Explicit])",
+      "artistName": "Tame Impala, Lil Yachty",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 57,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Moth Wings",
+          "artistName": "Pond"
+        },
+        {
+          "trackName": "Gemini",
+          "artistName": "Gum"
+        },
+        {
+          "trackName": "Shirim",
+          "artistName": "Melody's Echo Chamber"
+        }
+      ]
+    },
+    {
+      "trackName": "Soul to Squeeze",
+      "artistName": "Red Hot Chili Peppers",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 74,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "The Zephyr Song",
+          "artistName": "Red Hot Chili Peppers"
+        },
+        {
+          "trackName": "My Friends",
+          "artistName": "Red Hot Chili Peppers"
+        },
+        {
+          "trackName": "Drive",
+          "artistName": "Incubus"
+        }
+      ]
+    },
+    {
+      "trackName": "Peach Fuzz",
+      "artistName": "Caamp",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 67,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "No Sleep",
+          "artistName": "Caamp"
+        },
+        {
+          "trackName": "Snowshoes",
+          "artistName": "Caamp"
+        },
+        {
+          "trackName": "Strangers",
+          "artistName": "Mt. Joy"
+        }
+      ]
+    },
+    {
+      "trackName": "Pumped Up Kicks (BBC Live Version)",
+      "artistName": "The Kooks",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 39,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Tokyo (Vampires & Wolves)",
+          "artistName": "The Wombats"
+        },
+        {
+          "trackName": "Who Needs Love?",
+          "artistName": "Razorlight"
+        },
+        {
+          "trackName": "I Predict a Riot",
+          "artistName": "Kaiser Chiefs"
+        }
+      ]
+    },
+    {
+      "trackName": "Is This Love (Remix by Vicetone)",
+      "artistName": "The Tropical Pineapple",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 0,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Melanie Martinez || Soap (Max Liese Remix)",
+          "artistName": "La Tropicál"
+        },
+        {
+          "trackName": "A$AP Rocky - Fuckin' Problems Ft Xavier Dunn (Vijay & Sofia Zlatko, Kasúal Remix)",
+          "artistName": "Vijay and Sofia"
+        },
+        {
+          "trackName": "Pep & Rash - Rumors (Original Mix)",
+          "artistName": "Spinnin' Deep"
+        }
+      ]
+    },
+    {
+      "trackName": "Nola (feat. Khary & Hello Oshay)",
+      "artistName": "Kota the Friend",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 35,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "4 Willem",
+          "artistName": "Caleborate"
+        },
+        {
+          "trackName": "Darlin'",
+          "artistName": "tobi lou"
+        },
+        {
+          "trackName": "Lit - Bonus",
+          "artistName": "Bas"
+        }
+      ]
+    },
+    {
+      "trackName": "7 Minutes in Heaven",
+      "artistName": "Noah Richardson",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 42,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Tangerine",
+          "artistName": "Noah Richardson"
+        },
+        {
+          "trackName": "Rearview",
+          "artistName": "Brenn!"
+        },
+        {
+          "trackName": "Someone That's Better",
+          "artistName": "Mark Ambor"
+        }
+      ]
+    },
+    {
+      "trackName": "Till The End",
+      "artistName": "Logic",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 53,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Bounce",
+          "artistName": "Logic"
+        },
+        {
+          "trackName": "Metropolis",
+          "artistName": "Logic"
+        },
+        {
+          "trackName": "Devastated",
+          "artistName": "Joey Bada$$"
+        }
+      ]
+    },
+    {
+      "trackName": "Spilled Paint",
+      "artistName": "Camden Murphy,DREA,Austin Marc",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 46,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Why Bye",
+          "artistName": "Baltazar Lora"
+        },
+        {
+          "trackName": "Daddy's Mustang",
+          "artistName": "Shumaq"
+        },
+        {
+          "trackName": "Wave",
+          "artistName": "LAV.ISH"
+        }
+      ]
+    },
+    {
+      "trackName": "Always Vibin'",
+      "artistName": "Kash'd Out",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 48,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Do You",
+          "artistName": "Dale and the ZDubs"
+        },
+        {
+          "trackName": "Birds of Paradise",
+          "artistName": "Seranation"
+        },
+        {
+          "trackName": "Batshit Crazy",
+          "artistName": "ARTIKaL Sound System"
+        }
+      ]
+    },
+    {
+      "trackName": "Believe What I Say",
+      "artistName": "Kanye West",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 65,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Pure Souls",
+          "artistName": "Kanye West"
+        },
+        {
+          "trackName": "Remote Control",
+          "artistName": "Kanye West"
+        },
+        {
+          "trackName": "Fire",
+          "artistName": "Kids See Ghosts"
+        }
+      ]
+    },
+    {
+      "trackName": "No Type",
+      "artistName": "New Beat Fund",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 45,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Helena",
+          "artistName": "New Beat Fund"
+        },
+        {
+          "trackName": "Get Up",
+          "artistName": "New Beat Fund"
+        },
+        {
+          "trackName": "Blueberry Skies",
+          "artistName": "Loser Company"
+        }
+      ]
+    },
+    {
+      "trackName": "sun keeps on shining",
+      "artistName": "almost monday",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 56,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "sail away",
+          "artistName": "lovelytheband"
+        },
+        {
+          "trackName": "WHEN WE WERE KIDS",
+          "artistName": "young friend"
+        },
+        {
+          "trackName": "PINCH ME",
+          "artistName": "young friend"
         }
       ]
     }

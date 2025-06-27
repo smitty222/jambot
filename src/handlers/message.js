@@ -30,8 +30,11 @@ import * as themeManager from '../utils/themeManager.js'
 import { getUserSongReviews } from '../libs/roomStats.js'
 import { fetchOddsForSport, formatOddsMessage } from '../utils/sportsBetAPI.js'
 import { saveOddsForSport, getOddsForSport } from '../utils/bettingOdds.js'
+import { startHorseRace, handleHorseBet, handleHorseEntryAttempt, isWaitingForEntries } from '../libs/horseRace.js'
+import { handleBuyHorse, handleMyHorsesCommand, handleHorseHelpCommand, handleHorseStatsCommand, handleTopHorsesCommand } from '../libs/horseManager.js'
 import path from 'path'
 import fs from 'fs/promises'
+
 
 
 
@@ -77,9 +80,16 @@ const getSportAndTeamFromQuestion = (question) => {
   return null;
 }
 
+
 // Messages
 export default async (payload, room, state) => {
   logger.info({ sender: payload.sender, message: payload.message })
+
+  // Handle horse entry submissions FIRST
+  if (isWaitingForEntries() && !payload.message.startsWith('/')) {
+    await handleHorseEntryAttempt(payload);
+    return; // Prevent further processing
+  }
 
   // Handle Gifs Sent in Chat
   if (payload.message.type === 'ChatGif') {
@@ -252,6 +262,26 @@ export default async (payload, room, state) => {
       room,
       message: 'Hi!'
     })
+
+   
+
+  } else if (payload.message.startsWith('/horserace')) {
+  await startHorseRace(payload);
+  } else if (payload.message.match(/^\/horse\d+\s+\d+/)) {
+    await handleHorseBet(payload);
+  } else if (payload.message.startsWith('/buyhorse')) {
+    return handleBuyHorse(payload);
+  } else if (payload.message.startsWith('/myhorses')) {
+    return handleMyHorsesCommand(payload);
+  } else if (payload.message.startsWith('/horsehelp') || payload.message.startsWith('/horserules') || payload.message.startsWith('/horseinfo') ) {
+    await handleHorseHelpCommand(payload);
+  } else if (payload.message.startsWith('/horsestats')) {
+    await handleHorseStatsCommand(payload);
+  } else if (payload.message.startsWith('/tophorses')) {
+    await handleTopHorsesCommand(payload);
+
+
+
 
     /// //////////// LOTTERY GAME ////////////////////////////////////////////
   } else if (payload.message.startsWith('/lottery')) {
@@ -2239,98 +2269,114 @@ for (let i = 0; i < topSongs.length; i++) {
       })
     }
   } else if (payload.message.startsWith('/addsong')) {
-    try {
-    // Log the current song's track ID for debugging
-      console.log('Current song track ID:', roomBot.currentSong.spotifyTrackId)
+  try {
+    const isBeachCommand = payload.message.trim().toLowerCase() === '/addsong beach';
 
-      const spotifyTrackId = roomBot.currentSong.spotifyTrackId
+    const spotifyTrackId = roomBot.currentSong?.spotifyTrackId;
+    console.log('Current song track ID:', spotifyTrackId);
 
-      if (!spotifyTrackId) {
-        await postMessage({
-          room,
-          message: 'No track is currently playing or track ID is invalid.'
-        })
-        return
-      }
-
-      // Construct the Spotify track URI
-      const trackUri = `spotify:track:${spotifyTrackId}`
-
-      console.log('Track URI:', trackUri) // Log the URI for debugging
-
-      // Fetch playlist tracks and check if the track is already in the playlist
-      const playlistTracks = await fetchSpotifyPlaylistTracks()
-      const playlistTrackURIs = playlistTracks.map(track => track.track.uri)
-
-      if (playlistTrackURIs.includes(trackUri)) {
-        await postMessage({
-          room,
-          message: 'Track is already in the playlist!'
-        })
-      } else {
-      // Add the track to the playlist
-        const playlistId = process.env.DEFAULT_PLAYLIST_ID
-        const snapshotId = await addTracksToPlaylist(playlistId, [trackUri])
-
-        if (snapshotId) {
-          await postMessage({
-            room,
-            message: 'Track added successfully!'
-          })
-        } else {
-          await postMessage({
-            room,
-            message: 'Failed to add the track to the playlist.'
-          })
-        }
-      }
-    } catch (error) {
+    if (!spotifyTrackId) {
       await postMessage({
         room,
-        message: `Error adding track to playlist: ${error.message}`
-      })
+        message: 'No track is currently playing or track ID is invalid.'
+      });
+      return;
     }
-  } else if (payload.message.startsWith('/removesong')) {
-    try {
-      const senderUuid = payload.sender
-      const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken)
-      if (!isAuthorized) {
-        await postMessage({
-          room,
-          message: 'You need to be a moderator to execute this command.'
-        })
-        return
-      }
 
-      const trackUri = await fetchCurrentlyPlayingSong()
+    const trackUri = `spotify:track:${spotifyTrackId}`;
+    console.log('Track URI:', trackUri);
 
-      if (!trackUri) {
-        await postMessage({
-          room,
-          message: 'No track is currently playing or track URI is invalid.'
-        })
-        return
-      }
+    // Choose playlist ID based on command type
+    const playlistId = isBeachCommand
+      ? process.env.BEACH_PLAYLIST_ID
+      : process.env.DEFAULT_PLAYLIST_ID;
 
-      const snapshotId = await removeTrackFromPlaylist(process.env.DEFAULT_PLAYLIST_ID, trackUri)
+    if (!playlistId) {
+      await postMessage({
+        room,
+        message: 'Playlist ID is missing from environment variables.'
+      });
+      return;
+    }
 
+    const playlistTracks = await fetchSpotifyPlaylistTracks(playlistId);
+    const playlistTrackURIs = playlistTracks.map(track => track.track.uri);
+
+    if (playlistTrackURIs.includes(trackUri)) {
+      await postMessage({
+        room,
+        message: 'Track is already in the playlist!'
+      });
+    } else {
+      const snapshotId = await addTracksToPlaylist(playlistId, [trackUri]);
       if (snapshotId) {
         await postMessage({
           room,
-          message: 'Track removed successfully!'
-        })
+          message: `Track added to ${isBeachCommand ? 'beach' : 'default'} playlist!`
+        });
       } else {
         await postMessage({
           room,
-          message: 'Failed to remove the track from the playlist.'
-        })
+          message: 'Failed to add the track to the playlist.'
+        });
       }
-    } catch (error) {
+    }
+  } catch (error) {
+    await postMessage({
+      room,
+      message: `Error adding track to playlist: ${error.message}`
+    });
+  }
+
+  } else if (payload.message.startsWith('/removesong')) {
+  try {
+    const senderUuid = payload.sender;
+    const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken);
+    if (!isAuthorized) {
       await postMessage({
         room,
-        message: `Error removing track from playlist: ${error.message}`
-      })
+        message: 'You need to be a moderator to execute this command.'
+      });
+      return;
     }
+
+    const isBeachCommand = payload.message.trim().toLowerCase() === '/removesong beach';
+    const playlistId = isBeachCommand
+      ? process.env.BEACH_PLAYLIST_ID
+      : process.env.DEFAULT_PLAYLIST_ID;
+
+    // Get track ID from currently playing song
+    const spotifyTrackId = roomBot.currentSong?.spotifyTrackId;
+    if (!spotifyTrackId) {
+      await postMessage({
+        room,
+        message: 'No track is currently playing or track ID is invalid.'
+      });
+      return;
+    }
+
+    const trackUri = `spotify:track:${spotifyTrackId}`;
+
+    const snapshotId = await removeTrackFromPlaylist(playlistId, trackUri);
+
+    if (snapshotId) {
+      await postMessage({
+        room,
+        message: 'Track removed successfully!'
+      });
+    } else {
+      await postMessage({
+        room,
+        message: 'Failed to remove the track from the playlist.'
+      });
+    }
+  } catch (error) {
+    await postMessage({
+      room,
+      message: `Error removing track from playlist: ${error.message}`
+    });
+  }
+
   } else if (payload.message.startsWith('/status')) {
     try {
       const autobopStatus = roomBot.autobop ? 'enabled' : 'disabled'
@@ -2567,7 +2613,7 @@ for (let i = 0; i < topSongs.length; i++) {
     const statsFilePath = path.join(process.cwd(), 'src/libs/roomStats.json')
   
     try {
-      const content = await fs.promises.readFile(statsFilePath, 'utf8')
+      const content = await fs.readFile(statsFilePath, 'utf8')
       const history = JSON.parse(content)
       const songStats = history.find(s => s.songId === currentSong.songId)
   
@@ -2597,12 +2643,16 @@ for (let i = 0; i < topSongs.length; i++) {
     const statsFilePath = path.join(process.cwd(), 'src/libs/roomStats.json')
   
     try {
-      const content = await fs.promises.readFile(statsFilePath, 'utf8')
+      const content = await fs.readFile(statsFilePath, 'utf8')
       const history = JSON.parse(content)
+
+      console.log('✅ roomStats history length:', history.length);
   
       const topPlayed = history
-        .sort((a, b) => b.playCount - a.playCount)
-        .slice(0, 5)
+      .filter(song => song.trackName?.toLowerCase() !== 'unknown')
+      .sort((a, b) => b.playCount - a.playCount)
+      .slice(0, 5);
+
   
       if (topPlayed.length === 0) {
         await postMessage({ room, message: 'No play history found.' })
@@ -2625,12 +2675,14 @@ for (let i = 0; i < topSongs.length; i++) {
     const statsFilePath = path.join(process.cwd(), 'src/libs/roomStats.json')
   
     try {
-      const content = await fs.promises.readFile(statsFilePath, 'utf8')
+      const content = await fs.readFile(statsFilePath, 'utf8')
       const history = JSON.parse(content)
   
       const topLiked = history
-        .sort((a, b) => b.likes - a.likes)
-        .slice(0, 5)
+      .filter(song => song.trackName?.toLowerCase() !== 'unknown')
+      .sort((a, b) => b.likes - a.likes)
+      .slice(0, 5);
+
   
       if (topLiked.length === 0) {
         await postMessage({ room, message: 'No like history found.' })
@@ -2649,41 +2701,53 @@ for (let i = 0; i < topSongs.length; i++) {
         message: 'Error retrieving like stats.'
       })
     }
-  } else if (payload.message.startsWith('/playtime')) {
-    const statsFilePath = path.join(process.cwd(), 'src/libs/roomStats.json')
-  
-    try {
-      const content = await fs.promises.readFile(statsFilePath, 'utf8')
-      const history = JSON.parse(content)
-  
-      if (!history || history.length === 0) {
-        await postMessage({ room, message: 'No play history found.' })
-        return
-      }
-  
-      // Sum total seconds
-      const totalSeconds = history.reduce((acc, song) => {
-        const duration = song.songDuration || 0
-        const plays = song.playCount || 0
-        return acc + (duration * plays)
-      }, 0)
-  
-      // Convert to HH:MM:SS
-      const hours = Math.floor(totalSeconds / 3600)
-      const minutes = Math.floor((totalSeconds % 3600) / 60)
-      const seconds = totalSeconds % 60
-  
-      const formatted = `${hours}h ${minutes}m ${seconds}s`
-      const message = `⏱️ Total Room Playtime: ${formatted}`
-  
-      await postMessage({ room, message })
-    } catch (error) {
-      console.error('Error reading stats file:', error.message)
-      await postMessage({
-        room,
-        message: 'Error calculating total playtime.'
-      })
-    }  
+  } else if (payload.message.startsWith('/runtime')) {
+  const statsFilePath = path.join(process.cwd(), 'src/libs/roomStats.json');
+
+  try {
+    const content = await fs.readFile(statsFilePath, 'utf8');
+    const history = JSON.parse(content);
+
+    if (!Array.isArray(history) || history.length === 0) {
+      await postMessage({ room, message: 'No play history found.' });
+      return;
+    }
+
+    // Filter out invalid or "unknown" songs
+    const validSongs = history.filter(song =>
+      song.trackName &&
+      song.trackName.toLowerCase() !== 'unknown' &&
+      typeof song.songDuration === 'number' &&
+      typeof song.playCount === 'number'
+    );
+
+    if (validSongs.length === 0) {
+      await postMessage({ room, message: 'No valid songs with durations found.' });
+      return;
+    }
+
+    // Calculate total seconds
+    const totalSeconds = validSongs.reduce((acc, song) => {
+      return acc + (song.songDuration * song.playCount);
+    }, 0);
+
+    // Convert to HH:MM:SS
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = Math.floor(totalSeconds % 60); // round down just in case
+
+    const formatted = `${hours}h ${minutes}m ${seconds}s`;
+    const message = `⏱️ Total Room Run Time: ${formatted}`;
+
+    await postMessage({ room, message });
+  } catch (error) {
+    console.error('Error reading stats file:', error);
+    await postMessage({
+      room,
+      message: 'Error calculating total playtime.'
+    });
+  }
+
   } else if (payload.message === ('/album')) {
     const currentSong = roomBot.currentSong
     if (currentSong && currentSong.trackName) {

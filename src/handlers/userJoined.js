@@ -7,7 +7,7 @@ let greetingMessagesEnabled = true;
 
 const customWelcomeMessages = {
   '210141ad-6b01-4665-84dc-e47ea7c27dcb': '{nickname} has arrived!', //Rsmitty
-  '072b0bb3-518e-4422-97fd-13dc53e8ae7e': '{nickname} Welcome Back You MFer! I missed you so much!', //Shirey
+  '072b0bb3-518e-4422-97fd-13dc53e8ae7e': '🎧{nickname} in the building — not shy, just silently cooking heat 🔥', //Shirey
   '92302b7d-ae5e-466f-975b-d3fee461f13f': 'Ello {nickname}! Welcome!', //Cam
   '1225f84a-c57a-4589-8994-8069794b91ab': 'Govna! Welcome Back {nickname}!', //Dan
   '4c340480-4f5c-4b9a-9e43-f80519154cb0': '{nickname}! Im so happy to see you!', //BeRad
@@ -31,7 +31,7 @@ const generateWelcomeMessage = (uuid, nickname, room) => {
   }
 
   const theme = themeManager.getTheme(room) || 'Just Jam';
-  return `Welcome to the room, @${nickname}\n- Current Theme is: ${theme}\n- Type /commands to see what else I can do!`;
+  return `Hey @${nickname}!👋 Welcome to Just Jams! Feel free to hop on stage or vibe in the crowd. If you have any questions, just ask! Don't forget to say hi and invite friends who love music too🎶\n- Current Theme is: ${theme}\n- Type /commands to see what else I can do!`;
 };
 
 const handleUserJoinedWithStatePatch = async (payload) => {

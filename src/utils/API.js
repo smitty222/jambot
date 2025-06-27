@@ -88,7 +88,6 @@ async function fetchSpotifyPlaylistTracks (playlistId) {
       const response = await fetch(url, options)
       const playlist = await response.json()
 
-      console.log('Full playlist response:', playlist) // Log the full response
 
       if (!response.ok) {
         console.error('Error fetching playlist tracks:', playlist)
@@ -348,9 +347,9 @@ export async function extractTrackId (input) {
 
 /// //////////// TURNTABLE API /////////////////////////////
 
-async function fetchCurrentlyPlayingSong () {
-  const token = process.env.TTL_USER_TOKEN
-  const roomUUID = process.env.ROOM_UUID
+async function fetchCurrentlyPlayingSong() {
+  const token = process.env.TTL_USER_TOKEN;
+  const roomUUID = process.env.ROOM_UUID;
 
   try {
     const response = await fetch(`https://gateway.prod.tt.fm/api/room-service/rooms/uuid/${roomUUID}`, {
@@ -358,27 +357,47 @@ async function fetchCurrentlyPlayingSong () {
         Authorization: `Bearer ${token}`,
         accept: 'application/json'
       }
-    })
+    });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch current song: ${response.statusText}`)
+      throw new Error(`Failed to fetch current song: ${response.statusText}`);
     }
 
-    const data = await response.json()
-    const song = data.song
+    const data = await response.json();
+    const song = data.song;
 
-    if (song && song.musicProviders && song.musicProviders.spotify) {
-      const spotifyTrackId = song.musicProviders.spotify
-      const songId = song.songId // ✅ FIXED HERE
-
-      return { spotifyTrackId, songId }
-    } else {
-      throw new Error('Spotify track info not found in the current song')
+    if (!song) {
+      throw new Error('No song data found in response');
     }
+
+    // Always return core info
+    const basicSongInfo = {
+      songId: song.songId || null,
+      trackName: song.trackName || 'Unknown',
+      artistName: song.artistName || 'Unknown',
+      duration: song.duration || 0,
+      isrc: song.isrc || null,
+      explicit: song.explicit || false,
+      genre: song.genre || null,
+      thumbnails: song.thumbnails || {},
+      links: song.links || {},
+      musicProviders: song.musicProviders || {},
+      playbackToken: song.playbackToken || null,
+      status: song.status || null,
+      createdAt: song.createdAt || null,
+      updatedAt: song.updatedAt || null,
+      albumId: song.albumId || null,
+      albumName: song.albumName || null,
+      releaseDate: song.releaseDate || null,
+      // Add any other fields you want here
+    };
+
+    return basicSongInfo;
   } catch (error) {
-    throw new Error(`Error fetching current song: ${error.message}`)
+    throw new Error(`Error fetching current song: ${error.message}`);
   }
 }
+
 
 export async function updateUserAvatar(userToken, avatarId, color) {
   const response = await fetch('https://gateway.prod.tt.fm/api/user-service/users/profile', {
@@ -543,18 +562,16 @@ export async function updateRoomPosterFile(slug, posterFileUrl) {
 
 export async function fetchUserData(userUUIDs) {
   const token = process.env.TTL_USER_TOKEN;
-  if (!userUUIDs || userUUIDs.length === 0) {
-    console.error('No user UUIDs provided');
+
+  // Accept both single UUID and array of UUIDs
+  const uuids = Array.isArray(userUUIDs) ? userUUIDs : [userUUIDs];
+
+  if (!uuids.length) {
     throw new Error('No user UUIDs provided');
   }
 
-  const queryString = userUUIDs.map(uuid => `users=${uuid}`).join('&'); // Correct query format
+  const queryString = uuids.map(uuid => `users=${uuid}`).join('&');
   const endpoint = `https://gateway.prod.tt.fm/api/user-service/users/profiles?${queryString}`;
-
-  if (!token) {
-    console.error('TTL_USER_TOKEN is not set');
-    throw new Error('TTL_USER_TOKEN is not set');
-  }
 
   const response = await fetch(endpoint, {
     headers: {
@@ -564,14 +581,21 @@ export async function fetchUserData(userUUIDs) {
   });
 
   if (!response.ok) {
-    const errorText = await response.text(); // Only call text() once
+    const errorText = await response.text();
     throw new Error(`Failed to fetch user data: ${response.statusText} - ${errorText}`);
   }
 
-  // Consume the response body only once
-  const userData = await response.json();
-  return userData; // Return the array of user profiles
+  const raw = await response.json();
+
+  // Transform into flat user profiles
+  const parsed = raw
+    .map(entry => entry.userProfile)
+    .filter(profile => profile && profile.uuid); // Sanity check
+
+  return parsed; // Returns array of { uuid, nickname, ... }
 }
+
+
 
 
 async function getSenderNickname(senderUuid) {

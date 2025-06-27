@@ -4,6 +4,7 @@ import { roomBot } from '../index.js'
 import { logCurrentSong } from '../libs/roomStats.js'
 import fs from 'fs/promises'
 import path from 'path'
+import { formatDistanceToNow } from 'date-fns'
 
 const statsPath = path.join(process.cwd(), 'src/libs/roomStats.json')
 
@@ -58,14 +59,33 @@ async function postVoteCountsForLastSong(room) {
     await logCurrentSong(song, likes, dislikes, stars)
     console.log(`Logged stats for ${trackName} by ${artistName}: 👍 ${likes}, 👎 ${dislikes}, ⭐ ${stars}`)
 
-    // If songStatsEnabled is true, post the message
-    if (songStatsEnabled) {
-      const message = `${trackName} by ${artistName}\n 🎧 Played By: ${djNickname}\n 👍: ${likes}\n 👎: ${dislikes}\n ⭐: ${stars}\n Popularity Score: ${popularity} out of 100\n______________________________________________________`
+        if (songStatsEnabled) {
+          let message = `🛑 **Song Recap**\n`
+          message += `🎵 *${trackName}* by *${artistName}*\n`
+          message += `🎧 Played by: **${djNickname}**\n`
+          message += `👍 ${likes}   👎 ${dislikes}   ❤️ ${stars}`
 
-      await postMessage({
-        room,
-        message
-      })
+      // Optionally pull in average review and play count
+      try {
+        const content = await fs.readFile(statsPath, 'utf8')
+        const stats = JSON.parse(content)
+        const songEntry = stats.find(s => s.songId === song.songId)
+
+       if (songEntry) {
+          if (songEntry.averageReview !== undefined) {
+           message += `   ⭐ ${songEntry.averageReview}/5`
+          }
+
+          if (songEntry.playCount !== undefined) {
+           message += `\n🔁 Played ${songEntry.playCount} time${songEntry.playCount !== 1 ? 's' : ''}`
+          }
+        }
+      } catch (err) {
+        console.warn('Could not read songStats for end-of-song post:', err.message)
+      }
+
+      await postMessage({ room, message })
+
     } else {
       console.log('Posting song stats is disabled.')
     }
@@ -73,6 +93,50 @@ async function postVoteCountsForLastSong(room) {
     console.error('Error in postVoteCountsForLastSong:', error.message)
   }
 }
+
+export async function announceNowPlaying(room) {
+  try {
+    const song = roomBot.currentSong
+
+    if (!song || !song.trackName || !song.artistName || !song.songId) {
+      console.log('Not enough data to announce song.')
+      return
+    }
+
+    // Load roomStats.json
+    let stats = []
+    try {
+      const content = await fs.readFile(statsPath, 'utf8')
+      stats = JSON.parse(content)
+    } catch (err) {
+      console.warn('Could not read roomStats.json, defaulting to blank stats.')
+    }
+
+    const entry = stats.find(s => s.songId === song.songId)
+
+    const playCount = entry?.playCount || 1
+    const avgReview = entry?.averageReview !== undefined ? `⭐ ${entry.averageReview}/5` : null
+
+        let message = `🎵 Now playing: “${song.trackName}” by ${song.artistName}\n`
+
+        if (!entry?.lastPlayed || playCount === 1) {  
+         message += `🆕 First time playing in this room!`
+       } else {
+         message += `🔁 Played ${playCount} time${playCount !== 1 ? 's' : ''}`
+          const lastPlayedTime = formatDistanceToNow(new Date(entry.lastPlayed), { addSuffix: true })
+          message += `\n🕒 Last played ${lastPlayedTime}`
+        }
+
+        if (avgReview) {
+          message += `\n${avgReview}`
+        }
+
+    await postMessage({ room, message })
+  } catch (error) {
+    console.error('Error in announceNowPlaying:', error.message)
+  }
+}
+
 
 export async function saveSongReview({ currentSong, rating, sender }) {
   try {

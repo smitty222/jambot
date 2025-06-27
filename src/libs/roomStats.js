@@ -32,7 +32,6 @@ export async function logCurrentSong(song, likes = 0, dislikes = 0, stars = 0) {
   if (existingIndex !== -1) {
     const existing = history[existingIndex]
     existing.playCount += 1
-    existing.lastPlayed = now
     existing.songId = existing.songId || song.songId || null
     existing.spotifyTrackId = existing.spotifyTrackId || song.spotifyTrackId || null  
     existing.songDuration = existing.songDuration || song.songDuration || null
@@ -50,8 +49,7 @@ export async function logCurrentSong(song, likes = 0, dislikes = 0, stars = 0) {
       playCount: 1,
       likes,
       dislikes,
-      stars,
-      lastPlayed: now
+      stars
     })
   }
 
@@ -64,6 +62,30 @@ export async function logCurrentSong(song, likes = 0, dislikes = 0, stars = 0) {
     await fs.writeFile(statsFilePath, JSON.stringify(history, null, 2))
   } catch (e) {
     console.error('Error writing to roomStats.json:', e)
+  }
+}
+
+export async function updateLastPlayed(song) {
+  if (!song || !song.trackName || !song.artistName) return
+
+  try {
+    const content = await fs.readFile(statsFilePath, 'utf8')
+    const history = JSON.parse(content)
+
+    const existing = history.find(s =>
+      (song.songId && s.songId === song.songId) ||
+      (!song.songId &&
+        s.trackName === song.trackName &&
+        s.artistName === song.artistName)
+    )
+
+    if (!existing) return
+
+    existing.lastPlayed = new Date().toISOString()
+
+    await fs.writeFile(statsFilePath, JSON.stringify(history, null, 2))
+  } catch (err) {
+    console.error('Error updating lastPlayed in roomStats.json:', err)
   }
 }
 

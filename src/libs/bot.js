@@ -17,17 +17,25 @@ import { getMarkedUser, unmarkUser } from '../utils/removalQueue.js'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import fs from 'fs'
-import { logCurrentSong } from './roomStats.js'
+import { logCurrentSong, updateLastPlayed } from './roomStats.js'
 import * as themeManager from '../utils/themeManager.js'
+import { announceNowPlaying } from '../utils/voteCounts.js'
+
 
 const botUUID = process.env.BOT_USER_UUID
 
-export function getCurrentDJUUIDs (state) {
-  if (!state?.djs) {
-    return []
-  }
-  return state.djs.map(dj => dj.uuid)
+export function getCurrentDJUUIDs(state) {
+  if (!state) return [];
+
+  const visible = Array.isArray(state.visibleDjs) ? state.visibleDjs : [];
+  const fallback = Array.isArray(state.djs) ? state.djs : [];
+
+  const djsToUse = visible.length > 0 ? visible : fallback;
+
+  return djsToUse.map(dj => dj.uuid);
 }
+
+
 
 export function getCurrentSpotifyUrl () {
   if (this.currentSong && this.currentSong.spotifyUrl) {
@@ -126,7 +134,7 @@ const updateRecentSongs = async (newSong) => {
 
 
 export class Bot {
-  constructor (clientId, clientSecret, redirectUri) {
+  constructor(clientId, clientSecret, redirectUri) {
     this.clientId = clientId
     this.clientSecret = clientSecret
     this.redirectUri = redirectUri
@@ -137,8 +145,8 @@ export class Bot {
     this.userUUID = process.env.BOT_USER_UUID
     this.lastMessageIDs = {}
     this.currentTheme = themeManager.getTheme(this.roomUUID) || ''
-    this.socket = null // Initialize socket as null
-    this.playlistId = process.env.DEFAULT_PLAYLIST_ID // Add default playlist ID
+    this.socket = null
+    this.playlistId = process.env.DEFAULT_PLAYLIST_ID
     this.spotifyCredentials = process.env.SPOTIFY_CREDENTIALS
     this.lastPlayedTrackURI = null
     this.currentRoomUsers = []
@@ -178,31 +186,21 @@ export class Bot {
     }
   }
 
-  async enableAutoBop () {
-    this.autobop = true
-  }
+  // --- AutoBop / AutoDJ toggles ---
+  async enableAutoBop() { this.autobop = true }
+  async disableAutoBop() { this.autobop = false }
+  async enableAutoDJ() { this.autoDJ = true }
+  async disableAutoDJ() { this.autoDJ = false }
 
-  async disableAutoBop () {
-    this.autobop = false
-  }
-
-  async enableAutoDJ () {
-    this.autoDJ = true
-  }
-
-  async disableAutoDJ () {
-    this.autoDJ = false
-  }
-
-  async connect () {
+  // --- Connect to room and setup socket ---
+  async connect() {
     logger.debug('Connecting to room')
     try {
-      await joinChat(process.env.ROOM_UUID)
+      await joinChat(this.roomUUID)
 
       this.socket = new SocketClient('https://socket.prod.tt.fm')
-
       const connection = await this.socket.joinRoom(process.env.TTL_USER_TOKEN, {
-        roomUuid: process.env.ROOM_UUID
+        roomUuid: this.roomUUID
       })
       this.state = connection.state
     } catch (error) {
@@ -210,40 +208,35 @@ export class Bot {
     }
   }
 
-  updateRecentSpotifyTrackIds (trackId) {
-    // Get the current DJ
+  // --- Update recent Spotify track IDs (used for AutoDJ or suggestions) ---
+  updateRecentSpotifyTrackIds(trackId) {
     const currentDJ = getCurrentDJ(this.state)
-
-    // Check if the bot is the current DJ
-    if (currentDJ === process.env.BOT_USER_UUID) {
+    if (currentDJ === this.userUUID) {
       console.log('Bot is the current DJ; not updating recentSpotifyTrackIds.')
       return
     }
 
-    // Update recent track IDs only if the bot is not the current DJ
     if (this.recentSpotifyTrackIds.length >= 5) {
-      this.recentSpotifyTrackIds.pop() // Remove the oldest ID from the end
+      this.recentSpotifyTrackIds.pop()
     }
-
-    // Add the new track ID to the beginning
     this.recentSpotifyTrackIds.unshift(trackId)
     console.log(`Updated recentSpotifyTrackIds: ${JSON.stringify(this.recentSpotifyTrackIds)}`)
   }
 
-  async processNewMessages () {
+  // --- Process incoming chat messages ---
+  async processNewMessages() {
     try {
-      const response = await getMessages(process.env.ROOM_UUID, this.lastMessageIDs?.fromTimestamp)
-
+      const response = await getMessages(this.roomUUID, this.lastMessageIDs?.fromTimestamp)
       if (response?.data?.length) {
         for (const message of response.data) {
-          if (message.sentAt === undefined) continue
-
+          if (!message.sentAt) continue
           this.lastMessageIDs.fromTimestamp = message.sentAt + 1
+
           const textMessage = message?.data?.text?.trim()
           if (!textMessage) continue
 
           const sender = message?.sender
-          if (!sender || sender === process.env.BOT_USER_UUID) continue
+          if (!sender || sender === this.userUUID) continue
           if ([process.env.CHAT_USER_ID, process.env.CHAT_REPLY_ID].includes(sender)) continue
 
           handlers.message(
@@ -252,7 +245,7 @@ export class Bot {
               sender,
               senderName: message?.data?.entities?.sender?.name ?? 'Unknown'
             },
-            process.env.ROOM_UUID,
+            this.roomUUID,
             this.state
           )
         }
@@ -262,23 +255,44 @@ export class Bot {
     }
   }
 
-  configureListeners () {
+  // --- Setup socket event listeners ---
+  configureListeners() {
     const self = this
     logger.debug('Setting up listeners')
 
     this.socket.on('statefulMessage', async (payload) => {
-      self.state = fastJson.applyPatch(self.state, payload.statePatch).newDocument
+      try {
+        // Defensive initialization for nested paths before applying patch
+        for (const op of payload.statePatch) {
+          if (!op.path || !op.path.startsWith('/')) continue
+          const parts = op.path.split('/').slice(1)
+          let obj = self.state
+          for (let i = 0; i < parts.length - 1; i++) {
+            const key = parts[i]
+            const isNextIndex = /^\d+$/.test(parts[i + 1])
+            if (obj[key] === undefined) {
+              obj[key] = isNextIndex ? [] : {}
+            }
+            obj = obj[key]
+          }
+        }
+        // Apply patch
+        self.state = fastJson.applyPatch(self.state, payload.statePatch).newDocument
+      } catch (err) {
+        logger.error('Error applying state patch:', err)
+        logger.error('Payload that caused it:', JSON.stringify(payload, null, 2))
+        return
+      }
 
-      // Log the full payload for debugging
       logger.debug('Received payload:', JSON.stringify(payload, null, 2))
 
-      // Check for the 'votedOnSong' event (or similar name)
       if (payload.name === 'votedOnSong') {
-        logger.debug('Payload details:', JSON.stringify(payload, null, 2)) // Log everything about the event
+        logger.debug('Payload details:', JSON.stringify(payload, null, 2))
       } else {
         logger.debug(`State updated for ${payload.name}`)
       }
 
+      // Handle userJoined event
       if (payload.name === 'userJoined') {
         try {
           await handleUserJoinedWithStatePatch(payload)
@@ -287,158 +301,179 @@ export class Bot {
         }
       }
 
+      // --- Handle playedSong event ---
       if (payload.name === 'playedSong') {
         try {
-          let spotifyTrackId = null
-          let songId = null
+          // Fetch full song info from room-service API
+          const currentlyPlaying = await fetchCurrentlyPlayingSong()
 
-          try {
-            const currentlyPlaying = await fetchCurrentlyPlayingSong()
-              spotifyTrackId = currentlyPlaying.spotifyTrackId
-              songId = currentlyPlaying.songId
-               } catch (error) {
-                }       
-          // Fetch additional track details using the Spotify Track ID
-          if (spotifyTrackId) {
-            const trackInfo = await spotifyTrackInfo(spotifyTrackId)
+          // Set currentSong using full data, fallback to payload data if missing
+          this.currentSong = {
+            trackName: currentlyPlaying.trackName || payload.data?.song?.trackName || 'Unknown',
+            artistName: currentlyPlaying.artistName || payload.data?.song?.artistName || 'Unknown',
+            songId: currentlyPlaying.songId || payload.data?.song?.songId || '',
+            songDuration: currentlyPlaying.duration || payload.data?.song?.duration || 'Unknown',
+            isrc: currentlyPlaying.isrc || 'Unknown',
+            explicit: currentlyPlaying.explicit || false,
+            albumName: currentlyPlaying.albumName || 'Unknown',
+            releaseDate: currentlyPlaying.releaseDate || 'Unknown',
+            thumbnails: currentlyPlaying.thumbnails || {},
+            links: currentlyPlaying.links || {},
+            musicProviders: currentlyPlaying.musicProviders || {},
+            playbackToken: currentlyPlaying.playbackToken || null,
+            status: currentlyPlaying.status || null,
+            spotifyTrackId: '',
+            albumType: 'Unknown',
+            trackNumber: 'Unknown',
+            totalTracks: 'Unknown',
+            albumArt: '',
+            popularity: 0,
+            previewUrl: '',
+            albumID: 'Unknown'
+          }
 
-            if (trackInfo) {
+          // If Spotify info exists, enrich currentSong further
+          if (this.currentSong.musicProviders.spotify) {
+            const spotifyTrackId = this.currentSong.musicProviders.spotify
+            const spotifyDetails = await spotifyTrackInfo(spotifyTrackId)
+
+            if (spotifyDetails) {
               this.currentSong = {
-                trackName: trackInfo.spotifyTrackName || 'Unknown',
-                spotifyUrl: trackInfo.spotifySpotifyUrl || '',
+                ...this.currentSong,
                 spotifyTrackId,
-                songId,
-                artistName: trackInfo.spotifyArtistName || 'Unknown',
-                albumName: trackInfo.spotifyAlbumName || 'Unknown',
-                releaseDate: trackInfo.spotifyReleaseDate || 'Unknown',
-                albumType: trackInfo.spotifyAlbumType || 'Unknown',
-                trackNumber: trackInfo.spotifyTrackNumber || 'Unknown',
-                totalTracks: trackInfo.spotifyTotalTracks || 'Unknown',
-                songDuration: trackInfo.spotifyDuration || 'Unknown',
-                albumArt: trackInfo.spotifyAlbumArt || '',
-                popularity: trackInfo.spotifyPopularity || 0,
-                previewUrl: trackInfo.spotifyPreviewUrl || '',
-                isrc: trackInfo.spotifyIsrc || 'Unknown',
-                albumID: trackInfo.spotifyAlbumID || 'Unknown'
+                albumType: spotifyDetails.spotifyAlbumType || 'Unknown',
+                trackNumber: spotifyDetails.spotifyTrackNumber || 'Unknown',
+                totalTracks: spotifyDetails.spotifyTotalTracks || 'Unknown',
+                popularity: spotifyDetails.spotifyPopularity || 0,
+                previewUrl: spotifyDetails.spotifyPreviewUrl || '',
+                isrc: spotifyDetails.spotifyIsrc || this.currentSong.isrc || 'Unknown',
+                albumID: spotifyDetails.spotifyAlbumID || 'Unknown',
+                albumArt: spotifyDetails.spotifyAlbumArt || ''
               }
-              if (roomThemes[process.env.ROOM_UUID]?.toLowerCase().includes('album')) {
-                // Check if this is the first track of an album
+
+              // Album theme logic (optional)
+              if (roomThemes[this.roomUUID]?.toLowerCase().includes('album')) {
                 if (
-                  this.currentSong.trackNumber === 1 || 
-                  !this.currentAlbum || 
+                  this.currentSong.trackNumber === 1 ||
+                  !this.currentAlbum ||
                   this.currentAlbum.albumID !== this.currentSong.albumID
                 ) {
                   this.currentAlbum = {
-                    albumId: trackInfo.spotifyAlbumID,
-                    albumName: trackInfo.spotifyAlbumName,
-                    albumArt: trackInfo.spotifyAlbumArt,
-                    artistName: trackInfo.spotifyArtistName,
-                    trackCount: trackInfo.spotifyTotalTracks,
-                    releaseDate: trackInfo.spotifyReleaseDate
+                    albumID: spotifyDetails.spotifyAlbumID,
+                    albumName: spotifyDetails.spotifyAlbumName,
+                    albumArt: spotifyDetails.spotifyAlbumArt,
+                    artistName: spotifyDetails.spotifyArtistName,
+                    trackCount: spotifyDetails.spotifyTotalTracks,
+                    releaseDate: spotifyDetails.spotifyReleaseDate
                   }
-              
                   console.log('Set new album review data:', this.currentAlbum)
                 }
               }
             }
           }
 
-          
+          // Announce now playing
+          await announceNowPlaying(this.roomUUID)
+
+          // Log the song stats
           try {
             await logCurrentSong(this.currentSong, 0, 0, 0)
             console.log(`Logged song to roomStats.json: ${this.currentSong.trackName} by ${this.currentSong.artistName}`)
           } catch (error) {
             console.error('Error logging current song to roomStats.json:', error)
           }
-          
 
+          // Update last played timestamp
+          await updateLastPlayed(this.currentSong)
 
-
+          // Update recent songs with DJ info
           try {
-            const djType = whoIsCurrentDJ(this.state);
+            const djType = whoIsCurrentDJ(this.state)
+            const song = this.currentSong
+
             const newSong = {
-              trackName: this.currentSong.trackName,
-              artistName: this.currentSong.artistName,
-              albumName: this.currentSong.albumName,
-              releaseDate: this.currentSong.releaseDate,
-              spotifyUrl: this.currentSong.spotifyUrl,
-              popularity: this.currentSong.popularity,
+              trackName: song.trackName || 'Unknown',
+              artistName: song.artistName || 'Unknown',
+              albumName: song.albumName || 'Unknown',
+              releaseDate: song.releaseDate || 'Unknown',
+              spotifyUrl: song.spotifyUrl || '',
+              popularity: song.popularity || 0,
               dj: djType
             }
 
-            
             await updateRecentSongs(newSong)
           } catch (error) {
             console.error('Error updating recent songs:', error)
           }
 
-          const currentDJs = getCurrentDJUUIDs(this.state);
-          const botUUID = process.env.BOT_USER_UUID;
-
-
-          // Check if the bot is 2nd in the lineup
-          const botIndex = currentDJs.indexOf(botUUID);
-
-          if (botIndex === 1) {
-            await self.updateNextSong(true);
-          } else {
+          // AutoDJ: check DJ lineup and update next song if needed
+          const currentDJs = getCurrentDJUUIDs(this.state)
+          const botUUID = this.userUUID
+          const botIndex = currentDJs.indexOf(botUUID)
+          if (currentDJs.length === 1 && currentDJs[0] === botUUID) {
+          console.log('🤖 Bot is solo DJ — triggering updateNextSong...');
+           await self.updateNextSong(true)
+          } else if (botIndex === 1) {
+          console.log('🤖 Bot is 2nd DJ — preparing next song...');
+          await self.updateNextSong(true)
           }
 
 
-          self.scheduleLikeSong(process.env.ROOM_UUID, process.env.BOT_USER_UUID)
+          // Schedule bot to like the song (autobop)
+          self.scheduleLikeSong(this.roomUUID, this.userUUID)
+
+          // Post vote counts after delay
           setTimeout(() => {
-              postVoteCountsForLastSong(process.env.ROOM_UUID)
+            postVoteCountsForLastSong(this.roomUUID)
           }, 9500)
         } catch (error) {
           logger.error('Error handling playedSong event:', error)
         }
+
+        // Optional: album or covers theme event handlers
         try {
           await handleAlbumTheme(payload)
           await handleCoversTheme(payload)
         } catch (error) {
           logger.error('Error handling album or covers theme event:', error)
         }
+
+        // Remove users marked for removal after song ends
         const currentDJ = getCurrentDJ(self.state)
         if (currentDJ && usersToBeRemoved[currentDJ]) {
           await escortUserFromDJStand(currentDJ)
           delete usersToBeRemoved[currentDJ]
           console.log(`User ${currentDJ} removed from DJ stand after their song ended.`)
         }
-        
+
+        // Remove marked user from DJ stand if applicable
         const markedUUID = getMarkedUser()
-    if (markedUUID) {
-      console.log(`Removing marked DJ after song end: ${markedUUID}`)
+        if (markedUUID) {
+          console.log(`Removing marked DJ after song end: ${markedUUID}`)
+          await this.removeDJ(markedUUID)
+          unmarkUser()
+        }
 
-      // Remove the DJ from the stage
-      await this.removeDJ(markedUUID)
-
-      // Clear the mark so it doesn't remove again
-      unmarkUser()
-    }
-
+        // Process song payments
         await songPayment()
-
-        /*setTimeout(() => {
-          console.log(`Checking artist match for: ${self.currentSong.artistName}`)
-          checkArtistAndNotify(self.state, self.currentSong)
-        }, 10000)*/
-
       }
     })
   }
 
-  getSocketInstance () {
+  // --- Getter and setter for socket ---
+  getSocketInstance() {
     return this.socket
   }
 
-  setSocketClient (socketClient) {
+  setSocketClient(socketClient) {
     this.socket = socketClient
   }
 
-  async storeCurrentRoomUsers () {
+  // --- Store current room users ---
+  async storeCurrentRoomUsers() {
     try {
-      const currentUsers = await fetchCurrentUsers() // Fetch current room users
-      this.currentRoomUsers = currentUsers // Store the current room users in the bot instance
+      const currentUsers = await fetchCurrentUsers()
+      this.currentRoomUsers = currentUsers
       console.log('Current room users stored successfully:', currentUsers)
     } catch (error) {
       console.error('Error fetching and storing current room users:', error.message)
@@ -446,8 +481,7 @@ export class Bot {
   }
 
   async getRandomSong (useSuggestions = false) {
-    try {
-      let tracks
+    try {      let tracks
 
       // Check if suggestions are to be used
       if (useSuggestions) {

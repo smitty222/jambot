@@ -160,19 +160,40 @@ const userTokenMap = {
 
   /////////////////////////////// User Updates //////////////////////////////
   export async function handleDinoCommand(senderUuid, room, postMessage) {
-    const userToken = userTokenMap[senderUuid]
-    if (!userToken) {
-      await postMessage({ room, message: 'Sorry, this command is only available to authorized dino users 🦖.' })
-      return
-    }
-  
-    try {
-      await updateUserAvatar(userToken, 'jurassic-05', '#8B6C5C')
-      await postMessage({ room, message: 'You are now a dino! 🦖' })
-    } catch (error) {
-      await postMessage({ room, message: `Dino-fying failed` })
-    }
+  const userToken = userTokenMap[senderUuid];
+  if (!userToken) {
+    await postMessage({ room, message: 'Sorry, this command is only available to authorized users 🦕.' });
+    return;
   }
+
+  // 🦖 Allowed Jurassic avatars
+  const allowedSlugs = [
+    'jurassic-01',
+    'jurassic-02',
+    'jurassic-03',
+    'jurassic-05',
+    'jurassic-06',
+    'jurassic-07'
+  ];
+
+  const filteredAvatars = avatars.filter(avatar => allowedSlugs.includes(avatar.slug));
+
+  if (filteredAvatars.length === 0) {
+    await postMessage({ room, message: 'No Jurassic avatars found in the allowed list 🦴' });
+    return;
+  }
+
+  const randomAvatar = filteredAvatars[Math.floor(Math.random() * filteredAvatars.length)].slug;
+  const randomColor = randomColors[Math.floor(Math.random() * randomColors.length)];
+
+  try {
+    await updateUserAvatar(userToken, randomAvatar, randomColor);
+    await postMessage({ room, message: '🦖 You’ve gone full Jurassic. Roar on!' });
+  } catch (error) {
+    await postMessage({ room, message: `Failed to update to dinosaur avatar 😬` });
+  }
+}
+
   export async function handleDuckCommand(senderUuid, room, postMessage) {
     const userToken = userTokenMap[senderUuid]
     if (!userToken) {

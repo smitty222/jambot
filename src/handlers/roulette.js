@@ -99,17 +99,18 @@ async function logUserBets () {
   console.log(logMessages.join('\n'))
 }
 
-export async function getUserNickname (userId) {
-  const userArray = [userId]
-  const users = await fetchUserData(userArray) // Fetch user data
-
-  // Check if we have any user profiles returned and return the nickname
-  if (users && users.length > 0 && users[0].userProfile) {
-    return users[0].userProfile.nickname || 'Unknown' // Access userProfile for the nickname
-  } else {
-    return 'Unknown' // Return 'Unknown' if no user data is found
+export async function getUserNickname(userId) {
+  try {
+    const users = await fetchUserData(userId);
+    const user = users.find(u => u.uuid === userId);
+    return user?.nickname || 'Unknown';
+  } catch (err) {
+    console.error(`❌ Failed to get nickname for ${userId}: ${err.message}`);
+    return 'Unknown';
   }
 }
+
+
 
 async function initializeWallet (user) {
   try {
