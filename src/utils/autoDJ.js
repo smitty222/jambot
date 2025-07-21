@@ -158,7 +158,7 @@ if (roomBot.state) {
 }
 
 const userPlayedSongs = recentSongs.filter(song => song.dj !== 'bot');
-const songsToUse = [...userPlayedSongs].reverse().slice(0, currentDJCount);
+const songsToUse = [...userPlayedSongs].slice(0, currentDJCount);
 
 
 const similarTrackSuggestions = [];

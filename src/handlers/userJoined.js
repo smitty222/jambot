@@ -15,23 +15,26 @@ const customWelcomeMessages = {
   '3ea72ae7-77db-4d08-9dc6-ce875890c1b5': 'He loves his Metal, but dont let him fool you, hes got tunes from all genres. Welcome back, {nickname}!',//Metalman
   'e99d7d47-7d45-4ab5-b868-8a188db1ec5f': 'Nobody chills harder than {nickname}! Welcome back!', //Straight up Chill
   '554d0d38-0b7b-45d8-9f18-20b4f5689e70': 'Busterrrrrrrrr Douglassssssss {nickname}! In the house!', // P Eacho
-  'fd2f1b47-b1d4-4100-8f88-6e56aa82e13f': 'Our favorite groupie has arrived! Welcome {nickname}!' //Gab
+  'fd2f1b47-b1d4-4100-8f88-6e56aa82e13f': 'Our favorite groupie has arrived! Welcome {nickname}!', //Gab
+  'a5e09ebd-ceb5-46b6-b962-52754e32840d': '{nickname}! Sniff this one!'
   // Add more UUIDs and their corresponding custom welcome messages here
 };
 
 const generateWelcomeMessage = (uuid, nickname, room) => {
+  const mention = `<@uid:${uuid}>`;
+
   if (customWelcomeMessages[uuid]) {
-    // Replace the placeholder `{nickname}` with the actual nickname
-    return customWelcomeMessages[uuid].replace('{nickname}', nickname);
+    // Replace `{nickname}` with the actual mention
+    return customWelcomeMessages[uuid].replace('{nickname}', mention);
   }
-  
-  // If greeting messages are disabled, send a basic welcome message
+
+  // If greeting messages are disabled, use a basic mention
   if (!greetingMessagesEnabled) {
-    return `Welcome to the room, @${nickname}`;
+    return `Welcome to the room, ${mention}`;
   }
 
   const theme = themeManager.getTheme(room) || 'Just Jam';
-  return `Hey @${nickname}!👋 Welcome to Just Jams! Feel free to hop on stage or vibe in the crowd. If you have any questions, just ask! Don't forget to say hi and invite friends who love music too🎶\n- Current Theme is: ${theme}\n- Type /commands to see what else I can do!`;
+  return `Hey ${mention}! 👋 Welcome to Just Jams! Feel free to hop on stage or vibe in the crowd. If you have any questions, just ask! Don't forget to say hi and invite friends who love music too 🎶\n- Current Theme is: ${theme}\n- Type /commands to see what else I can do!`;
 };
 
 const handleUserJoinedWithStatePatch = async (payload) => {

@@ -4,13 +4,16 @@ const albumStatsPath = 'src/libs/albumStats.json'
 
 export async function saveAlbumReview({ albumId, albumName, albumArt, artistName, trackCount, userId, rating }) {
   try {
+    if (typeof rating !== 'number' || rating < 1 || rating > 6) {
+      return { success: false, message: 'Rating must be between 1 and 6' }
+    }
+
     let stats = []
 
     try {
       const file = await fs.readFile(albumStatsPath, 'utf8')
       stats = JSON.parse(file)
     } catch (err) {
-      // File might not exist yet, fallback to empty
       stats = []
     }
 
@@ -26,15 +29,10 @@ export async function saveAlbumReview({ albumId, albumName, albumArt, artistName
         reviews: []
       }
       stats.push(albumEntry)
-    } else {
-      // If album already exists but was missing albumArt, update it
-      if (!albumEntry.albumArt && albumArt) {
-        albumEntry.albumArt = albumArt
-      }
+    } else if (!albumEntry.albumArt && albumArt) {
+      albumEntry.albumArt = albumArt
     }
-    
 
-    // Replace or add the user’s review
     const existing = albumEntry.reviews.find(r => r.userId === userId)
     if (existing) {
       existing.rating = rating
@@ -42,7 +40,6 @@ export async function saveAlbumReview({ albumId, albumName, albumArt, artistName
       albumEntry.reviews.push({ userId, rating })
     }
 
-    // Update average
     const total = albumEntry.reviews.reduce((sum, r) => sum + r.rating, 0)
     albumEntry.averageReview = parseFloat((total / albumEntry.reviews.length).toFixed(2))
 
@@ -53,6 +50,7 @@ export async function saveAlbumReview({ albumId, albumName, albumArt, artistName
     return { success: false }
   }
 }
+
 
 
 

@@ -168,5 +168,218 @@
       }
     ],
     "averageReview": 4
+  },
+  {
+    "albumId": "3lQePoIm6iNQIiZkCYxCy0",
+    "albumName": "The College Dropout",
+    "artistName": "Kanye West",
+    "trackCount": 21,
+    "reviews": [
+      {
+        "userId": "210141ad-6b01-4665-84dc-e47ea7c27dcb",
+        "rating": 5
+      }
+    ],
+    "averageReview": 5
+  },
+  {
+    "albumId": "3h1mhf59nhAhNcg68ITKmM",
+    "albumName": "NO RAP ON SUNDAY",
+    "albumArt": "https://i.scdn.co/image/ab67616d0000b2730f22ccc02a908a54b6e84b01",
+    "artistName": "Kota the Friend",
+    "trackCount": 14,
+    "reviews": [
+      {
+        "userId": "210141ad-6b01-4665-84dc-e47ea7c27dcb",
+        "rating": 5
+      },
+      {
+        "userId": "92302b7d-ae5e-466f-975b-d3fee461f13f",
+        "rating": 5
+      }
+    ],
+    "averageReview": 5
+  },
+  {
+    "albumId": "0NZPpZsTmlxmqpItHdgCRF",
+    "albumName": "Stargazers, Wanderers & Rogues",
+    "albumArt": "https://i.scdn.co/image/ab67616d0000b273740911642df10fd09e841885",
+    "artistName": "The Hip Abduction",
+    "trackCount": 13,
+    "reviews": [
+      {
+        "userId": "210141ad-6b01-4665-84dc-e47ea7c27dcb",
+        "rating": 4
+      },
+      {
+        "userId": "072b0bb3-518e-4422-97fd-13dc53e8ae7e",
+        "rating": 4
+      }
+    ],
+    "averageReview": 4
+  },
+  {
+    "albumId": "1KEqpbUQ0g4lKFGFLZJnk1",
+    "albumName": "Searchin' for a Rainbow",
+    "albumArt": "https://i.scdn.co/image/ab67616d0000b273cde29611676d1bd9eae3f3dd",
+    "artistName": "The Marshall Tucker Band",
+    "trackCount": 9,
+    "reviews": [
+      {
+        "userId": "072b0bb3-518e-4422-97fd-13dc53e8ae7e",
+        "rating": 5
+      }
+    ],
+    "averageReview": 5
+  },
+  {
+    "albumId": "2qwv7hNjSGfLarHY2adeq9",
+    "albumName": "14 minutes",
+    "albumArt": "https://i.scdn.co/image/ab67616d0000b273abdde781e79a44868914e661",
+    "artistName": "Dominic Fike",
+    "trackCount": 8,
+    "reviews": [
+      {
+        "userId": "210141ad-6b01-4665-84dc-e47ea7c27dcb",
+        "rating": 4
+      }
+    ],
+    "averageReview": 4
+  },
+  {
+    "albumId": "0QnWm07An8WyO3eupjBDoP",
+    "albumName": "If This Isn’t Nice, I Don’t Know What Is",
+    "albumArt": "https://i.scdn.co/image/ab67616d0000b273178df9e236187d6f1e710f5f",
+    "artistName": "Still Woozy",
+    "trackCount": 13,
+    "reviews": [
+      {
+        "userId": "210141ad-6b01-4665-84dc-e47ea7c27dcb",
+        "rating": 5
+      }
+    ],
+    "averageReview": 5
+  },
+  {
+    "albumId": "79dL7FLiJFOO0EoehUHQBv",
+    "albumName": "Currents",
+    "albumArt": "https://i.scdn.co/image/ab67616d0000b2739e1cfc756886ac782e363d79",
+    "artistName": "Tame Impala",
+    "trackCount": 13,
+    "reviews": [
+      {
+        "userId": "210141ad-6b01-4665-84dc-e47ea7c27dcb",
+        "rating": 4
+      }
+    ],
+    "averageReview": 4
+  },
+  {
+    "albumId": "6sDQacCej53Q43vZF9PJ8i",
+    "albumName": "Milky Way",
+    "albumArt": "https://i.scdn.co/image/ab67616d0000b273267158422744961d90e942b3",
+    "artistName": "Bas",
+    "trackCount": 14,
+    "reviews": [
+      {
+        "userId": "210141ad-6b01-4665-84dc-e47ea7c27dcb",
+        "rating": 5
+      },
+      {
+        "userId": "072b0bb3-518e-4422-97fd-13dc53e8ae7e",
+        "rating": 5
+      }
+    ],
+    "averageReview": 5
+  },
+  {
+    "albumId": "5ra51AaWF3iVebyhlZ1aqq",
+    "albumName": "1999",
+    "albumArt": "https://i.scdn.co/image/ab67616d0000b273fcd3724fba954e6104e4530d",
+    "artistName": "Joey Bada$$, Capital Steez",
+    "trackCount": 15,
+    "reviews": [
+      {
+        "userId": "210141ad-6b01-4665-84dc-e47ea7c27dcb",
+        "rating": 6
+      },
+      {
+        "userId": "92302b7d-ae5e-466f-975b-d3fee461f13f",
+        "rating": 6
+      },
+      {
+        "userId": "072b0bb3-518e-4422-97fd-13dc53e8ae7e",
+        "rating": 6
+      }
+    ],
+    "averageReview": 6
+  },
+  {
+    "albumId": "1jzv3jwZbt8lYfEtMjiD1R",
+    "albumName": "DON'T TAP THE GLASS",
+    "albumArt": "https://i.scdn.co/image/ab67616d0000b27311e55e4aa68150f5a0bfa22f",
+    "artistName": "Tyler, The Creator",
+    "trackCount": 10,
+    "reviews": [
+      {
+        "userId": "210141ad-6b01-4665-84dc-e47ea7c27dcb",
+        "rating": 2
+      },
+      {
+        "userId": "072b0bb3-518e-4422-97fd-13dc53e8ae7e",
+        "rating": 2
+      }
+    ],
+    "averageReview": 2
+  },
+  {
+    "albumId": "4Suls86gUFWBN7rP3MKphB",
+    "albumName": "Visions",
+    "albumArt": "https://i.scdn.co/image/ab67616d0000b27350cfa05f48efe69f7e887457",
+    "artistName": "The Movement",
+    "trackCount": 13,
+    "reviews": [
+      {
+        "userId": "210141ad-6b01-4665-84dc-e47ea7c27dcb",
+        "rating": 4
+      },
+      {
+        "userId": "072b0bb3-518e-4422-97fd-13dc53e8ae7e",
+        "rating": 4
+      }
+    ],
+    "averageReview": 4
+  },
+  {
+    "albumId": "1YnYYbRawnQcFqRooF0159",
+    "albumName": "Breakfast",
+    "albumArt": "https://i.scdn.co/image/ab67616d0000b273f34dd29bf11177daea217638",
+    "artistName": "Chiddy Bang",
+    "trackCount": 14,
+    "reviews": [
+      {
+        "userId": "210141ad-6b01-4665-84dc-e47ea7c27dcb",
+        "rating": 4
+      },
+      {
+        "userId": "92302b7d-ae5e-466f-975b-d3fee461f13f",
+        "rating": 3
+      }
+    ],
+    "averageReview": 3.5
+  },
+  {
+    "albumId": "4pG3bKkbmReDt5QTDn3JDz",
+    "albumName": "Astral Weeks",
+    "albumArt": "https://i.scdn.co/image/ab67616d0000b273c849bc0a79a44105a4258662",
+    "artistName": "Van Morrison",
+    "trackCount": 8,
+    "reviews": [
+      {
+        "userId": "210141ad-6b01-4665-84dc-e47ea7c27dcb",
+        "rating": 2
+      }
+    ],
+    "averageReview": 2
   }
 ]

@@ -1,6 +1,6 @@
 import fastJson from 'fast-json-patch'
 import { SocketClient } from 'ttfm-socket'
-import { joinChat, getMessages } from './cometchat.js'
+import { joinChat, getMessages, startTimeStamp } from './cometchat.js'
 import { logger } from '../utils/logging.js'
 import { handlers } from '../handlers/index.js'
 import { fetchSpotifyPlaylistTracks, fetchCurrentUsers, spotifyTrackInfo, fetchCurrentlyPlayingSong, fetchSongData, getSimilarArtists, getSimilarTracks, getArtistTags, getTopArtistTracks } from '../utils/API.js'
@@ -20,6 +20,8 @@ import fs from 'fs'
 import { logCurrentSong, updateLastPlayed } from './roomStats.js'
 import * as themeManager from '../utils/themeManager.js'
 import { announceNowPlaying } from '../utils/voteCounts.js'
+import { parseDurationToMs, scheduleLetterChallenge } from '../handlers/songNameGame.js'
+import { addTrackedUser } from '../utils/trackedUsers.js'
 
 
 const botUUID = process.env.BOT_USER_UUID
@@ -184,6 +186,11 @@ export class Bot {
       previewUrl: '',
       isrc: 'Unknown'
     }
+    this.lastPlayedSong = {
+    songId: null,
+  timestamp: 0
+}
+
   }
 
   // --- AutoBop / AutoDJ toggles ---
@@ -223,37 +230,78 @@ export class Bot {
     console.log(`Updated recentSpotifyTrackIds: ${JSON.stringify(this.recentSpotifyTrackIds)}`)
   }
 
-  // --- Process incoming chat messages ---
-  async processNewMessages() {
-    try {
-      const response = await getMessages(this.roomUUID, this.lastMessageIDs?.fromTimestamp)
-      if (response?.data?.length) {
-        for (const message of response.data) {
-          if (!message.sentAt) continue
-          this.lastMessageIDs.fromTimestamp = message.sentAt + 1
+async processNewMessages() {
+  try {
+    // --- Group chat messages ---
+    const groupMessages = await getMessages(this.roomUUID, this.lastMessageIDs?.room || startTimeStamp, 'group')
+    if (groupMessages?.data?.length) {
+      for (const message of groupMessages.data) {
+        if (!message.sentAt || !message.data?.text) continue
 
-          const textMessage = message?.data?.text?.trim()
-          if (!textMessage) continue
+        this.lastMessageIDs.room = Math.max(this.lastMessageIDs.room || 0, message.sentAt + 1)
 
-          const sender = message?.sender
-          if (!sender || sender === this.userUUID) continue
-          if ([process.env.CHAT_USER_ID, process.env.CHAT_REPLY_ID].includes(sender)) continue
+        const textMessage = message.data.text.trim()
+        if (!textMessage) continue
 
-          handlers.message(
-            {
-              message: textMessage,
-              sender,
-              senderName: message?.data?.entities?.sender?.name ?? 'Unknown'
-            },
-            this.roomUUID,
-            this.state
-          )
-        }
+        const sender = message.sender
+        if (!sender || sender === process.env.BOT_USER_UUID) continue
+
+        // Skip messages from other bots
+        if ([process.env.BOT_USER_UUID, process.env.CHAT_REPLY_ID].includes(sender)) continue
+
+        await handlers.message(
+          {
+            message: textMessage,
+            sender,
+            receiverType: 'group'
+          },
+          this.roomUUID,
+          this.state
+        )
       }
-    } catch (error) {
-      console.error('Error processing new messages:', error)
     }
+
+    // --- Direct messages to bot ---
+    const dmMessages = await getMessages(process.env.BOT_USER_UUID, this.lastMessageIDs?.dm || startTimeStamp, 'user')
+    if (dmMessages?.data?.length) {
+      for (const message of dmMessages.data) {
+        if (!message.sentAt) continue
+
+        console.log('[RAW DM]', JSON.stringify(message, null, 2))
+
+        if (!message.data?.text) continue
+
+        this.lastMessageIDs.dm = Math.max(this.lastMessageIDs.dm || 0, message.sentAt + 1)
+
+        const textMessage = message.data.text.trim()
+        if (!textMessage) continue
+
+        const sender = message.sender
+        if (!sender || sender === process.env.BOT_USER_UUID) continue
+
+        addTrackedUser(sender)
+
+        console.log(`[DM] Message from ${sender}: ${textMessage}`)
+
+        await handlers.message(
+          {
+            message: textMessage,
+            sender,
+            senderName: message?.data?.entities?.sender?.name ?? 'Unknown',
+            receiverType: 'user'
+          },
+          sender,
+          this.state
+        )
+      }
+    }
+  } catch (error) {
+    console.error('Error processing new messages:', error)
   }
+}
+
+
+
 
   // --- Setup socket event listeners ---
   configureListeners() {
@@ -292,6 +340,23 @@ export class Bot {
         logger.debug(`State updated for ${payload.name}`)
       }
 
+
+  if (payload.name === 'addedDj') {
+    // The user who joined as DJ should be somewhere in the state patch,
+    // usually as the uuid added to the djs array.
+    // Let's extract it:
+
+    // Find the patch entry that added a DJ UUID (usually path like "/djs/NN/uuid")
+    const addedDjPatch = payload.statePatch.find(patch => patch.path.includes('/djs/') && patch.op === 'add' && patch.value?.uuid);
+
+    if (addedDjPatch) {
+      const addedUuid = addedDjPatch.value.uuid;
+      console.log(`DJ added: ${addedUuid}`);
+    } else {
+      console.log('Added DJ payload received but could not find added UUID.');
+    }
+  }
+
       // Handle userJoined event
       if (payload.name === 'userJoined') {
         try {
@@ -303,6 +368,13 @@ export class Bot {
 
       // --- Handle playedSong event ---
       if (payload.name === 'playedSong') {
+
+        const currentDJs = getCurrentDJUUIDs(this.state);
+
+          if (currentDJs.length === 0) {
+          console.log('No DJs on stage, skipping playedSong processing.');
+          return;
+          }
         try {
           // Fetch full song info from room-service API
           const currentlyPlaying = await fetchCurrentlyPlayingSong()
@@ -331,6 +403,11 @@ export class Bot {
             previewUrl: '',
             albumID: 'Unknown'
           }
+
+          const songDurationMs = parseDurationToMs(this.currentSong.songDuration);
+          const challengeStartMs = Math.max(0, songDurationMs - 40000); // 30 seconds before end
+
+          this.currentSong.challengeStartMs = challengeStartMs;
 
           // If Spotify info exists, enrich currentSong further
           if (this.currentSong.musicProviders.spotify) {
@@ -429,6 +506,14 @@ export class Bot {
         } catch (error) {
           logger.error('Error handling playedSong event:', error)
         }
+
+        // Get current theme and check for 'Name Game'
+          //const currentTheme = getTheme(this.roomUUID)?.toLowerCase()
+
+          //if (currentTheme === 'name game') {
+           // console.log('🎯 Name Game theme active. Scheduling letter challenge...')
+            //scheduleLetterChallenge.call(this) // Make sure to bind the bot context
+         // }
 
         // Optional: album or covers theme event handlers
         try {
@@ -650,7 +735,7 @@ export class Bot {
       logger.error(`Error removing user ${userUuid || 'Bot'} from DJ:`, error)
     }
   }
-
+ 
   async voteOnSong (roomUuid, songVotes, userUuid) {
     try {
       if (!this.socket) {

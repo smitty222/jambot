@@ -179,8 +179,8 @@ async function handleHorseBet(payload) {
   if (!isBettingOpen) return;
 
   let match =
-    payload.message.match(/^\/horse(\d+)\s+(\d+)/i) ||  // /horse2 50
-    payload.message.match(/^\/horse\s+(\d+)\s+(\d+)/i); // /horse 2 50
+    payload.message.match(/^\/horse(\d+)\s+(\d+)/i) ||
+    payload.message.match(/^\/horse\s+(\d+)\s+(\d+)/i);
 
   if (!match) return;
 
@@ -204,7 +204,11 @@ async function handleHorseBet(payload) {
   const success = await removeFromUserWallet(userId, amount);
   if (!success) return;
 
-  horseBets[userId] = { horseIndex, amount };
+  if (!horseBets[userId]) {
+    horseBets[userId] = [];
+  }
+
+  horseBets[userId].push({ horseIndex, amount });
 
   const horse = horses[horseIndex];
   const nicknameText = horse.nickname ? ` (${horse.nickname})` : '';
@@ -215,8 +219,9 @@ async function handleHorseBet(payload) {
 }
 
 
+
 async function runRace() {
-  // 🎬 Start with a race-start GIF
+  console.log('🏁 Race is starting...');
   await postMessage({
     room,
     message: `🏇 The race is about to begin! Buckle up!`,
@@ -233,6 +238,7 @@ async function runRace() {
     segments: [Math.random(), Math.random(), Math.random()]
   }));
 
+  // ⬇️ Restore commentary pool and function
   const commentaryPool = [
     "💥 A strong start from #NAME!",
     "🐎 #NAME bursts forward with fury!",
@@ -258,39 +264,30 @@ async function runRace() {
     return line.replace('#NAME', name);
   }
 
+  // 🌀 Simulate race
   for (let i = 0; i < 3; i++) {
     raceState.forEach(h => h.progress += h.segments[i]);
 
-    await postMessage({
-      room,
-      message: `🏁 Turn ${i + 1}:`
-    });
+    await postMessage({ room, message: `🏁 Turn ${i + 1}:` });
 
-    // Sort horses by current progress
-const sortedByProgress = [...raceState].sort((a, b) => b.progress - a.progress);
+    const sortedByProgress = [...raceState].sort((a, b) => b.progress - a.progress);
+    let focusHorse;
 
-let focusHorse;
+    if (Math.random() < 0.7) {
+      const top3 = sortedByProgress.slice(0, 3);
+      focusHorse = top3[Math.floor(Math.random() * top3.length)];
+    } else {
+      const underdogs = sortedByProgress.slice(3);
+      focusHorse = underdogs.length
+        ? underdogs[Math.floor(Math.random() * underdogs.length)]
+        : sortedByProgress[Math.floor(Math.random() * sortedByProgress.length)];
+    }
 
-// 70% chance to pick one of the top 3, 30% chance to pick a random underdog
-if (Math.random() < 0.7) {
-  const top3 = sortedByProgress.slice(0, 3);
-  focusHorse = top3[Math.floor(Math.random() * top3.length)];
-} else {
-  const notTop3 = sortedByProgress.slice(3);
-  if (notTop3.length > 0) {
-    focusHorse = notTop3[Math.floor(Math.random() * notTop3.length)];
-  } else {
-    focusHorse = sortedByProgress[Math.floor(Math.random() * sortedByProgress.length)];
-  }
-}
-
-const randomComment = getRandomCommentary(focusHorse.name);
-await postMessage({ room, message: randomComment });
-
-
+    const comment = getRandomCommentary(focusHorse.name);
+    await postMessage({ room, message: comment });
     await postMessage({ room, message: generateVisualProgress(raceState, false) });
 
-    await new Promise(r => setTimeout(r, RACE_STEP_DELAY + Math.random() * 1000)); // suspenseful variation
+    await new Promise(r => setTimeout(r, RACE_STEP_DELAY + Math.random() * 1000));
   }
 
   await postMessage({ room, message: `🎉 It's the final sprint! Who's got the guts?!` });
@@ -298,50 +295,80 @@ await postMessage({ room, message: randomComment });
 
   const sortedRace = [...raceState].sort((a, b) => b.progress - a.progress);
   const winner = sortedRace[0];
+  console.log('🏆 Winner:', winner.name, `(index: ${winner.index})`);
 
   await updateHorseStatsAndRetirements(winner.index);
-
   await postMessage({ room, message: generateVisualProgress(raceState, true) });
+
   await postMessage({
     room,
     message: `🏆 **VICTORY!** The winner is #${winner.index + 1} **${winner.name}**!!! 🎊`
   });
 
-  // Calculate total bets placed on the winning horse
-const totalBetsOnWinner = Object.values(horseBets)
-  .filter(bet => bet.horseIndex === winner.index)
-  .reduce((sum, bet) => sum + bet.amount, 0);
+  // 🎯 Log and handle payouts
+  console.log('🎰 Bets placed:', horseBets);
 
-// Pay all bettors who bet on the winner
-for (const [userId, bet] of Object.entries(horseBets)) {
-  if (bet.horseIndex === winner.index) {
-    const winnings = Math.floor(bet.amount * horses[bet.horseIndex].odds);
-    await addToUserWallet(userId, winnings);
-    const nickname = await getUserNickname(userId);
-    await postMessage({
-      room,
-      message: `💰 @${nickname} won $${winnings} on ${horses[bet.horseIndex].name}!`
-    });
+  const totalBetsOnWinner = Object.values(horseBets)
+    .filter(bet => bet.horseIndex === winner.index)
+    .reduce((sum, bet) => sum + bet.amount, 0);
+  console.log(`💰 Total bet pool on winner: $${totalBetsOnWinner}`);
+
+  for (const [userId, bets] of Object.entries(horseBets)) {
+  let totalWinnings = 0;
+
+  for (const bet of bets) {
+    if (bet.horseIndex === winner.index) {
+      const winnings = Math.floor(bet.amount * horses[bet.horseIndex].odds);
+      totalWinnings += winnings;
+
+      console.log(`✅ ${userId} matched winning horse with bet of $${bet.amount}, won $${winnings}`);
+    } else {
+      console.log(`❌ ${userId}'s bet on horse #${bet.horseIndex + 1} did not win.`);
+    }
+  }
+
+  if (totalWinnings > 0) {
+    try {
+      await addToUserWallet(userId, totalWinnings);
+      const nickname = await getUserNickname(userId);
+      await postMessage({
+        room,
+        message: `💰 @${nickname} won a total of $${totalWinnings} betting on ${winner.name}!`
+      });
+      console.log(`💸 Paid out $${totalWinnings} to @${nickname}`);
+    } catch (err) {
+      console.error(`❌ Failed to pay out to ${userId}:`, err);
+    }
   }
 }
 
-// Owner bonus payout regardless of betting
-const ownerId = horses[winner.index].ownerId;
-const horsePrice = horses[winner.index].price || 0;
 
-if (ownerId && horsePrice > 0) {
-  const ownerBonus = Math.floor(horsePrice * 0.1); // 10% of price
+  // 🐎 Owner bonus
+  const ownerId = horses[winner.index].ownerId;
+  const horsePrice = horses[winner.index].price || 0;
 
-  if (ownerBonus > 0) {
-    await addToUserWallet(ownerId, ownerBonus);
-    const ownerName = await getUserNickname(ownerId);
-    await postMessage({
-      room,
-      message: `🏇 Owner @${ownerName} earned $${ownerBonus} (10% of their horse's purchase price) from the big win!`
-    });
+  if (ownerId && horsePrice > 0) {
+    const ownerBonus = Math.floor(horsePrice * 0.1);
+    console.log(`🏇 Owner ID: ${ownerId}, Horse Price: ${horsePrice}, Bonus: $${ownerBonus}`);
+
+    if (ownerBonus > 0) {
+      try {
+        await addToUserWallet(ownerId, ownerBonus);
+        const ownerName = await getUserNickname(ownerId);
+        await postMessage({
+          room,
+          message: `🏇 Owner @${ownerName} earned $${ownerBonus} (10% of their horse's purchase price) from the big win!`
+        });
+        console.log(`🎉 Owner bonus paid to @${ownerName}`);
+      } catch (err) {
+        console.error(`❌ Failed to pay owner bonus to ${ownerId}:`, err);
+      }
+    }
   }
+
 }
-}
+
+
 
 
 async function updateHorseStatsAndRetirements(winnerIndex) {

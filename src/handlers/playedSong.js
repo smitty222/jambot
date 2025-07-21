@@ -1,138 +1,178 @@
 // playedSong.js
 import { postMessage } from '../libs/cometchat.js'
 import { roomBot } from '../index.js'
-import { fetchSongData, fetchUserData, spotifyTrackInfo } from '../utils/API.js'
+import { fetchSongData, getAlbumTracks, spotifyTrackInfo } from '../utils/API.js'
 import { roomThemes } from './message.js'
 import { getCurrentDJUUIDs } from '../libs/bot.js'
 import { askQuestion } from '../libs/ai.js'
 import { getUserNickname } from './roulette.js'
+import { QueueManager } from '../utils/queueManager.js'
+
+const queueManager = new QueueManager('src/libs/djQueue.json', getUserNickname)
+
+const stageLock = {
+  locked: false,
+  userUuid: null,
+  timeout: null
+}
 
 const formatDate = (dateString) => {
   const [year, month, day] = dateString.split('-')
   return `${month}-${day}-${year}`
 }
 
+const parseDuration = (durationStr) => {
+  const [minutes, seconds] = durationStr.split(':').map(Number)
+  return (minutes * 60 + seconds) * 1000
+}
+
 const handleAlbumTheme = async (payload) => {
   const room = process.env.ROOM_UUID
   const theme = (roomThemes[room] || '').toLowerCase()
   const albumThemes = ['album monday', 'albums', 'album day']
-
   if (!albumThemes.includes(theme)) return
 
   const currentSong = roomBot.currentSong
-  if (!currentSong || !currentSong.spotifyTrackId) {
-    console.log('No song is currently playing or missing Spotify Track ID.')
-    return
-  }
+  if (!currentSong || !currentSong.spotifyTrackId) return
 
   try {
     const songData = await spotifyTrackInfo(currentSong.spotifyTrackId)
-    if (!songData) {
-      console.log('No song data returned from Spotify.')
-      return
-    }
+    if (!songData) return
 
     const {
       spotifyTrackNumber,
-      spotifyTotalTracks: trackCount,
       spotifyDuration,
       spotifyAlbumName: albumName,
       spotifyArtistName: artistName,
       spotifyReleaseDate: releaseDate,
       spotifyTrackName: trackName,
-      spotifyAlbumArt: albumArt, 
+      spotifyAlbumArt: albumArt,
       spotifyAlbumID: albumID
     } = songData
+
+    const albumTracks = await getAlbumTracks(albumID)
+    let reliableTrackNumber = albumTracks.findIndex(track => track.id === currentSong.spotifyTrackId) + 1
+    const trackCount = albumTracks.length
+
+    if (reliableTrackNumber === 0) reliableTrackNumber = parseInt(spotifyTrackNumber)
 
     const songDuration = parseDuration(spotifyDuration)
     const formattedReleaseDate = releaseDate ? formatDate(releaseDate) : 'N/A'
 
-    console.log(`Track debug — Track #: ${spotifyTrackNumber}, Track Count: ${trackCount}, Album: ${albumName}`)
-
-    // === First Track ===
-    if (spotifyTrackNumber === 1) {
+    if (reliableTrackNumber === 1) {
       const currentDJUuid = getCurrentDJUUIDs(roomBot.state)[0]
       const currentDJName = await getUserNickname(currentDJUuid)
+      roomBot.currentAlbum = { albumId: albumID, albumName, artistName, trackCount, albumArt }
+      roomBot.currentAlbumTrackNumber = reliableTrackNumber
 
-      roomBot.currentAlbum = {
-        albumId: albumID,  
-        albumName,
-        artistName,
-        trackCount
-      }
-
+      await postMessage({ room, message: ``, images: [albumArt] })
       await postMessage({
         room,
-        message: ``,
-        images: [albumArt]
-      })
-      await postMessage({
-        room,
-        message: `@${currentDJName} is starting an Album!\n\nAlbum: ${albumName}\nArtist: ${artistName}\nRelease Date: ${formattedReleaseDate}\nTrack Number: ${spotifyTrackNumber} of ${trackCount}`,
+        message: `@${currentDJName} is starting an Album!\n\nAlbum: ${albumName}\nArtist: ${artistName}\nRelease Date: ${formattedReleaseDate}\nTrack Number: ${reliableTrackNumber} of ${trackCount}`
       })
     }
 
-    // === Halfway Point ===
-    if (spotifyTrackNumber === Math.floor(trackCount / 2)) {
+    if (reliableTrackNumber === Math.floor(trackCount / 2)) {
       await postMessage({
         room,
-        message: `This is the halfway point in ${artistName}'s album, *${albumName}*.\n\nTrack: ${trackName}\nRelease Date: ${formattedReleaseDate}\nTrack ${spotifyTrackNumber} of ${trackCount}`
+        message: `This is the halfway point in ${artistName}'s album, *${albumName}*.\n\nTrack: ${trackName}\nRelease Date: ${formattedReleaseDate}\nTrack ${reliableTrackNumber} of ${trackCount}`
       })
     }
 
-    // === Last Track ===
-    if (spotifyTrackNumber === trackCount) {
+    if (reliableTrackNumber === trackCount) {
       const currentDJUuid = getCurrentDJUUIDs(roomBot.state)[0]
       const currentDJName = await getUserNickname(currentDJUuid)
 
+      await postMessage({ room, message: ``, images: [albumArt] })
       await postMessage({
         room,
-        message: ``,
-        images: [albumArt]
+        message: `${trackName}\nTrack ${reliableTrackNumber} of ${trackCount}\n\nThis is the last song of the album. Thanks @${currentDJName} for the tunes! You will be removed from the stage when this song ends.`
       })
-      await postMessage({
-        room,
-        message: `${trackName}\nTrack ${spotifyTrackNumber} of ${trackCount}\n\nThis is the last song of the album. Thanks @${currentDJName} for the tunes! You will be removed from the stage when this song ends.`,
-      })
-      await postMessage({
-        room,
-        message: `Make sure to leave your review of the album! Use /reviewhelp for more info`,
-      })
-     
+      await postMessage({ room, message: `Make sure to leave your review of the album! Use /reviewhelp for more info` })
 
-      if (currentDJUuid) {
-        const adjustedDuration = Math.max(0, songDuration - 5000)
-        console.log(`Waiting ${adjustedDuration}ms to remove DJ ${currentDJUuid}`)
+      const adjustedDuration = Math.max(0, songDuration - 5000)
 
-        setTimeout(async () => {
+      setTimeout(async () => {
+        try {
           await roomBot.removeDJ(currentDJUuid)
-          console.log(`DJ ${currentDJUuid} removed from stage after final track.`)
-        }, adjustedDuration)
-      }
-    }
+          const nextUser = await queueManager.advanceQueue()
 
-    // === Any Other Track ===
-    if (
-      spotifyTrackNumber !== 1 &&
-      spotifyTrackNumber !== Math.floor(trackCount / 2) &&
-      spotifyTrackNumber !== trackCount
-    ) {
-      await postMessage({
-        room,
-        message: `${trackName}\nTrack ${spotifyTrackNumber} of ${trackCount}`
-      })
+          if (nextUser && nextUser.userId) {
+            stageLock.locked = true
+            stageLock.userUuid = nextUser.userId
+
+            await postMessage({
+              room,
+              message: `<@uid:${nextUser.userId}>; you're up next! Please press the 'Play Music' button to get on stage within 30 seconds.`
+            })
+
+            stageLock.timeout = setTimeout(async () => {
+              const onStage = getCurrentDJUUIDs(roomBot.state)
+
+              for (const djUuid of onStage) {
+                if (djUuid !== nextUser.userId) {
+                  console.log(`Removing unexpected DJ ${djUuid} from stage`)
+                  await roomBot.removeDJ(djUuid)
+                  await postMessage({
+                    room,
+                    message: `<@uid:${djUuid}>; you're not next in the queue. Please wait for your turn.`
+                  })
+                }
+              }
+
+              if (onStage.includes(nextUser.userId)) {
+                console.log(`${nextUser.userId} successfully joined the stage.`)
+                await queueManager.leaveQueue(nextUser)
+                
+              } else {
+                await postMessage({
+                  room,
+                  message: `<@uid:${nextUser.userId}>; did not take the stage in time. Moving on.`
+                })
+              }
+
+              cancelStageLock()
+            }, 30000)
+
+            const stageMonitor = setInterval(async () => {
+              const onStageNow = getCurrentDJUUIDs(roomBot.state)
+              for (const djUuid of onStageNow) {
+                if (djUuid !== nextUser.userId) {
+                  console.log(`Immediately removing unauthorized DJ ${djUuid}`)
+                  await roomBot.removeDJ(djUuid)
+                  await postMessage({
+                    room,
+                    message: `<@uid:${djUuid}>; you're not next in the queue. Please wait for your turn.`
+                  })
+                }
+              }
+            }, 1000)
+
+            setTimeout(() => clearInterval(stageMonitor), 30000)
+          } else {
+            console.log('No user found in queue to add.')
+          }
+        } catch (error) {
+          console.error('Error transitioning to next DJ:', error)
+        }
+      }, adjustedDuration)
     }
   } catch (error) {
-    
+    console.error('Error in handleAlbumTheme:', error)
   }
 }
 
-
-// Helper function to convert duration string to milliseconds
-const parseDuration = (durationStr) => {
-  const [minutes, seconds] = durationStr.split(':').map(Number)
-  return (minutes * 60 + seconds) * 1000 // Convert to milliseconds
+function isStageLockedFor(userUuid) {
+  return stageLock.locked && userUuid !== stageLock.userUuid
 }
+
+function cancelStageLock() {
+  if (stageLock.timeout) clearTimeout(stageLock.timeout)
+  stageLock.locked = false
+  stageLock.userUuid = null
+  stageLock.timeout = null
+}
+
 
 const handleCoversTheme = async (payload) => {
   try {
@@ -195,4 +235,4 @@ const handleCoversTheme = async (payload) => {
   }
 }
 
-export { handleAlbumTheme, handleCoversTheme }
+export { handleAlbumTheme, handleCoversTheme, isStageLockedFor, cancelStageLock }

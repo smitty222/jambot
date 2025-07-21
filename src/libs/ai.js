@@ -1,66 +1,122 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import fetch from 'node-fetch'
+import fs from 'fs'
+
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY
+let currentSong = null
 
 const askQuestion = async (question) => {
   try {
-    const apiKey = process.env.GEMINI_API_KEY // Use environment variable for the Gemini API key
-    const genAI = new GoogleGenerativeAI(apiKey)
-
-    // Initialize the generative model (e.g., 'gemini-1.5-flash')
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
-
-    // Log the received question
     console.log(`Received question: "${question}"`)
 
-    // Check if the question refers to "this song" and replace if necessary (your custom logic)
+    // Replace "this song" with actual song info if available
     if (question.toLowerCase().includes('this song')) {
-      question = replaceThisSong(question) // Your custom replace function
+      question = replaceThisSong(question)
     }
 
-    // Log the final question being sent to Gemini AI
-    console.log(`Final question sent to Gemini: "${question}"`)
+    // Detect image-related prompt
+    const isImagePrompt = /(draw|generate.*image|make.*picture|create.*image|illustrate|show.*image|show.*picture|design|render|make art|generate.*visual)/i.test(question)
 
-    // Get the generative content response
+    if (isImagePrompt) {
+      console.log('Image request detected. Generating image...')
+      const result = await generateImage(question)
+
+      if (result.imageBase64) {
+        const filePath = `./generated_${Date.now()}.png`
+        fs.writeFileSync(filePath, Buffer.from(result.imageBase64, 'base64'))
+        console.log(`Saved image to ${filePath}`)
+        return { text: result.text, imagePath: filePath }
+      } else {
+        return { text: result.text }
+      }
+    }
+
+    // Text-only fallback
+    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY)
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+
+    console.log(`Sending prompt to Gemini: "${question}"`)
     const result = await model.generateContent(question)
 
-    // Log the response from Gemini AI
-    console.log(`AI Response: ${JSON.stringify(result)}`)
-
-    // Return the response text
-    return result.response.text() || 'Sorry, I could not generate a response at the moment.'
+    return {
+      text: result.response.text() || 'Sorry, I could not generate a response.'
+    }
   } catch (error) {
-    console.error('Error:', error)
-    return 'Sorry, something went wrong trying to get a response from Gemini.'
+    console.error('AI Error:', error)
+    return {
+      text: 'Sorry, something went wrong trying to get a response from Gemini.'
+    }
   }
 }
 
-// Custom function to replace "this song" with current song details
+// 🔁 Generates an image from the Gemini REST API
+async function generateImage(prompt) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent?key=${GEMINI_API_KEY}`
+
+  const body = {
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: {
+      responseModalities: ['TEXT', 'IMAGE']
+    }
+  }
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+
+    const data = await res.json()
+
+    const parts = data.candidates?.[0]?.content?.parts || []
+    let outputText = ''
+    let base64Image = null
+
+    for (const part of parts) {
+      if (part.text) outputText += part.text
+      if (part.inlineData?.mimeType?.startsWith('image/')) {
+        base64Image = part.inlineData.data
+      }
+    }
+
+    return {
+      text: outputText || 'Here’s your image!',
+      imageBase64: base64Image
+    }
+  } catch (error) {
+    console.error('Image generation error:', error)
+    return {
+      text: 'Sorry, I couldn’t create an image this time.',
+      imageBase64: null
+    }
+  }
+}
+
+// 🧠 Song-aware phrase replacement
 const replaceThisSong = (question) => {
-  if (currentSong && currentSong.artistName && currentSong.trackName) {
+  if (currentSong?.artistName && currentSong?.trackName) {
     const songDetails = `Artist: ${currentSong.artistName}, Track: ${currentSong.trackName}`
-    const modifiedQuestion = question.replace('this song', songDetails)
+    const modifiedQuestion = question.replace(/this song/gi, songDetails)
 
     console.log(`Replaced "this song" with details: "${songDetails}"`)
-    console.log(`Modified question: "${modifiedQuestion}"`)
-
     return modifiedQuestion
   } else {
-    console.warn('No current song details available at the time of replacement.')
+    console.warn('No current song details available.')
     return question
   }
 }
 
-let currentSong = null
-
+// 📝 Set current song
 const setCurrentSong = (song) => {
   currentSong = song
 }
 
-
-// Example of how you might use this in your chat application
+// 💬 Interface for chat system
 const chatWithBot = async (userMessage) => {
-  const botResponse = await askQuestion(userMessage)
-  console.log(`Bot response: ${botResponse}`)
-  // Here you can handle sending the botResponse back to the chat system
+  const response = await askQuestion(userMessage)
+  console.log(`Bot response: ${JSON.stringify(response)}`)
+  return response
 }
 
 export { askQuestion, chatWithBot, setCurrentSong }

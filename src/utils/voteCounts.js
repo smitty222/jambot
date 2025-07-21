@@ -4,6 +4,7 @@ import { roomBot } from '../index.js'
 import { logCurrentSong } from '../libs/roomStats.js'
 import fs from 'fs/promises'
 import path from 'path'
+import { roomThemes } from '../handlers/message.js'
 import { formatDistanceToNow } from 'date-fns'
 
 const statsPath = path.join(process.cwd(), 'src/libs/roomStats.json')
@@ -113,29 +114,39 @@ export async function announceNowPlaying(room) {
     }
 
     const entry = stats.find(s => s.songId === song.songId)
-
     const playCount = entry?.playCount || 1
     const avgReview = entry?.averageReview !== undefined ? `⭐ ${entry.averageReview}/5` : null
 
-        let message = `🎵 Now playing: “${song.trackName}” by ${song.artistName}\n`
+    let message = `🎵 Now playing: “${song.trackName}” by ${song.artistName}`
 
-        if (!entry?.lastPlayed || playCount === 1) {  
-         message += `🆕 First time playing in this room!`
-       } else {
-         message += `🔁 Played ${playCount} time${playCount !== 1 ? 's' : ''}`
-          const lastPlayedTime = formatDistanceToNow(new Date(entry.lastPlayed), { addSuffix: true })
-          message += `\n🕒 Last played ${lastPlayedTime}`
-        }
+    // Album theme detection
+    const theme = (roomThemes[room] || '').toLowerCase()
+    const albumThemes = ['album monday', 'albums', 'album day']
+    const isAlbumTheme = albumThemes.includes(theme)
 
-        if (avgReview) {
-          message += `\n${avgReview}`
-        }
+    // Track info append
+    if (isAlbumTheme && song.trackNumber && song.totalTracks) {
+      message += `\n📀 Track ${song.trackNumber} of ${song.totalTracks}`
+    }
+
+    if (!entry?.lastPlayed || playCount === 1) {
+      message += `\n🆕 First time playing in this room!`
+    } else {
+      message += `\n🔁 Played ${playCount} time${playCount !== 1 ? 's' : ''}`
+      const lastPlayedTime = formatDistanceToNow(new Date(entry.lastPlayed), { addSuffix: true })
+      message += `\n🕒 Last played ${lastPlayedTime}`
+    }
+
+    if (avgReview) {
+      message += `\n${avgReview}`
+    }
 
     await postMessage({ room, message })
   } catch (error) {
     console.error('Error in announceNowPlaying:', error.message)
   }
 }
+
 
 
 export async function saveSongReview({ currentSong, rating, sender }) {

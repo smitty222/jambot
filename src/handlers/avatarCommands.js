@@ -236,6 +236,34 @@ const userTokenMap = {
       await postMessage({ room, message: `Something went wrong transforming you into a` })
     }
   }
+  export async function handleVibesGuyCommand(senderUuid, room, postMessage) {
+    const userToken = userTokenMap[senderUuid]
+    if (!userToken) {
+      await postMessage({ room, message: 'Sorry, this command is only available to authorized dino users 🦖.' })
+      return
+    }
+  
+    try {
+      await updateUserAvatar(userToken, 'dj-aurision-1', '#FFA500')
+      await postMessage({ room, message: 'All time vibes guy is back' })
+    } catch (error) {
+      await postMessage({ room, message: `Something went wrong transforming you into a vibes guy` })
+    }
+  }
+  export async function handleFacesCommand(senderUuid, room, postMessage) {
+    const userToken = userTokenMap[senderUuid]
+    if (!userToken) {
+      await postMessage({ room, message: 'Sorry, this command is only available to authorized dino users 🦖.' })
+      return
+    }
+  
+    try {
+      await updateUserAvatar(userToken, 'dj-FACES-1', '#007CF0')
+      await postMessage({ room, message: 'Smile!' })
+    } catch (error) {
+      await postMessage({ room, message: `Something went wrong transforming you into a smiley face` })
+    }
+  }
   
   export async function handleRandomAvatarCommand(senderUuid, room, postMessage) {
     const userToken = userTokenMap[senderUuid]

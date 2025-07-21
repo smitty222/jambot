@@ -1,13 +1,13 @@
 [
   {
     "name": "Allen",
-    "totalHR": 90,
+    "totalHR": 131,
     "players": [
       {
         "id": "41292",
         "name": "Cal Raleigh",
         "team": "SEA",
-        "homeRuns": 12
+        "homeRuns": 32
       },
       {
         "id": "39712",
@@ -19,7 +19,7 @@
         "id": "39832",
         "name": "Shohei Ohtani",
         "team": "LAD",
-        "homeRuns": 20
+        "homeRuns": 32
       },
       {
         "id": "34923",
@@ -31,7 +31,7 @@
         "id": "42468",
         "name": "Andy Pages",
         "team": "LAD",
-        "homeRuns": 8
+        "homeRuns": 17
       },
       {
         "id": "42714",
@@ -61,7 +61,7 @@
   },
   {
     "name": "BeRad",
-    "totalHR": 87,
+    "totalHR": 121,
     "players": [
       {
         "id": "39907",
@@ -79,7 +79,7 @@
         "id": "34967",
         "name": "Kyle Tucker",
         "team": "CHC",
-        "homeRuns": 12
+        "homeRuns": 17
       },
       {
         "id": "33377",
@@ -103,13 +103,13 @@
         "id": "33192",
         "name": "Aaron Judge",
         "team": "NYY",
-        "homeRuns": 18
+        "homeRuns": 35
       },
       {
         "id": "40926",
         "name": "Brent Rooker",
         "team": "ATH",
-        "homeRuns": 8
+        "homeRuns": 20
       },
       {
         "id": "30836",
@@ -121,7 +121,7 @@
   },
   {
     "name": "Noremac",
-    "totalHR": 82,
+    "totalHR": 102,
     "players": [
       {
         "id": "32129",
@@ -151,7 +151,7 @@
         "id": "37498",
         "name": "Pete Alonso",
         "team": "NYM",
-        "homeRuns": 11
+        "homeRuns": 21
       },
       {
         "id": "35578",
@@ -163,7 +163,7 @@
         "id": "4918256",
         "name": "James Wood",
         "team": "WSH",
-        "homeRuns": 14
+        "homeRuns": 24
       },
       {
         "id": "42598",
@@ -181,7 +181,7 @@
   },
   {
     "name": "Chill Duck Lookin MF",
-    "totalHR": 76,
+    "totalHR": 89,
     "players": [
       {
         "id": "4686066",
@@ -193,7 +193,7 @@
         "id": "42415",
         "name": "Michael Busch",
         "team": "CHC",
-        "homeRuns": 6
+        "homeRuns": 19
       },
       {
         "id": "42404",
@@ -241,13 +241,13 @@
   },
   {
     "name": "Rsmitty",
-    "totalHR": 74,
+    "totalHR": 101,
     "players": [
       {
         "id": "42179",
         "name": "Riley Greene",
         "team": "DET",
-        "homeRuns": 12
+        "homeRuns": 24
       },
       {
         "id": "32159",
@@ -259,7 +259,7 @@
         "id": "32655",
         "name": "Byron Buxton",
         "team": "MIN",
-        "homeRuns": 6
+        "homeRuns": 21
       },
       {
         "id": "31283",

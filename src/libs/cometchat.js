@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid'
 import { buildUrl, makeRequest } from '../utils/networking.js'
 
-const startTimeStamp = Math.floor(Date.now() / 1000)
+export const startTimeStamp = Math.floor(Date.now() / 1000)
 
 const headers = {
   appid: process.env.CHAT_API_KEY,
@@ -12,54 +12,37 @@ const headers = {
   sdk: 'javascript@3.0.10'
 }
 
-export const postMessage = async (options) => {
-  headers.appid = process.env.CHAT_API_KEY
-  const paths = ['v3.0', 'messages']
+// Build the chat metadata consistently
+const buildChatMetadata = (message) => ({
+  message: message || '',
+  avatarId: process.env.CHAT_AVATAR_ID,
+  userName: process.env.CHAT_NAME,
+  color: `#${process.env.CHAT_COLOUR}`,
+  mentions: [],
+  userUuid: process.env.BOT_USER_UUID,
+  badges: ['VERIFIED', 'STAFF'],
+  id: uuidv4()
+})
 
-  // Build the base chat metadata (not for attachments)
-  const chatMessageMetadata = {
-    message: options.message || '',
-    avatarId: process.env.CHAT_AVATAR_ID,
-    userName: process.env.CHAT_NAME,
-    color: `#${process.env.CHAT_COLOUR}`,
-    mentions: [],
-    userUuid: process.env.CHAT_USER_ID,
-    badges: ['VERIFIED', 'STAFF'],
-    id: uuidv4()
-  }
-
-  if (options.mentions) {
-    chatMessageMetadata.mentions = options.mentions.map((mention) => ({
-      start: mention.position,
-      userNickname: mention.nickname,
-      userUuid: mention.userId
-    }))
-  }
-
-  if (options.customData && options.customData.songs) {
-    chatMessageMetadata.songs = options.customData.songs
-  }
-
-  // Determine if this is a media message
+// Build full message payload for CometChat API
+const buildPayload = (options) => {
   let type = 'text'
   const data = {}
 
   if (options.images || options.gifs) {
     type = 'image'
     data.attachments = []
-
     const mediaUrls = options.images || options.gifs
     for (const url of mediaUrls) {
       const filename = url.split('/').pop()
       const extension = filename.split('.').pop()
       const mimeType = extension === 'gif' ? 'image/gif' : `image/${extension}`
-
       data.attachments.push({
         url,
         name: filename,
         mimeType,
         extension,
-        size: 'unknown' // Optional; fill in if known
+        size: 'unknown'
       })
     }
   } else {
@@ -67,36 +50,46 @@ export const postMessage = async (options) => {
   }
 
   data.metadata = {
-    chatMessage: chatMessageMetadata
+    chatMessage: buildChatMetadata(options.message)
   }
 
-  const payload = {
+  return {
     type,
     receiverType: options.receiverType === 'user' ? 'user' : 'group',
     category: 'message',
     receiver: options.receiverType === 'user' ? options.receiver : options.room,
     data
   }
+}
+
+export const postMessage = async (options) => {
+  headers.appid = process.env.CHAT_API_KEY
+  const paths = ['v3.0', 'messages']
+
+  const payload = buildPayload(options)
 
   const url = buildUrl(`${process.env.CHAT_API_KEY}.apiclient-us.cometchat.io`, paths)
-  const messageResponse = await makeRequest(url, { method: 'POST', body: JSON.stringify(payload) }, headers)
 
-  return {
-    message: options.message,
-    messageResponse
+  try {
+    const messageResponse = await makeRequest(url, { method: 'POST', body: JSON.stringify(payload) }, headers)
+    return {
+      message: options.message,
+      messageResponse
+    }
+  } catch (error) {
+    console.error('Failed to post message:', error.message)
+    throw error
   }
 }
 
-
-// Function to send a direct message to a specific user
 export const sendDirectMessage = async (receiverUUID, message) => {
   try {
     const options = {
       message,
-      receiver: receiverUUID, // Receiver's UUID for direct message
-      receiverType: 'user' // Specify that the receiver is a user
+      receiver: receiverUUID,
+      receiverType: 'user'
     }
-    return await postMessage(options) // Use the modified postMessage function
+    return await postMessage(options)
   } catch (error) {
     console.error(`Failed to send direct message to ${receiverUUID}: ${error.message}`)
   }
@@ -111,11 +104,17 @@ export const joinChat = async (roomId) => {
   return response
 }
 
+/**
+ * Fetch messages for a group or user since a timestamp.
+ * @param {string} roomOrUserId - group ID or user ID to fetch messages for
+ * @param {number} fromTimestamp - UNIX timestamp from which to fetch new messages
+ * @param {'group'|'user'} receiverType - type of chat to fetch
+ * @returns {Promise<object>} API response containing messages
+ */
 export const getMessages = async (roomOrUserId, fromTimestamp = startTimeStamp, receiverType = 'group') => {
   headers.appid = process.env.CHAT_API_KEY
   const messageLimit = 50
 
-  let paths
   const searchParams = [
     ['per_page', messageLimit],
     ['hideMessagesFromBlockedUsers', 0],
@@ -126,17 +125,44 @@ export const getMessages = async (roomOrUserId, fromTimestamp = startTimeStamp, 
     ['affix', 'append']
   ]
 
+  let paths
   if (receiverType === 'group') {
-    // Fetching messages for a group chat
     paths = ['v3.0', 'groups', roomOrUserId, 'messages']
   } else if (receiverType === 'user') {
-    // Fetching direct messages for a user
-    paths = ['v3.0', 'users', roomOrUserId, 'messages'] // This fetches direct messages for a user
+    paths = ['v3.0', 'users', roomOrUserId, 'messages']
+  } else {
+    throw new Error(`Invalid receiverType "${receiverType}"`)
   }
 
-  // Build the URL for the API request
   const url = buildUrl(`${process.env.CHAT_API_KEY}.apiclient-us.cometchat.io`, paths, searchParams)
 
-  // Fetch messages
-  return await makeRequest(url, { headers })
+  try {
+    const response = await makeRequest(url, { headers })
+    return response
+  } catch (error) {
+    console.error(`Failed to get messages for ${receiverType} ${roomOrUserId}:`, error.message)
+    throw error
+  }
+}
+
+export const getDirectConversation = async (userUUID, botUUID = process.env.BOT_USER_UUID, limit = 50) => {
+  headers.appid = process.env.CHAT_API_KEY
+
+  const searchParams = [
+    ['conversationType', 'user'],
+    ['limit', limit],
+    ['uid', botUUID]
+  ]
+
+  const paths = ['v3', 'users', userUUID, 'conversation']
+
+  const url = buildUrl(`${process.env.CHAT_API_KEY}.apiclient-us.cometchat.io`, paths, searchParams)
+
+  try {
+    const response = await makeRequest(url, { headers })
+    return response
+  } catch (error) {
+    console.error(`Failed to get direct conversation with user ${userUUID}:`, error.message)
+    throw error
+  }
 }
