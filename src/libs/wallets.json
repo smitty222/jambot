@@ -3,7 +3,7 @@
     "balance": 5
   },
   "210141ad-6b01-4665-84dc-e47ea7c27dcb": {
-    "balance": 111712
+    "balance": 111847.4
   },
   "3ea72ae7-77db-4d08-9dc6-ce875890c1b5": {
     "balance": 261
@@ -12,7 +12,7 @@
     "balance": 8466.1
   },
   "072b0bb3-518e-4422-97fd-13dc53e8ae7e": {
-    "balance": 97145.7
+    "balance": 97147.7
   },
   "df2cd59d-c1ab-4589-98cd-e14f8a400f77": {
     "balance": 142.8
@@ -114,7 +114,7 @@
     "balance": 4
   },
   "fd2f1b47-b1d4-4100-8f88-6e56aa82e13f": {
-    "balance": 1181
+    "balance": 1157.4
   },
   "154fea7e-e957-40f8-bcfc-528eb67c4da0": {
     "balance": 4
@@ -178,5 +178,8 @@
   },
   "a51b58ee-1826-45a3-b8f4-f08ba1bb5eea": {
     "balance": 4
+  },
+  "f3b152a3-b29b-41b8-88b1-dea4d9b952aa": {
+    "balance": 100008
   }
 }

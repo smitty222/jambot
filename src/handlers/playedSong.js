@@ -1,5 +1,5 @@
 // playedSong.js
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/Cometchat/messageSender.js'
 import { roomBot } from '../index.js'
 import { fetchSongData, getAlbumTracks, spotifyTrackInfo } from '../utils/API.js'
 import { roomThemes } from './message.js'
@@ -122,7 +122,7 @@ const handleAlbumTheme = async (payload) => {
 
               if (onStage.includes(nextUser.userId)) {
                 console.log(`${nextUser.userId} successfully joined the stage.`)
-                await queueManager.leaveQueue(nextUser)
+                await queueManager.leaveQueue(nextUser.userId)
                 
               } else {
                 await postMessage({

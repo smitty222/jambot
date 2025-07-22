@@ -1,5 +1,5 @@
 import { roomBot } from '../index.js'
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/Cometchat/messageSender.js'
 import { getUserNickname } from '../handlers/roulette.js'
 
 const activeRemovals = {}

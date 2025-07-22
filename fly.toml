@@ -1,9 +1,9 @@
-# fly.toml app configuration file generated for jamflowbot-allen on 2025-06-27T08:48:30-04:00
+# fly.toml app configuration file generated for jamflowbot-allen-morning-voice-8280 on 2025-07-22T07:29:36-04:00
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'jamflowbot-allen'
+app = 'jamflowbot-allen-morning-voice-8280'
 primary_region = 'atl'
 
 [build]

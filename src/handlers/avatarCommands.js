@@ -4,7 +4,9 @@ import avatars from '../libs/TT live avatars.json' assert { type: 'json' }
 const userTokenMap = {
     '072b0bb3-518e-4422-97fd-13dc53e8ae7e': process.env.IAN_USER_TOKEN,
     '210141ad-6b01-4665-84dc-e47ea7c27dcb': process.env.SMITTY_USER_TOKEN,
-    '92302b7d-ae5e-466f-975b-d3fee461f13f': process.env.CAM_USER_TOKEN
+    '92302b7d-ae5e-466f-975b-d3fee461f13f': process.env.CAM_USER_TOKEN,
+    'fd2f1b47-b1d4-4100-8f88-6e56aa82e13f': process.env.GAB_USER_TOKEN
+
   }
   
   const randomColors = [

@@ -1,5 +1,6 @@
 // message.js
-import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
+import { sendDirectMessage } from '../libs/Cometchat/messageSender.js'
+import { postMessage } from '../libs/Cometchat/messageSender.js'
 import { askQuestion, setCurrentSong } from '../libs/ai.js'
 import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, displayTriviaInfo } from '../handlers/triviaCommands.js'
 import { logger } from '../utils/logging.js'
@@ -66,6 +67,18 @@ export default async (payload, room, state) => {
       room,
       message: 'Hi!'
     })
+  }
+}
+if (payload.message === '/addMe') {
+  const sender = payload.sender;
+  console.log('🎤 /addMe requested by:', sender);
+
+  const added = await roomBot.addUserDJ(sender);
+
+  if (added) {
+    await postMessage({ room, message: `<@uid:${sender}> has been added to the stage.` });
+  } else {
+    await postMessage({ room, message: `<@uid:${sender}> is already a DJ or there was an error.` });
   }
 }
 

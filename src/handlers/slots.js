@@ -95,28 +95,32 @@ function calculateRTP (winMultiplier, betAmount, rtp = 0.96) {
   return expectedPayout
 }
 
+function formatBalance(balance) {
+  const rounded = Math.round(balance)
+  return rounded > 999 ? rounded.toLocaleString() : rounded.toString()
+}
+
 async function playSlots (userUUID, betSize = 1, paylines = 1) {
-  const maxBetSize = 10000 // Set a maximum bet size if desired
-  const minBetSize = 1 // Set a mrsinimum bet size
+  const maxBetSize = 10000
+  const minBetSize = 1
 
   if (betSize < minBetSize || betSize > maxBetSize) {
-    return `Bet amount must be between $${minBetSize} and $${maxBetSize}.`
+    return `Bet amount must be between $${formatBalance(minBetSize)} and $${formatBalance(maxBetSize)}.`
   }
 
   try {
     let currentBalance = await getUserWallet(userUUID)
+    const formattedBalance = formatBalance(currentBalance)
 
     const totalBet = betSize * paylines
     if (betSize <= 0 || totalBet > currentBalance) {
-      return `Invalid bet amount. Your current balance is $${currentBalance}.`
+      return `Invalid bet amount. Your current balance is $${formattedBalance}.`
     }
 
-    // Deduct the bet from the user's wallet
     await removeFromUserWallet(userUUID, totalBet)
 
-    // Increment the progressive jackpot by 5% of the total bet
     let currentJackpot = getJackpotValue()
-    const jackpotIncrement = totalBet * 0.05 // 5% of the total bet
+    const jackpotIncrement = totalBet * 0.05
     currentJackpot += jackpotIncrement
     updateJackpotValue(currentJackpot)
 
@@ -130,10 +134,9 @@ async function playSlots (userUUID, betSize = 1, paylines = 1) {
       const multiplier = calculateMultiplier(slotsResult)
 
       if (multiplier === 'jackpot') {
-        // Jackpot hit with 3 diamonds
         winnings += currentJackpot
-        currentJackpot = 100 // Reset jackpot
-        updateJackpotValue(currentJackpot) // Save the new jackpot value
+        currentJackpot = 100
+        updateJackpotValue(currentJackpot)
         console.log(`User ${userUUID} hit the jackpot!`)
       } else if (multiplier > 0) {
         winnings += calculateRTP(multiplier, betSize)
@@ -143,16 +146,18 @@ async function playSlots (userUUID, betSize = 1, paylines = 1) {
     if (winnings > 0) {
       await addToUserWallet(userUUID, winnings)
       currentBalance = await getUserWallet(userUUID)
-      return `____SPIN____\n\n${results.map(r => r.join(' | ')).join('\n')}\n_____________\n\n You Win $${winnings.toFixed(2)}!\nCurrent Balance: $${currentBalance}.`
+
+      return `____SPIN____\n\n${results.map(r => r.join(' | ')).join('\n')}\n_____________\n\n🎉 You Win $${formatBalance(winnings.toFixed(2))}!\n💰 Current Balance: $${formatBalance(currentBalance)}.`
     } else {
       currentBalance = await getUserWallet(userUUID)
-      return `____SPIN____\n\n${results.map(r => r.join(' | ')).join('\n')}\n_____________\n\n You Lose $${totalBet}.\nCurrent Balance: $${currentBalance}.`
+      return `____SPIN____\n\n${results.map(r => r.join(' | ')).join('\n')}\n_____________\n\n😢 You Lose $${formatBalance(totalBet)}.\n💰 Current Balance: $${formatBalance(currentBalance)}.`
     }
   } catch (error) {
     console.error('Error while playing slots:', error)
     return 'An error occurred while playing the slots. Please try again later.'
   }
 }
+
 
 // Simulate progressive jackpot hit with low probability
 function isJackpotHit () {

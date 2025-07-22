@@ -1,12 +1,12 @@
 import 'dotenv/config';
 import express from 'express';
-import axios from 'axios';
 import { Bot, getCurrentDJUUIDs } from './libs/bot.js';
 import { updateCurrentUsers } from './utils/currentUsers.js';
 import { fetchCurrentUsers } from './utils/API.js';
 import * as themeStorage from './utils/themeManager.js';
 import { roomThemes } from './handlers/message.js';
 import { addTrackedUser, getTrackedUsers } from './utils/trackedUsers.js';
+import { pollDirectMessages } from './handlers/directmessageHandler.js';
 
 const app = express();
 
@@ -68,17 +68,21 @@ const pollDMConversations = async () => {
   }
 };
 
-// Poll DMs every 5 seconds for more responsive handling
-setInterval(pollDMConversations, 5_000);
+setInterval(() => {
+  pollDirectMessages()
+}, 5000) // every 5 seconds
 
 const repeatedTasks = setInterval(async () => {
   await roomBot.processNewMessages();
 }, 500);
 
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server is running on port ${PORT}`);
+app.get('/', (req, res) => {
+  res.send('Jamflow bot is alive and running!');
 });
+
+const port = process.env.PORT || 3000;
+app.listen(port, '0.0.0.0', () =>
+  console.log(`Listening on ${port}`));
+
 
 export { roomBot };

@@ -1,4 +1,4 @@
-/* import { postMessage } from '../libs/cometchat.js'; // Adjust import paths as needed
+/* import { postMessage } from '../libs/messageSender.js'; // Adjust import paths as needed
 import { fetchAudioFeatures} from './API.js';
 import { addTracksToPlaylist } from './playlistUpdate.js';
 

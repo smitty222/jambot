@@ -1,100 +1,169 @@
 {
   "songs": [
     {
-      "trackName": "Black Water",
-      "artistName": "The Doobie Brothers",
+      "trackName": "Heaven Falls / Fall on Me",
+      "artistName": "Surfaces",
       "albumName": "Unknown",
       "releaseDate": "Unknown",
       "spotifyUrl": "",
-      "popularity": 69,
-      "dj": "user",
+      "popularity": 61,
+      "dj": "bot",
       "similarTracks": [
         {
-          "trackName": "China Grove",
-          "artistName": "The Doobie Brothers"
+          "trackName": "Shine On Top",
+          "artistName": "Surfaces"
         },
         {
-          "trackName": "Listen to the Music",
-          "artistName": "The Doobie Brothers"
+          "trackName": "Take It Easy",
+          "artistName": "Surfaces"
         },
         {
-          "trackName": "Maggie May",
-          "artistName": "Rod Stewart"
+          "trackName": "Strawberry Sunscreen",
+          "artistName": "Lostboycrow"
         }
       ]
     },
     {
-      "trackName": "Magic Carpet Ride",
-      "artistName": "Steppenwolf",
+      "trackName": "All the Smoke",
+      "artistName": "Tyla Yaweh feat. Gunna & Wiz Khalifa",
       "albumName": "Unknown",
       "releaseDate": "Unknown",
       "spotifyUrl": "",
-      "popularity": 72,
-      "dj": "user",
+      "popularity": 52,
+      "dj": "bot",
       "similarTracks": [
         {
-          "trackName": "White Room",
-          "artistName": "Cream"
+          "trackName": "Pull Up",
+          "artistName": "Lil Mosey"
         },
         {
-          "trackName": "Born to Be Wild",
-          "artistName": "Steppenwolf"
+          "trackName": "Gone Girl",
+          "artistName": "iann dior"
         },
         {
-          "trackName": "Sunshine of Your Love",
-          "artistName": "Cream"
+          "trackName": "Wow.",
+          "artistName": "Post Malone"
         }
       ]
     },
     {
-      "trackName": "Down On The Corner",
-      "artistName": "Creedence Clearwater Revival",
+      "trackName": "Forwards",
+      "artistName": "Still Woozy",
       "albumName": "Unknown",
       "releaseDate": "Unknown",
       "spotifyUrl": "",
-      "popularity": 75,
-      "dj": "user",
+      "popularity": 49,
+      "dj": "bot",
       "similarTracks": [
         {
-          "trackName": "It Came Out of the Sky",
-          "artistName": "Creedence Clearwater Revival"
+          "trackName": "Lemon",
+          "artistName": "Still Woozy"
         },
         {
-          "trackName": "Up Around the Bend",
-          "artistName": "Creedence Clearwater Revival"
+          "trackName": "Again",
+          "artistName": "Still Woozy"
         },
         {
-          "trackName": "Ramblin' Man",
-          "artistName": "The Allman Brothers Band"
+          "trackName": "Trigger of Love",
+          "artistName": "Jawny"
         }
       ]
     },
     {
-      "trackName": "For What It's Worth",
-      "artistName": "Buffalo Springfield",
+      "trackName": "Again",
+      "artistName": "Still Woozy",
       "albumName": "Unknown",
       "releaseDate": "Unknown",
       "spotifyUrl": "",
-      "popularity": 83,
-      "dj": "user",
+      "popularity": 52,
+      "dj": "bot",
       "similarTracks": [
         {
-          "trackName": "Bound To Fall",
-          "artistName": "Stephen Stills"
+          "trackName": "Forwards",
+          "artistName": "Still Woozy"
         },
         {
-          "trackName": "Heart of Gold",
-          "artistName": "Crosby, Stills, Nash & Young"
+          "trackName": "Lemon",
+          "artistName": "Still Woozy"
         },
         {
-          "trackName": "Out on the Weekend",
-          "artistName": "Neil Young"
+          "trackName": "strawberry chainsaw",
+          "artistName": "Jawny"
         }
       ]
     },
     {
-      "trackName": "I Won't Back Down",
-      "artistName": "Tom Petty",
+      "trackName": "strawberry chainsaw",
+      "artistName": "JAWNY",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 57,
+      "dj": "bot",
+      "similarTracks": [
+        {
+          "trackName": "Trigger of Love",
+          "artistName": "Jawny"
+        },
+        {
+          "trackName": "wide eyed",
+          "artistName": "Jawny"
+        },
+        {
+          "trackName": "Metamodernity",
+          "artistName": "Vansire"
+        }
+      ]
+    },
+    {
+      "trackName": "Intro",
+      "artistName": "DVA",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 6,
+      "dj": "bot",
+      "similarTracks": [
+        {
+          "trackName": "Bádalisk",
+          "artistName": "DVA"
+        },
+        {
+          "trackName": "Pingu hop",
+          "artistName": "DVA"
+        },
+        {
+          "trackName": "Summer Deviation (The Scandals Fatal Dance Mix)",
+          "artistName": "Moimir Papalescu & The Nihilists"
+        }
+      ]
+    },
+    {
+      "trackName": "All Your Life",
+      "artistName": "Still Woozy",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 48,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Again",
+          "artistName": "Still Woozy"
+        },
+        {
+          "trackName": "Forwards",
+          "artistName": "Still Woozy"
+        },
+        {
+          "trackName": "strawberry chainsaw",
+          "artistName": "Jawny"
+        }
+      ]
+    },
+    {
+      "trackName": "First Date",
+      "artistName": "Blink 182",
       "albumName": "Unknown",
       "releaseDate": "Unknown",
       "spotifyUrl": "",
@@ -102,352 +171,99 @@
       "dj": "user",
       "similarTracks": [
         {
-          "trackName": "Free Fallin'",
-          "artistName": "Tom Petty"
+          "trackName": "The Rock Show",
+          "artistName": "blink-182"
         },
         {
-          "trackName": "Runnin' Down A Dream",
-          "artistName": "Tom Petty"
+          "trackName": "Stay Together for the Kids",
+          "artistName": "blink-182"
         },
         {
-          "trackName": "Learning to Fly",
-          "artistName": "Tom Petty and The Heartbreakers"
+          "trackName": "In Too Deep",
+          "artistName": "Sum 41"
         }
       ]
     },
     {
-      "trackName": "The Weight (Remastered 2000)",
-      "artistName": "The Band",
+      "trackName": "Mr. Brightside",
+      "artistName": "The Killers",
       "albumName": "Unknown",
       "releaseDate": "Unknown",
       "spotifyUrl": "",
-      "popularity": 74,
+      "popularity": 13,
       "dj": "user",
       "similarTracks": [
         {
-          "trackName": "Beast Of Burden (Remastered 1994)",
-          "artistName": "The Rolling Stones"
+          "trackName": "Somebody Told Me",
+          "artistName": "The Killers"
         },
         {
-          "trackName": "Heart of Gold (2009 Remaster)",
-          "artistName": "Neil Young"
+          "trackName": "When You Were Young",
+          "artistName": "The Killers"
         },
         {
-          "trackName": "Mrs. Robinson (From \"The Graduate\" Soundtrack)",
-          "artistName": "Simon & Garfunkel"
+          "trackName": "Take Me Out",
+          "artistName": "Franz Ferdinand"
         }
       ]
     },
     {
-      "trackName": "Rock'n Me",
-      "artistName": "Steve Miller Band",
-      "albumName": "Unknown",
-      "releaseDate": "Unknown",
-      "spotifyUrl": "",
-      "popularity": 72,
-      "dj": "user",
-      "similarTracks": [
-        {
-          "trackName": "Jet Airliner",
-          "artistName": "Steve Miller Band"
-        },
-        {
-          "trackName": "Take the Money and Run",
-          "artistName": "Steve Miller Band"
-        },
-        {
-          "trackName": "Listen to the Music",
-          "artistName": "The Doobie Brothers"
-        }
-      ]
-    },
-    {
-      "trackName": "China Grove",
-      "artistName": "The Doobie Brothers",
-      "albumName": "Unknown",
-      "releaseDate": "Unknown",
-      "spotifyUrl": "",
-      "popularity": 71,
-      "dj": "user",
-      "similarTracks": [
-        {
-          "trackName": "Long Train Runnin'",
-          "artistName": "The Doobie Brothers"
-        },
-        {
-          "trackName": "Black Water",
-          "artistName": "The Doobie Brothers"
-        },
-        {
-          "trackName": "Rock'n Me",
-          "artistName": "Steve Miller Band"
-        }
-      ]
-    },
-    {
-      "trackName": "Casey Jones",
-      "artistName": "Grateful Dead",
-      "albumName": "Unknown",
-      "releaseDate": "Unknown",
-      "spotifyUrl": "",
-      "popularity": 62,
-      "dj": "user",
-      "similarTracks": [
-        {
-          "trackName": "Sugar Magnolia",
-          "artistName": "Grateful Dead"
-        },
-        {
-          "trackName": "I Know You Rider",
-          "artistName": "Grateful Dead"
-        },
-        {
-          "trackName": "The Weight",
-          "artistName": "The Band"
-        }
-      ]
-    },
-    {
-      "trackName": "The Joker",
-      "artistName": "Steve Miller Band",
-      "albumName": "Unknown",
-      "releaseDate": "Unknown",
-      "spotifyUrl": "",
-      "popularity": 80,
-      "dj": "user",
-      "similarTracks": [
-        {
-          "trackName": "Jet Airliner",
-          "artistName": "Steve Miller Band"
-        },
-        {
-          "trackName": "Fly Like an Eagle",
-          "artistName": "Steve Miller Band"
-        },
-        {
-          "trackName": "All Right Now",
-          "artistName": "Free"
-        }
-      ]
-    },
-    {
-      "trackName": "Another Brick in the Wall, Pt. 2",
-      "artistName": "Pink Floyd",
-      "albumName": "Unknown",
-      "releaseDate": "Unknown",
-      "spotifyUrl": "",
-      "popularity": 85,
-      "dj": "user",
-      "similarTracks": [
-        {
-          "trackName": "Another Brick in the Wall, Pt. 1",
-          "artistName": "Pink Floyd"
-        },
-        {
-          "trackName": "The Happiest Days of Our Lives",
-          "artistName": "Pink Floyd"
-        },
-        {
-          "trackName": "Riders on the Storm",
-          "artistName": "The Doors"
-        }
-      ]
-    },
-    {
-      "trackName": "Cocaine",
-      "artistName": "Eric Clapton",
-      "albumName": "Unknown",
-      "releaseDate": "Unknown",
-      "spotifyUrl": "",
-      "popularity": 71,
-      "dj": "user",
-      "similarTracks": [
-        {
-          "trackName": "Lay Down Sally",
-          "artistName": "Eric Clapton"
-        },
-        {
-          "trackName": "Wonderful Tonight",
-          "artistName": "Eric Clapton"
-        },
-        {
-          "trackName": "Sultans of Swing",
-          "artistName": "Dire Straits"
-        }
-      ]
-    },
-    {
-      "trackName": "Gimme Shelter",
-      "artistName": "The Rolling Stones",
-      "albumName": "Unknown",
-      "releaseDate": "Unknown",
-      "spotifyUrl": "",
-      "popularity": 80,
-      "dj": "user",
-      "similarTracks": [
-        {
-          "trackName": "You Can't Always Get What You Want",
-          "artistName": "The Rolling Stones"
-        },
-        {
-          "trackName": "Love in Vain",
-          "artistName": "The Rolling Stones"
-        },
-        {
-          "trackName": "White Room",
-          "artistName": "Cream"
-        }
-      ]
-    },
-    {
-      "trackName": "Mary Jane's Last Dance",
-      "artistName": "Tom Petty",
-      "albumName": "Unknown",
-      "releaseDate": "Unknown",
-      "spotifyUrl": "",
-      "popularity": 1,
-      "dj": "user",
-      "similarTracks": [
-        {
-          "trackName": "Don't Do Me Like That",
-          "artistName": "Tom Petty"
-        },
-        {
-          "trackName": "Learning To Fly",
-          "artistName": "Tom Petty"
-        },
-        {
-          "trackName": "Lyin' Eyes (2013 Remaster)",
-          "artistName": "Eagles"
-        }
-      ]
-    },
-    {
-      "trackName": "Midnight Rider",
-      "artistName": "The Allman Brothers Band",
-      "albumName": "Unknown",
-      "releaseDate": "Unknown",
-      "spotifyUrl": "",
-      "popularity": 1,
-      "dj": "user",
-      "similarTracks": [
-        {
-          "trackName": "In Memory of Elizabeth Reed",
-          "artistName": "The Allman Brothers Band"
-        },
-        {
-          "trackName": "Ramblin' Man",
-          "artistName": "The Allman Brothers Band"
-        },
-        {
-          "trackName": "Can't You See",
-          "artistName": "The Marshall Tucker Band"
-        }
-      ]
-    },
-    {
-      "trackName": "Beast Of Burden (Remastered 1994)",
-      "artistName": "The Rolling Stones",
-      "albumName": "Unknown",
-      "releaseDate": "Unknown",
-      "spotifyUrl": "",
-      "popularity": 79,
-      "dj": "user",
-      "similarTracks": [
-        {
-          "trackName": "Start Me Up (Remastered 2009)",
-          "artistName": "The Rolling Stones"
-        },
-        {
-          "trackName": "Gimme Shelter",
-          "artistName": "The Rolling Stones"
-        },
-        {
-          "trackName": "Long Cool Woman (In a Black Dress) (1999 Remaster)",
-          "artistName": "The Hollies"
-        }
-      ]
-    },
-    {
-      "trackName": "Take It Easy",
-      "artistName": "Eagles",
-      "albumName": "Unknown",
-      "releaseDate": "Unknown",
-      "spotifyUrl": "",
-      "popularity": 84,
-      "dj": "user",
-      "similarTracks": [
-        {
-          "trackName": "Peaceful Easy Feeling",
-          "artistName": "Eagles"
-        },
-        {
-          "trackName": "Witchy Woman",
-          "artistName": "Eagles"
-        },
-        {
-          "trackName": "Listen to the Music",
-          "artistName": "The Doobie Brothers"
-        }
-      ]
-    },
-    {
-      "trackName": "Listen to the Music",
-      "artistName": "The Doobie Brothers",
-      "albumName": "Unknown",
-      "releaseDate": "Unknown",
-      "spotifyUrl": "",
-      "popularity": 86,
-      "dj": "user",
-      "similarTracks": [
-        {
-          "trackName": "Long Train Runnin'",
-          "artistName": "The Doobie Brothers"
-        },
-        {
-          "trackName": "China Grove",
-          "artistName": "The Doobie Brothers"
-        },
-        {
-          "trackName": "Sister Golden Hair",
-          "artistName": "America"
-        }
-      ]
-    },
-    {
-      "trackName": "Reelin' In The Years",
-      "artistName": "Steely Dan",
-      "albumName": "Unknown",
-      "releaseDate": "Unknown",
-      "spotifyUrl": "",
-      "popularity": 4,
-      "dj": "user",
-      "similarTracks": [
-        {
-          "trackName": "Do It Again",
-          "artistName": "Steely Dan"
-        },
-        {
-          "trackName": "Dirty Work",
-          "artistName": "Steely Dan"
-        },
-        {
-          "trackName": "Listen to the Music",
-          "artistName": "The Doobie Brothers"
-        }
-      ]
-    },
-    {
-      "trackName": "Almost",
+      "trackName": "Girl All the Bad Guys Want",
       "artistName": "Bowling For Soup",
       "albumName": "Unknown",
       "releaseDate": "Unknown",
       "spotifyUrl": "",
-      "popularity": 61,
+      "popularity": 67,
       "dj": "user",
       "similarTracks": [
         {
-          "trackName": "Ohio (Come Back to Texas)",
+          "trackName": "The River",
+          "artistName": "Good Charlotte"
+        },
+        {
+          "trackName": "Empty Spaces",
+          "artistName": "SR-71"
+        },
+        {
+          "trackName": "Head on Collision",
+          "artistName": "New Found Glory"
+        }
+      ]
+    },
+    {
+      "trackName": "High School Never Ends (Main Version - Explicit)",
+      "artistName": "Bowling For Soup",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 64,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Girl All the Bad Guys Want",
+          "artistName": "Bowling for Soup"
+        },
+        {
+          "trackName": "Getting Old Sucks (But Everybody's Doing It)",
+          "artistName": "Bowling for Soup"
+        },
+        {
+          "trackName": "Lifestyles of the Rich & Famous",
+          "artistName": "Good Charlotte"
+        }
+      ]
+    },
+    {
+      "trackName": "Ohio (Come Back To Texas)",
+      "artistName": "Bowling For Soup",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 57,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Almost",
           "artistName": "Bowling for Soup"
         },
         {
@@ -455,14 +271,37 @@
           "artistName": "Bowling for Soup"
         },
         {
-          "trackName": "My Friends Over You",
-          "artistName": "New Found Glory"
+          "trackName": "Walking Disaster",
+          "artistName": "Sum 41"
         }
       ]
     },
     {
-      "trackName": "Ocean Avenue",
-      "artistName": "Yellowcard",
+      "trackName": "Sweetness",
+      "artistName": "Jimmy Eat World",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 73,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Bleed American",
+          "artistName": "Jimmy Eat World"
+        },
+        {
+          "trackName": "If You Don't, Don't",
+          "artistName": "Jimmy Eat World"
+        },
+        {
+          "trackName": "MakeDamnSure",
+          "artistName": "Taking Back Sunday"
+        }
+      ]
+    },
+    {
+      "trackName": "My Own Worst Enemy",
+      "artistName": "Lit",
       "albumName": "Unknown",
       "releaseDate": "Unknown",
       "spotifyUrl": "",
@@ -470,12 +309,12 @@
       "dj": "user",
       "similarTracks": [
         {
-          "trackName": "Only One",
-          "artistName": "Yellowcard"
+          "trackName": "Semi-Charmed Life",
+          "artistName": "Third Eye Blind"
         },
         {
-          "trackName": "Way Away",
-          "artistName": "Yellowcard"
+          "trackName": "Fat Lip",
+          "artistName": "Sum 41"
         },
         {
           "trackName": "The Anthem",
@@ -484,112 +323,66 @@
       ]
     },
     {
-      "trackName": "Move Along",
-      "artistName": "The All-American Rejects",
+      "trackName": "Say It Ain't So (Original Mix)",
+      "artistName": "Weezer",
       "albumName": "Unknown",
       "releaseDate": "Unknown",
       "spotifyUrl": "",
-      "popularity": 75,
+      "popularity": 2,
       "dj": "user",
       "similarTracks": [
         {
-          "trackName": "Dirty Little Secret",
-          "artistName": "The All-American Rejects"
+          "trackName": "Ring the Bell",
+          "artistName": "Joey Supaporn"
         },
         {
-          "trackName": "It Ends Tonight",
-          "artistName": "The All-American Rejects"
+          "trackName": "El Conductor Barbado",
+          "artistName": "Taco-Town"
         },
         {
-          "trackName": "Ocean Avenue",
-          "artistName": "Yellowcard"
+          "trackName": "Bang Bang - Lazy Hammock Chillout Mix",
+          "artistName": "The Diventa Project"
         }
       ]
     },
     {
-      "trackName": "Dirty Little Secret",
-      "artistName": "The All-American Rejects",
+      "trackName": "Inside Out",
+      "artistName": "Eve 6",
       "albumName": "Unknown",
       "releaseDate": "Unknown",
       "spotifyUrl": "",
-      "popularity": 77,
+      "popularity": 70,
       "dj": "user",
       "similarTracks": [
         {
-          "trackName": "Move Along",
-          "artistName": "The All-American Rejects"
+          "trackName": "Flagpole Sitta",
+          "artistName": "Harvey Danger"
         },
         {
-          "trackName": "Gives You Hell",
-          "artistName": "The All-American Rejects"
+          "trackName": "Santa Monica",
+          "artistName": "Everclear"
         },
         {
-          "trackName": "Sugar, We're Goin Down",
-          "artistName": "Fall Out Boy"
+          "trackName": "If You Could Only See",
+          "artistName": "Tonic"
         }
       ]
     },
     {
-      "trackName": "Streetcorner Symphony",
-      "artistName": "Rob Thomas",
+      "trackName": "Lifestyles of the Rich & Famous",
+      "artistName": "Good Charlotte",
       "albumName": "Unknown",
       "releaseDate": "Unknown",
       "spotifyUrl": "",
-      "popularity": 56,
+      "popularity": 72,
       "dj": "user",
       "similarTracks": [
         {
-          "trackName": "Ever The Same",
-          "artistName": "Rob Thomas"
+          "trackName": "The Anthem",
+          "artistName": "Good Charlotte"
         },
         {
-          "trackName": "When The Heartache Ends",
-          "artistName": "Rob Thomas"
-        },
-        {
-          "trackName": "Our Song",
-          "artistName": "Matchbox Twenty"
-        }
-      ]
-    },
-    {
-      "trackName": "Fake It",
-      "artistName": "Seether",
-      "albumName": "Unknown",
-      "releaseDate": "Unknown",
-      "spotifyUrl": "",
-      "popularity": 78,
-      "dj": "user",
-      "similarTracks": [
-        {
-          "trackName": "Remedy",
-          "artistName": "Seether"
-        },
-        {
-          "trackName": "Fine Again",
-          "artistName": "Seether"
-        },
-        {
-          "trackName": "Riot",
-          "artistName": "Three Days Grace"
-        }
-      ]
-    },
-    {
-      "trackName": "Flavor Of The Weak",
-      "artistName": "American Hi-Fi",
-      "albumName": "Unknown",
-      "releaseDate": "Unknown",
-      "spotifyUrl": "",
-      "popularity": 4,
-      "dj": "user",
-      "similarTracks": [
-        {
-          "trackName": "My Friends Over You",
-          "artistName": "New Found Glory"
-        },
-        {
-          "trackName": "Lifestyles of the Rich & Famous",
+          "trackName": "Girls & Boys",
           "artistName": "Good Charlotte"
         },
         {
@@ -599,44 +392,228 @@
       ]
     },
     {
-      "trackName": "The Anthem",
-      "artistName": "Good Charlotte",
+      "trackName": "Sound of Madness",
+      "artistName": "Shinedown",
       "albumName": "Unknown",
       "releaseDate": "Unknown",
       "spotifyUrl": "",
-      "popularity": 77,
+      "popularity": 76,
       "dj": "user",
       "similarTracks": [
         {
-          "trackName": "Lifestyles of the Rich & Famous",
-          "artistName": "Good Charlotte"
+          "trackName": "Second Chance",
+          "artistName": "Shinedown"
         },
         {
-          "trackName": "Girls & Boys",
-          "artistName": "Good Charlotte"
+          "trackName": "Devour",
+          "artistName": "Shinedown"
         },
         {
-          "trackName": "Ocean Avenue",
-          "artistName": "Yellowcard"
+          "trackName": "Remedy",
+          "artistName": "Seether"
         }
       ]
     },
     {
-      "trackName": "One Week",
-      "artistName": "Barenaked Ladies",
+      "trackName": "Buddy Holly",
+      "artistName": "Weezer",
       "albumName": "Unknown",
       "releaseDate": "Unknown",
       "spotifyUrl": "",
-      "popularity": 74,
+      "popularity": 80,
       "dj": "user",
       "similarTracks": [
         {
-          "trackName": "It's All Been Done",
-          "artistName": "Barenaked Ladies"
+          "trackName": "Undone - The Sweater Song",
+          "artistName": "Weezer"
         },
         {
-          "trackName": "Pinch Me",
-          "artistName": "Barenaked Ladies"
+          "trackName": "My Name Is Jonas",
+          "artistName": "Weezer"
+        },
+        {
+          "trackName": "Just",
+          "artistName": "Radiohead"
+        }
+      ]
+    },
+    {
+      "trackName": "II MOST WANTED",
+      "artistName": "Beyoncé & Miley Cyrus",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 60,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "TEXAS HOLD 'EM (PONY UP) REMIX",
+          "artistName": "Beyoncé"
+        },
+        {
+          "trackName": "Is It Over Now? (Taylor's Version) [From the Vault]",
+          "artistName": "Taylor Swift"
+        },
+        {
+          "trackName": "\"Slut!\" (Taylor's Version) [From the Vault]",
+          "artistName": "Taylor Swift"
+        }
+      ]
+    },
+    {
+      "trackName": "Shakin' Off The Rust",
+      "artistName": "The Blue Stones",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 59,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "One by One",
+          "artistName": "The Blue Stones"
+        },
+        {
+          "trackName": "Come on Over",
+          "artistName": "Royal Blood"
+        },
+        {
+          "trackName": "Better Strangers",
+          "artistName": "Royal Blood"
+        }
+      ]
+    },
+    {
+      "trackName": "In Too Deep",
+      "artistName": "Sum 41",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 78,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Fat Lip",
+          "artistName": "Sum 41"
+        },
+        {
+          "trackName": "Motivation",
+          "artistName": "Sum 41"
+        },
+        {
+          "trackName": "The Anthem",
+          "artistName": "Good Charlotte"
+        }
+      ]
+    },
+    {
+      "trackName": "Don't Bring Me Down",
+      "artistName": "Electric Light Orchestra",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 81,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Livin' Thing",
+          "artistName": "Electric Light Orchestra"
+        },
+        {
+          "trackName": "Evil Woman",
+          "artistName": "Electric Light Orchestra"
+        },
+        {
+          "trackName": "More Than a Feeling",
+          "artistName": "Boston"
+        }
+      ]
+    },
+    {
+      "trackName": "Jealous Again",
+      "artistName": "The Black Crowes",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 61,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Twice As Hard",
+          "artistName": "The Black Crowes"
+        },
+        {
+          "trackName": "Hard To Handle",
+          "artistName": "The Black Crowes"
+        },
+        {
+          "trackName": "Midnight Rider",
+          "artistName": "The Allman Brothers Band"
+        }
+      ]
+    },
+    {
+      "trackName": "Right Now",
+      "artistName": "SR-71",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 63,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Memory",
+          "artistName": "Sugarcult"
+        },
+        {
+          "trackName": "Girl All the Bad Guys Want",
+          "artistName": "Bowling for Soup"
+        },
+        {
+          "trackName": "Flavor of the Weak",
+          "artistName": "American Hi-Fi"
+        }
+      ]
+    },
+    {
+      "trackName": "Wild Child",
+      "artistName": "The Black Keys",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 68,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Lo/Hi",
+          "artistName": "The Black Keys"
+        },
+        {
+          "trackName": "Go",
+          "artistName": "The Black Keys"
+        },
+        {
+          "trackName": "Hate to Say I Told You So",
+          "artistName": "The Hives"
+        }
+      ]
+    },
+    {
+      "trackName": "What I Got",
+      "artistName": "Sublime",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 80,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Santeria",
+          "artistName": "Sublime"
+        },
+        {
+          "trackName": "Wrong Way",
+          "artistName": "Sublime"
         },
         {
           "trackName": "Semi-Charmed Life",
@@ -645,48 +622,71 @@
       ]
     },
     {
-      "trackName": "Dani California",
-      "artistName": "Red Hot Chili Peppers",
+      "trackName": "Crazy Bitch",
+      "artistName": "Buckcherry",
       "albumName": "Unknown",
       "releaseDate": "Unknown",
       "spotifyUrl": "",
-      "popularity": 83,
+      "popularity": 73,
       "dj": "user",
       "similarTracks": [
         {
-          "trackName": "Snow (Hey Oh)",
-          "artistName": "Red Hot Chili Peppers"
+          "trackName": "Bad Girlfriend",
+          "artistName": "Theory of a Deadman"
         },
         {
-          "trackName": "By the Way",
-          "artistName": "Red Hot Chili Peppers"
+          "trackName": "Addicted",
+          "artistName": "Saving Abel"
         },
         {
-          "trackName": "The Pretender",
-          "artistName": "Foo Fighters"
+          "trackName": "Bitch Came Back",
+          "artistName": "Theory of a Deadman"
         }
       ]
     },
     {
-      "trackName": "Absolutely (Story of a Girl) (Radio Mix)",
-      "artistName": "Nine Days",
+      "trackName": "The Rock Show",
+      "artistName": "Blink 182",
       "albumName": "Unknown",
       "releaseDate": "Unknown",
       "spotifyUrl": "",
-      "popularity": 69,
+      "popularity": 73,
       "dj": "user",
       "similarTracks": [
         {
-          "trackName": "Heart In Hand",
-          "artistName": "Vertical Horizon"
+          "trackName": "First Date",
+          "artistName": "blink-182"
         },
         {
-          "trackName": "Real World",
-          "artistName": "Matchbox Twenty"
+          "trackName": "Online Songs",
+          "artistName": "blink-182"
         },
         {
-          "trackName": "Til I Hear It From You",
-          "artistName": "Gin Blossoms"
+          "trackName": "Fat Lip",
+          "artistName": "Sum 41"
+        }
+      ]
+    },
+    {
+      "trackName": "The Walker",
+      "artistName": "Fitz And The Tantrums",
+      "albumName": "Unknown",
+      "releaseDate": "Unknown",
+      "spotifyUrl": "",
+      "popularity": 65,
+      "dj": "user",
+      "similarTracks": [
+        {
+          "trackName": "Out of My League",
+          "artistName": "Fitz and the Tantrums"
+        },
+        {
+          "trackName": "HandClap",
+          "artistName": "Fitz and the Tantrums"
+        },
+        {
+          "trackName": "My Type",
+          "artistName": "Saint Motel"
         }
       ]
     }

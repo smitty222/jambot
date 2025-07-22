@@ -1,6 +1,7 @@
 import fastJson from 'fast-json-patch'
 import { SocketClient } from 'ttfm-socket'
-import { joinChat, getMessages, startTimeStamp } from './cometchat.js'
+import { joinChat } from './Cometchat/roomManager.js'
+import { getMessages } from './Cometchat/messageFetcher.js'
 import { logger } from '../utils/logging.js'
 import { handlers } from '../handlers/index.js'
 import { fetchSpotifyPlaylistTracks, fetchCurrentUsers, spotifyTrackInfo, fetchCurrentlyPlayingSong, fetchSongData, getSimilarArtists, getSimilarTracks, getArtistTags, getTopArtistTracks } from '../utils/API.js'
@@ -23,6 +24,7 @@ import { announceNowPlaying } from '../utils/voteCounts.js'
 import { parseDurationToMs, scheduleLetterChallenge } from '../handlers/songNameGame.js'
 import { addTrackedUser } from '../utils/trackedUsers.js'
 
+const startTimeStamp = Math.floor(Date.now() / 1000);
 
 const botUUID = process.env.BOT_USER_UUID
 
@@ -598,114 +600,159 @@ async processNewMessages() {
     }
   }
 
-  async updateNextSong (userUuid) {
-    try {
-    // Fetch a popular Spotify track ID
-      const spotifyTrackId = await getPopularSpotifyTrackID()
+  async generateSongPayload() {
+  const spotifyTrackId = await getPopularSpotifyTrackID();
 
-      if (!spotifyTrackId) {
-        throw new Error('No popular Spotify track ID found.')
-      }
-
-      // Fetch song data using the track ID
-      const songData = await fetchSongData(spotifyTrackId)
-
-      if (!songData || !songData.id) {
-        throw new Error('Invalid song data received.')
-      }
-
-      // Prepare the songPayload using the fetched data
-      const songPayload = {
-        songId: songData.id, // Unique ID for the song
-        trackName: songData.trackName,
-        artistName: songData.artistName,
-        duration: songData.duration,
-        isrc: songData.isrc || '', // Handle missing ISRC gracefully
-        explicit: songData.explicit || false, // Default to false if not provided
-        genre: songData.genre || '', // Default to empty string if no genre is available
-        links: songData.links || {}, // Ensure links are included
-        musicProviders: songData.musicProviders || {}, // Include all music providers
-        thumbnails: songData.thumbnails || {}, // Include thumbnails
-        playbackToken: songData.playbackToken || null, // Default to null if missing
-        album: songData.album || {}, // Include album info (may be empty)
-        artist: songData.artist || {}, // Include artist info (may be empty)
-        status: songData.status || 'PENDING_UPLOAD', // Default to 'PENDING_UPLOAD'
-        updatedAt: songData.updatedAt // Include the update timestamp
-      }
-
-      // Ensure socket is initialized
-      if (!this.socket) {
-        throw new Error('SocketClient not initialized. Please call connect() first.')
-      }
-
-      // Log the DJ's next song update with the song details
-      logger.debug(`Updating next song for DJ: ${userUuid} to: ${songPayload.trackName}`)
-
-      // Call the updateNextSong action with the songPayload and other parameters
-      await this.socket.action('updateNextSong', {
-        roomUuid: process.env.ROOM_UUID, // Room UUID from environment variables
-        userUuid, // The user UUID of the DJ whose next song is being updated
-        song: songPayload // The song object
-      })
-    } catch (error) {
-      logger.error('Error updating next song for DJ:', error)
-    }
+  if (!spotifyTrackId) {
+    throw new Error('No popular Spotify track ID found.');
   }
 
-  async addDJ (userUuid, tokenRole = 'DJ') {
-    try {
-    // Fetch a popular Spotify track ID
-      const spotifyTrackId = await getPopularSpotifyTrackID()
+  const songData = await fetchSongData(spotifyTrackId);
 
-      if (!spotifyTrackId) {
-        throw new Error('No popular Spotify track ID found.')
-      }
-
-      // Fetch song data using the track ID
-      const songData = await fetchSongData(spotifyTrackId)
-
-      if (!songData || !songData.id) {
-        throw new Error('Invalid song data received.')
-      }
-
-      // Prepare the songPayload using the fetched data
-      const songPayload = {
-        songId: songData.id, // Unique ID for the song
-        trackName: songData.trackName,
-        artistName: songData.artistName,
-        duration: songData.duration,
-        isrc: songData.isrc || '', // Handle missing ISRC gracefully
-        explicit: songData.explicit || false, // Default to false if not provided
-        genre: songData.genre || '', // Default to empty string if no genre is available
-        links: songData.links || {}, // Ensure links are included
-        musicProviders: songData.musicProviders || {}, // Include all music providers
-        thumbnails: songData.thumbnails || {}, // Include thumbnails
-        playbackToken: songData.playbackToken || null, // Default to null if missing
-        album: songData.album || {}, // Include album info (may be empty)
-        artist: songData.artist || {}, // Include artist info (may be empty)
-        status: songData.status || 'PENDING_UPLOAD', // Default to 'PENDING_UPLOAD'
-        updatedAt: songData.updatedAt // Include the update timestamp
-      }
-
-      // Ensure socket is initialized
-      if (!this.socket) {
-        throw new Error('SocketClient not initialized. Please call connect() first.')
-      }
-
-      // Log the DJ being added with the song details
-      logger.debug(`Adding DJ: ${userUuid} to the lineup with song: ${songPayload.trackName}`)
-
-      // Call the addDJ action with the songPayload and other parameters
-      await this.socket.action('addDj', {
-        roomUuid: process.env.ROOM_UUID, // Room UUID from environment variables
-        userUuid, // The user UUID of the DJ being added
-        song: songPayload, // The song object
-        tokenRole // The role assigned to the user, default is 'DJ'
-      })
-    } catch (error) {
-      logger.error('Error adding DJ:', error)
-    }
+  if (!songData || !songData.id) {
+    throw new Error('Invalid song data received.');
   }
+
+  return {
+    songId: songData.id,
+    trackName: songData.trackName,
+    artistName: songData.artistName,
+    duration: songData.duration,
+    isrc: songData.isrc || '',
+    explicit: songData.explicit || false,
+    genre: songData.genre || '',
+    links: songData.links || {},
+    musicProviders: songData.musicProviders || {},
+    thumbnails: songData.thumbnails || {},
+    playbackToken: songData.playbackToken || null,
+    album: songData.album || {},
+    artist: songData.artist || {},
+    status: songData.status || 'PENDING_UPLOAD',
+    updatedAt: songData.updatedAt
+  };
+}
+
+
+  async updateNextSong(userUuid) {
+  try {
+    const songPayload = await this.generateSongPayload();
+
+    if (!this.socket) {
+      throw new Error('SocketClient not initialized. Please call connect() first.');
+    }
+
+    logger.debug(`Updating next song for DJ: ${userUuid} to: ${songPayload.trackName}`);
+
+    await this.socket.action('updateNextSong', {
+      roomUuid: process.env.ROOM_UUID,
+      userUuid,
+      song: songPayload
+    });
+  } catch (error) {
+    logger.error('Error updating next song for DJ:', error);
+  }
+}
+
+
+  async addUserDJ(userUuid, tokenRole = 'User') {
+  try {
+    if (!userUuid) {
+      console.error('❌ [addUserDJ] Invalid userUuid:', userUuid);
+      return;
+    }
+
+    console.log(`🎧 [addUserDJ] Request to add user UUID: ${userUuid}`);
+
+    const currentDJs = getCurrentDJUUIDs(this.state);
+    if (currentDJs.includes(userUuid)) {
+      console.log(`ℹ️ User ${userUuid} is already on stage.`);
+      return;
+    }
+
+    if (userUuid === this.userUUID) {
+      console.warn('⚠️ [addUserDJ] This method should not be used to add the bot. Use addDJ instead.');
+      return;
+    }
+
+    if (!this.socket) {
+      throw new Error('SocketClient not initialized. Please call connect() first.');
+    }
+
+    const stringUuid = String(userUuid);
+    console.log(`📡 [addUserDJ] Sending addDj action for user UUID: ${stringUuid}`);
+
+    await this.socket.action('addDj', {
+      roomUuid: process.env.ROOM_UUID,
+      userUuid: stringUuid,
+      tokenRole
+    });
+
+    console.log(`✅ [addUserDJ] Successfully added user ${stringUuid} to DJ lineup.`);
+
+  } catch (error) {
+    logger.error('❌ [addUserDJ] Error adding user to DJ lineup:', error);
+  }
+}
+
+
+
+  async addDJ(userUuid, tokenRole = 'DJ') {
+  try {
+    console.log('🎧 [addDJ] Received UUID:', userUuid); // Log early
+
+    const currentDJs = getCurrentDJUUIDs(this.state);
+    if (currentDJs.includes(userUuid)) {
+      console.log(`User ${userUuid} is already on stage as a DJ.`);
+      return false;
+    }
+
+    const spotifyTrackId = await getPopularSpotifyTrackID();
+    if (!spotifyTrackId) throw new Error('No popular Spotify track ID found.');
+
+    const songData = await fetchSongData(spotifyTrackId);
+    if (!songData || !songData.id) throw new Error('Invalid song data received.');
+
+    const songPayload = {
+      songId: songData.id,
+      trackName: songData.trackName,
+      artistName: songData.artistName,
+      duration: songData.duration,
+      isrc: songData.isrc || '',
+      explicit: songData.explicit || false,
+      genre: songData.genre || '',
+      links: songData.links || {},
+      musicProviders: songData.musicProviders || {},
+      thumbnails: songData.thumbnails || {},
+      playbackToken: songData.playbackToken || null,
+      album: songData.album || {},
+      artist: songData.artist || {},
+      status: songData.status || 'PENDING_UPLOAD',
+      updatedAt: songData.updatedAt
+    };
+
+    if (!this.socket) {
+      throw new Error('SocketClient not initialized.');
+    }
+
+    // ✅ Log exactly what you're passing to the socket
+    console.log(`🎧 [addDJ] Adding ${userUuid} with song "${songPayload.trackName}"`);
+
+    await this.socket.action('addDj', {
+      roomUuid: process.env.ROOM_UUID,
+      userUuid,
+      song: songPayload,
+      tokenRole
+    });
+
+    return true;
+  } catch (error) {
+    logger.error('Error adding DJ:', error);
+    return false;
+  }
+}
+
+
+
 
   async removeDJ (userUuid) {
     try {

@@ -11,5 +11,12 @@
     "winningNumber": 74,
     "amountWon": 100000,
     "timestamp": "2025-07-18T18:49:02.827Z"
+  },
+  {
+    "userId": "f3b152a3-b29b-41b8-88b1-dea4d9b952aa",
+    "nickname": "DJ Stewie ",
+    "winningNumber": 27,
+    "amountWon": 100000,
+    "timestamp": "2025-07-21T22:57:33.147Z"
   }
 ]

@@ -1,4 +1,4 @@
-import { sendDirectMessage } from '../libs/cometchat.js'
+import { sendDirectMessage } from '../libs/Cometchat/messageSender.js'
 import { getCurrentDJ } from '../libs/bot.js'
 
 export const badArtistList = ['Taylor Swift'] // List of "bad" artists

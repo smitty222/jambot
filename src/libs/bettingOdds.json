@@ -1,46 +1,6 @@
 {
   "baseball_mlb": [
     {
-      "id": "6d8a12d6bd6eb2f5952efc11a4d6e3a5",
-      "commence_time": "2025-07-21T22:40:00Z",
-      "home_team": "Cleveland Guardians",
-      "away_team": "Baltimore Orioles",
-      "bookmaker": {
-        "key": "fanduel",
-        "title": "FanDuel",
-        "markets": [
-          {
-            "key": "h2h",
-            "outcomes": [
-              {
-                "name": "Baltimore Orioles",
-                "price": 118
-              },
-              {
-                "name": "Cleveland Guardians",
-                "price": -138
-              }
-            ]
-          },
-          {
-            "key": "spreads",
-            "outcomes": [
-              {
-                "name": "Baltimore Orioles",
-                "price": -184,
-                "point": 1.5
-              },
-              {
-                "name": "Cleveland Guardians",
-                "price": 152,
-                "point": -1.5
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
       "id": "94eff03561670a62e673a31a99309a5f",
       "commence_time": "2025-07-21T22:40:00Z",
       "home_team": "Pittsburgh Pirates",
@@ -54,11 +14,11 @@
             "outcomes": [
               {
                 "name": "Detroit Tigers",
-                "price": 108
+                "price": 126
               },
               {
                 "name": "Pittsburgh Pirates",
-                "price": -126
+                "price": -162
               }
             ]
           },
@@ -67,12 +27,12 @@
             "outcomes": [
               {
                 "name": "Detroit Tigers",
-                "price": -220,
+                "price": -194,
                 "point": 1.5
               },
               {
                 "name": "Pittsburgh Pirates",
-                "price": 180,
+                "price": 144,
                 "point": -1.5
               }
             ]
@@ -94,11 +54,11 @@
             "outcomes": [
               {
                 "name": "Miami Marlins",
-                "price": -136
+                "price": -174
               },
               {
                 "name": "San Diego Padres",
-                "price": 116
+                "price": 136
               }
             ]
           },
@@ -107,12 +67,12 @@
             "outcomes": [
               {
                 "name": "Miami Marlins",
-                "price": 152,
+                "price": 124,
                 "point": -1.5
               },
               {
                 "name": "San Diego Padres",
-                "price": -184,
+                "price": -166,
                 "point": 1.5
               }
             ]
@@ -121,10 +81,10 @@
       }
     },
     {
-      "id": "59488535af10fc401d35d46d975b4f57",
-      "commence_time": "2025-07-21T22:45:00Z",
-      "home_team": "Philadelphia Phillies",
-      "away_team": "Boston Red Sox",
+      "id": "6d8a12d6bd6eb2f5952efc11a4d6e3a5",
+      "commence_time": "2025-07-21T22:41:01Z",
+      "home_team": "Cleveland Guardians",
+      "away_team": "Baltimore Orioles",
       "bookmaker": {
         "key": "fanduel",
         "title": "FanDuel",
@@ -133,12 +93,12 @@
             "key": "h2h",
             "outcomes": [
               {
-                "name": "Boston Red Sox",
-                "price": 180
+                "name": "Baltimore Orioles",
+                "price": -174
               },
               {
-                "name": "Philadelphia Phillies",
-                "price": -215
+                "name": "Cleveland Guardians",
+                "price": 136
               }
             ]
           },
@@ -146,14 +106,14 @@
             "key": "spreads",
             "outcomes": [
               {
-                "name": "Boston Red Sox",
-                "price": -118,
-                "point": 1.5
+                "name": "Baltimore Orioles",
+                "price": 100,
+                "point": -1.5
               },
               {
-                "name": "Philadelphia Phillies",
-                "price": -102,
-                "point": -1.5
+                "name": "Cleveland Guardians",
+                "price": -132,
+                "point": 1.5
               }
             ]
           }
@@ -162,7 +122,7 @@
     },
     {
       "id": "09a9630246c9421e9f1096d4bddae3a4",
-      "commence_time": "2025-07-21T22:45:00Z",
+      "commence_time": "2025-07-21T22:45:16Z",
       "home_team": "Washington Nationals",
       "away_team": "Cincinnati Reds",
       "bookmaker": {
@@ -174,11 +134,11 @@
             "outcomes": [
               {
                 "name": "Cincinnati Reds",
-                "price": -126
+                "price": -154
               },
               {
                 "name": "Washington Nationals",
-                "price": 108
+                "price": 120
               }
             ]
           },
@@ -187,13 +147,53 @@
             "outcomes": [
               {
                 "name": "Cincinnati Reds",
-                "price": 122,
+                "price": -102,
                 "point": -1.5
               },
               {
                 "name": "Washington Nationals",
-                "price": -146,
+                "price": -130,
                 "point": 1.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "59488535af10fc401d35d46d975b4f57",
+      "commence_time": "2025-07-21T22:45:42Z",
+      "home_team": "Philadelphia Phillies",
+      "away_team": "Boston Red Sox",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Boston Red Sox",
+                "price": 120
+              },
+              {
+                "name": "Philadelphia Phillies",
+                "price": -154
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Boston Red Sox",
+                "price": -180,
+                "point": 1.5
+              },
+              {
+                "name": "Philadelphia Phillies",
+                "price": 134,
+                "point": -1.5
               }
             ]
           }
@@ -254,11 +254,11 @@
             "outcomes": [
               {
                 "name": "Los Angeles Angels",
-                "price": 154
+                "price": 150
               },
               {
                 "name": "New York Mets",
-                "price": -184
+                "price": -178
               }
             ]
           },
@@ -267,12 +267,12 @@
             "outcomes": [
               {
                 "name": "Los Angeles Angels",
-                "price": -128,
+                "price": -130,
                 "point": 1.5
               },
               {
                 "name": "New York Mets",
-                "price": 106,
+                "price": 108,
                 "point": -1.5
               }
             ]
@@ -294,11 +294,11 @@
             "outcomes": [
               {
                 "name": "Atlanta Braves",
-                "price": -126
+                "price": -132
               },
               {
                 "name": "San Francisco Giants",
-                "price": 108
+                "price": 112
               }
             ]
           },
@@ -307,12 +307,12 @@
             "outcomes": [
               {
                 "name": "Atlanta Braves",
-                "price": 150,
+                "price": 146,
                 "point": -1.5
               },
               {
                 "name": "San Francisco Giants",
-                "price": -182,
+                "price": -178,
                 "point": 1.5
               }
             ]
@@ -334,11 +334,11 @@
             "outcomes": [
               {
                 "name": "Chicago White Sox",
-                "price": 188
+                "price": 180
               },
               {
                 "name": "Tampa Bay Rays",
-                "price": -225
+                "price": -215
               }
             ]
           },
@@ -347,12 +347,12 @@
             "outcomes": [
               {
                 "name": "Chicago White Sox",
-                "price": -108,
+                "price": -110,
                 "point": 1.5
               },
               {
                 "name": "Tampa Bay Rays",
-                "price": -111,
+                "price": -110,
                 "point": -1.5
               }
             ]
@@ -374,11 +374,11 @@
             "outcomes": [
               {
                 "name": "Chicago Cubs",
-                "price": -142
+                "price": -144
               },
               {
                 "name": "Kansas City Royals",
-                "price": 120
+                "price": 122
               }
             ]
           },
@@ -392,7 +392,7 @@
               },
               {
                 "name": "Kansas City Royals",
-                "price": -178,
+                "price": -176,
                 "point": 1.5
               }
             ]
@@ -414,11 +414,11 @@
             "outcomes": [
               {
                 "name": "Oakland Athletics",
-                "price": 106
+                "price": 102
               },
               {
                 "name": "Texas Rangers",
-                "price": -124
+                "price": -120
               }
             ]
           },
@@ -427,13 +427,13 @@
             "outcomes": [
               {
                 "name": "Oakland Athletics",
-                "price": -192,
-                "point": 1.5
+                "price": 164,
+                "point": -1.5
               },
               {
                 "name": "Texas Rangers",
-                "price": 158,
-                "point": -1.5
+                "price": -200,
+                "point": 1.5
               }
             ]
           }
@@ -454,11 +454,11 @@
             "outcomes": [
               {
                 "name": "Colorado Rockies",
-                "price": 130
+                "price": 142
               },
               {
                 "name": "St. Louis Cardinals",
-                "price": -154
+                "price": -168
               }
             ]
           },
@@ -467,12 +467,12 @@
             "outcomes": [
               {
                 "name": "Colorado Rockies",
-                "price": -111,
+                "price": -105,
                 "point": 1.5
               },
               {
                 "name": "St. Louis Cardinals",
-                "price": -108,
+                "price": -115,
                 "point": -1.5
               }
             ]
@@ -507,12 +507,12 @@
             "outcomes": [
               {
                 "name": "Arizona Diamondbacks",
-                "price": 142,
+                "price": 134,
                 "point": -1.5
               },
               {
                 "name": "Houston Astros",
-                "price": -172,
+                "price": -162,
                 "point": 1.5
               }
             ]
@@ -534,11 +534,11 @@
             "outcomes": [
               {
                 "name": "Milwaukee Brewers",
-                "price": -102
+                "price": 102
               },
               {
                 "name": "Seattle Mariners",
-                "price": -116
+                "price": -120
               }
             ]
           },
@@ -547,12 +547,12 @@
             "outcomes": [
               {
                 "name": "Milwaukee Brewers",
-                "price": 176,
+                "price": 184,
                 "point": -1.5
               },
               {
                 "name": "Seattle Mariners",
-                "price": -215,
+                "price": -225,
                 "point": 1.5
               }
             ]
@@ -574,11 +574,11 @@
             "outcomes": [
               {
                 "name": "Los Angeles Dodgers",
-                "price": -166
+                "price": -178
               },
               {
                 "name": "Minnesota Twins",
-                "price": 140
+                "price": 150
               }
             ]
           },
@@ -593,6 +593,486 @@
               {
                 "name": "Minnesota Twins",
                 "price": -137,
+                "point": 1.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "4631fb2aef9f1e508cb1333938a645d9",
+      "commence_time": "2025-07-22T22:41:00Z",
+      "home_team": "Cleveland Guardians",
+      "away_team": "Baltimore Orioles",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Baltimore Orioles",
+                "price": 112
+              },
+              {
+                "name": "Cleveland Guardians",
+                "price": -132
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Baltimore Orioles",
+                "price": -182,
+                "point": 1.5
+              },
+              {
+                "name": "Cleveland Guardians",
+                "price": 150,
+                "point": -1.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "e6afbabe221c3af3aeb6bf814c04840f",
+      "commence_time": "2025-07-22T22:41:00Z",
+      "home_team": "Pittsburgh Pirates",
+      "away_team": "Detroit Tigers",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Detroit Tigers",
+                "price": -136
+              },
+              {
+                "name": "Pittsburgh Pirates",
+                "price": 116
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Detroit Tigers",
+                "price": 125,
+                "point": -1.5
+              },
+              {
+                "name": "Pittsburgh Pirates",
+                "price": -150,
+                "point": 1.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "a98181034ad8e08f6a11269f46af9bd6",
+      "commence_time": "2025-07-22T22:41:00Z",
+      "home_team": "Miami Marlins",
+      "away_team": "San Diego Padres",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Miami Marlins",
+                "price": -108
+              },
+              {
+                "name": "San Diego Padres",
+                "price": -108
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Miami Marlins",
+                "price": -192,
+                "point": 1.5
+              },
+              {
+                "name": "San Diego Padres",
+                "price": 158,
+                "point": -1.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "db1c583a2bd3f21fe8ec30cc589eeb91",
+      "commence_time": "2025-07-22T22:46:00Z",
+      "home_team": "Philadelphia Phillies",
+      "away_team": "Boston Red Sox",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Boston Red Sox",
+                "price": 160
+              },
+              {
+                "name": "Philadelphia Phillies",
+                "price": -190
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Boston Red Sox",
+                "price": -122,
+                "point": 1.5
+              },
+              {
+                "name": "Philadelphia Phillies",
+                "price": 102,
+                "point": -1.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "3a3b44134650ac62f5f358ccc4925b33",
+      "commence_time": "2025-07-22T22:46:00Z",
+      "home_team": "Washington Nationals",
+      "away_team": "Cincinnati Reds",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Cincinnati Reds",
+                "price": -136
+              },
+              {
+                "name": "Washington Nationals",
+                "price": 116
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Cincinnati Reds",
+                "price": 116,
+                "point": -1.5
+              },
+              {
+                "name": "Washington Nationals",
+                "price": -140,
+                "point": 1.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "4037ed43e7905f4540eba4c83a638b83",
+      "commence_time": "2025-07-22T23:08:00Z",
+      "home_team": "Toronto Blue Jays",
+      "away_team": "New York Yankees",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "New York Yankees",
+                "price": -102
+              },
+              {
+                "name": "Toronto Blue Jays",
+                "price": -116
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "New York Yankees",
+                "price": 146,
+                "point": -1.5
+              },
+              {
+                "name": "Toronto Blue Jays",
+                "price": -176,
+                "point": 1.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "2ee013146af023c985c025c66a483e05",
+      "commence_time": "2025-07-22T23:11:00Z",
+      "home_team": "New York Mets",
+      "away_team": "Los Angeles Angels",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Los Angeles Angels",
+                "price": 146
+              },
+              {
+                "name": "New York Mets",
+                "price": -174
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Los Angeles Angels",
+                "price": -130,
+                "point": 1.5
+              },
+              {
+                "name": "New York Mets",
+                "price": 108,
+                "point": -1.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "c845bcc9b029a75b4010744bde751069",
+      "commence_time": "2025-07-22T23:16:00Z",
+      "home_team": "Atlanta Braves",
+      "away_team": "San Francisco Giants",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Atlanta Braves",
+                "price": -102
+              },
+              {
+                "name": "San Francisco Giants",
+                "price": -116
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Atlanta Braves",
+                "price": -162,
+                "point": 1.5
+              },
+              {
+                "name": "San Francisco Giants",
+                "price": 134,
+                "point": -1.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "83b9f23cbf51e409f72330c6f65d6e9d",
+      "commence_time": "2025-07-23T00:41:00Z",
+      "home_team": "Colorado Rockies",
+      "away_team": "St. Louis Cardinals",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Colorado Rockies",
+                "price": 136
+              },
+              {
+                "name": "St. Louis Cardinals",
+                "price": -162
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Colorado Rockies",
+                "price": -115,
+                "point": 1.5
+              },
+              {
+                "name": "St. Louis Cardinals",
+                "price": -104,
+                "point": -1.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "bc7de0d32f8fca35ab010384abbb8629",
+      "commence_time": "2025-07-23T01:41:00Z",
+      "home_team": "Arizona Diamondbacks",
+      "away_team": "Houston Astros",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Arizona Diamondbacks",
+                "price": 114
+              },
+              {
+                "name": "Houston Astros",
+                "price": -134
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Arizona Diamondbacks",
+                "price": -150,
+                "point": 1.5
+              },
+              {
+                "name": "Houston Astros",
+                "price": 125,
+                "point": -1.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "6527892b815036107e6baa7a206f9150",
+      "commence_time": "2025-07-23T01:41:00Z",
+      "home_team": "Seattle Mariners",
+      "away_team": "Milwaukee Brewers",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Milwaukee Brewers",
+                "price": 110
+              },
+              {
+                "name": "Seattle Mariners",
+                "price": -130
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Milwaukee Brewers",
+                "price": -205,
+                "point": 1.5
+              },
+              {
+                "name": "Seattle Mariners",
+                "price": 168,
+                "point": -1.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "d2b3463ab66e3fb1fd7b478ba0264cae",
+      "commence_time": "2025-07-23T02:11:00Z",
+      "home_team": "Los Angeles Dodgers",
+      "away_team": "Minnesota Twins",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Los Angeles Dodgers",
+                "price": -230
+              },
+              {
+                "name": "Minnesota Twins",
+                "price": 190
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Los Angeles Dodgers",
+                "price": -108,
+                "point": -1.5
+              },
+              {
+                "name": "Minnesota Twins",
+                "price": -111,
                 "point": 1.5
               }
             ]
