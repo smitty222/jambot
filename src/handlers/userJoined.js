@@ -1,4 +1,4 @@
-import { postMessage } from '../libs/cometchat.js';
+import { postMessage } from '../libs/Cometchat/messageSender.js';
 import { logger } from '../utils/logging.js';
 import { roomThemes } from './message.js';
 import * as themeManager from '../utils/themeManager.js'
