@@ -24,7 +24,8 @@ export const getMessages = async (roomOrUserId, fromTimestamp, receiverType = 'g
     throw new Error(`Invalid receiverType "${receiverType}"`);
   }
 
-  const url = buildUrl(`${process.env.CHAT_API_KEY}.apiclient-us.cometchat.io`, paths, searchParams);
+  const url = buildUrl(`${process.env.COMETCHAT_APP_ID}.api-us.cometchat.io`, paths, searchParams);
+
 
   try {
     const response = await makeRequest(url, { headers });

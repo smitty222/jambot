@@ -53,8 +53,6 @@ app.get('/health', (req, res) => {
   res.status(200).send('OK');
 });
 
-console.log('🚀 NEW DEPLOYMENT APPLIED');
-
 
 const port = process.env.PORT || 3000;
 app.listen(port, '0.0.0.0', () =>
