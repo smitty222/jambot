@@ -1,4 +1,4 @@
-import { postMessage } from '../libs/cometChat.js'
+import { postMessage } from '../libs/cometchat.js'
 import { getUserNickname } from '../handlers/roulette.js'
 import { addToUserWallet, loadUsers, getUserWallet, removeFromUserWallet } from '../libs/walletManager.js' // Import the wallet management function
 import { findUserIdAndNickname } from './regex.js'

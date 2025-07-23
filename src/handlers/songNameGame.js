@@ -1,4 +1,4 @@
-import { postMessage } from '../libs/cometChat.js'; // adjust path if needed
+import { postMessage } from '../libs/cometchat.js'; // adjust path if needed
 import { getCurrentDJUUIDs } from '../libs/bot.js';
 import { getUserNickname } from './roulette.js';
 

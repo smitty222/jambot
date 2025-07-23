@@ -1,6 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { postMessage } from './cometChat.js';
+import { postMessage } from './cometchat.js';
 import { getUserNickname } from '../handlers/roulette.js';
 import { getUserWallet, removeFromUserWallet } from './walletManager.js';
 
