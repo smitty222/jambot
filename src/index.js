@@ -6,7 +6,7 @@ import { fetchCurrentUsers } from './utils/API.js';
 import * as themeStorage from './utils/themeManager.js';
 import { roomThemes } from './handlers/message.js';
 import { addTrackedUser, getTrackedUsers } from './utils/trackedUsers.js';
-import { pollDirectMessages } from './handlers/directmessageHandler.js';
+import { pollForDMs } from './libs/Cometchat/pollDMs.js';
 
 const app = express();
 
@@ -34,43 +34,12 @@ startupTasks();
 const savedThemes = themeStorage.loadThemes();
 Object.assign(roomThemes, savedThemes);
 
-const botUUID = process.env.BOT_USER_UUID;
+const botUUID = process.env.BOT_USER_UUID
 
-const pollDMConversations = async () => {
-  const users = getTrackedUsers();
-
-  for (const userUUID of users) {
-    try {
-      const url = `https://${process.env.CHAT_API_KEY}.apiclient-us.cometchat.io/v3/users/${userUUID}/conversation`;
-      const params = new URLSearchParams({
-        conversationType: 'user',
-        limit: '50',
-        uid: botUUID
-      });
-
-      const response = await axios.get(`${url}?${params.toString()}`, {
-        headers: {
-          appid: process.env.CHAT_API_KEY,
-          authtoken: process.env.CHAT_TOKEN,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      const messages = response.data?.data?.messages || [];
-
-      if (messages.length > 0) {
-        console.log(`Polled DM conversation with ${userUUID}, messages count: ${messages.length}`);
-        // Here you can add your message processing logic per message
-      }
-    } catch (error) {
-      console.error(`Error polling DM conversation with ${userUUID}:`, error.message);
-    }
-  }
-};
-
+// Poll every 5 seconds
 setInterval(() => {
-  pollDirectMessages()
-}, 5000) // every 5 seconds
+  pollForDMs(botUUID)
+}, 5000)
 
 const repeatedTasks = setInterval(async () => {
   await roomBot.processNewMessages();

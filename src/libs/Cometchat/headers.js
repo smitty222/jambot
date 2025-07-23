@@ -9,3 +9,9 @@ export function buildHeaders() {
     sdk: 'javascript@3.0.10'
   };
 }
+
+export const buildApiKeyHeaders = () => ({
+  'Content-Type': 'application/json',
+  'apikey': process.env.CHAT_API_KEY
+});
+

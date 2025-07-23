@@ -1,6 +1,6 @@
 // message.js
 import { sendDirectMessage } from '../libs/Cometchat/messageSender.js'
-import { postMessage } from '../libs/Cometchat/messageSender.js'
+import { postMessage, sendAuthenticatedDM} from '../libs/Cometchat/messageSender.js'
 import { askQuestion, setCurrentSong } from '../libs/ai.js'
 import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, displayTriviaInfo } from '../handlers/triviaCommands.js'
 import { logger } from '../utils/logging.js'
@@ -49,6 +49,21 @@ const queueManager = new QueueManager(
   getUserNickname            // optional nickname fetcher
 )
 
+export async function handleDirectMessage(payload) {
+  const sender = payload.sender
+  const text = payload.data?.text?.trim() || ''
+
+  console.log(`[DM] from ${sender}: ${text}`)
+
+  if (text.startsWith('/help')) {
+    await sendAuthenticatedDM(sender, `Here are some things I can do:\n• /balance\n• /lottery\n• /help`)
+  } else if (text.startsWith('/balance')) {
+    const balance = 1000
+    await sendAuthenticatedDM(sender, `💰 Your balance is $${balance}`)
+  } else {
+    await sendAuthenticatedDM(sender, `🤖 Unknown DM command: "${text}"`)
+  }
+}
 
 // Messages
 export default async (payload, room, state) => {
@@ -56,19 +71,15 @@ export default async (payload, room, state) => {
 
   if (!payload?.message) return
 
-    if (payload.message.startsWith('/hello')) {
-  console.log('Hello command received from:', payload.sender, 'type:', payload.receiverType)
-  if (payload.receiverType === 'user') {
-    console.log('Sending DM reply...')
-    await sendDirectMessage(payload.sender, 'Hi there (DM)!')
-  } else if (payload.receiverType === 'group') {
-    console.log('Sending group reply...')
-    await postMessage({
-      room,
-      message: 'Hi!'
-    })
+  const isPrivate = payload.receiverType === 'user';
+  const isToBot = payload.receiver === process.env.BOT_USER_UUID;
+  const text = payload.message.trim();
+
+  if (isPrivate && isToBot && text === '/hello') {
+    // Reply to user privately
+    await sendDirectMessage(payload.sender, 'Hello there! 👋');
+    return;
   }
-}
 if (payload.message === '/addMe') {
   const sender = payload.sender;
   console.log('🎤 /addMe requested by:', sender);
@@ -655,11 +666,9 @@ if (reply?.imagePath) {
   
     //////////////////////////// ////////////////////////////
     } else if (payload.message.startsWith('/test')) {
-      const topcharts = await getTopChartTracks(10);  // await the async call, pass limit if you want
-      console.log(topcharts); // logs the resolved array of tracks
       await postMessage({
         room,
-        message: `Logged top chart tracks to console.`
+        message: `testing!`
       });
 
   

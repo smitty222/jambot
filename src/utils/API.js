@@ -1352,8 +1352,49 @@ export function getUserToken(userId) {
 }
 
 
+export async function loginCometChatUser(uid) {
+  const url = `https://${process.env.CHAT_API_KEY}.api-us.cometchat.io/v3.0/users/${uid}/auth_tokens`
+  const headers = {
+    accept: 'application/json',
+    apikey: process.env.CHAT_AUTH_KEY,
+    'Content-Type': 'application/json'
+  }
 
+  try {
+    const res = await fetch(url, { method: 'POST', headers })
+    const json = await res.json()
 
+    if (!res.ok) {
+      console.error('❌ Failed to log in bot:', res.status, json)
+      return null
+    }
+
+    const authToken = json.data.authToken
+    return authToken
+  } catch (err) {
+    console.error('🔥 CometChat login error:', err.message)
+    return null
+  }
+}
+const fetchDMsFromUser = async (userUUID) => {
+  const url = `https://${process.env.CHAT_API_KEY}.api-us.cometchat.io/v3/users/${userUUID}/conversation?conversationType=user`
+
+  const headers = {
+    authtoken: process.env.CHAT_TOKEN,
+    appid: process.env.CHAT_API_KEY,
+    'Content-Type': 'application/json'
+  }
+
+  try {
+    const res = await fetch(url, { method: 'GET', headers })
+    const data = await res.json()
+
+    console.log('📩 DMs received:', JSON.stringify(data, null, 2))
+    return data
+  } catch (err) {
+    console.error('❌ Failed to fetch DM conversation:', err.message)
+  }
+}
 
 
 export { getAccessToken, getSimilarArtists, getTrackTags, currentsongduration, spotifyTrackInfo, fetchTrackDetails, isUserAuthorized, fetchUserRoles, fetchRecentSongs, fetchCurrentUsers, fetchSpotifyPlaylistTracks, fetchCurrentlyPlayingSong, fetchSongData, DeleteQueueSong, fetchAllUserQueueSongIDsWithUUID, searchSpotify, getSenderNickname }

@@ -1,5 +1,4 @@
-
-import { buildHeaders } from './headers.js';
+import { buildHeaders, buildApiKeyHeaders } from './headers.js';
 import { buildUrl, makeRequest } from '../../utils/networking.js';
 
 export const getMessages = async (roomOrUserId, fromTimestamp, receiverType = 'group') => {
@@ -31,13 +30,13 @@ export const getMessages = async (roomOrUserId, fromTimestamp, receiverType = 'g
     const response = await makeRequest(url, { headers });
     return response;
   } catch (error) {
-    console.error(`Failed to get messages for ${receiverType} ${roomOrUserId}:`, error.message);
+    console.error(`❌ Failed to get messages for ${receiverType} ${roomOrUserId}:`, error.message);
     throw error;
   }
 };
 
 export const getDirectConversation = async (userUUID, botUUID = process.env.BOT_USER_UUID, limit = 50) => {
-  const headers = buildHeaders();
+  const headers = buildApiKeyHeaders();
 
   const searchParams = [
     ['conversationType', 'user'],
@@ -50,9 +49,16 @@ export const getDirectConversation = async (userUUID, botUUID = process.env.BOT_
 
   try {
     const response = await makeRequest(url, { headers });
+
+    // Optional: Debug raw response
+    // console.log('[getDirectConversation] Full raw response:', JSON.stringify(response, null, 2));
+
     return response;
   } catch (error) {
-    console.error(`Failed to get direct conversation with user ${userUUID}:`, error.message);
+    console.error(`❌ Error fetching conversation for ${userUUID}:`, error.message);
+    if (error.response) {
+      console.error('🚨 API Response:', error.response.status, JSON.stringify(error.response.data, null, 2));
+    }
     throw error;
   }
 };

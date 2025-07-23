@@ -41,10 +41,11 @@ export const buildPayload = (options) => {
   };
 
   return {
-    type,
-    receiverType: options.receiverType === 'user' ? 'user' : 'group',
-    category: 'message',
-    receiver: options.receiverType === 'user' ? options.receiver : options.room,
-    data
-  };
+  type,
+  receiverType: options.receiverType === 'user' ? 'user' : 'group',
+  category: 'message',
+  receiver: options.receiverType === 'user' ? options.receiver : options.room,
+  sender: process.env.BOT_USER_UUID, // ✅ Required when using API key auth
+  data
+}
 };
