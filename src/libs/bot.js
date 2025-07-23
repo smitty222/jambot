@@ -1,7 +1,6 @@
 import fastJson from 'fast-json-patch'
 import { SocketClient } from 'ttfm-socket'
-import { joinChat } from './Cometchat/roomManager.js'
-import { getMessages } from './Cometchat/messageFetcher.js'
+import { joinChat, getMessages, sendDirectMessage, sendGroupMessage } from './cometchat.js'
 import { logger } from '../utils/logging.js'
 import { handlers } from '../handlers/index.js'
 import { fetchSpotifyPlaylistTracks, fetchCurrentUsers, spotifyTrackInfo, fetchCurrentlyPlayingSong, fetchSongData, getSimilarArtists, getSimilarTracks, getArtistTags, getTopArtistTracks } from '../utils/API.js'

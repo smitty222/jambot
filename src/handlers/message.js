@@ -70,10 +70,24 @@ export default async (payload, room, state) => {
   console.log('[MessageHandler]', payload)
 
   if (!payload?.message) return
-
+  
   const isPrivate = payload.receiverType === 'user';
   const isToBot = payload.receiver === process.env.BOT_USER_UUID;
   const text = payload.message.trim();
+
+  // ✅ Private DM: /test
+  if (isPrivate && isToBot && text === '/test') {
+    await sendDirectMessage(payload.sender, '✅ Test succeeded (DM)');
+    return;
+  }
+
+  // ✅ Group chat: /test
+  if (!isPrivate && text === '/test') {
+    await sendGroupMessage(room, '✅ Test succeeded (group)');
+    return;
+  }
+
+
 
   if (isPrivate && isToBot && text === '/hello') {
     // Reply to user privately
