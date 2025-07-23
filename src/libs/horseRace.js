@@ -1,5 +1,5 @@
 // src/handlers/horserace.js
-import { postMessage } from './Cometchat/messageSender.js';
+import { postMessage } from './cometChat.js';
 import { addToUserWallet, removeFromUserWallet, getUserWallet } from '../libs/walletManager.js';
 import { getUserNickname } from '../handlers/roulette.js';
 import { loadHorses, saveHorses, decimalToFraction, getCurrentOdds } from '../libs/horseManager.js';

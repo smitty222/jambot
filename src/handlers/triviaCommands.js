@@ -1,4 +1,4 @@
-import { postMessage } from "../libs/Cometchat/messageSender.js"
+import { postMessage } from "../libs/cometchat.js"
 import { getTriviaQuestions, decodeHtml } from '../utils/API.js'
 
 let currentQuestion = null

@@ -6,7 +6,6 @@ import { fetchCurrentUsers } from './utils/API.js';
 import * as themeStorage from './utils/themeManager.js';
 import { roomThemes } from './handlers/message.js';
 import { addTrackedUser, getTrackedUsers } from './utils/trackedUsers.js';
-import { pollForDMs } from './libs/Cometchat/pollDMs.js';
 
 const app = express();
 
@@ -36,10 +35,6 @@ Object.assign(roomThemes, savedThemes);
 
 const botUUID = process.env.BOT_USER_UUID
 
-// Poll every 5 seconds
-setInterval(() => {
-  pollForDMs(botUUID)
-}, 5000)
 
 const repeatedTasks = setInterval(async () => {
   await roomBot.processNewMessages();

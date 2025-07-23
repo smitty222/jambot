@@ -1,6 +1,5 @@
 // message.js
-import { sendDirectMessage } from '../libs/Cometchat/messageSender.js'
-import { postMessage, sendAuthenticatedDM} from '../libs/Cometchat/messageSender.js'
+import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
 import { askQuestion, setCurrentSong } from '../libs/ai.js'
 import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, displayTriviaInfo } from '../handlers/triviaCommands.js'
 import { logger } from '../utils/logging.js'
@@ -70,45 +69,8 @@ export default async (payload, room, state) => {
   console.log('[MessageHandler]', payload)
 
   if (!payload?.message) return
+
   
-  const isPrivate = payload.receiverType === 'user';
-  const isToBot = payload.receiver === process.env.BOT_USER_UUID;
-  const text = payload.message.trim();
-
-  // ✅ Private DM: /test
-  if (isPrivate && isToBot && text === '/test') {
-    await sendDirectMessage(payload.sender, '✅ Test succeeded (DM)');
-    return;
-  }
-
-  // ✅ Group chat: /test
-  if (!isPrivate && text === '/test') {
-    await sendGroupMessage(room, '✅ Test succeeded (group)');
-    return;
-  }
-
-
-
-  if (isPrivate && isToBot && text === '/hello') {
-    // Reply to user privately
-    await sendDirectMessage(payload.sender, 'Hello there! 👋');
-    return;
-  }
-if (payload.message === '/addMe') {
-  const sender = payload.sender;
-  console.log('🎤 /addMe requested by:', sender);
-
-  const added = await roomBot.addUserDJ(sender);
-
-  if (added) {
-    await postMessage({ room, message: `<@uid:${sender}> has been added to the stage.` });
-  } else {
-    await postMessage({ room, message: `<@uid:${sender}> is already a DJ or there was an error.` });
-  }
-}
-
-
-
   // Handle horse entry submissions FIRST
   if (isWaitingForEntries() && !payload.message.startsWith('/')) {
     await handleHorseEntryAttempt(payload);

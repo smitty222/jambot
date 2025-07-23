@@ -1,4 +1,4 @@
-import { postMessage } from '../libs/Cometchat/messageSender.js'
+import { postMessage } from '../libs/cometChat.js'
 import { fetchUserData, updateRoomInfo } from '../utils/API.js'
 import { addToUserWallet, getUserWallet, loadWallets, saveWallets, removeFromUserWallet } from '../libs/walletManager.js'
 

@@ -1,5 +1,5 @@
 // playedSong.js
-import { postMessage } from '../libs/Cometchat/messageSender.js'
+import { postMessage } from '../libs/cometchat.js'
 import { roomBot } from '../index.js'
 import { fetchSongData, getAlbumTracks, spotifyTrackInfo } from '../utils/API.js'
 import { roomThemes } from './message.js'

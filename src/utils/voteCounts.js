@@ -1,4 +1,4 @@
-import { postMessage } from '../libs/Cometchat/messageSender.js'
+import { postMessage } from '../libs/cometchat.js'
 import { fetchRecentSongs, fetchUserData } from './API.js'
 import { roomBot } from '../index.js'
 import { logCurrentSong } from '../libs/roomStats.js'
