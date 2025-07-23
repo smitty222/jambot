@@ -46,7 +46,8 @@ export const getDirectConversation = async (userUUID, botUUID = process.env.BOT_
   ];
 
   const paths = ['v3', 'users', userUUID, 'conversation'];
-  const url = buildUrl(`${process.env.CHAT_API_KEY}.apiclient-us.cometchat.io`, paths, searchParams);
+  const url = buildUrl(`${process.env.COMETCHAT_APP_ID}.api-us.cometchat.io`, paths, searchParams);
+
 
   try {
     const response = await makeRequest(url, { headers });
