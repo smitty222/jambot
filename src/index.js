@@ -49,6 +49,13 @@ app.get('/', (req, res) => {
   res.send('Jamflow bot is alive and running!');
 });
 
+app.get('/health', (req, res) => {
+  res.status(200).send('OK');
+});
+
+console.log('🚀 NEW DEPLOYMENT APPLIED');
+
+
 const port = process.env.PORT || 3000;
 app.listen(port, '0.0.0.0', () =>
   console.log(`Listening on ${port}`));

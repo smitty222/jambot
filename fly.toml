@@ -26,6 +26,6 @@ primary_region = 'atl'
   [checks.alive]
     type = "http"
     port = 3000
-    path = "/"
+    path = "/health"   # ← change this
     interval = "30s"
     timeout = "5s"
