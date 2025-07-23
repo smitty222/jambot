@@ -1,5 +1,5 @@
 import { addToUserWallet, removeFromUserWallet, getUserWallet } from '../libs/walletManager.js'
-import { postMessage } from '../libs/cometChat.js'
+import { postMessage } from '../libs/cometchat.js'
 
 const BETTING_TIMEOUT_DURATION = 30000
 const PLAYER_DECISION_TIMEOUT = 30000
