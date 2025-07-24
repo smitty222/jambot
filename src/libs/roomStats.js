@@ -1,7 +1,7 @@
 import fs from 'fs/promises'
 import path from 'path'
 
-const statsFilePath = path.join(process.cwd(), 'src/libs/roomStats.json')
+const statsFilePath = path.join(process.cwd(), 'src/data/roomStats.json')
 
 export async function logCurrentSong(song, likes = 0, dislikes = 0, stars = 0) {
   if (!song || !song.trackName || !song.artistName) return

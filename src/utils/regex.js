@@ -1,6 +1,15 @@
 // lotteryQuestionParser.js
 
-import users from '../libs/users.json' assert { type: "json" }; // or your actual path
+import { readFile } from 'fs/promises'
+import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
+const usersFilePath = path.join(__dirname, '../data/users.json')
+const users = JSON.parse(await readFile(usersFilePath, 'utf-8'))
+
 
 const mentionRegex = /<@uid:([a-f0-9\-]+)>/i;
 const nicknameRegex = /([\w\s\-]+)/i; // no need for '@' here since you strip them before matching

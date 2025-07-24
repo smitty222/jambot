@@ -7,7 +7,7 @@ import path from 'path';
 import { roomBot } from '../index.js';
 
 
-const blacklistPath = path.join(process.cwd(), 'src/libs/songBlacklist.json');
+const blacklistPath = path.join(process.cwd(), 'src/data/songBlacklist.json');
 
 function loadBlacklist() {
   if (!fs.existsSync(blacklistPath)) return [];

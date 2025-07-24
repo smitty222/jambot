@@ -4,7 +4,7 @@
 #
 
 app = 'jamflowbot-allen-morning-voice-8280'
-primary_region = 'atl'
+primary_region = 'mia'
 
 [build]
 
@@ -29,3 +29,7 @@ primary_region = 'atl'
     path = "/health"   # ← change this
     interval = "30s"
     timeout = "5s"
+    
+[mounts]
+  source = "data_volume"
+  destination = "/data"

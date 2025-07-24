@@ -70,7 +70,7 @@ export function getCurrentDJ (state) {
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
-const recentSongsFilePath = join(__dirname, 'recentSongs.json')
+const recentSongsFilePath = join(__dirname, '../data/recentSongs.json')
 
 export const readRecentSongs = () => {
   try {

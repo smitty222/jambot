@@ -2,7 +2,7 @@ import { addToUserWallet, getUserWallet, removeFromUserWallet } from '../libs/wa
 import fs from 'fs'
 import path from 'path'
 
-const jackpotFile = path.join(process.cwd(), 'src/libs/jackpot.json')
+const jackpotFile = path.join(process.cwd(), 'src/data/jackpot.json')
 
 // Slot machine symbols and payouts
 const symbols = ['🍒', '🍋', '🍊', '🍉', '🔔', '⭐', '💎'] // Slot symbols

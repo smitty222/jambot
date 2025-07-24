@@ -1,6 +1,6 @@
 // albumVotes.js
 import fs from 'fs/promises'
-const albumStatsPath = 'src/libs/albumStats.json'
+const albumStatsPath = 'src/data/albumStats.json'
 
 export async function saveAlbumReview({ albumId, albumName, albumArt, artistName, trackCount, userId, rating }) {
   try {

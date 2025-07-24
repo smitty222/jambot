@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'fs/promises'; // import readFile and writeF
 import path from 'path';
 
 // Path for the derby teams file
-const derbyFilePath = path.join(process.cwd(), 'src/libs/derby_teams.json');
+const derbyFilePath = path.join(process.cwd(), 'src/data/derby_teams.json');
 
 // Function to get the current derby standings
 export async function getDerbyStandings() {

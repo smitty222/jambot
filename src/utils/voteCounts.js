@@ -7,7 +7,7 @@ import path from 'path'
 import { roomThemes } from '../handlers/message.js'
 import { formatDistanceToNow } from 'date-fns'
 
-const statsPath = path.join(process.cwd(), 'src/libs/roomStats.json')
+const statsPath = path.join(process.cwd(), 'src/data/roomStats.json')
 
 let songStatsEnabled = false
 

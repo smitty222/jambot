@@ -1,5 +1,5 @@
 import fs from 'fs';
-const FILE_PATH = 'src/libs/bettingOdds.json';
+const FILE_PATH = 'src/data/bettingOdds.json';
 
 export function saveOddsForSport(sport, odds) {
   let allOdds = {};

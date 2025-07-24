@@ -1,5 +1,15 @@
 import { updateUserAvatar } from '../utils/API.js'
-import avatars from '../libs/TT live avatars.json' assert { type: 'json' }
+import { readFile } from 'fs/promises'
+import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
+const avatarsPath = path.join(__dirname, '../data/TT live avatars.json')
+const avatarsRaw = await readFile(avatarsPath, 'utf-8')
+const avatars = JSON.parse(avatarsRaw)
+
 
 const userTokenMap = {
     '072b0bb3-518e-4422-97fd-13dc53e8ae7e': process.env.IAN_USER_TOKEN,

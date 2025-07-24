@@ -1,16 +1,26 @@
 import { postMessage } from '../libs/cometchat.js'
 import { getUserNickname } from '../handlers/roulette.js'
-import { addToUserWallet, loadUsers, getUserWallet, removeFromUserWallet } from '../libs/walletManager.js' // Import the wallet management function
+import { addToUserWallet, loadUsers, getUserWallet, removeFromUserWallet } from '../libs/walletManager.js'
 import { findUserIdAndNickname } from './regex.js'
 import { storeItems } from '../libs/jamflowStore.js'
-import lotteryWinners from '../libs/lotteryWinners.json' assert { type: 'json' }
-import fs from 'fs/promises' // Use the fs/promises module for async operations
-import path from 'path' // For handling file paths
+import fs from 'fs/promises'
+import path from 'path'
+import { fileURLToPath } from 'url'
 
-const numberStatsPath = path.join(process.cwd(), 'src/libs/lottoBalls.json')
+// 🔧 Required for ESM paths
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
+// ✅ Read the JSON manually with fs instead of import()
+const lotteryWinnersPath = path.join(__dirname, '../data/lotteryWinners.json')
+const lotteryWinnersRaw = await fs.readFile(lotteryWinnersPath, 'utf-8')
+const lotteryWinners = JSON.parse(lotteryWinnersRaw)
+
+const numberStatsPath = path.join(process.cwd(), 'src/data/lottoBalls.json')
 const room = process.env.ROOM_UUID
 
-const { cost } = storeItems['/lottery'];
+const { cost } = storeItems['/lottery']
+
 
 // Global variables
 const MAX_NUMBER = 100
@@ -24,7 +34,7 @@ const LOTTERY_WIN_AMOUNT = 100000 // Amount to add to the winner's wallet
 
 
 // Path to the lottery winners file
-const winnersFilePath = path.join(process.cwd(), 'src/libs/lotteryWinners.json')
+const winnersFilePath = path.join(process.cwd(), 'src/data/lotteryWinners.json')
 
 // Function to generate a random number within a given range
 function generateRandomNumber (min, max) {

@@ -5,7 +5,7 @@ import { getLatestScoresForSport } from './sportsBetAPI.js';
 
 
 
-const BETS_FILE = 'src/libs/bets.json';
+const BETS_FILE = 'src/dataibs/bets.json';
 
 let mlbGamesCache = [];
 

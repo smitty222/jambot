@@ -3,8 +3,8 @@ import path from 'path'
 import { fetchRecentSongs } from '../utils/API.js'
 import { getUserNickname } from '../handlers/roulette.js'
 
-const walletsFilePath = path.join(process.cwd(), 'src/libs/wallets.json')
-const usersFilePath = path.join(process.cwd(), 'src/libs/users.json')
+const walletsFilePath = path.join(process.cwd(), 'src/data/wallets.json')
+const usersFilePath = path.join(process.cwd(), 'src/data/users.json')
 
 // Helper function to round to nearest tenth
 function roundToTenth (amount) {

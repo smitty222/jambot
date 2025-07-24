@@ -44,7 +44,7 @@ const usersToBeRemoved = {}
 const userstagedive = {}
 
 const queueManager = new QueueManager(
-  'src/libs/djQueue.json',   // your file path
+  'src/data/djQueue.json',   // your file path
   getUserNickname            // optional nickname fetcher
 )
 
@@ -1942,7 +1942,7 @@ else if (payload.message.startsWith('/randomavatar')) {
   }  
 
   else if (payload.message.startsWith('/topsongs')) {
-    const statsPath = path.join(process.cwd(), 'src/libs/roomStats.json')
+    const statsPath = path.join(process.cwd(), 'src/data/roomStats.json')
     let stats = []
   
     try {
@@ -2641,7 +2641,7 @@ for (let i = 0; i < topSongs.length; i++) {
       return
     }
   
-    const statsFilePath = path.join(process.cwd(), 'src/libs/roomStats.json')
+    const statsFilePath = path.join(process.cwd(), 'src/data/roomStats.json')
   
     try {
       const content = await fs.readFile(statsFilePath, 'utf8')
@@ -2671,7 +2671,7 @@ for (let i = 0; i < topSongs.length; i++) {
       })
     }  
   } else if (payload.message.startsWith('/mostplayed')) {
-    const statsFilePath = path.join(process.cwd(), 'src/libs/roomStats.json')
+    const statsFilePath = path.join(process.cwd(), 'src/data/roomStats.json')
   
     try {
       const content = await fs.readFile(statsFilePath, 'utf8')
@@ -2703,7 +2703,7 @@ for (let i = 0; i < topSongs.length; i++) {
       })
     }
   } else if (payload.message.startsWith('/topliked')) {
-    const statsFilePath = path.join(process.cwd(), 'src/libs/roomStats.json')
+    const statsFilePath = path.join(process.cwd(), 'src/data/roomStats.json')
   
     try {
       const content = await fs.readFile(statsFilePath, 'utf8')
@@ -2733,7 +2733,7 @@ for (let i = 0; i < topSongs.length; i++) {
       })
     }
   } else if (payload.message.startsWith('/runtime')) {
-  const statsFilePath = path.join(process.cwd(), 'src/libs/roomStats.json');
+  const statsFilePath = path.join(process.cwd(), 'src/data/roomStats.json');
 
   try {
     const content = await fs.readFile(statsFilePath, 'utf8');
@@ -2960,7 +2960,7 @@ for (let i = 0; i < topSongs.length; i++) {
   
       const fs = await import('fs')
       const path = await import('path')
-      const blacklistPath = path.join(process.cwd(), 'src/libs/songBlacklist.json')
+      const blacklistPath = path.join(process.cwd(), 'src/data/songBlacklist.json')
   
       const fullName = `${currentSong.artistName} - ${currentSong.trackName}`
   
