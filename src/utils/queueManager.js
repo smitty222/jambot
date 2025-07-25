@@ -1,39 +1,30 @@
-import fsPromises from 'fs/promises'
-import fs from 'fs'
+// src/libs/queueManager.js
+import db from '../database/db.js'
 
 export class QueueManager {
-  constructor(queueFilePath, getUsernameFn = null) {
-    this.queueFile = queueFilePath
+  constructor(getUsernameFn = null) {
     this.getUserNickname = getUsernameFn
   }
 
   async loadQueue() {
-    try {
-      if (!fs.existsSync(this.queueFile)) return { queue: [], currentIndex: 0 }
+    const queue = db.prepare(`
+      SELECT userId, username, joinedAt 
+      FROM dj_queue 
+      ORDER BY id ASC
+    `).all()
 
-      const contents = await fsPromises.readFile(this.queueFile, 'utf-8')
-      if (!contents.trim()) return { queue: [], currentIndex: 0 }
-
-      return JSON.parse(contents)
-    } catch (err) {
-      console.error(`Failed to load queue from ${this.queueFile}:`, err)
-      return { queue: [], currentIndex: 0 }
-    }
+    return { queue, currentIndex: 0 }
   }
 
-  async saveQueue(data) {
-    try {
-      await fsPromises.writeFile(this.queueFile, JSON.stringify(data, null, 2), 'utf8')
-    } catch (err) {
-      console.error(`Failed to save queue to ${this.queueFile}:`, err)
-    }
+  async saveQueue() {
+    // Not needed anymore in DB model
   }
 
   async joinQueue(userId) {
-    const data = await this.loadQueue()
-    if (data.queue.find(u => u.userId === userId)) {
-      const existing = data.queue.find(u => u.userId === userId)
-      return { success: false, username: existing?.username || 'Unknown' }
+    const exists = db.prepare(`SELECT 1 FROM dj_queue WHERE userId = ?`).get(userId)
+    if (exists) {
+      const user = db.prepare(`SELECT username FROM dj_queue WHERE userId = ?`).get(userId)
+      return { success: false, username: user?.username || 'Unknown' }
     }
 
     let username = userId
@@ -41,46 +32,53 @@ export class QueueManager {
       username = await this.getUserNickname(userId)
     }
 
-    data.queue.push({ userId, username, joinedAt: new Date().toISOString() })
-    await this.saveQueue(data)
+    db.prepare(`
+      INSERT INTO dj_queue (userId, username, joinedAt)
+      VALUES (?, ?, ?)
+    `).run(userId, username, new Date().toISOString())
+
     return { success: true, username }
   }
 
   async leaveQueue(userId) {
-    const data = await this.loadQueue()
-    const index = data.queue.findIndex(u => u.userId === userId)
-    if (index === -1) return false
-    data.queue.splice(index, 1)
-    if (data.currentIndex >= data.queue.length) data.currentIndex = 0
-    await this.saveQueue(data)
-    return true
+    const info = db.prepare(`DELETE FROM dj_queue WHERE userId = ?`).run(userId)
+    return info.changes > 0
   }
 
   async getQueue() {
-    const data = await this.loadQueue()
-    return data.queue || []
+    const queue = db.prepare(`
+      SELECT userId, username, joinedAt 
+      FROM dj_queue 
+      ORDER BY id ASC
+    `).all()
+    return queue
   }
 
   async getCurrentUser() {
-    const data = await this.loadQueue()
-    return data.queue[data.currentIndex] || null
+    const user = db.prepare(`
+      SELECT userId, username, joinedAt 
+      FROM dj_queue 
+      ORDER BY id ASC 
+      LIMIT 1
+    `).get()
+    return user || null
   }
 
   async advanceQueue() {
-    const data = await this.loadQueue()
-    if (data.queue.length === 0) return null
-    data.currentIndex = (data.currentIndex + 1) % data.queue.length
-    await this.saveQueue(data)
-    return data.queue[data.currentIndex]
+    const current = await this.getCurrentUser()
+    if (!current) return null
+
+    await this.leaveQueue(current.userId)
+    return await this.getCurrentUser()
   }
 
   async clearQueue() {
-    await this.saveQueue({ queue: [], currentIndex: 0 })
+    db.prepare(`DELETE FROM dj_queue`).run()
   }
 
   async isUserNext(userId) {
-    const data = await this.loadQueue()
-    return data.queue[data.currentIndex]?.userId === userId
+    const current = await this.getCurrentUser()
+    return current?.userId === userId
   }
 
   async removeIfNotNext(userId) {

@@ -1,33 +1,27 @@
-import fs from 'fs'
-import path from 'path'
-import { fileURLToPath } from 'url'
+// src/libs/themeManager.js
+import db from '../database/db.js'
 
-// Needed to get __dirname in ESM
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+// Get current theme for a room
+export function getTheme(roomId) {
+  const result = db.prepare('SELECT theme FROM themes WHERE roomId = ?').get(roomId)
+  return result?.theme || null
+}
 
-const filePath = path.join(__dirname, 'themeStorage.json')
+// Set or update a theme for a room
+export function setTheme(roomId, theme) {
+  db.prepare(`
+    INSERT INTO themes (roomId, theme)
+    VALUES (?, ?)
+    ON CONFLICT(roomId) DO UPDATE SET theme = excluded.theme
+  `).run(roomId, theme)
+}
 
+// Optional: Load all themes (room → theme map)
 export function loadThemes() {
-  try {
-    const raw = fs.readFileSync(filePath)
-    return JSON.parse(raw)
-  } catch (e) {
-    return {} // fallback if file missing or broken
+  const rows = db.prepare('SELECT * FROM themes').all()
+  const map = {}
+  for (const row of rows) {
+    map[row.roomId] = row.theme
   }
-}
-
-export function saveThemes(themes) {
-  fs.writeFileSync(filePath, JSON.stringify(themes, null, 2))
-}
-
-export function getTheme(room) {
-  const themes = loadThemes()
-  return themes[room] || null
-}
-
-export function setTheme(room, theme) {
-  const themes = loadThemes()
-  themes[room] = theme
-  saveThemes(themes)
+  return map
 }

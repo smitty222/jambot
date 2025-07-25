@@ -1,8 +1,5 @@
-import { addToUserWallet, getUserWallet, removeFromUserWallet } from '../libs/walletManager.js'
-import fs from 'fs'
-import path from 'path'
-
-const jackpotFile = path.join(process.cwd(), 'src/data/jackpot.json')
+import { addToUserWallet, getUserWallet, removeFromUserWallet } from '../database/dbwalletmanager.js'
+import db from '../database/db.js'
 
 // Slot machine symbols and payouts
 const symbols = ['🍒', '🍋', '🍊', '🍉', '🔔', '⭐', '💎'] // Slot symbols
@@ -37,25 +34,13 @@ function spinSlots () {
 }
 
 function getJackpotValue () {
-  if (fs.existsSync(jackpotFile)) {
-    const data = fs.readFileSync(jackpotFile, 'utf8')
-    const json = JSON.parse(data)
-    return json.progressiveJackpot || 100 // Default to 100 if not set
-  } else {
-    return 100 // Default to 100 if the file doesn't exist
-  }
+  const row = db.prepare(`SELECT progressiveJackpot FROM jackpot WHERE id = 1`).get()
+  return row?.progressiveJackpot || 100
 }
 
-// Update the jackpot value in the JSON file
 function updateJackpotValue (newValue) {
-  console.log(`Updating jackpot value to: ${newValue}`)
-  const data = { progressiveJackpot: newValue }
-  try {
-    fs.writeFileSync(jackpotFile, JSON.stringify(data), 'utf8')
-    console.log('Jackpot file updated successfully.')
-  } catch (error) {
-    console.error('Failed to update jackpot file:', error)
-  }
+  db.prepare(`UPDATE jackpot SET progressiveJackpot = ? WHERE id = 1`).run(newValue)
+  console.log(`✅ Jackpot updated in DB: $${newValue}`)
 }
 
 // Function to calculate the multiplier for wins

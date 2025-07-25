@@ -1,8 +1,14 @@
 // src/handlers/horserace.js
 import { postMessage } from './cometchat.js';
-import { addToUserWallet, removeFromUserWallet, getUserWallet } from '../libs/walletManager.js';
-import { getUserNickname } from '../handlers/roulette.js';
-import { loadHorses, saveHorses, decimalToFraction, getCurrentOdds } from '../libs/horseManager.js';
+import { addToUserWallet, removeFromUserWallet, getUserWallet } from '../database/dbwalletmanager.js';
+import { getUserNickname } from '../handlers/message.js';
+import {
+  getAllHorses,
+  getHorseByName,
+  updateHorseStats,
+  updateHorseOdds
+} from '../database/dbhorses.js'
+
 import { fetchCurrentUsers } from '../utils/API.js';
 
 const room = process.env.ROOM_UUID;
@@ -26,7 +32,8 @@ export async function handleHorseEntryAttempt(payload) {
   const userId = payload.sender;
   const rawMessage = payload.message.trim().toLowerCase();
 
-  const allHorses = await loadHorses();
+  const allHorses = getAllHorses()
+
 
   // Find all valid horses this user owns that aren't retired
   const ownedHorses = allHorses.filter(h =>
@@ -57,7 +64,8 @@ async function startHorseRace() {
   horseBets = {};
   waitingForHorseEntries = true;
   enteredHorses = new Set();
-  allHorses = await loadHorses();
+  const allHorses = getAllHorses()
+
 
   // Fetch current users in the room by calling your fetchCurrentUsers()
   let activeUserIds = [];
@@ -372,7 +380,8 @@ async function runRace() {
 
 
 async function updateHorseStatsAndRetirements(winnerIndex) {
-  const allHorses = await loadHorses();
+  const allHorses = getAllHorses()
+
 
   const winner = horses[winnerIndex];
   const fullWinner = allHorses.find(h => h.name.toLowerCase() === winner.name.toLowerCase());
@@ -402,7 +411,10 @@ async function updateHorseStatsAndRetirements(winnerIndex) {
     }
   }
 
-  await saveHorses(allHorses);
+  for (const horse of allHorses) {
+  updateHorseStats(horse)
+}
+
 }
 
 

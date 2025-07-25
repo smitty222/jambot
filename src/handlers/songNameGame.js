@@ -1,75 +1,114 @@
-import { postMessage } from '../libs/cometchat.js'; // adjust path if needed
-import { getCurrentDJUUIDs } from '../libs/bot.js';
-import { getUserNickname } from './roulette.js';
+import { postMessage } from '../libs/cometchat.js'
+import { getCurrentDJUUIDs } from '../libs/bot.js'
+import { getTheme } from '../utils/themeManager.js'
 
+// Memory-based point tracking (replace with DB later)
+const userPoints = {}
+let letterChallengeTimer = null
+let currentChallengeLetter = null
+let currentDJ = null
 
+// Convert duration formats to milliseconds
 export function parseDurationToMs(duration) {
-  if (typeof duration === 'number') {
-    // Assuming already in seconds
-    return duration * 1000;
+  if (typeof duration === 'number') return duration * 1000
+
+  const parts = duration.split(':').map(Number)
+  if (parts.length === 2) {
+    const [minutes, seconds] = parts
+    return (minutes * 60 + seconds) * 1000
+  } else if (parts.length === 3) {
+    const [hours, minutes, seconds] = parts
+    return ((hours * 3600) + (minutes * 60) + seconds) * 1000
   }
-  if (typeof duration === 'string') {
-    // Expect format "MM:SS" or "H:MM:SS"
-    const parts = duration.split(':').map(Number);
-    if (parts.length === 2) {
-      // MM:SS
-      const [minutes, seconds] = parts;
-      return (minutes * 60 + seconds) * 1000;
-    } else if (parts.length === 3) {
-      // H:MM:SS
-      const [hours, minutes, seconds] = parts;
-      return ((hours * 3600) + (minutes * 60) + seconds) * 1000;
-    }
-  }
-  // If unknown format, fallback
-  return 0;
+
+  return 0
 }
 
-
-// Helper to pick a random letter A-Z
+// Pick a random letter A–Z
 function getRandomLetter() {
   const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
   return letters[Math.floor(Math.random() * letters.length)]
 }
 
-// Announce a random letter to the room
-export async function announceRandomLetter(room, state) {
-  const letter = getRandomLetter()
-  const djUUIDs = getCurrentDJUUIDs(state)
+// Score a DJ’s track
+export async function scoreLetterChallenge(bot) {
+  const songTitle = bot.currentSong?.trackName || ''
+  const artistName = bot.currentSong?.artistName || ''
+  const playingDJ = getCurrentDJUUIDs(bot.state)[0]
 
-  let targetName = 'the next DJ'
+  if (!currentChallengeLetter || !songTitle || !playingDJ) return
 
-  if (djUUIDs.length > 1) {
-    const secondDJ = djUUIDs[1]
-    const nickname = await getUserNickname(secondDJ)
-    targetName = `@${nickname}`
+  const letter = currentChallengeLetter.toUpperCase()
+  const firstLetter = songTitle[0]?.toUpperCase()
+
+  if (firstLetter !== letter) {
+    await postMessage({
+      room: bot.roomUUID,
+      message: `❌ <@uid:${playingDJ}> played *${songTitle}* — but it doesn't start with "${letter}". No points this round!`
+    })
+    currentChallengeLetter = null
+    currentDJ = null
+    return
   }
+
+  let score = 1 // Base point for first word match
+  let breakdown = ['+1 for track title starting with the correct letter']
+
+  const words = songTitle.trim().split(/\s+/)
+  for (let i = 1; i < words.length; i++) {
+    if (words[i][0]?.toUpperCase() === letter) {
+      score++
+      breakdown.push(`+1 for word "${words[i]}" in title`)
+    }
+  }
+
+  if (artistName[0]?.toUpperCase() === letter) {
+    score++
+    breakdown.push(`+1 for artist name starting with "${letter}"`)
+  }
+
+  userPoints[playingDJ] = (userPoints[playingDJ] || 0) + score
 
   await postMessage({
-    room,
-    message: `🎵 Letter Challenge!\n${targetName}, your song should start with the letter *${letter}*!`
+    room: bot.roomUUID,
+    message: `✅ <@uid:${playingDJ}> earned ${score} point(s) for playing *${songTitle}* by *${artistName}* — matching letter "${letter}"!\n${breakdown.join('\n')}\n🎯 Total: ${userPoints[playingDJ]} point(s)`
   })
+
+  currentChallengeLetter = null
+  currentDJ = null
 }
 
-let letterChallengeTimer = null; // Store the timer ID so you can clear it if needed
+// Schedule the challenge near end of song
+export function scheduleLetterChallenge(bot) {
+  if (!bot || !bot.currentSong) return
 
-function scheduleLetterChallenge() {
-  if (letterChallengeTimer) {
-    clearTimeout(letterChallengeTimer);
-    letterChallengeTimer = null;
+  const challengeStartMs = bot.currentSong.challengeStartMs
+  const theme = getTheme(bot.roomUUID)?.toLowerCase()
+
+  if (!theme || !theme.includes('name game')) {
+    return
   }
 
-  if (!this.currentSong || typeof this.currentSong.challengeStartMs !== 'number') {
-    console.log('No valid challengeStartMs to schedule letter challenge.');
-    return;
+  if (!challengeStartMs || typeof challengeStartMs !== 'number') {
+    console.log('[🎵 NameGame] Invalid challengeStartMs')
+    return
+  }
+
+  if (letterChallengeTimer) {
+    clearTimeout(letterChallengeTimer)
+    letterChallengeTimer = null
   }
 
   letterChallengeTimer = setTimeout(async () => {
-    await announceRandomLetter(this.roomUUID, this.state)  // <-- pass state
+    const letter = getRandomLetter()
+    currentChallengeLetter = letter
+    currentDJ = getCurrentDJUUIDs(bot.state)[0]
+
+    await postMessage({
+      room: bot.roomUUID,
+      message: `🎯 Letter Challenge!\n<@uid:${currentDJ}>, your next song should start with *${letter}* to score points!\n🎁 Bonus for multiple words or matching artist!`
+    })
+
     letterChallengeTimer = null
-  }, this.currentSong.challengeStartMs);
+  }, challengeStartMs)
 }
-
-
-
-export { scheduleLetterChallenge }

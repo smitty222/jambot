@@ -1,4 +1,4 @@
-import { getUserWallet, removeFromUserWallet, addToUserWallet } from '../libs/walletManager.js'
+import { getUserWallet, removeFromUserWallet, addToUserWallet } from '../database/dbwalletmanager.js'
 import { getOddsForSport } from './bettingOdds.js';
 import { promises as fs } from 'fs'
 import { getLatestScoresForSport } from './sportsBetAPI.js';

@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs'
 import path from 'path'
 import { fetchRecentSongs } from '../utils/API.js'
-import { getUserNickname } from '../handlers/roulette.js'
+import { getUserNickname } from '../handlers/message.js'
 
 const walletsFilePath = path.join(process.cwd(), 'src/data/wallets.json')
 const usersFilePath = path.join(process.cwd(), 'src/data/users.json')
@@ -19,7 +19,6 @@ async function loadWallets () {
   } catch (error) {
     if (error.code === 'ENOENT') {
       console.error('Wallets file not found, initializing a new one.')
-      await saveWallets({}) // Create a new file if it doesn't exist
       return {} // Return an empty object
     } else {
       console.error('Error reading wallets file:', error)
@@ -56,21 +55,6 @@ async function addOrUpdateUser (userUUID) {
   }
 }
 
-// Save wallets to the JSON file
-async function saveWallets (wallets) {
-  // Ensure wallets is a valid object
-  if (typeof wallets !== 'object' || wallets === null) {
-    console.error('Invalid wallets object:', wallets)
-    return // Exit if wallets is invalid
-  }
-
-  try {
-    await fs.writeFile(walletsFilePath, JSON.stringify(wallets, null, 2)) // Pretty print JSON
-    console.log('Wallets saved successfully:') // Log successful save
-  } catch (error) {
-    console.error('Error writing to wallets file:', error)
-  }
-}
 
 // Load users from the JSON file
 export async function loadUsers () {
@@ -121,9 +105,7 @@ async function addToUserWallet (userUUID, amount, nickname) {
     // Step 3: Add the amount and round the result
     wallets[userUUID].balance = roundToTenth(wallets[userUUID].balance + amount)
 
-    // Step 4: Save the updated wallets back to the file
-    await saveWallets(wallets)
-    return true // Return true to indicate success
+
   } catch (error) {
     console.error('Error adding to wallet:', error)
     return false // Return false to indicate an error
@@ -143,8 +125,6 @@ async function removeFromUserWallet (userUUID, amount) {
     const newBalance = roundToTenth(wallets[userUUID].balance - amount)
     wallets[userUUID].balance = newBalance < 0 ? 0 : newBalance // Set to zero if negative
 
-    await saveWallets(wallets) // Save updated wallets back to the file
-    return true // Return true to indicate success
   } catch (error) {
     console.error('Error removing from wallet:', error)
     return false // Return false to indicate an error
@@ -257,7 +237,6 @@ export {
   addDollarsByNickname,
   getNicknamesFromWallets,
   getBalanceByNickname,
-  saveWallets,
   loadWallets,
   removeFromUserWallet,
   songPayment

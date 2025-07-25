@@ -1,189 +1,102 @@
+// votecounts.js
 import { postMessage } from '../libs/cometchat.js'
 import { fetchRecentSongs, fetchUserData } from './API.js'
-import { roomBot } from '../index.js'
-import { logCurrentSong } from '../libs/roomStats.js'
-import fs from 'fs/promises'
-import path from 'path'
-import { roomThemes } from '../handlers/message.js'
-import { formatDistanceToNow } from 'date-fns'
-
-const statsPath = path.join(process.cwd(), 'src/data/roomStats.json')
+import db from '../database/db.js'
 
 let songStatsEnabled = false
 
-async function postVoteCountsForLastSong(room) {
+export async function postVoteCountsForLastSong(room) {
   try {
     const recentSongs = await fetchRecentSongs()
+    if (!recentSongs?.length) return console.log('No recent songs found.')
 
-    if (!recentSongs || recentSongs.length === 0) {
-      console.log('No recent songs found.')
-      return
+    const { song, voteCounts, djUuid } = recentSongs[0]
+    if (!song) return console.log('No song found.')
+
+    const { trackName, artistName, songId, duration } = song
+    const { likes = 0, dislikes = 0, stars = 0 } = voteCounts
+
+    const now = new Date().toISOString()
+    const durationStr = duration || null
+
+    // Update stats table
+    const existing = db.prepare('SELECT * FROM room_stats WHERE songId = ?').get(songId)
+
+    if (existing) {
+      db.prepare(`
+        UPDATE room_stats SET 
+          playCount = playCount + 1,
+          likes = likes + ?,
+          dislikes = dislikes + ?,
+          stars = stars + ?,
+          lastPlayed = ?
+        WHERE songId = ?
+      `).run(likes, dislikes, stars, now, songId)
+    } else {
+      db.prepare(`
+        INSERT INTO room_stats (songId, trackName, artistName, songDuration, playCount, likes, dislikes, stars, lastPlayed)
+        VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)
+      `).run(songId, trackName, artistName, durationStr, likes, dislikes, stars, now)
     }
 
-    // Get the most recent song
-    const lastSong = recentSongs[0]
+    console.log(`Logged stats for ${trackName} by ${artistName}: 👍 ${likes}, 👎 ${dislikes}, ❤️ ${stars}`)
 
-    if (!lastSong) {
-      console.log('No previous song found.')
-      return
-    }
+    // 🎯 Only post if stats are enabled
+    if (!songStatsEnabled) return
 
-    const { song, voteCounts, djUuid } = lastSong
-   
-    const songDuration = song.duration || null
-    song.songDuration = songDuration
+    let message = `🛑 **Song Recap**\n🎵 *${trackName}* by *${artistName}*`
 
-    const { artistName, trackName, songId } = song
-
-    // Check if djUuid is available
-    if (!djUuid) {
-      console.log('No DJ found.')
-      return
-    }
-
-    // Fetch DJ nickname using djUuid
-    let djNickname = 'Unknown DJ' // Default to 'Unknown DJ'
+    // Fetch DJ nickname
+    let djNickname = 'Unknown DJ'
     try {
-      const userData = await fetchUserData([djUuid]) // Fetch user data
-      if (userData.length > 0 && userData[0].userProfile) {
-        djNickname = userData[0].userProfile.nickname // Access nickname from userProfile
-      }
-    } catch (fetchError) {
-      console.error(`Failed to fetch DJ nickname: ${fetchError.message}`)
-    }
+      const [user] = await fetchUserData([djUuid])
+      djNickname = user?.userProfile?.nickname || djNickname
+    } catch {}
 
-    const popularity = roomBot.currentSong ? roomBot.currentSong.popularity : 'Unknown'
+    message += `\n🎧 Played by: **${djNickname}**\n👍 ${likes}   👎 ${dislikes}   ❤️ ${stars}`
 
-    const { likes = 0, dislikes = 0, stars = 0 } = voteCounts // Provide default values if not available
-
-    // Log the song stats (this will always happen)
-    await logCurrentSong(song, likes, dislikes, stars)
-    console.log(`Logged stats for ${trackName} by ${artistName}: 👍 ${likes}, 👎 ${dislikes}, ⭐ ${stars}`)
-
-        if (songStatsEnabled) {
-          let message = `🛑 **Song Recap**\n`
-          message += `🎵 *${trackName}* by *${artistName}*\n`
-          message += `🎧 Played by: **${djNickname}**\n`
-          message += `👍 ${likes}   👎 ${dislikes}   ❤️ ${stars}`
-
-      // Optionally pull in average review and play count
-      try {
-        const content = await fs.readFile(statsPath, 'utf8')
-        const stats = JSON.parse(content)
-        const songEntry = stats.find(s => s.songId === song.songId)
-
-       if (songEntry) {
-          if (songEntry.averageReview !== undefined) {
-           message += `   ⭐ ${songEntry.averageReview}/5`
-          }
-
-          if (songEntry.playCount !== undefined) {
-           message += `\n🔁 Played ${songEntry.playCount} time${songEntry.playCount !== 1 ? 's' : ''}`
-          }
-        }
-      } catch (err) {
-        console.warn('Could not read songStats for end-of-song post:', err.message)
+    // Append play count and avg review
+    const updated = db.prepare('SELECT playCount, averageReview FROM room_stats WHERE songId = ?').get(songId)
+    if (updated) {
+      if (updated.averageReview) {
+        message += `   ⭐ ${updated.averageReview}/5`
       }
 
-      await postMessage({ room, message })
-
-    } else {
-      console.log('Posting song stats is disabled.')
-    }
-  } catch (error) {
-    console.error('Error in postVoteCountsForLastSong:', error.message)
-  }
-}
-
-export async function announceNowPlaying(room) {
-  try {
-    const song = roomBot.currentSong
-
-    if (!song || !song.trackName || !song.artistName || !song.songId) {
-      console.log('Not enough data to announce song.')
-      return
-    }
-
-    // Load roomStats.json
-    let stats = []
-    try {
-      const content = await fs.readFile(statsPath, 'utf8')
-      stats = JSON.parse(content)
-    } catch (err) {
-      console.warn('Could not read roomStats.json, defaulting to blank stats.')
-    }
-
-    const entry = stats.find(s => s.songId === song.songId)
-    const playCount = entry?.playCount || 1
-    const avgReview = entry?.averageReview !== undefined ? `⭐ ${entry.averageReview}/5` : null
-
-    let message = `🎵 Now playing: “${song.trackName}” by ${song.artistName}`
-
-    // Album theme detection
-    const theme = (roomThemes[room] || '').toLowerCase()
-    const albumThemes = ['album monday', 'albums', 'album day']
-    const isAlbumTheme = albumThemes.includes(theme)
-
-    // Track info append
-    if (isAlbumTheme && song.trackNumber && song.totalTracks) {
-      message += `\n📀 Track ${song.trackNumber} of ${song.totalTracks}`
-    }
-
-    if (!entry?.lastPlayed || playCount === 1) {
-      message += `\n🆕 First time playing in this room!`
-    } else {
-      message += `\n🔁 Played ${playCount} time${playCount !== 1 ? 's' : ''}`
-      const lastPlayedTime = formatDistanceToNow(new Date(entry.lastPlayed), { addSuffix: true })
-      message += `\n🕒 Last played ${lastPlayedTime}`
-    }
-
-    if (avgReview) {
-      message += `\n${avgReview}`
+      if (updated.playCount) {
+        message += `\n🔁 Played ${updated.playCount} time${updated.playCount !== 1 ? 's' : ''}`
+      }
     }
 
     await postMessage({ room, message })
   } catch (error) {
-    console.error('Error in announceNowPlaying:', error.message)
+    console.error('Error in postVoteCountsForLastSong:', error)
   }
 }
 
-
-
 export async function saveSongReview({ currentSong, rating, sender }) {
   try {
-    const content = await fs.readFile(statsPath, 'utf8')
-    const stats = JSON.parse(content)
+    const { songId, trackName, artistName } = currentSong
+    const existing = db.prepare('SELECT * FROM song_reviews WHERE songId = ? AND userId = ?').get(songId, sender)
 
-    const songIndex = stats.findIndex(s =>
-      (currentSong.songId && s.songId === currentSong.songId) ||
-      (!currentSong.songId &&
-        s.trackName === currentSong.trackName &&
-        s.artistName === currentSong.artistName)
-    )
-
-    if (songIndex === -1) return { success: false, reason: 'not_found' }
-
-    const songStats = stats[songIndex]
-    songStats.reviews = songStats.reviews || []
-
-    // Update or add the user's review
-    const existingReview = songStats.reviews.find(r => r.userId === sender)
-    if (existingReview) {
-      existingReview.rating = rating
-      existingReview.userPlayCount = (existingReview.userPlayCount || 0) + 1
+    if (existing) {
+      db.prepare(`
+        UPDATE song_reviews 
+        SET rating = ?, userPlayCount = userPlayCount + 1 
+        WHERE songId = ? AND userId = ?
+      `).run(rating, songId, sender)
     } else {
-      songStats.reviews.push({
-        userId: sender,
-        rating,
-        userPlayCount: 1
-      })
+      db.prepare(`
+        INSERT INTO song_reviews (songId, userId, rating, userPlayCount)
+        VALUES (?, ?, ?, 1)
+      `).run(songId, sender, rating)
     }
 
     // Recalculate average
-    const total = songStats.reviews.reduce((sum, r) => sum + r.rating, 0)
-    songStats.averageReview = parseFloat((total / songStats.reviews.length).toFixed(2))
+    const rows = db.prepare('SELECT rating FROM song_reviews WHERE songId = ?').all(songId)
+    const total = rows.reduce((sum, r) => sum + r.rating, 0)
+    const average = parseFloat((total / rows.length).toFixed(2))
 
-    await fs.writeFile(statsPath, JSON.stringify(stats, null, 2))
+    db.prepare('UPDATE room_stats SET averageReview = ? WHERE songId = ?').run(average, songId)
 
     return { success: true }
   } catch (err) {
@@ -192,29 +105,24 @@ export async function saveSongReview({ currentSong, rating, sender }) {
   }
 }
 
-
 export async function getAverageRating(currentSong) {
   try {
-    const content = await fs.readFile(statsPath, 'utf8')
-    const stats = JSON.parse(content)
+    const stmt = db.prepare(`
+      SELECT AVG(rating) as average, COUNT(*) as count
+      FROM song_reviews
+      WHERE songId = ?
+    `)
 
-    const song = stats.find(s =>
-      (currentSong.songId && s.songId === currentSong.songId) ||
-      (!currentSong.songId &&
-        s.trackName === currentSong.trackName &&
-        s.artistName === currentSong.artistName)
-    )
+    const result = stmt.get(currentSong.songId)
 
-    if (!song || !song.reviews || song.reviews.length === 0) {
+    if (!result || result.count === 0) {
       return { found: false }
     }
 
-    const avg = parseFloat((song.reviews.reduce((sum, r) => sum + r.rating, 0) / song.reviews.length).toFixed(2))
-
     return {
       found: true,
-      average: avg,
-      count: song.reviews.length
+      average: parseFloat(result.average.toFixed(2)),
+      count: result.count
     }
   } catch (err) {
     console.error('Error getting average rating:', err)
@@ -223,17 +131,15 @@ export async function getAverageRating(currentSong) {
 }
 
 
-function isSongStatsEnabled () {
+// Flag controls
+export function isSongStatsEnabled() {
   return songStatsEnabled
 }
-// Command to turn on song stats
-async function enableSongStats () {
+
+export function enableSongStats() {
   songStatsEnabled = true
 }
 
-// Command to turn off song stats
-async function disableSongStats () {
+export function disableSongStats() {
   songStatsEnabled = false
 }
-
-export { postVoteCountsForLastSong, enableSongStats, disableSongStats, isSongStatsEnabled }

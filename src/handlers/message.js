@@ -5,38 +5,40 @@ import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, displayTriviaIn
 import { logger } from '../utils/logging.js'
 import { roomBot } from '../index.js'
 import { getAlbumsByArtist, getAlbumTracks, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSongData, updateRoomInfo, isUserOwner, searchSpotify, getSenderNickname, getMLBScores, getNHLScores, getNBAScores, getTopHomeRunLeaders, getSimilarTracks, getTopChartTracks, addSongsToCrate, getUserToken, clearUserQueueCrate, getUserQueueCrateId} from '../utils/API.js'
-import { handleLotteryCommand, handleLotteryNumber, LotteryGameActive, getLotteryWinners, handleTopLotteryStatsCommand, handleSingleNumberQuery } from '../utils/lotteryGame.js'
+import { handleLotteryCommand, handleLotteryNumber, handleTopLotteryStatsCommand, handleSingleNumberQuery, handleLotteryCheck, LotteryGameActive, getLotteryWinners } from '../database/dblotterymanager.js'
 import { enableSongStats, disableSongStats, isSongStatsEnabled, saveSongReview, getAverageRating} from '../utils/voteCounts.js'
 import { enableGreetingMessages, disableGreetingMessages, greetingMessagesEnabled } from './userJoined.js'
-import { getCurrentDJ, readRecentSongs, getCurrentDJUUIDs } from '../libs/bot.js'
+import { getCurrentDJ, getCurrentDJUUIDs } from '../libs/bot.js'
+import { readRecentSongs } from '../database/dbrecentsongsmanager.js'
 import { addTracksToPlaylist, removeTrackFromPlaylist } from '../utils/playlistUpdate.js'
-import { getUserNickname, handleRouletteBet, rouletteGameActive, startRouletteGame } from '../handlers/roulette.js'
-import { getBalanceByNickname, getNicknamesFromWallets, addDollarsByNickname, loadWallets, saveWallets, removeFromUserWallet, getUserWallet } from '../libs/walletManager.js'
+import {
+  startRouletteGame,
+  handleRouletteBet,
+  handleBalanceCommand,
+  showAllBets,
+  rouletteGameActive
+} from './roulette.js'
+import { getBalanceByNickname, getNicknamesFromWallets, addDollarsByNickname, loadWallets, removeFromUserWallet, getUserWallet } from '../database/dbwalletmanager.js'
 import { getJackpotValue, handleSlotsCommand } from './slots.js'
-import { joinTable, leaveTable, handleBlackjackBet, handleHit, handleStand, gameState } from '../handlers/blackJack.js'
+import { joinTable, handleBlackjackBet, handleHit, handleStand, gameState } from '../handlers/blackJack.js'
 import { updateAfkStatus, isUserAfkAuthorized, userTokens } from './afk.js'
-import { generateDerbyTeamsJSON, updateDerbyTeamsFromJSON, getDerbyStandings } from '../utils/homerunDerby.js'
 import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand, handleRandomCyberCommand, handleVibesGuyCommand, handleFacesCommand } from './avatarCommands.js'
 import { markUser, getMarkedUser} from '../utils/removalQueue.js'
-import { handleLotteryCheck } from '../utils/lotteryGame.js'
-import {extractUserFromText, isLotteryQuestion} from '../utils/regex.js'
+import {extractUserFromText, isLotteryQuestion} from '../database/dblotteryquestionparser.js'
 import { askMagic8Ball } from './magic8Ball.js'
 import { storeItems } from '../libs/jamflowStore.js'
-import { saveAlbumReview, getTopAlbumReviews, getUserAlbumReviews } from '../utils/albumVotes.js'
+import { saveAlbumReview, getTopAlbumReviews, getUserAlbumReviews } from '../database/dbalbumstatsmanager.js'
 import { placeSportsBet, resolveCompletedBets } from '../utils/sportsBet.js'
 import { setTheme } from '../utils/themeManager.js'
 import * as themeManager from '../utils/themeManager.js'
-import { getUserSongReviews } from '../libs/roomStats.js'
+import { getUserSongReviews } from '../database/dbroomstatsmanager.js'
 import { fetchOddsForSport, formatOddsMessage } from '../utils/sportsBetAPI.js'
 import { saveOddsForSport, getOddsForSport } from '../utils/bettingOdds.js'
 import { startHorseRace, handleHorseBet, handleHorseEntryAttempt, isWaitingForEntries } from '../libs/horseRace.js'
 import { handleBuyHorse, handleMyHorsesCommand, handleHorseHelpCommand, handleHorseStatsCommand, handleTopHorsesCommand } from '../libs/horseManager.js'
 import { QueueManager } from '../utils/queueManager.js'
-import path from 'path'
-import fs from 'fs/promises'
-
-
-
+import db from '../database/db.js'
+import { handleAddAvatarCommand } from './addAvatar.js'
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
 export const roomThemes = {}
@@ -47,6 +49,11 @@ const queueManager = new QueueManager(
   'src/data/djQueue.json',   // your file path
   getUserNickname            // optional nickname fetcher
 )
+
+export async function getUserNickname(userId) {
+  return `<@uid:${userId}>`
+}
+
 
 export async function handleDirectMessage(payload) {
   const sender = payload.sender
@@ -289,10 +296,16 @@ if (reply?.imagePath) {
   })
   } else if (payload.message.startsWith('/qalbum')) {
   const albumId = payload.message.split(' ')[1]?.trim();
+  const room = process.env.ROOM_UUID;
+
   if (!albumId) {
     await postMessage({
       room,
-      message: '⚠️ Please provide a valid album ID. Example: `/qalbum 5ht7ItJgpBH7W6vJ5BqpPr`'
+      message:
+`⚠️ *Missing Album ID*
+
+Please provide a valid Spotify album ID.  
+Example: \`/qalbum 4aawyAB9vmqN3uQ7FjRGTy\``
     });
     return;
   }
@@ -301,36 +314,46 @@ if (reply?.imagePath) {
   if (!token) {
     await postMessage({
       room,
-      message: '❌ No access token found for your user. Ask the admin to set it in the environment file or map.'
+      message:
+`🔐 *Spotify account not linked*
+
+We couldn’t find your access token.  
+Please contact an admin to link your account to use this command.`
     });
     return;
   }
 
   try {
-    // Step 1: Clear the user's current queue crate
+    // Step 1: Clear user queue
+    await postMessage({
+      room,
+      message: `📁 *Clearing your current queue...*\n📡 Fetching album from Spotify...`
+    });
+
     await clearUserQueueCrate(payload.sender);
 
-    // Step 2: Get the fresh queue crate ID after clearing
+    // Step 2: Get fresh queue ID
     const crateInfo = await getUserQueueCrateId(payload.sender);
     const crateId = crateInfo?.crateUuid;
     if (!crateId) {
       await postMessage({
         room,
-        message: '❌ Could not retrieve your queue crate ID after clearing.'
+        message: `❌ *Failed to retrieve your queue ID. Please try again later.*`
       });
       return;
     }
 
-    await postMessage({ room, message: `📦 Queuing album ${albumId} for your crate...` });
-
     // Step 3: Fetch album tracks
     const tracks = await getAlbumTracks(albumId);
     if (!tracks || tracks.length === 0) {
-      await postMessage({ room, message: `❌ Failed to fetch tracks for album \`${albumId}\`.` });
+      await postMessage({
+        room,
+        message: `❌ *No tracks found for album \`${albumId}\`.*`
+      });
       return;
     }
 
-    // Format tracks to crate song format
+    // Step 4: Format for queue
     const formattedTracks = tracks.map(track => ({
       musicProvider: 'spotify',
       songId: track.id,
@@ -343,21 +366,26 @@ if (reply?.imagePath) {
       genre: ''
     }));
 
-    // Step 4: Add songs to crate
+    // Step 5: Add to queue
     await addSongsToCrate(crateId, formattedTracks, true, token);
 
     await postMessage({
       room,
-      message: `✅ Queued ${formattedTracks.length} track(s) from album \`${albumId}\` to your crate. Please refresh your page for updates to show`
+      message:
+`✅ *Album Queued!*
+
+🎵 Added *${formattedTracks.length} track(s)* from album \`${albumId}\` to your queue.  
+Please refresh your page for tha queue to update`
     });
+
   } catch (error) {
     await postMessage({
       room,
-      message: `❌ Failed to queue album: ${error.message}`
+      message:
+`❌ *Something went wrong while queuing your album*  
+\`\`\`${error.message}\`\`\``
     });
   }
-
-
   } else if (payload.message.startsWith('/horserace')) {
   await startHorseRace(payload);
   } else if (payload.message.match(/^\/horse\d+\s+\d+/)) {
@@ -652,7 +680,7 @@ if (reply?.imagePath) {
   } else if (payload.message.startsWith('/games')) {
     await postMessage({
       room,
-      message: 'Games:\n- /trivia: Play Trivia\n- /lottery: Play the Lottery\n- /roulette: Play Roulette\n- /slots: Play Slots\n- /blackjack: Play Blackjack\n- /slotinfo: Display slots payout info\n- /lotto (#):Insert number to get amount of times won\n- /lottostats: Get most won lottery numbers \n- /jackpot: Slots progressive jackpot value'
+      message: 'Games:\n- /trivia: Play Trivia\n- /lottery: Play the Lottery\n- /roulette: Play Roulette\n- /slots: Play Slots\n- /blackjack: Play Blackjack\n- /horserace\n- /slotinfo: Display slots payout info\n- /lotto (#):Insert number to get amount of times won\n- /lottostats: Get most won lottery numbers \n- /jackpot: Slots progressive jackpot value'
     })
   } else if (payload.message.startsWith('/theme')) {
     try {
@@ -1085,6 +1113,26 @@ if (reply?.imagePath) {
       console.error('Error processing command:', error.message)
     }
 
+    } else if (payload.message.startsWith('/shred')) {
+    try {
+      const danceImageOptions = [
+        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExZTIxczIxamNnbHpyajFyMmFhZmVwZnR4OTdhN3IwaDM0NGp4ZGhrbyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/0VwKnH9W96meBS9NAv/giphy.gif',
+        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExd295ajQ1cmJtdGZhMWQ4eWQ4cXhtNmV5eGphODBxNnV0anI5b3F0ZiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/9D8SldWd6lmVbHwRB1/giphy.gif',
+        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdzd1MnlzNnZsN2Z0NWZ3ajU4bTJ3NnJmZHh1bzAweHFrbnA5eDY5YiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/7aLx6EHBGyTZTNOt5G/giphy.gif',
+        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ3oyN2phaXN1emk4aXN0eHJwb3BhODZpdDU0a2hxNmd3NGVsZWs4eiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/U23XuUNi3XdW93JM0b/giphy.gif',
+        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExd3l4a2hlNzk0Y2dlYm9sOTZ4ajFvOTFjOTdqOTU4ZW15ZjU1OGRlaSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/3o7P4DBaIJG4n8DzNK/giphy.gif',
+        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExa2JleHNweGkwZGtpcXo4dm9sZGo1ZTB2ZmoxbGJqb2IweTlpZ3c4ZiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/mI3J3e2v97T8Y/giphy.gif'
+      ]
+      const randomDanceImageUrl = danceImageOptions[Math.floor(Math.random() * danceImageOptions.length)]
+      await postMessage({
+        room,
+        message: '',
+        images: [randomDanceImageUrl]
+      })
+    } catch (error) {
+      console.error('Error processing command:', error.message)
+    }
+
     /// ///////////  GIF Commands /////////////////////////
   } else if (payload.message.startsWith('/gifs')) {
     await postMessage({
@@ -1230,60 +1278,70 @@ if (reply?.imagePath) {
   }
   /// //////////////////// VIRTUAL CASINO ////////////////////////
 
-  /// //////////////////// ROULETTE ///////////////////////////////
+  /////////////////////// ROULETTE ///////////////////////////////
 
+// Helper to detect if message is a direct number bet like "/7 10"
+function isDirectNumberBet(message) {
+  const command = message.trim().split(' ')[0].substring(1)
+  const number = parseInt(command, 10)
+  return !isNaN(number) && number >= 0 && number <= 36
+}
+
+// Start roulette game
 if (payload.message.startsWith('/roulette start')) {
-  // Check if the roulette game is already active
   if (!rouletteGameActive) {
-    await startRouletteGame(payload) // Start the roulette game
+    await startRouletteGame(payload)
   } else {
     await postMessage({
       room,
-      message: 'A roulette game is already active! Please wait for it to finish before starting a new one.'
+      message: '🎰 A roulette game is already active! Please wait for it to finish.'
     })
   }
+
+// Roulette instructions
 } else if (payload.message.startsWith('/roulette')) {
-  // Send detailed instructions for the roulette game
   await postMessage({
     room,
-    message: 'Welcome to Roulette! Use `/roulette start` to begin the game.\n' +
-             'To place a bet, use one of the following commands:\n' +
-             '- `/red <amount>`: Bet on red numbers.\n' +
-             '- `/black <amount>`: Bet on black numbers.\n' +
-             '- `/odd <amount>`: Bet on odd numbers.\n' +
-             '- `/even <amount>`: Bet on even numbers.\n' +
-             '- `/high <amount>`: Bet on high numbers (19-36).\n' +
-             '- `/low <amount>`: Bet on low numbers (1-18).\n' +
-             '- `/number <number> <amount>`: Bet on a specific number (0-36).\n' +
-             '- `/dozen <1|2|3> <amount>`: Bet on the first (1), second (2), or third dozen of numbers.\n' +
-             '- `/column <1|2|3> <amount>`: Bet on one of the three vertical columns of numbers.\n\n' +
-             'The `<amount>` specifies how much you want to wager from your balance. Use `/balance` to check your wallet balance.'
+    message:
+      '🎡 Welcome to Roulette! Use `/roulette start` to begin.\n\n' +
+      '🎯 Place bets using:\n' +
+      '- `/red <amount>` or `/black <amount>`\n' +
+      '- `/odd <amount>` or `/even <amount>`\n' +
+      '- `/high <amount>` or `/low <amount>`\n' +
+      '- `/number <number> <amount>` or `/<number> <amount>`\n' +
+      '- `/dozen <1|2|3> <amount>`\n\n' +
+      '💰 Use `/balance` to check your wallet.\n' +
+      '🧾 Use `/bets` to see all current bets.'
   })
-} else if (rouletteGameActive && (
-  payload.message.startsWith('/red') ||
-  payload.message.startsWith('/black') ||
-  payload.message.startsWith('/green') ||
-  payload.message.startsWith('/odd') ||
-  payload.message.startsWith('/even') ||
-  payload.message.startsWith('/high') ||
-  payload.message.startsWith('/low') ||
-  payload.message.startsWith('/number') ||
-  (!isNaN(payload.message.split(' ')[0].substring(1)) && parseInt(payload.message.split(' ')[0].substring(1), 10) >= 0 && parseInt(payload.message.split(' ')[0].substring(1), 10) <= 36) ||
-  payload.message.startsWith('/dozen') ||
-  payload.message.startsWith('/column') ||
-  payload.message.startsWith('/two') ||
-  payload.message.startsWith('/three') ||
-  payload.message.startsWith('/four') ||
-  payload.message.startsWith('/five') ||
-  payload.message.startsWith('/six')
-)) {
-  // Use the original payload directly
-  await handleRouletteBet(payload) // Handle the user's bet
+
+// Show all bets
+} else if (payload.message.startsWith('/bets') && rouletteGameActive) {
+  await showAllBets()
+
+// Check wallet balance
+} else if (payload.message.startsWith('/balance')) {
+  await handleBalanceCommand(payload)
+
+// Handle bets (color, number, dozen, direct number)
+} else if (
+  rouletteGameActive &&
+  (
+    payload.message.startsWith('/red') ||
+    payload.message.startsWith('/black') ||
+    payload.message.startsWith('/green') ||
+    payload.message.startsWith('/odd') ||
+    payload.message.startsWith('/even') ||
+    payload.message.startsWith('/high') ||
+    payload.message.startsWith('/low') ||
+    payload.message.startsWith('/number') ||
+    payload.message.startsWith('/dozen') ||
+    isDirectNumberBet(payload.message)
+  )
+) {
+  await handleRouletteBet(payload)
 }
 
-function formatBalance(balance) {
-  return balance > 999 ? balance.toLocaleString() : balance.toString()
-}
+/////////////////////////// Wallet Stuff ////////////////////////////////////
 
   if (payload.message.startsWith('/balance')) {
     const userId = payload.sender // Get the user's ID from the payload
@@ -1304,12 +1362,12 @@ function formatBalance(balance) {
 
       await postMessage({
         room: process.env.ROOM_UUID,
-        message: `@${nickname}, your current balance is $${formattedBalance}.`
+        message: `${nickname}, your current balance is $${formattedBalance}.`
       })
     } else {
       await postMessage({
         room: process.env.ROOM_UUID,
-        message: `@${nickname}, you do not have a wallet yet. You can use /getwallet`
+        message: `${nickname}, you do not have a wallet yet. You can use /getwallet`
       })
     }
   }
@@ -1325,19 +1383,17 @@ function formatBalance(balance) {
     if (wallets[userId]) {
       await postMessage({
         room,
-        message: `@${nickname}, you already have a wallet with $${wallets[userId].balance}.`
+        message: `${nickname}, you already have a wallet with $${wallets[userId].balance}.`
       })
     } else {
       // Initialize the wallet with a default balance
       const defaultBalance = 50
       wallets[userId] = { balance: defaultBalance }
 
-      // Save the updated wallets to persistent storage
-      await saveWallets(wallets)
 
       await postMessage({
         room,
-        message: `@${nickname}, your wallet has been initialized with $${defaultBalance}.`
+        message: `${nickname}, your wallet has been initialized with $${defaultBalance}.`
       })
     }
   }
@@ -1369,9 +1425,10 @@ function formatBalance(balance) {
       })
     }
   }
+  ///////////////////////////////////////////////////////////////////////////
   if (payload.message.startsWith('/bankroll')) {
     try {
-      const bankroll = await getNicknamesFromWallets() // Fetch the bankroll information
+      const bankroll = getNicknamesFromWallets() // Fetch the bankroll information
 
       // Sort the bankroll by balance in descending order
       const sortedBankroll = bankroll
@@ -1401,42 +1458,39 @@ function formatBalance(balance) {
   }
 
   if (payload.message.startsWith('/lottowinners')) {
-    try {
-    // Fetch the list of lottery winners
-      const winners = await getLotteryWinners()
+  try {
+    const winners = await getLotteryWinners()
 
-      if (winners.length === 0) {
-      // If there are no winners, send an appropriate message
-        await postMessage({
-          room: process.env.ROOM_UUID,
-          message: 'No lottery winners found at this time.'
-        })
-        return
-      }
-
-      // Format the list of winners
-      const formattedWinners = winners.map((winner, index) =>
-      `${index + 1}. ${winner.nickname}: Won $${Math.round(winner.amountWon).toLocaleString()} with number ${winner.winningNumber} on ${winner.date}`
-      )
-
-      // Create the final message
-      const finalMessage = `💰 💵 **Lottery Winners List** 💵 💰\n\n${formattedWinners.join('\n')}`
-
-      // Post the message to the chat
+    if (winners.length === 0) {
       await postMessage({
         room: process.env.ROOM_UUID,
-        message: finalMessage // Send the formatted winners list
+        message: 'No lottery winners found at this time.'
       })
-    } catch (error) {
-      console.error('Error fetching or displaying lottery winners:', error)
-
-      // Send an error message
-      await postMessage({
-        room: process.env.ROOM_UUID,
-        message: 'There was an error fetching the lottery winners list.'
-      })
+      return
     }
+
+    // Sort winners from oldest → newest
+    winners.sort((a, b) => new Date(a.date) - new Date(b.date))
+
+    const formattedWinners = winners.map((winner, index) =>
+      `${index + 1}. <@uid:${winner.userId}>: Won $${Math.round(winner.amountWon).toLocaleString()} with number ${winner.winningNumber} on ${winner.date}`
+    )
+
+    const finalMessage = `💰 💵 **Lottery Winners List** 💵 💰\n\n${formattedWinners.join('\n')}`
+
+    await postMessage({
+      room: process.env.ROOM_UUID,
+      message: finalMessage
+    })
+  } catch (error) {
+    console.error('Error fetching or displaying lottery winners:', error)
+    await postMessage({
+      room: process.env.ROOM_UUID,
+      message: 'There was an error fetching the lottery winners list.'
+    })
   }
+}
+
 
   /// ///////////////////// SLOTS //////////////////////////////
   if (payload.message.startsWith('/slots')) {
@@ -1526,40 +1580,65 @@ function formatBalance(balance) {
   }
 
   /// ////////////////// BLACKJACK /////////////////////////
-  // Start game
+
 if (payload.message.startsWith('/blackjack')) {
   const userUUID = payload.sender
   const nickname = await getSenderNickname(userUUID)
   const room = process.env.ROOM_UUID
 
   if (gameState.active) {
-    await postMessage({ room, message: 'A blackjack game is already active! Use /join to join the table.' })
-  } else {
-    gameState.active = true
-
-    await postMessage({ room, message: '🃏 Blackjack game starting in 30 seconds! Type /join to sit at the table.' })
-
-    if (!gameState.tableUsers.includes(userUUID)) {
-      await joinTable(userUUID, nickname)
-    }
-
-    setTimeout(async () => {
-      await postMessage({ room, message: 'All players please place your bets using /bet [amount].' })
-      gameState.canJoinTable = false // If needed for reference
-    }, 30000)
+    await postMessage({ room, message: 'A blackjack game is already in progress! Please wait for the next round.' })
+    return
   }
+
+  await postMessage({ room, message: '🃏 Blackjack game starting in 30 seconds! Type /join to sit at the table.' })
+
+  if (!gameState.tableUsers.includes(userUUID)) {
+    await joinTable(userUUID, nickname)
+  }
+
+  gameState.canJoinTable = true
+
+  setTimeout(async () => {
+    gameState.canJoinTable = false
+    await postMessage({ room, message: 'All players please place your bets using /bet [amount].' })
+  }, 30000)
+
   return
 }
 
-  // Place bet
+// Player joins
+if (payload.message.startsWith('/join')) {
+  const userUUID = payload.sender
+  const nickname = await getSenderNickname(userUUID)
+  const room = process.env.ROOM_UUID
+
+  if (!gameState.active && !gameState.canJoinTable) {
+    await postMessage({ room, message: 'No active blackjack lobby. Start one with /blackjack.' })
+    return
+  }
+
+  await joinTable(userUUID, nickname)
+  return
+}
+
+// Player leaves (optional command)
+if (payload.message.startsWith('/leave')) {
+  const userUUID = payload.sender
+  await leaveTable(userUUID)
+  return
+}
+
+// Place bet
 if (payload.message.startsWith('/bet')) {
   const userUUID = payload.sender
   const nickname = await getSenderNickname(userUUID)
   const room = process.env.ROOM_UUID
-  const betAmount = parseInt(payload.message.split(' ')[1], 10)
+  const amountStr = payload.message.split(' ')[1]
+  const betAmount = parseInt(amountStr, 10)
 
-  if (!gameState.active) {
-    await postMessage({ room, message: 'No active blackjack game. Start one with /blackjack.' })
+  if (gameState.active) {
+    await postMessage({ room, message: 'Game already started. Please wait for the next round.' })
     return
   }
 
@@ -1568,7 +1647,7 @@ if (payload.message.startsWith('/bet')) {
     return
   }
 
-  if (isNaN(betAmount) || betAmount <= 0) {
+  if (!betAmount || isNaN(betAmount) || betAmount <= 0) {
     await postMessage({ room, message: 'Please enter a valid bet amount (e.g. /bet 50).' })
     return
   }
@@ -1577,14 +1656,13 @@ if (payload.message.startsWith('/bet')) {
   return
 }
 
-  // Player hits
+// Player hits
 if (payload.message.startsWith('/hit')) {
   const userUUID = payload.sender
   const nickname = await getSenderNickname(userUUID)
-  const room = process.env.ROOM_UUID
 
   if (!gameState.tableUsers.includes(userUUID)) {
-    await postMessage({ room, message: 'You must join the blackjack table first using /join.' })
+    await postMessage({ room: process.env.ROOM_UUID, message: 'You must join the blackjack table first using /join.' })
     return
   }
 
@@ -1592,8 +1670,21 @@ if (payload.message.startsWith('/hit')) {
   return
 }
 
-  // Player stands
+// Player stands
 if (payload.message.startsWith('/stand')) {
+  const userUUID = payload.sender
+  const nickname = await getSenderNickname(userUUID)
+
+  if (!gameState.tableUsers.includes(userUUID)) {
+    await postMessage({ room: process.env.ROOM_UUID, message: 'You must join the blackjack table first using /join.' })
+    return
+  }
+
+  await handleStand(userUUID, nickname)
+  return
+}
+
+if (payload.message.startsWith('/split')) {
   const userUUID = payload.sender
   const nickname = await getSenderNickname(userUUID)
   const room = process.env.ROOM_UUID
@@ -1603,24 +1694,74 @@ if (payload.message.startsWith('/stand')) {
     return
   }
 
-  await handleStand(userUUID, nickname)
-  return
-}
-
-  // Player joins
-if (payload.message.startsWith('/join')) {
-  const userUUID = payload.sender
-  const nickname = await getSenderNickname(userUUID)
-  const room = process.env.ROOM_UUID
-
-  if (!gameState.active) {
-    await postMessage({ room, message: 'No active blackjack game. Start one with /blackjack.' })
+  const hand = gameState.playerHands[userUUID]
+  if (!hand || !canSplitHand(hand)) {
+    await postMessage({ room, message: `${nickname}, you can only split if you have two cards of the same value.` })
     return
   }
 
-  await joinTable(userUUID, nickname)
+  const extraBet = gameState.playerBets[userUUID]
+  const balance = await getUserWallet(userUUID)
+  if (balance < extraBet) {
+    await postMessage({ room, message: `${nickname}, you don't have enough money to split (requires another $${extraBet}).` })
+    return
+  }
+
+  await removeFromUserWallet(userUUID, extraBet)
+  const card1 = hand[0]
+  const card2 = hand[1]
+
+  // Create two hands, each gets 1 extra card
+  const newHand1 = [card1, gameState.deck.pop()]
+  const newHand2 = [card2, gameState.deck.pop()]
+
+  gameState.splitHands[userUUID] = [newHand1, newHand2]
+  gameState.splitIndex[userUUID] = 0
+  gameState.playerBets[userUUID] = extraBet // each hand treated as full bet
+  gameState.playerHands[userUUID] = newHand1
+
+  await postMessage({ room, message: `${nickname} has split their hand! Playing first hand:` })
+  await postMessage({ room, message: formatHandWithValue(newHand1) })
   return
 }
+
+
+// Player surrenders
+if (payload.message.startsWith('/surrender')) {
+  const userUUID = payload.sender
+  const nickname = await getSenderNickname(userUUID)
+
+  if (!gameState.tableUsers.includes(userUUID)) {
+    await postMessage({ room: process.env.ROOM_UUID, message: 'You must join the blackjack table first using /join.' })
+    return
+  }
+
+  await handleSurrender(userUUID, nickname)
+  return
+}
+
+// Player doubles down
+if (payload.message.startsWith('/double')) {
+  const userUUID = payload.sender
+  const nickname = await getSenderNickname(userUUID)
+
+  if (!gameState.tableUsers.includes(userUUID)) {
+    await postMessage({ room: process.env.ROOM_UUID, message: 'You must join the blackjack table first using /join.' })
+    return
+  }
+
+  await handleDouble(userUUID, nickname)
+  return
+}
+
+// Show table state
+if (payload.message.startsWith('/table')) {
+  const room = process.env.ROOM_UUID
+  const tableMessage = getFullTableView()
+  await postMessage({ room, message: tableMessage || '🪑 No one is at the table yet.' })
+  return
+}
+
   /// ////////////// MOD Commands ///////////////////////////
   if (payload.message.startsWith('/mod')) {
     const isAuthorized = await isUserAuthorized(payload.sender, ttlUserToken)
@@ -1711,6 +1852,7 @@ if (payload.message.startsWith('/join')) {
   } else if (payload.message.startsWith('/botdino')) {
       await handleBotDinoCommand(room, postMessage, isUserAuthorized, payload.sender, ttlUserToken)
     }
+////////////////////// USER AVATAR UPDATES /////////////////////////////////
 
   else if (payload.message.startsWith('/dino')) {
     await handleDinoCommand(payload.sender, room, postMessage)
@@ -1740,6 +1882,11 @@ if (payload.message.startsWith('/join')) {
 
 else if (payload.message.startsWith('/randomavatar')) {
   await handleRandomAvatarCommand(payload.sender, room, postMessage)
+}
+
+////////////////////////// Add Avatar //////////////////////////
+else if (payload.message.startsWith('/addavatar')) {
+  await handleAddAvatarCommand(payload.sender, room, postMessage)
 }
 
   /// ////////////////////// Themes ////////////////////////////////////
@@ -1902,7 +2049,7 @@ else if (payload.message.startsWith('/randomavatar')) {
     if (isNaN(rating) || rating < 1 || rating > 6) {
       await postMessage({
         room,
-        message: `@${await getUserNickname(sender)} please enter a number between 1 and 6 to review the song.`
+        message: `${await getUserNickname(sender)} please enter a number between 1 and 6 to review the song.`
       })
       return
     }
@@ -1942,103 +2089,78 @@ else if (payload.message.startsWith('/randomavatar')) {
   }  
 
   else if (payload.message.startsWith('/topsongs')) {
-    const statsPath = path.join(process.cwd(), 'src/data/roomStats.json')
-    let stats = []
-  
-    try {
-      const content = await fs.readFile(statsPath, 'utf8')
-      stats = JSON.parse(content)
-    } catch (err) {
-      console.error('Error reading stats:', err)
-      await postMessage({
-        room,
-        message: `Oops! Couldn't load song stats.`
-      })
-      return
-    }
-  
-    // Filter and sort songs by averageReview
-    const topSongs = stats
-      .filter(song => song.averageReview && song.reviews?.length > 0 && song.spotifyTrackId)
-      .sort((a, b) => b.averageReview - a.averageReview)
-      .slice(0, 5)
-  
-    if (topSongs.length === 0) {
-      await postMessage({
-        room,
-        message: 'No reviewed songs found yet.'
-      })
-      return
-    }
-  
-    const customDataSongs = []
-    const leaderboardLines = []
-  
-    const numberEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣']
-
-for (let i = 0; i < topSongs.length; i++) {
-  const song = topSongs[i]
-  const emoji = numberEmojis[i] || `#${i + 1}`
-
   try {
-    const songData = await fetchSongData(song.spotifyTrackId)
+    const topReviewedSongs = db.prepare(`
+      SELECT 
+        rs.trackName,
+        rs.artistName,
+        rs.spotifyTrackId,
+        AVG(sr.rating) AS averageReview,
+        COUNT(sr.rating) AS reviewCount
+      FROM room_stats rs
+      JOIN song_reviews sr ON rs.songId = sr.songId
+      WHERE rs.spotifyTrackId IS NOT NULL
+      GROUP BY rs.songId
+      HAVING reviewCount > 0
+      ORDER BY averageReview DESC
+      LIMIT 5
+    `).all()
 
-    const average = song.averageReview.toFixed(1)
-    const reviewCount = song.reviews.length
-    const reviewText = `${average}⭐ from ${reviewCount} review${reviewCount > 1 ? 's' : ''}`
-    const songLabel = `*${song.artistName} – ${song.trackName}*`
+    if (topReviewedSongs.length === 0) {
+      await postMessage({ room, message: 'No reviewed songs found yet.' })
+      return
+    }
 
+    const numberEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣']
+    const customDataSongs = []
+
+    for (let i = 0; i < topReviewedSongs.length; i++) {
+      const song = topReviewedSongs[i]
+      const emoji = numberEmojis[i] || `#${i + 1}`
+
+      try {
+        const songData = await fetchSongData(song.spotifyTrackId)
+
+        const reviewText = `${parseFloat(song.averageReview).toFixed(1)}⭐ from ${song.reviewCount} review${song.reviewCount > 1 ? 's' : ''}`
+        const songLabel = `*${song.artistName} – ${song.trackName}*`
+
+        await postMessage({
+          room,
+          message: `${emoji} ${songLabel} (${reviewText})`,
+          customData: {
+            songs: [
+              {
+                song: {
+                  ...songData,
+                  musicProviders: songData.musicProvidersIds,
+                  status: 'SUCCESS'
+                }
+              }
+            ]
+          }
+        })
+
+      } catch (err) {
+        console.error(`❌ Failed to fetch song data for ${song.trackName}:`, err.message)
+      }
+    }
+  } catch (err) {
+    console.error('❌ Error generating /topsongs:', err.message)
     await postMessage({
       room,
-      message: `${emoji} ${songLabel} (${reviewText})`,
-      customData: {
-        songs: [
-          {
-            song: {
-              ...songData,
-              musicProviders: songData.musicProvidersIds,
-              status: 'SUCCESS'
-            }
-          }
-        ]
-      }
+      message: 'Error loading top songs. Please try again later.'
     })
-
-  } catch (err) {
-    console.error(`Failed to fetch song data for ${song.trackName}:`, err.message)
   }
 }
-
-  
-    const leaderboardMessage = [
-      '🎵 **Top 5 Reviewed Songs:**',
-      ...leaderboardLines
-    ].join('\n')
-  
-    if (customDataSongs.length > 0) {
-      await postMessage({
-        room,
-        message: leaderboardMessage,
-        customData: {
-          songs: customDataSongs
-        }
-      })
-    } else {
-      await postMessage({
-        room,
-        message: 'No valid top songs to display.'
-      })
-    }
-  }
   
   else if (payload.message.startsWith('/mytopsongs')) {
     const userId = payload.sender
-    const topSongs = await getUserSongReviews(userId, 5)
+    const topSongs = getUserSongReviews(userId, 5)
   
     if (!topSongs.length) {
       await postMessage({
         room,
-        message: `@${await getUserNickname(userId)} you haven't rated any songs yet. Start rating with /songreview! 🎵`
+        message: `${await getUserNickname(userId)} you haven't rated any songs yet. Start rating with /songreview! 🎵`
       })
       return
     }
@@ -2128,12 +2250,12 @@ for (let i = 0; i < topSongs.length; i++) {
 
 } else if (payload.message.startsWith('/mytopalbums')) {
   const userId = payload.sender
-  const userAlbums = await getUserAlbumReviews(userId, 5)
+  const userAlbums = getUserAlbumReviews(userId, 5)
 
   if (!userAlbums || userAlbums.length === 0) {
     await postMessage({
       room,
-      message: `🎵 @${await getUserNickname(userId)} you haven't rated any albums yet! Use /albumreview to start rating.`
+      message: `🎵 ${await getUserNickname(userId)} you haven't rated any albums yet! Use /albumreview to start rating.`
     })
     return
   }
@@ -2195,7 +2317,7 @@ for (let i = 0; i < topSongs.length; i++) {
     if (isNaN(rating) || rating < 1 || rating > 6) {
       await postMessage({
         room,
-        message: `@${await getUserNickname(sender)} please enter a number between 1 and 6 to rate the album.`
+        message: `${await getUserNickname(sender)} please enter a number between 1 and 6 to rate the album.`
       })
       return
     }
@@ -2224,7 +2346,7 @@ for (let i = 0; i < topSongs.length; i++) {
     if (result.success) {
       await postMessage({
         room,
-        message: `@${await getUserNickname(sender)} thanks! Your album review (${rating}/6) was saved. Current avg: ${result.average}/6.`
+        message: `${await getUserNickname(sender)} thanks! Your album review (${rating}/6) was saved. Current avg: ${result.average}/6.`
       })
     } else {
       await postMessage({
@@ -2632,151 +2754,99 @@ for (let i = 0; i < topSongs.length; i++) {
       })
     }
   } else if (payload.message.startsWith('/stats')) {
-    const currentSong = roomBot.currentSong
-    if (!currentSong || !currentSong.songId) {
-      await postMessage({
-        room,
-        message: 'No song is currently playing or missing songId.'
-      })
-      return
-    }
-  
-    const statsFilePath = path.join(process.cwd(), 'src/data/roomStats.json')
-  
-    try {
-      const content = await fs.readFile(statsFilePath, 'utf8')
-      const history = JSON.parse(content)
-      const songStats = history.find(s => s.songId === currentSong.songId)
-  
-      if (songStats) {
-        const message = `📊 Stats for "${songStats.trackName}" by ${songStats.artistName}\n\n` +
-          `🟢 Plays: ${songStats.playCount}\n` +
-          `👍 Likes: ${songStats.likes}\n` +
-          `👎 Dislikes: ${songStats.dislikes}\n` +
-          `⭐ Stars: ${songStats.stars || 0}\n` +
-          `🕒 Last Played: ${new Date(songStats.lastPlayed).toLocaleString()}`
-  
-        await postMessage({ room, message })
-      } else {
-        await postMessage({
-          room,
-          message: 'No stats found for this song yet.'
-        })
-      }
-    } catch (error) {
-      console.error('Error reading stats file:', error.message)
-      await postMessage({
-        room,
-        message: 'Error retrieving song stats.'
-      })
-    }  
-  } else if (payload.message.startsWith('/mostplayed')) {
-    const statsFilePath = path.join(process.cwd(), 'src/data/roomStats.json')
-  
-    try {
-      const content = await fs.readFile(statsFilePath, 'utf8')
-      const history = JSON.parse(content)
+  const currentSong = roomBot.currentSong
 
-      console.log('✅ roomStats history length:', history.length);
-  
-      const topPlayed = history
-      .filter(song => song.trackName?.toLowerCase() !== 'unknown')
-      .sort((a, b) => b.playCount - a.playCount)
-      .slice(0, 5);
-
-  
-      if (topPlayed.length === 0) {
-        await postMessage({ room, message: 'No play history found.' })
-        return
-      }
-  
-      const message = `📈 Most Played Songs:\n\n` + topPlayed.map((song, i) =>
-        `${i + 1}. "${song.trackName}" by ${song.artistName} — ${song.playCount} plays`
-      ).join('\n')
-  
-      await postMessage({ room, message })
-    } catch (error) {
-      console.error('Error reading stats file:', error.message)
-      await postMessage({
-        room,
-        message: 'Error retrieving play count stats.'
-      })
-    }
-  } else if (payload.message.startsWith('/topliked')) {
-    const statsFilePath = path.join(process.cwd(), 'src/data/roomStats.json')
-  
-    try {
-      const content = await fs.readFile(statsFilePath, 'utf8')
-      const history = JSON.parse(content)
-  
-      const topLiked = history
-      .filter(song => song.trackName?.toLowerCase() !== 'unknown')
-      .sort((a, b) => b.likes - a.likes)
-      .slice(0, 5);
-
-  
-      if (topLiked.length === 0) {
-        await postMessage({ room, message: 'No like history found.' })
-        return
-      }
-  
-      const message = `❤️ Top Liked Songs:\n\n` + topLiked.map((song, i) =>
-        `${i + 1}. "${song.trackName}" by ${song.artistName} — 👍 ${song.likes}`
-      ).join('\n')
-  
-      await postMessage({ room, message })
-    } catch (error) {
-      console.error('Error reading stats file:', error.message)
-      await postMessage({
-        room,
-        message: 'Error retrieving like stats.'
-      })
-    }
-  } else if (payload.message.startsWith('/runtime')) {
-  const statsFilePath = path.join(process.cwd(), 'src/data/roomStats.json');
-
-  try {
-    const content = await fs.readFile(statsFilePath, 'utf8');
-    const history = JSON.parse(content);
-
-    if (!Array.isArray(history) || history.length === 0) {
-      await postMessage({ room, message: 'No play history found.' });
-      return;
-    }
-
-    // Filter out invalid or "unknown" songs
-    const validSongs = history.filter(song =>
-      song.trackName &&
-      song.trackName.toLowerCase() !== 'unknown' &&
-      typeof song.songDuration === 'number' &&
-      typeof song.playCount === 'number'
-    );
-
-    if (validSongs.length === 0) {
-      await postMessage({ room, message: 'No valid songs with durations found.' });
-      return;
-    }
-
-    // Calculate total seconds
-    const totalSeconds = validSongs.reduce((acc, song) => {
-      return acc + (song.songDuration * song.playCount);
-    }, 0);
-
-    // Convert to HH:MM:SS
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = Math.floor(totalSeconds % 60); // round down just in case
-
-    const formatted = `${hours}h ${minutes}m ${seconds}s`;
-    const message = `⏱️ Total Room Run Time: ${formatted}`;
-
-    await postMessage({ room, message });
-  } catch (error) {
-    console.error('Error reading stats file:', error);
+  if (!currentSong || !currentSong.songId) {
     await postMessage({
       room,
-      message: 'Error calculating total playtime.'
-    });
+      message: 'No song is currently playing or missing songId.'
+    })
+    return
+  }
+
+  try {
+    const songStats = db
+      .prepare('SELECT * FROM room_stats WHERE songId = ?')
+      .get(currentSong.songId)
+
+    if (songStats) {
+      const message = `📊 Stats for "${songStats.trackName}" by ${songStats.artistName}\n\n` +
+        `🟢 Plays: ${songStats.playCount}\n` +
+        `👍 Likes: ${songStats.likes}\n` +
+        `👎 Dislikes: ${songStats.dislikes}\n` +
+        `⭐ Stars: ${songStats.stars || 0}\n` +
+        `🕒 Last Played: ${new Date(songStats.lastPlayed).toLocaleString()}`
+
+      await postMessage({ room, message })
+    } else {
+      await postMessage({
+        room,
+        message: 'No stats found for this song yet.'
+      })
+    }
+  } catch (error) {
+    console.error('Error querying song stats from DB:', error.message)
+    await postMessage({
+      room,
+      message: 'Error retrieving song stats.'
+    })
+  }
+  } else if (payload.message.startsWith('/mostplayed')) {
+  try {
+    const topPlayed = db.prepare(`
+      SELECT trackName, artistName, playCount
+      FROM room_stats
+      WHERE LOWER(trackName) != 'unknown'
+      ORDER BY playCount DESC
+      LIMIT 5
+    `).all()
+
+    if (topPlayed.length === 0) {
+      await postMessage({ room, message: 'No play history found.' })
+      return
+    }
+
+    const message = `📈 **Most Played Songs:**\n\n` +
+      topPlayed.map((song, i) =>
+        `${i + 1}. "${song.trackName}" by ${song.artistName} — ${song.playCount} play${song.playCount !== 1 ? 's' : ''}`
+      ).join('\n')
+
+    await postMessage({ room, message })
+  } catch (error) {
+    console.error('❌ Error loading most played songs:', error.message)
+    await postMessage({
+      room,
+      message: 'Error retrieving play count stats.'
+    })
+  }
+
+  } else if (payload.message.startsWith('/topliked')) {
+  try {
+    const topLiked = db.prepare(`
+      SELECT trackName, artistName, likes
+      FROM room_stats
+      WHERE LOWER(trackName) != 'unknown'
+      ORDER BY likes DESC
+      LIMIT 5
+    `).all()
+
+    if (topLiked.length === 0) {
+      await postMessage({ room, message: 'No like history found.' })
+      return
+    }
+
+    const message = `❤️ **Top Liked Songs:**\n\n` +
+      topLiked.map((song, i) =>
+        `${i + 1}. "${song.trackName}" by ${song.artistName} — 👍 ${song.likes}`
+      ).join('\n')
+
+    await postMessage({ room, message })
+  } catch (error) {
+    console.error('❌ Error loading top liked songs:', error.message)
+    await postMessage({
+      room,
+      message: 'Error retrieving like stats.'
+    })
   }
 
   } else if (payload.message === ('/album')) {
@@ -3005,13 +3075,23 @@ for (let i = 0; i < topSongs.length; i++) {
 ////////////////////////////////// JAMFLOW STORE ///////////////////////////////////
 
 } else if (payload.message.startsWith('/store')) {
-  let storeMessage = '🛒 Welcome to the JamFlow Store 🛒\n\nHere’s what you can spend your hard earned dollars on today:\n\n'
+  let storeMessage = '🛒 **Welcome to the JamFlow Store** 🛒\n\nHere’s what you can spend your hard-earned dollars on today:\n';
 
-  for (const [command, { cost, desc }] of Object.entries(storeItems)) {
-    storeMessage += `${command} — ${desc} ($${cost})\n`
+  for (const [command, value] of Object.entries(storeItems)) {
+    if (command.startsWith('---')) {
+      storeMessage += `\n\n__**${command.replace(/---/g, '').trim()}**__\n_${value}_\n`;
+    } else {
+      const costText = typeof value.cost === 'number' ? `$${value.cost}` : value.cost;
+      storeMessage += `\`${command}\` — ${value.desc} (${costText})\n`;
+    }
   }
 
-  storeMessage += '\nType any command to get started.'
+  storeMessage += `\n🧾 Type any command to get started.`;
+
+  await postMessage({
+    room: payload.room || process.env.ROOM_UUID,
+    message: storeMessage
+  });
 
   await postMessage({ room, message: storeMessage })
 } else if (payload.message.startsWith('/8ball')) {
@@ -3049,7 +3129,7 @@ for (let i = 0; i < topSongs.length; i++) {
 
   await postMessage({
     room,
-    message: `🎱 @${nickname} \nMagic 8-Ball says: *${answer}*(Cost: $${cost})`
+    message: `🎱 ${nickname} \nMagic 8-Ball says: *${answer}*(Cost: $${cost})`
   });
 }
 

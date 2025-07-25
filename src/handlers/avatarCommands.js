@@ -1,14 +1,5 @@
 import { updateUserAvatar } from '../utils/API.js'
-import { readFile } from 'fs/promises'
-import path from 'path'
-import { fileURLToPath } from 'url'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-
-const avatarsPath = path.join(__dirname, '../data/TT live avatars.json')
-const avatarsRaw = await readFile(avatarsPath, 'utf-8')
-const avatars = JSON.parse(avatarsRaw)
+import { getAllAvatarSlugs, getAvatarsBySlugs, getRandomAvatarSlug } from '../database/dbavatars.js'
 
 
 const userTokenMap = {
@@ -28,7 +19,7 @@ const userTokenMap = {
   /////////////////////////// Bot Updates /////////////////////////////
   
   export async function handleBotRandomAvatarCommand(room, postMessage, ttlUserToken) {
-    const avatarId = avatars[Math.floor(Math.random() * avatars.length)].slug
+    const avatarId = getRandomAvatarSlug()
     const color = randomColors[Math.floor(Math.random() * randomColors.length)]
   
     const randomReplies = [
@@ -188,18 +179,24 @@ const userTokenMap = {
     'jurassic-07'
   ];
 
-  const filteredAvatars = avatars.filter(avatar => allowedSlugs.includes(avatar.slug));
+  const filteredAvatars = getAvatarsBySlugs(allowedSlugs)
+
 
   if (filteredAvatars.length === 0) {
     await postMessage({ room, message: 'No Jurassic avatars found in the allowed list 🦴' });
     return;
   }
 
-  const randomAvatar = filteredAvatars[Math.floor(Math.random() * filteredAvatars.length)].slug;
+  const randomAvatar = getRandomAvatarSlug()
   const randomColor = randomColors[Math.floor(Math.random() * randomColors.length)];
 
   try {
     await updateUserAvatar(userToken, randomAvatar, randomColor);
+    if (!randomAvatar) {
+  await postMessage({ room, message: 'No avatars available right now 😬' })
+  return
+}
+
     await postMessage({ room, message: '🦖 You’ve gone full Jurassic. Roar on!' });
   } catch (error) {
     await postMessage({ room, message: `Failed to update to dinosaur avatar 😬` });
@@ -284,11 +281,15 @@ const userTokenMap = {
       return
     }
   
-    const randomAvatar = avatars[Math.floor(Math.random() * avatars.length)].slug
+    const randomAvatar = getRandomAvatarSlug()
     const randomColor = randomColors[Math.floor(Math.random() * randomColors.length)]
   
     try {
       await updateUserAvatar(userToken, randomAvatar, randomColor)
+      if (!randomAvatar) {
+      await postMessage({ room, message: 'No avatars available right now 😬' })
+      return
+      }
       await postMessage({ room, message: 'You\'ve been randomly avatar-ized! 🎭' })
     } catch (error) {
       await postMessage({ room, message: `Failed to update avatar` })
@@ -305,19 +306,23 @@ const userTokenMap = {
     // ✅ Define your allowed avatar slugs
     const allowedSlugs = ['cyber-bear-visor', 'cyber-bear-angry', 'cyber-girl', 'cyber-gorilla', 'cyber-guy', 'cyber-helmet', 'cyber-hood-purple', 'cyber-hood-yellow']; // Replace with your chosen avatar slugs
   
-    // ✅ Find avatar objects that match only those slugs
-    const filteredAvatars = avatars.filter(avatar => allowedSlugs.includes(avatar.slug));
-  
+    const filteredAvatars = getAvatarsBySlugs(allowedSlugs)
+
     if (filteredAvatars.length === 0) {
       await postMessage({ room, message: 'No avatars found in your allowed list. 🫤' });
       return;
     }
-  
-    const randomAvatar = filteredAvatars[Math.floor(Math.random() * filteredAvatars.length)].slug;
+
+    const randomAvatar = filteredAvatars[Math.floor(Math.random() * filteredAvatars.length)].slug
+
     const randomColor = randomColors[Math.floor(Math.random() * randomColors.length)];
   
     try {
       await updateUserAvatar(userToken, randomAvatar, randomColor);
+        if (!randomAvatar) {
+      await postMessage({ room, message: 'No avatars available right now 😬' })
+      return
+      }
       await postMessage({ room, message: '⚡ You’ve been cyber-ized. Welcome to the grid.' });
     } catch (error) {
       await postMessage({ room, message: `Failed to update avatar 😞` });

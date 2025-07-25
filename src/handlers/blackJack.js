@@ -1,4 +1,4 @@
-import { addToUserWallet, removeFromUserWallet, getUserWallet } from '../libs/walletManager.js'
+import { addToUserWallet, removeFromUserWallet, getUserWallet } from '../database/dbwalletmanager.js'
 import { postMessage } from '../libs/cometchat.js'
 
 const BETTING_TIMEOUT_DURATION = 30000
@@ -15,7 +15,13 @@ export const gameState = {
   canJoinTable: true,
   userNicknames: {},
   bettingTimeout: null,
-  turnTimeout: null
+  turnTimeout: null,
+  awaitingInput: false,
+  stats: {},
+  doubledDown: new Set(),
+  surrendered: new Set(),
+  splitHands: {},
+  splitIndex: {}
 }
 
 function delay(ms) {
@@ -25,13 +31,7 @@ function delay(ms) {
 function createDeck() {
   const suits = ['♠', '♥', '♦', '♣']
   const values = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
-  const deck = []
-  for (const suit of suits) {
-    for (const value of values) {
-      deck.push({ value, suit })
-    }
-  }
-  return deck
+  return suits.flatMap(suit => values.map(value => ({ value, suit })))
 }
 
 function shuffleDeck(deck) {
@@ -39,6 +39,16 @@ function shuffleDeck(deck) {
     const j = Math.floor(Math.random() * (i + 1))
     ;[deck[i], deck[j]] = [deck[j], deck[i]]
   }
+}
+
+function getCardValue(card) {
+  if (['J', 'Q', 'K'].includes(card.value)) return 10
+  if (card.value === 'A') return 11
+  return parseInt(card.value)
+}
+
+function canSplitHand(hand) {
+  return hand.length === 2 && getCardValue(hand[0]) === getCardValue(hand[1])
 }
 
 function calculateHandValue(hand) {
@@ -80,11 +90,18 @@ function formatHandWithValue(hand) {
 
 function getPlayerListMessage() {
   if (gameState.tableUsers.length === 0) return '🪑 No one at the table yet.'
-  const list = gameState.tableUsers.map((uuid, i) => {
-    const name = gameState.userNicknames[uuid] || uuid
-    return `${i + 1}. ${name}`
+  return `🃏 Blackjack Table:\n` +
+    gameState.tableUsers.map((uuid, i) => `${i + 1}. ${gameState.userNicknames[uuid] || uuid}`).join('\n')
+}
+
+function getFullTableView() {
+  return gameState.tableUsers.map(uuid => {
+    const name = gameState.userNicknames[uuid]
+    const bet = gameState.playerBets[uuid] || 0
+    const hand = gameState.playerHands[uuid]
+    const status = hand ? formatHandWithValue(hand) : '(Not dealt)'
+    return `🎲 ${name} - Bet: $${bet} - ${status}`
   }).join('\n')
-  return `🃏 Blackjack Table:\n${list}`
 }
 
 function allPlayersHaveBet() {
@@ -93,11 +110,7 @@ function allPlayersHaveBet() {
 
 async function joinTable(userUUID, nickname) {
   const room = process.env.ROOM_UUID
-
-  if (!gameState.canJoinTable) {
-    await postMessage({ room, message: `${nickname}, the game has already started.` })
-    return
-  }
+  if (!gameState.canJoinTable) return postMessage({ room, message: `${nickname}, the game has already started.` })
 
   if (!gameState.tableUsers.includes(userUUID)) {
     gameState.tableUsers.push(userUUID)
@@ -126,10 +139,11 @@ async function leaveTable(userUUID) {
 async function handleBlackjackBet(userUUID, betAmount, nickname) {
   const room = process.env.ROOM_UUID
   const balance = await getUserWallet(userUUID)
-
+  if (gameState.playerBets[userUUID] > 0) {
+    return postMessage({ room, message: `${nickname}, you've already placed a bet.` })
+  }
   if (balance < betAmount) {
-    await postMessage({ room, message: `${nickname}, you don’t have enough money to bet $${betAmount}.` })
-    return
+    return postMessage({ room, message: `${nickname}, not enough funds to bet $${betAmount}.` })
   }
 
   await removeFromUserWallet(userUUID, betAmount)
@@ -144,9 +158,7 @@ async function handleBlackjackBet(userUUID, betAmount, nickname) {
   } else if (!gameState.bettingTimeout) {
     gameState.bettingTimeout = setTimeout(async () => {
       for (const user of [...gameState.tableUsers]) {
-        if (!gameState.playerBets[user]) {
-          await leaveTable(user)
-        }
+        if (!gameState.playerBets[user]) await leaveTable(user)
       }
       await postMessage({ room, message: `Time's up! Starting with remaining players.` })
       await startGame()
@@ -161,17 +173,20 @@ async function startGame() {
   gameState.dealerHand = [gameState.deck.pop(), gameState.deck.pop()]
 
   await postMessage({ room, message: `🃏 Dealing cards...` })
-  await delay(2000)
+  await delay(1500)
 
   for (const user of gameState.tableUsers) {
-    gameState.playerHands[user] = [gameState.deck.pop(), gameState.deck.pop()]
-    const nickname = gameState.userNicknames[user] || user
-    const value = calculateHandValue(gameState.playerHands[user])
+    const hand = [gameState.deck.pop(), gameState.deck.pop()]
+    const nickname = gameState.userNicknames[user]
+    gameState.playerHands[user] = hand
 
-    await postMessage({ room, message: `${nickname}'s hand: ${formatHandWithValue(gameState.playerHands[user])}` })
+    await postMessage({ room, message: `${nickname}'s hand: ${formatHandWithValue(hand)}` })
 
-    if (value === 21) {
-      await postMessage({ room, message: `🎉 ${nickname} has a natural blackjack!` })
+    if (calculateHandValue(hand) === 21) {
+      const payout = Math.floor(gameState.playerBets[user] * 2.5)
+      await addToUserWallet(user, payout)
+      await postMessage({ room, message: `🎉 ${nickname} has a natural blackjack! (+$${payout})` })
+      gameState.surrendered.add(user)
     }
   }
 
@@ -185,11 +200,15 @@ async function promptPlayerTurn() {
   const room = process.env.ROOM_UUID
   const user = gameState.tableUsers[gameState.currentPlayerIndex]
   const nickname = gameState.userNicknames[user] || user
+
+  if (gameState.surrendered.has(user)) return handleNextPlayer()
+
   const hand = gameState.playerHands[user]
+  gameState.awaitingInput = true
 
   await postMessage({
     room,
-    message: `🎯 It's your turn, ${nickname}!\nYour hand: ${formatHandWithValue(hand)}\nType /hit or /stand`
+    message: `🎯 It's your turn, ${nickname}!\n${formatHandWithValue(hand)}\n\nType /hit, /stand, /double, /surrender, or /split`
   })
 
   gameState.turnTimeout = setTimeout(async () => {
@@ -199,50 +218,90 @@ async function promptPlayerTurn() {
 }
 
 async function handleHit(userUUID, nickname) {
-  const room = process.env.ROOM_UUID
-
-  if (gameState.tableUsers[gameState.currentPlayerIndex] !== userUUID) {
-    await postMessage({ room, message: `It's not your turn, ${nickname}.` })
-    return
-  }
-
-  if (!gameState.deck.length) {
-    await postMessage({ room, message: `Deck is empty! Ending game.` })
-    resetGame()
-    return
-  }
+  if (!validateTurn(userUUID, nickname)) return
+  if (!gameState.deck.length) return endGameDueToDeck()
 
   const newCard = gameState.deck.pop()
   gameState.playerHands[userUUID].push(newCard)
   const value = calculateHandValue(gameState.playerHands[userUUID])
 
-  await postMessage({ room, message: `${nickname} hits: ${getCardEmoji(newCard)}. Total: ${value}` })
+  await postMessage({ room: process.env.ROOM_UUID, message: `${nickname} hits: ${getCardEmoji(newCard)}. Total: ${value}` })
 
   if (value > 21) {
-    await postMessage({ room, message: `💥 ${nickname} busted!` })
+    await postMessage({ room: process.env.ROOM_UUID, message: `💥 ${nickname} busted!` })
     clearTimeout(gameState.turnTimeout)
-    await handleNextPlayer()
+    await handleStand(userUUID, nickname)
   } else if (value === 21) {
-    await postMessage({ room, message: `🎯 ${nickname}, you hit 21! Standing automatically.` })
+    await postMessage({ room: process.env.ROOM_UUID, message: `🎯 ${nickname}, you hit 21! Auto-standing.` })
     clearTimeout(gameState.turnTimeout)
     await handleStand(userUUID, nickname)
   }
 }
 
 async function handleStand(userUUID, nickname) {
-  const room = process.env.ROOM_UUID
+  if (!validateTurn(userUUID, nickname)) return
 
-  if (gameState.tableUsers[gameState.currentPlayerIndex] !== userUUID) {
-    await postMessage({ room, message: `It's not your turn, ${nickname}.` })
-    return
+  await postMessage({
+    room: process.env.ROOM_UUID,
+    message: `🛑 ${nickname} stands at ${calculateHandValue(gameState.playerHands[userUUID])}.`
+  })
+
+  clearTimeout(gameState.turnTimeout)
+
+  if (gameState.splitHands[userUUID]) {
+    const currentIndex = gameState.splitIndex[userUUID] || 0
+    if (currentIndex === 0) {
+      gameState.splitIndex[userUUID] = 1
+      gameState.playerHands[userUUID] = gameState.splitHands[userUUID][1]
+      await postMessage({ room: process.env.ROOM_UUID, message: `${nickname}, now playing your second hand:` })
+      await postMessage({ room: process.env.ROOM_UUID, message: formatHandWithValue(gameState.playerHands[userUUID]) })
+      return promptPlayerTurn()
+    }
   }
 
-  await postMessage({ room, message: `🛑 ${nickname} stands at ${calculateHandValue(gameState.playerHands[userUUID])}.` })
+  await handleNextPlayer()
+}
+
+async function handleSurrender(userUUID, nickname) {
+  if (!validateTurn(userUUID, nickname)) return
+
+  const refund = Math.floor(gameState.playerBets[userUUID] / 2)
+  await addToUserWallet(userUUID, refund)
+  gameState.surrendered.add(userUUID)
+
+  await postMessage({ room: process.env.ROOM_UUID, message: `🏳️ ${nickname} surrendered and got $${refund} back.` })
   clearTimeout(gameState.turnTimeout)
   await handleNextPlayer()
 }
 
+async function handleDouble(userUUID, nickname) {
+  if (!validateTurn(userUUID, nickname)) return
+  if (gameState.playerHands[userUUID].length !== 2) return postMessage({ room: process.env.ROOM_UUID, message: `${nickname}, you can only double on your first turn.` })
+
+  const extraBet = gameState.playerBets[userUUID]
+  const balance = await getUserWallet(userUUID)
+  if (balance < extraBet) return postMessage({ room: process.env.ROOM_UUID, message: `${nickname}, not enough balance to double.` })
+
+  await removeFromUserWallet(userUUID, extraBet)
+  gameState.playerBets[userUUID] *= 2
+  gameState.doubledDown.add(userUUID)
+
+  await postMessage({ room: process.env.ROOM_UUID, message: `${nickname} doubled down!` })
+  await handleHit(userUUID, nickname)
+  clearTimeout(gameState.turnTimeout)
+  await handleStand(userUUID, nickname)
+}
+
+function validateTurn(userUUID, nickname) {
+  if (gameState.tableUsers[gameState.currentPlayerIndex] !== userUUID) {
+    postMessage({ room: process.env.ROOM_UUID, message: `⛔ It's not your turn, ${nickname}.` })
+    return false
+  }
+  return true
+}
+
 async function handleNextPlayer() {
+  gameState.awaitingInput = false
   gameState.currentPlayerIndex++
   if (gameState.currentPlayerIndex < gameState.tableUsers.length) {
     await promptPlayerTurn()
@@ -255,48 +314,68 @@ async function playDealerTurn() {
   const room = process.env.ROOM_UUID
   await postMessage({ room, message: `🃍 Dealer's turn.` })
 
-  while (calculateHandValue(gameState.dealerHand) < 17) {
-    if (!gameState.deck.length) break
+  while (calculateHandValue(gameState.dealerHand) < 17 && gameState.deck.length) {
     gameState.dealerHand.push(gameState.deck.pop())
     await postMessage({ room, message: `Dealer hits: ${formatHandWithValue(gameState.dealerHand)}` })
   }
 
   const dealerValue = calculateHandValue(gameState.dealerHand)
-  await postMessage({ room, message: `🃏 Dealer's final: ${formatHandWithValue(gameState.dealerHand)}` })
+  await postMessage({ room, message: `🃏 Dealer stands: ${formatHandWithValue(gameState.dealerHand)}` })
 
   for (const user of gameState.tableUsers) {
-    const nickname = gameState.userNicknames[user] || user
-    const playerValue = calculateHandValue(gameState.playerHands[user])
+    const nickname = gameState.userNicknames[user]
     const bet = gameState.playerBets[user]
 
-    if (playerValue > 21) {
-      await postMessage({ room, message: `💀 ${nickname} busted and lost $${bet}.` })
-    } else if (dealerValue > 21 || playerValue > dealerValue) {
-      const payout = bet * 2
-      await addToUserWallet(user, payout)
-      await postMessage({ room, message: `🎉 ${nickname} wins with ${playerValue} vs Dealer's ${dealerValue}! (+$${payout})` })
-    } else if (playerValue === dealerValue) {
-      await addToUserWallet(user, bet)
-      await postMessage({ room, message: `🤝 ${nickname} ties with the dealer. Bet returned: $${bet}.` })
-    } else {
-      await postMessage({ room, message: `❌ ${nickname} loses with ${playerValue} vs Dealer's ${dealerValue}. (-$${bet})` })
+    if (gameState.surrendered.has(user)) continue
+
+    const hands = gameState.splitHands[user] || [gameState.playerHands[user]]
+
+    for (let i = 0; i < hands.length; i++) {
+      const hand = hands[i]
+      const playerValue = calculateHandValue(hand)
+      const handLabel = hands.length > 1 ? ` (Hand ${i + 1})` : ''
+
+      if (playerValue > 21) {
+        await postMessage({ room, message: `💀 ${nickname}${handLabel} busted and lost $${bet}.` })
+      } else if (dealerValue > 21 || playerValue > dealerValue) {
+        const payout = bet * 2
+        await addToUserWallet(user, payout)
+        await postMessage({ room, message: `🎉 ${nickname}${handLabel} wins! (+$${payout})` })
+      } else if (playerValue === dealerValue) {
+        await addToUserWallet(user, bet)
+        await postMessage({ room, message: `🤝 ${nickname}${handLabel} ties. Bet returned: $${bet}.` })
+      } else {
+        await postMessage({ room, message: `❌ ${nickname}${handLabel} lost to dealer. (-$${bet})` })
+      }
     }
   }
 
   resetGame()
 }
 
+function endGameDueToDeck() {
+  postMessage({ room: process.env.ROOM_UUID, message: '🛑 Deck exhausted. Ending game.' })
+  resetGame()
+}
+
 function resetGame() {
-  gameState.tableUsers = []
-  gameState.active = false
-  gameState.playerBets = {}
-  gameState.playerHands = {}
-  gameState.dealerHand = []
-  gameState.deck = []
-  gameState.currentPlayerIndex = 0
-  gameState.canJoinTable = true
-  gameState.bettingTimeout = null
-  gameState.turnTimeout = null
+  Object.assign(gameState, {
+    tableUsers: [],
+    active: false,
+    playerBets: {},
+    playerHands: {},
+    dealerHand: [],
+    deck: [],
+    currentPlayerIndex: 0,
+    canJoinTable: true,
+    bettingTimeout: null,
+    turnTimeout: null,
+    awaitingInput: false,
+    doubledDown: new Set(),
+    surrendered: new Set(),
+    splitHands: {},
+    splitIndex: {}
+  })
 }
 
 export {
@@ -304,5 +383,8 @@ export {
   leaveTable,
   handleBlackjackBet,
   handleHit,
-  handleStand
+  handleStand,
+  handleSurrender,
+  handleDouble,
+  getFullTableView
 }

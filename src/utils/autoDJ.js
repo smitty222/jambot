@@ -1,4 +1,5 @@
-import { readRecentSongs, getCurrentDJUUIDs, Bot } from '../libs/bot.js'
+import { getCurrentDJUUIDs } from '../libs/bot.js'
+import { readRecentSongs } from '../database/dbrecentsongsmanager.js';
 import { searchSpotify, getTopTracksByTag, getTopChartTracks, fetchSpotifyPlaylistTracks } from './API.js'
 import { getTheme } from './themeManager.js';
 import {themeSynonyms} from '../libs/themeSynonyms.js'

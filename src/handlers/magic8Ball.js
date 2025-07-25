@@ -1,6 +1,6 @@
 // src/commands/magic8ball.js
-import { removeFromUserWallet, getUserWallet } from '../libs/walletManager.js'
-import { getUserNickname } from './roulette.js'
+import { removeFromUserWallet, getUserWallet } from '../database/dbwalletmanager.js'
+import { getUserNickname } from './message.js'
 
 // Classic Magic 8-Ball responses
 const magic8BallResponses = [

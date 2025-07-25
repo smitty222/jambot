@@ -16,7 +16,7 @@ const customWelcomeMessages = {
   'e99d7d47-7d45-4ab5-b868-8a188db1ec5f': 'Nobody chills harder than {nickname}! Welcome back!', //Straight up Chill
   '554d0d38-0b7b-45d8-9f18-20b4f5689e70': 'Busterrrrrrrrr Douglassssssss {nickname}! In the house!', // P Eacho
   'fd2f1b47-b1d4-4100-8f88-6e56aa82e13f': 'Our favorite groupie has arrived! Welcome {nickname}!', //Gab
-  'a5e09ebd-ceb5-46b6-b962-52754e32840d': '{nickname}! Sniff this one!'
+  'f3b152a3-b29b-41b8-88b1-dea4d9b952aa': '🌵 From the mysterious deserts of Arizona... emerging once again — it’s the long-lost legend of the aux cord himself! Welcome back, {nickname}!'
   // Add more UUIDs and their corresponding custom welcome messages here
 };
 

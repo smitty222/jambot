@@ -1,31 +1,28 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { postMessage } from './cometchat.js';
-import { getUserNickname } from '../handlers/roulette.js';
-import { getUserWallet, removeFromUserWallet } from './walletManager.js';
-
-
-
-const horsesFile = path.resolve('./src/data/horses.json');
+import { getUserNickname } from '../handlers/message.js';
+import { getUserWallet, removeFromUserWallet } from '../database/dbwalletmanager.js';
+import { getAllHorses, getUserHorses, getHorseByName, insertHorse } from '../database/dbhorses.js'
 const room = process.env.ROOM_UUID
 
 const HORSE_TIERS = {
   basic: {
-    price: 2,
+    price: 2000,
     oddsRange: [6.0, 9.0],
     volatilityRange: [1.5, 2.5],
     careerLengthRange: [8, 12],  // basic horses race 8-12 times
     emoji: '🐴'
   },
   elite: {
-    price: 7,
+    price: 7000,
     oddsRange: [4.0, 7.0],
     volatilityRange: [1.0, 2.0],
     careerLengthRange: [12, 18],  // elite horses race 12-18 times
     emoji: '🐎'
   },
   champion: {
-    price: 15,
+    price: 15000,
     oddsRange: [2.5, 5.0],
     volatilityRange: [0.5, 1.5],
     careerLengthRange: [18, 24],  // champion horses race 18-24 times
@@ -113,7 +110,6 @@ async function handleBuyHorse(payload) {
   const message = payload.message.trim();
   const userId = payload.sender;
   const nickname = await getUserNickname(userId);
-  
 
   const match = message.match(/^\/buyhorse\s*(\w+)?/i);
   if (!match) return;
@@ -121,22 +117,32 @@ async function handleBuyHorse(payload) {
   const tierName = match[1]?.toLowerCase();
 
   if (!tierName) {
-    return postMessage({
-      room,
-      message: `🐎 Want to buy a horse? Choose your tier:\n\n` +
-        `/buyhorse basic     🐴 $2,000 – Balanced starter horses\n` +
-        `/buyhorse elite     🐎 $7,000 – Faster with better consistency\n` +
-        `/buyhorse champion  🐉 $15,000 – Top-tier racers with elite stats\n\n` +
-        `Each horse has random stats based on tier.`
-    });
-  }
+  return postMessage({
+    room,
+    message: `🐎 **Want to buy a horse?** Choose your tier below:\n\n` +
+      `__**/buyhorse basic**__   🐴 $2,000 – Balanced starter horses\n` +
+      `• Odds: 6.0–9.0\n` +
+      `• Volatility: 1.5–2.5\n` +
+      `• Career: 8–12 races\n\n` +
+      `__**/buyhorse elite**__   🐎 $7,000 – Faster with better consistency\n` +
+      `• Odds: 4.0–7.0\n` +
+      `• Volatility: 1.0–2.0\n` +
+      `• Career: 12–18 races\n\n` +
+      `__**/buyhorse champion**__ 🐉 $15,000 – Top-tier racers with elite stats\n` +
+      `• Odds: 2.5–5.0\n` +
+      `• Volatility: 0.5–1.5\n` +
+      `• Career: 18–24 races\n\n` +
+      `Type one of the commands above to buy a horse.\n\n🏁 Horses have unique stats and retire after a fixed number of races.`
+  });
+}
+
 
   const tier = HORSE_TIERS[tierName];
   if (!tier) return;
 
-  const careerLength = Math.floor(randomInRange(...tier.careerLengthRange, 0)); // integer races
+  const careerLength = Math.floor(randomInRange(...tier.careerLengthRange, 0));
+  const balance = getUserWallet(userId);
 
-  const balance = await getUserWallet(userId);
   if (balance < tier.price) {
     return postMessage({
       room,
@@ -144,31 +150,29 @@ async function handleBuyHorse(payload) {
     });
   }
 
-  const success = await removeFromUserWallet(userId, tier.price);
+  const success = removeFromUserWallet(userId, tier.price);
   if (!success) return;
 
-  const horses = await loadHorses(); // 🔧 FIXED: added await
-  const existingNames = horses.map(h => h.name);
+  const existingHorses = getAllHorses();
+  const existingNames = existingHorses.map(h => h.name);
   const name = generateHorseName(existingNames);
   const baseOdds = Math.round(randomInRange(...tier.oddsRange));
   const volatility = parseFloat(randomInRange(...tier.volatilityRange).toFixed(1));
 
-  horses.push({
-  name,
-  baseOdds,
-  volatility,
-  wins: 0,
-  racesParticipated: 0,
-  careerLength,
-  owner: await getUserNickname(userId),
-  ownerId: userId,
-  tier: tierName,
-  emoji: tier.emoji,
-  price: tier.price,
-  retired: false
-});
-
-  await saveHorses(horses); // 🔧 FIXED: added await
+   insertHorse({
+    name,
+    baseOdds,
+    volatility,
+    wins: 0,
+    racesParticipated: 0,
+    careerLength,
+    owner: nickname,
+    ownerId: userId,
+    tier: tierName,
+    emoji: tier.emoji,
+    price: tier.price,
+    retired: false
+  });
 
   await postMessage({
     room,
@@ -179,9 +183,8 @@ async function handleBuyHorse(payload) {
 export async function handleMyHorsesCommand(payload) {
   const userId = payload.sender;
   const nickname = await getUserNickname(userId);
-  const allHorses = await loadHorses();
+  const userHorses = getUserHorses(userId)
 
-  const userHorses = allHorses.filter(h => h.ownerId === userId);
 
   if (userHorses.length === 0) {
     await postMessage({

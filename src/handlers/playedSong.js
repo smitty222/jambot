@@ -5,7 +5,7 @@ import { fetchSongData, getAlbumTracks, spotifyTrackInfo } from '../utils/API.js
 import { roomThemes } from './message.js'
 import { getCurrentDJUUIDs } from '../libs/bot.js'
 import { askQuestion } from '../libs/ai.js'
-import { getUserNickname } from './roulette.js'
+import { getUserNickname } from './message.js'
 import { QueueManager } from '../utils/queueManager.js'
 
 const queueManager = new QueueManager('src/data/djQueue.json', getUserNickname)
@@ -59,108 +59,217 @@ const handleAlbumTheme = async (payload) => {
     const songDuration = parseDuration(spotifyDuration)
     const formattedReleaseDate = releaseDate ? formatDate(releaseDate) : 'N/A'
 
-    if (reliableTrackNumber === 1) {
-      const currentDJUuid = getCurrentDJUUIDs(roomBot.state)[0]
-      const currentDJName = await getUserNickname(currentDJUuid)
+    const renderProgressBar = (current, total) => {
+      const filled = Math.round((current / total) * 10)
+      return '▓'.repeat(filled) + '░'.repeat(10 - filled)
+    }
+
+    const progressBar = renderProgressBar(reliableTrackNumber, trackCount)
+
+    const currentDJUuid = getCurrentDJUUIDs(roomBot.state)[0]
+    const currentDJName = await getUserNickname(currentDJUuid)
+
+    const isFirst = reliableTrackNumber === 1
+    const isMidpoint = reliableTrackNumber === Math.floor(trackCount / 2)
+    const isLast = reliableTrackNumber === trackCount
+    const shouldAnnounceBasic = !isFirst && !isMidpoint && !isLast
+
+    // 🎧 Album start
+    if (isFirst) {
       roomBot.currentAlbum = { albumId: albumID, albumName, artistName, trackCount, albumArt }
       roomBot.currentAlbumTrackNumber = reliableTrackNumber
 
       await postMessage({ room, message: ``, images: [albumArt] })
+
       await postMessage({
         room,
-        message: `@${currentDJName} is starting an Album!\n\nAlbum: ${albumName}\nArtist: ${artistName}\nRelease Date: ${formattedReleaseDate}\nTrack Number: ${reliableTrackNumber} of ${trackCount}`
+        message:
+`🎧 *Album Session Started*  
+────────────────────────────  
+👤 DJ: <@uid:${currentDJUuid}>  
+📀 Album: *${albumName}*  	
+🎤 Artist: *${artistName}*  
+📅 Released: ${formattedReleaseDate}  
+💿 Track: ${reliableTrackNumber} of ${trackCount}  
+📊 Progress: ${progressBar}`
       })
     }
 
-    if (reliableTrackNumber === Math.floor(trackCount / 2)) {
+    // 🌓 Midpoint
+    if (isMidpoint) {
       await postMessage({
         room,
-        message: `This is the halfway point in ${artistName}'s album, *${albumName}*.\n\nTrack: ${trackName}\nRelease Date: ${formattedReleaseDate}\nTrack ${reliableTrackNumber} of ${trackCount}`
+        message:
+`🌓 *Halfway through the album!*  
+🎧 *${albumName}* by *${artistName}*  
+📀 Now Playing: *${trackName}*  
+📊 Progress: ${progressBar}
+
+💬 Use \`/albumreview\` to rate tracks. Type \`/reviewhelp\` to see the rating scale!`
       })
     }
 
-    if (reliableTrackNumber === trackCount) {
-      const currentDJUuid = getCurrentDJUUIDs(roomBot.state)[0]
-      const currentDJName = await getUserNickname(currentDJUuid)
-
+    // 🎉 Final Track Logic
+    if (isLast) {
       await postMessage({ room, message: ``, images: [albumArt] })
+
       await postMessage({
         room,
-        message: `${trackName}\nTrack ${reliableTrackNumber} of ${trackCount}\n\nThis is the last song of the album. Thanks @${currentDJName} for the tunes! You will be removed from the stage when this song ends.`
+        message:
+`🎉 *Final Track of the Album!*  
+🖼️ Album: *${albumName}*  
+📀 Track: *${trackName}* (${reliableTrackNumber}/${trackCount})  
+👤 Thanks for the vibes, <@uid:${currentDJUuid}>  
+💬 Time to leave your review: \`/albumreview\`  
+📊 Progress: ${progressBar}`
       })
-      await postMessage({ room, message: `Make sure to leave your review of the album! Use /reviewhelp for more info` })
+
+      await postMessage({
+        room,
+        message: `✨ Use \`/reviewhelp\` to learn how to rate the album!`
+      })
 
       const adjustedDuration = Math.max(0, songDuration - 5000)
+      const reminderTime = Math.max(0, adjustedDuration - 60000)
+
+      // ⏳ Queue reminder (60s before end)
+      setTimeout(async () => {
+        const nextUser = await queueManager.getCurrentUser()
+        if (nextUser?.userId) {
+          await postMessage({
+            room,
+            message:
+`⏳ *Album ending soon!*  
+🎧 <@uid:${nextUser.userId}> you're next in the queue.  
+Please be ready to press *Play Music* when the stage opens.`
+          })
+        } else {
+          await postMessage({
+            room,
+            message:
+`📢 *Album wrapping up in 60 seconds!*  
+No one is in the queue.  
+Want to go next? Type \`q+\` to claim your spot and play an album!`
+          })
+        }
+      }, reminderTime)
+
+      console.log(`[AlbumTheme] Will remove DJ <@uid:${currentDJUuid}> in ${adjustedDuration}ms`)
 
       setTimeout(async () => {
         try {
+          const onStage = getCurrentDJUUIDs(roomBot.state)
+
+          if (!onStage.includes(currentDJUuid)) {
+            console.log(`[AlbumTheme] DJ ${currentDJUuid} already removed from stage.`)
+            return
+          }
+
+          console.log(`[AlbumTheme] Removing DJ after album end: ${currentDJUuid}`)
           await roomBot.removeDJ(currentDJUuid)
+
           const nextUser = await queueManager.advanceQueue()
 
-          if (nextUser && nextUser.userId) {
+          if (nextUser?.userId) {
             stageLock.locked = true
             stageLock.userUuid = nextUser.userId
 
             await postMessage({
               room,
-              message: `<@uid:${nextUser.userId}>; you're up next! Please press the 'Play Music' button to get on stage within 30 seconds.`
+              message: `<@uid:${nextUser.userId}> you're up next! Please press the 'Play Music' button to get on stage within 30 seconds.`
             })
 
             stageLock.timeout = setTimeout(async () => {
-              const onStage = getCurrentDJUUIDs(roomBot.state)
+              const currentDJs = getCurrentDJUUIDs(roomBot.state)
 
-              for (const djUuid of onStage) {
+              for (const djUuid of currentDJs) {
                 if (djUuid !== nextUser.userId) {
-                  console.log(`Removing unexpected DJ ${djUuid} from stage`)
+                  console.log(`[Queue] Removing unexpected DJ: ${djUuid}`)
                   await roomBot.removeDJ(djUuid)
                   await postMessage({
                     room,
-                    message: `<@uid:${djUuid}>; you're not next in the queue. Please wait for your turn.`
+                    message: `<@uid:${djUuid}> you're not next in the queue. Please wait for your turn.`
                   })
                 }
               }
 
-              if (onStage.includes(nextUser.userId)) {
-                console.log(`${nextUser.userId} successfully joined the stage.`)
+              if (currentDJs.includes(nextUser.userId)) {
+                console.log(`[Queue] ${nextUser.userId} joined — removing from queue.`)
                 await queueManager.leaveQueue(nextUser.userId)
-                
               } else {
-                await postMessage({
-                  room,
-                  message: `<@uid:${nextUser.userId}>; did not take the stage in time. Moving on.`
-                })
-              }
+                console.log(`[Queue] ${nextUser.userId} did not join — removing from queue.`)
+                await queueManager.leaveQueue(nextUser.userId)
 
-              cancelStageLock()
+                const nextNextUser = await queueManager.getCurrentUser()
+
+                if (nextNextUser?.userId) {
+                  await postMessage({
+                    room,
+                    message: `<@uid:${nextNextUser.userId}> you're next up! Please press 'Play Music' within 30 seconds.`
+                  })
+
+                  stageLock.userUuid = nextNextUser.userId
+                  stageLock.timeout = null
+                } else {
+                  await postMessage({
+                    room,
+                    message: `🎵 No more DJs in queue. The stage is open for the next album!`
+                  })
+                  stageLock.locked = false
+                  stageLock.userUuid = null
+                  stageLock.timeout = null
+                }
+              }
             }, 30000)
 
-            const stageMonitor = setInterval(async () => {
-              const onStageNow = getCurrentDJUUIDs(roomBot.state)
-              for (const djUuid of onStageNow) {
+            const monitor = setInterval(async () => {
+              const liveDJs = getCurrentDJUUIDs(roomBot.state)
+
+              for (const djUuid of liveDJs) {
                 if (djUuid !== nextUser.userId) {
-                  console.log(`Immediately removing unauthorized DJ ${djUuid}`)
+                  console.log(`[Queue] Booting unauthorized DJ ${djUuid}`)
                   await roomBot.removeDJ(djUuid)
                   await postMessage({
                     room,
-                    message: `<@uid:${djUuid}>; you're not next in the queue. Please wait for your turn.`
+                    message: `<@uid:${djUuid}> you're not next up. Please wait for your turn.`
                   })
                 }
               }
             }, 1000)
 
-            setTimeout(() => clearInterval(stageMonitor), 30000)
+            setTimeout(() => clearInterval(monitor), 30000)
           } else {
-            console.log('No user found in queue to add.')
+            await postMessage({
+              room,
+              message: `🎵 No one is in the queue. The stage is open to play the next album!`
+            })
           }
         } catch (error) {
-          console.error('Error transitioning to next DJ:', error)
+          console.error('[AlbumTheme] Error during DJ transition:', error)
         }
       }, adjustedDuration)
     }
+
+    // 🎵 Standard track
+    if (shouldAnnounceBasic) {
+      await postMessage({
+        room,
+        message:
+`🎵 Now playing from *${albumName}*\n🎤 *${artistName}*  
+📀 *${trackName}* (Track ${reliableTrackNumber} of ${trackCount})  
+📊 ${progressBar}`
+      })
+    }
+
   } catch (error) {
     console.error('Error in handleAlbumTheme:', error)
   }
 }
+
+
+
+
+
 
 function isStageLockedFor(userUuid) {
   return stageLock.locked && userUuid !== stageLock.userUuid

@@ -8,19 +8,19 @@ import { postVoteCountsForLastSong } from '../utils/voteCounts.js'
 import { usersToBeRemoved, roomThemes } from '../handlers/message.js'
 import { escortUserFromDJStand } from '../utils/escortDJ.js'
 import handleUserJoinedWithStatePatch from '../handlers/userJoined.js'
-import { handleAlbumTheme, handleCoversTheme } from '../handlers/playedSong.js'
+import { handleAlbumTheme, handleCoversTheme,  } from '../handlers/playedSong.js'
 // import { checkAndPostAudioFeatures, addHappySongsToPlaylist, addDanceSongsToPlaylist } from '../utils/audioFeatures.js'
-import { songPayment } from './walletManager.js'
-import { checkArtistAndNotify } from '../handlers/artistChecker.js'
+import { songPayment } from '../database/dbwalletmanager.js'
+import { updateRecentSongs } from '../database/dbrecentsongsmanager.js'
 import { getPopularSpotifyTrackID } from '../utils/autoDJ.js'
 import { getMarkedUser, unmarkUser } from '../utils/removalQueue.js'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import fs from 'fs'
-import { logCurrentSong, updateLastPlayed } from './roomStats.js'
+import { logCurrentSong, updateLastPlayed } from '../database/dbroomstatsmanager.js'
 import * as themeManager from '../utils/themeManager.js'
-import { announceNowPlaying } from '../utils/voteCounts.js'
-import { parseDurationToMs, scheduleLetterChallenge } from '../handlers/songNameGame.js'
+import { announceNowPlaying } from '../utils/announceNowPlaying.js'
+import { scheduleLetterChallenge, scoreLetterChallenge, parseDurationToMs } from '../handlers/songNameGame.js'
 import { addTrackedUser } from '../utils/trackedUsers.js'
 
 const startTimeStamp = Math.floor(Date.now() / 1000);
@@ -67,73 +67,6 @@ export function getCurrentDJ (state) {
   const currentDJs = getCurrentDJUUIDs(state)
   return currentDJs.length > 0 ? currentDJs[0] : null
 }
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
-const recentSongsFilePath = join(__dirname, '../data/recentSongs.json')
-
-export const readRecentSongs = () => {
-  try {
-    const data = fs.readFileSync(recentSongsFilePath, 'utf8')
-    const parsedData = JSON.parse(data)
-
-    // Ensure parsedData.songs is an array before returning
-    return Array.isArray(parsedData.songs) ? parsedData.songs : []
-  } catch (error) {
-    console.error('Error reading recent songs:', error)
-    return []
-  }
-}
-
-const updateRecentSongs = async (newSong) => {
-  try {
-    const recentSongs = readRecentSongs();
-
-    // === STEP 1: Populate similarTracks ===
-    const similarTracks = await getSimilarTracks(newSong.artistName, newSong.trackName);
-
-    if (similarTracks?.length > 0) {
-      newSong.similarTracks = similarTracks
-        .filter(t => t?.trackName && t?.artistName)
-        .slice(0, 3);
-    } else {
-      const similarArtists = await getSimilarArtists(newSong.artistName);
-      const fallbackTracks = [];
-
-      for (const artistName of similarArtists.slice(0, 3)) {
-        const topTracks = await getTopArtistTracks(artistName);
-        const validTracks = topTracks.filter(t => t?.trackName);
-
-        if (validTracks.length > 0) {
-          const randomIndex = Math.floor(Math.random() * Math.min(10, validTracks.length));
-          fallbackTracks.push({
-            trackName: validTracks[randomIndex].trackName,
-            artistName: artistName
-          });
-        }
-      }
-
-      newSong.similarTracks = fallbackTracks;
-    }
-
-    // === STEP 2: Add to recentSongs list ===
-    recentSongs.unshift(newSong);
-
-    if (recentSongs.length > 30) {
-      recentSongs.length = 30;
-    }
-
-    fs.writeFileSync(
-      recentSongsFilePath,
-      JSON.stringify({ songs: recentSongs }, null, 2),
-      'utf8'
-    );
-  } catch (error) {
-    console.error('❌ Error updating recent songs:', error);
-  }
-};
-
-
 
 
 export class Bot {
@@ -450,19 +383,25 @@ async processNewMessages() {
             }
           }
 
-          // Announce now playing
-          await announceNowPlaying(this.roomUUID)
+          const theme = (roomThemes[this.roomUUID] || '').toLowerCase()
+          const albumThemes = ['album monday', 'albums', 'album day']
+          const isAlbumTheme = albumThemes.includes(theme)
 
+          if (isAlbumTheme) {
+            await handleAlbumTheme(payload) // Album theme gets its own message
+          } else {
+           await announceNowPlaying(this.roomUUID)
+          }
           // Log the song stats
           try {
-            await logCurrentSong(this.currentSong, 0, 0, 0)
-            console.log(`Logged song to roomStats.json: ${this.currentSong.trackName} by ${this.currentSong.artistName}`)
+            logCurrentSong(this.currentSong, 0, 0, 0)
+            console.log(`Logged song to roomStats DB ${this.currentSong.trackName} by ${this.currentSong.artistName}`)
           } catch (error) {
-            console.error('Error logging current song to roomStats.json:', error)
+            console.error('Error logging current song to roomStats DB:', error)
           }
 
           // Update last played timestamp
-          await updateLastPlayed(this.currentSong)
+           updateLastPlayed(this.currentSong)
 
           // Update recent songs with DJ info
           try {
@@ -508,22 +447,6 @@ async processNewMessages() {
           logger.error('Error handling playedSong event:', error)
         }
 
-        // Get current theme and check for 'Name Game'
-          //const currentTheme = getTheme(this.roomUUID)?.toLowerCase()
-
-          //if (currentTheme === 'name game') {
-           // console.log('🎯 Name Game theme active. Scheduling letter challenge...')
-            //scheduleLetterChallenge.call(this) // Make sure to bind the bot context
-         // }
-
-        // Optional: album or covers theme event handlers
-        try {
-          await handleAlbumTheme(payload)
-          await handleCoversTheme(payload)
-        } catch (error) {
-          logger.error('Error handling album or covers theme event:', error)
-        }
-
         // Remove users marked for removal after song ends
         const currentDJ = getCurrentDJ(self.state)
         if (currentDJ && usersToBeRemoved[currentDJ]) {
@@ -542,9 +465,16 @@ async processNewMessages() {
 
         // Process song payments
         await songPayment()
+        try {
+      await scoreLetterChallenge(this)       // 1. Score previous DJ if challenge was active
+      scheduleLetterChallenge(this)          // 2. Start new challenge for next DJ
+      } catch (err) {
+      logger.error('Error running Name Game scoring or scheduling:', err)
+      }
       }
     })
-  }
+
+    }
 
   // --- Getter and setter for socket ---
   getSocketInstance() {

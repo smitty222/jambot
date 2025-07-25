@@ -1140,13 +1140,28 @@ export function cleanTrackName(track) {
   return track.replace(/\(feat\..*?\)|\(ft\..*?\)/gi, '').trim();
 }
 
-async function getSimilarArtists(artist) {
-  const cleanedArtistName = cleanArtistName(artist);
-  const url = `https://ws.audioscrobbler.com/2.0/?method=artist.getsimilar&artist=${encodeURIComponent(cleanedArtistName)}&api_key=${process.env.LASTFM_API_KEY}&format=json`;
-  const res = await fetch(url);
-  const data = await res.json();
-  return data.similarartists?.artist?.map(a => a.name) || [];
+async function getSimilarArtists(artistId) {
+  const response = await fetch(`https://api.spotify.com/v1/artists/${artistId}/related-artists`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`
+    }
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`❌ Spotify API error ${response.status}:`, errorText)
+    return [] // or null
+  }
+
+  try {
+    const json = await response.json()
+    return json.artists || []
+  } catch (err) {
+    console.error('❌ Failed to parse JSON from Spotify:', err.message)
+    return []
+  }
 }
+
 
 export async function getSimilarTracks(artist, track) {
   const cleanedArtistName = cleanArtistName(artist);

@@ -1,6 +1,5 @@
 import { QueueManager } from './queueManager.js'
-import { getUserNickname } from '../handlers/roulette.js'
+import { getUserNickname } from '../handlers/message.js'
 
-const queueManager = new QueueManager('src/data/djQueue.json', getUserNickname)
-
+const queueManager = new QueueManager(getUserNickname)
 export default queueManager
