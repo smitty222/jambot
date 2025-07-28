@@ -118,6 +118,7 @@ const handleAlbumTheme = async (payload) => {
         message:
 `🎉 *Final Track of the Album!*  
 🖼️ Album: *${albumName}*  
+🎤 Artist: *${artistName}*  
 📀 Track: *${trackName}* (${reliableTrackNumber}/${trackCount})  
 👤 Thanks for the vibes, <@uid:${currentDJUuid}>  
 💬 Time to leave your review: \`/albumreview\`  

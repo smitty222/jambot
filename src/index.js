@@ -6,8 +6,6 @@ import { fetchCurrentUsers } from './utils/API.js';
 import * as themeStorage from './utils/themeManager.js';
 import { roomThemes } from './handlers/message.js';
 import { addTrackedUser, getTrackedUsers } from './utils/trackedUsers.js';
-import './database/initdb.js'
-
 
 const app = express();
 

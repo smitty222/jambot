@@ -22,6 +22,7 @@ import * as themeManager from '../utils/themeManager.js'
 import { announceNowPlaying } from '../utils/announceNowPlaying.js'
 import { scheduleLetterChallenge, scoreLetterChallenge, parseDurationToMs } from '../handlers/songNameGame.js'
 import { addTrackedUser } from '../utils/trackedUsers.js'
+import { saveCurrentState } from '../database/dbcurrent.js'
 
 const startTimeStamp = Math.floor(Date.now() / 1000);
 
@@ -165,77 +166,87 @@ export class Bot {
   }
 
 async processNewMessages() {
+  // Guard against overlapping runs
+  if (this._processingMessages) return;
+  this._processingMessages = true;
+
   try {
-    // --- Group chat messages ---
-    const groupMessages = await getMessages(this.roomUUID, this.lastMessageIDs?.room || startTimeStamp, 'group')
-    if (groupMessages?.data?.length) {
-      for (const message of groupMessages.data) {
-        if (!message.sentAt || !message.data?.text) continue
+    // Initialize cursors & persistent ID cache
+    this.lastMessageIDs = {
+      room: this.lastMessageIDs?.room ?? startTimeStamp,
+      dm:   this.lastMessageIDs?.dm   ?? startTimeStamp
+    };
+    this._seenMessageIds = this._seenMessageIds || new Set();
 
-        this.lastMessageIDs.room = Math.max(this.lastMessageIDs.room || 0, message.sentAt + 1)
+    // Group chat
+    {
+      const oldTs = this.lastMessageIDs.room;
+      const msgs  = (await getMessages(this.roomUUID, oldTs, 'group')).data || [];
+      let maxTs   = oldTs;
 
-        const textMessage = message.data.text.trim()
-        if (!textMessage) continue
+      for (const { id, sentAt, data, sender } of msgs) {
+        if (!id || !sentAt || !data?.text) continue;
+        if (this._seenMessageIds.has(id)) continue;
+        this._seenMessageIds.add(id);
 
-        const sender = message.sender
-        if (!sender || sender === process.env.BOT_USER_UUID) continue
+        maxTs = Math.max(maxTs, sentAt + 1);
 
-        // Skip messages from other bots
-        if ([process.env.BOT_USER_UUID, process.env.CHAT_REPLY_ID].includes(sender)) continue
+        const txt = data.text.trim();
+        if (!txt || !sender || sender === botUUID) continue;
+        if ([botUUID, process.env.CHAT_REPLY_ID].includes(sender)) continue;
 
         await handlers.message(
-          {
-            message: textMessage,
-            sender,
-            receiverType: 'group'
-          },
+          { message: txt, sender, receiverType: 'group' },
           this.roomUUID,
           this.state
-        )
+        );
+      }
+
+      if (maxTs !== oldTs) {
+        this.lastMessageIDs.room = maxTs;
       }
     }
 
-    // --- Direct messages to bot ---
-    const dmMessages = await getMessages(process.env.BOT_USER_UUID, this.lastMessageIDs?.dm || startTimeStamp, 'user')
-    if (dmMessages?.data?.length) {
-      for (const message of dmMessages.data) {
-        if (!message.sentAt) continue
+    // Direct messages
+    {
+      const oldTs = this.lastMessageIDs.dm;
+      const msgs  = (await getMessages(botUUID, oldTs, 'user')).data || [];
+      let maxTs   = oldTs;
 
-        console.log('[RAW DM]', JSON.stringify(message, null, 2))
+      for (const { id, sentAt, data, sender } of msgs) {
+        if (!id || !sentAt || !data?.text) continue;
+        if (this._seenMessageIds.has(id)) continue;
+        this._seenMessageIds.add(id);
 
-        if (!message.data?.text) continue
+        maxTs = Math.max(maxTs, sentAt + 1);
 
-        this.lastMessageIDs.dm = Math.max(this.lastMessageIDs.dm || 0, message.sentAt + 1)
+        const txt = data.text.trim();
+        if (!txt || !sender || sender === botUUID) continue;
 
-        const textMessage = message.data.text.trim()
-        if (!textMessage) continue
-
-        const sender = message.sender
-        if (!sender || sender === process.env.BOT_USER_UUID) continue
-
-        addTrackedUser(sender)
-
-        console.log(`[DM] Message from ${sender}: ${textMessage}`)
+        addTrackedUser(sender);
 
         await handlers.message(
           {
-            message: textMessage,
+            message:     txt,
             sender,
-            senderName: message?.data?.entities?.sender?.name ?? 'Unknown',
-            receiverType: 'user'
+            senderName:  data.entities?.sender?.name ?? 'Unknown',
+            receiverType:'user'
           },
           sender,
           this.state
-        )
+        );
+      }
+
+      if (maxTs !== oldTs) {
+        this.lastMessageIDs.dm = maxTs;
       }
     }
-  } catch (error) {
-    console.error('Error processing new messages:', error)
+  } catch (err) {
+    logger.error('Error in processNewMessages:', err);
+  } finally {
+    this._processingMessages = false;
   }
 }
-
-
-
 
   // --- Setup socket event listeners ---
   configureListeners() {
@@ -382,6 +393,17 @@ async processNewMessages() {
               }
             }
           }
+
+              // Persist the latest state
+            try {
+              saveCurrentState({
+                currentSong:  this.currentSong,
+                currentAlbum: this.currentAlbum
+              });
+              console.log('✔️ Saved currentSong/currentAlbum to DB');
+            } catch (err) {
+              console.error('Failed to save current state:', err);
+            }
 
           const theme = (roomThemes[this.roomUUID] || '').toLowerCase()
           const albumThemes = ['album monday', 'albums', 'album day']

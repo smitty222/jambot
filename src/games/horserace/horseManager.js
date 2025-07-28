@@ -1,9 +1,9 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { postMessage } from './cometchat.js';
-import { getUserNickname } from '../handlers/message.js';
-import { getUserWallet, removeFromUserWallet } from '../database/dbwalletmanager.js';
-import { getAllHorses, getUserHorses, getHorseByName, insertHorse } from '../database/dbhorses.js'
+import { postMessage } from '../../libs/cometchat.js';
+import { getUserNickname } from '../../handlers/message.js';
+import { getUserWallet, removeFromUserWallet } from '../../database/dbwalletmanager.js';
+import { getAllHorses, getUserHorses, getHorseByName, insertHorse } from '../../database/dbhorses.js'
 const room = process.env.ROOM_UUID
 
 const HORSE_TIERS = {

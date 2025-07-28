@@ -171,5 +171,36 @@ db.exec(`
     slug TEXT PRIMARY KEY
   );
 `)
+db.exec(`
+CREATE TABLE IF NOT EXISTS current_state (
+  id              INTEGER PRIMARY KEY CHECK (id = 1),
+  -- Song fields
+  songId          TEXT,
+  trackName       TEXT,
+  spotifyTrackId  TEXT,
+  spotifyUrl      TEXT,
+  artistName      TEXT,
+  albumName       TEXT,
+  releaseDate     TEXT,
+  albumType       TEXT,
+  trackNumber     TEXT,
+  totalTracks     TEXT,
+  songDuration    TEXT,
+  albumArt        TEXT,
+  popularity      REAL,
+  previewUrl      TEXT,
+  isrc            TEXT,
+  albumID         TEXT,
+  -- Album fields
+  albumAlbumID    TEXT,
+  albumNameField  TEXT,
+  albumArtistName TEXT,
+  albumReleaseDate TEXT,
+  albumArtField   TEXT,
+  albumTypeField  TEXT,
+  albumIsrc       TEXT
+);
+`)
+
 
 console.log('✅ Database initialized')

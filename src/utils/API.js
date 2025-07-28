@@ -177,6 +177,39 @@ async function spotifyTrackInfo (trackId) {
     return null
   }
 }
+export async function spotifyArtistGenres(artistId) {
+  const url = `https://api.spotify.com/v1/artists/${artistId}`
+
+  // Ensure token is valid (reuse logic from your existing spotifyTrackInfo)
+  if (!accessToken) {
+    accessToken = await getAccessToken(config.clientId, config.clientSecret)
+  }
+
+  const options = {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${accessToken}` }
+  }
+
+  let response = await fetch(url, options)
+  let artistInfo = await response.json()
+
+  // Handle expired token
+  if (response.status === 401) {
+    console.log('🎟️ Token expired. Refreshing...')
+    accessToken = await getAccessToken(config.clientId, config.clientSecret)
+    options.headers.Authorization = `Bearer ${accessToken}`
+    response = await fetch(url, options)
+    artistInfo = await response.json()
+  }
+
+  if (!response.ok) {
+    console.error('❌ Error fetching artist info:', artistInfo)
+    return []
+  }
+
+  return artistInfo.genres || []
+}
+
 export async function getAlbumTracks(albumId) {
   const url = `https://api.spotify.com/v1/albums/${albumId}/tracks`
 

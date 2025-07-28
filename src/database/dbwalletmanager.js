@@ -80,14 +80,16 @@ export function getNicknamesFromWallets() {
   const wallets = db.prepare(`
     SELECT u.uuid, u.nickname, w.balance
     FROM wallets w
-    JOIN users u ON u.uuid = w.uuid
+    LEFT JOIN users u ON u.uuid = w.uuid
   `).all()
 
   return wallets.map(({ uuid, nickname, balance }) => ({
+    uuid,
     nickname: nickname || 'Unknown',
     balance: roundToTenth(balance)
   }))
 }
+
 
 export async function addDollarsByNickname(nickname, amount) {
   if (typeof amount !== 'number' || amount <= 0) {

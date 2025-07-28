@@ -7,6 +7,8 @@ const userPoints = {}
 let letterChallengeTimer = null
 let currentChallengeLetter = null
 let currentDJ = null
+let totalRounds = 0
+let currentRoundPlays = new Set()
 
 // Convert duration formats to milliseconds
 export function parseDurationToMs(duration) {
@@ -30,8 +32,26 @@ function getRandomLetter() {
   return letters[Math.floor(Math.random() * letters.length)]
 }
 
+// Generate a formatted leaderboard
+function getLeaderboard() {
+  const sorted = Object.entries(userPoints)
+    .sort((a, b) => b[1] - a[1])
+    .map(([uid, points], idx) => {
+      const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '🎵'
+      return `${medal} <@uid:${uid}>: ${points} point(s)`
+    })
+
+  return `📊 **Leaderboard**\n${sorted.join('\n')}`
+}
+
 // Score a DJ’s track
 export async function scoreLetterChallenge(bot) {
+  const theme = getTheme(bot.roomUUID)?.toLowerCase()
+  if (!theme || !theme.includes('name game')) {
+    console.log('[🎯 NameGame] Skipping score — current theme is not "name game".')
+    return
+  }
+
   const songTitle = bot.currentSong?.trackName || ''
   const artistName = bot.currentSong?.artistName || ''
   const playingDJ = getCurrentDJUUIDs(bot.state)[0]
@@ -42,16 +62,29 @@ export async function scoreLetterChallenge(bot) {
   const firstLetter = songTitle[0]?.toUpperCase()
 
   if (firstLetter !== letter) {
+    currentRoundPlays.add(playingDJ)
+
+    const allStageDJs = getCurrentDJUUIDs(bot.state)
+    const allHavePlayed = allStageDJs.every(dj => currentRoundPlays.has(dj))
+
+    let roundEndMessage = ''
+    if (allHavePlayed) {
+      totalRounds++
+      currentRoundPlays.clear()
+      roundEndMessage = `\n\n🏁 **Round ${totalRounds} complete!**\n${getLeaderboard()}`
+    }
+
     await postMessage({
       room: bot.roomUUID,
-      message: `❌ <@uid:${playingDJ}> played *${songTitle}* — but it doesn't start with "${letter}". No points this round!`
+      message: `❌ <@uid:${playingDJ}> played *${songTitle}* — but it doesn't start with "${letter}". No points this round! 😢${roundEndMessage}`
     })
+
     currentChallengeLetter = null
     currentDJ = null
     return
   }
 
-  let score = 1 // Base point for first word match
+  let score = 1
   let breakdown = ['+1 for track title starting with the correct letter']
 
   const words = songTitle.trim().split(/\s+/)
@@ -67,11 +100,35 @@ export async function scoreLetterChallenge(bot) {
     breakdown.push(`+1 for artist name starting with "${letter}"`)
   }
 
+  // 🎧 Popularity Bonus
+  const popularity = bot.currentSong?.popularity || 0
+  let popularityBonus = 0
+
+  if (popularity >= 90) {
+    popularityBonus = 2
+    breakdown.push('🌟 +2 bonus for viral popularity!')
+  } else if (popularity >= 75) {
+    popularityBonus = 1
+    breakdown.push('🔥 +1 bonus for popular pick!')
+  }
+
+  score += popularityBonus
   userPoints[playingDJ] = (userPoints[playingDJ] || 0) + score
+
+  currentRoundPlays.add(playingDJ)
+  const allStageDJs = getCurrentDJUUIDs(bot.state)
+  const allHavePlayed = allStageDJs.every(dj => currentRoundPlays.has(dj))
+
+  let roundEndMessage = ''
+  if (allHavePlayed) {
+    totalRounds++
+    currentRoundPlays.clear()
+    roundEndMessage = `\n\n🏁 **Round ${totalRounds} complete!**\n${getLeaderboard()}`
+  }
 
   await postMessage({
     room: bot.roomUUID,
-    message: `✅ <@uid:${playingDJ}> earned ${score} point(s) for playing *${songTitle}* by *${artistName}* — matching letter "${letter}"!\n${breakdown.join('\n')}\n🎯 Total: ${userPoints[playingDJ]} point(s)`
+    message: `✅ **Scoring time!**\n<@uid:${playingDJ}> earned **${score}** point(s) for *${songTitle}* by *${artistName}* — matching **"${letter}"**! 🔠🎶\n\n${breakdown.map(b => `• ${b}`).join('\n')}\n\n🎯 **Total Points**: ${userPoints[playingDJ]} 🧮${roundEndMessage}`
   })
 
   currentChallengeLetter = null
@@ -85,12 +142,14 @@ export function scheduleLetterChallenge(bot) {
   const challengeStartMs = bot.currentSong.challengeStartMs
   const theme = getTheme(bot.roomUUID)?.toLowerCase()
 
+  // ✅ ENFORCE NAME GAME ONLY
   if (!theme || !theme.includes('name game')) {
+    console.log(`[🎯 NameGame] Theme is not "name game" (found: "${theme}"). Skipping challenge.`)
     return
   }
 
   if (!challengeStartMs || typeof challengeStartMs !== 'number') {
-    console.log('[🎵 NameGame] Invalid challengeStartMs')
+    console.log('[🎯 NameGame] Invalid challengeStartMs')
     return
   }
 
@@ -101,12 +160,22 @@ export function scheduleLetterChallenge(bot) {
 
   letterChallengeTimer = setTimeout(async () => {
     const letter = getRandomLetter()
+    const djUUIDs = getCurrentDJUUIDs(bot.state)
+
+    const currentPlayingDJ = djUUIDs[0]
+    const nextDJ = djUUIDs[1]
+
+    if (!nextDJ) {
+      console.log('[🎯 NameGame] Not enough DJs for next challenge')
+      return
+    }
+
     currentChallengeLetter = letter
-    currentDJ = getCurrentDJUUIDs(bot.state)[0]
+    currentDJ = nextDJ
 
     await postMessage({
       room: bot.roomUUID,
-      message: `🎯 Letter Challenge!\n<@uid:${currentDJ}>, your next song should start with *${letter}* to score points!\n🎁 Bonus for multiple words or matching artist!`
+      message: `🎯 **Letter Challenge Time!** 🔡\n<@uid:${nextDJ}> — your next track must start with **"${letter}"**!\n🎁 Bonus points for multiple matching words, artist name, or track popularity!`
     })
 
     letterChallengeTimer = null

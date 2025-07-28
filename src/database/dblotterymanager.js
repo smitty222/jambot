@@ -2,7 +2,7 @@
 import db from './db.js'
 import { postMessage } from '../libs/cometchat.js'
 import { getUserNickname } from '../handlers/message.js'
-import { addToUserWallet, getUserWallet, removeFromUserWallet } from '../libs/walletManager.js'
+import { addToUserWallet, getUserWallet, removeFromUserWallet } from '../database/dbwalletmanager.js'
 import { findUserIdAndNickname } from '../database/dblotteryquestionparser.js'
 import { storeItems } from '../libs/jamflowStore.js'
 
@@ -67,24 +67,24 @@ export async function handleLotteryNumber(payload) {
   if (isNaN(number) || number < MIN_NUMBER || number > MAX_NUMBER) return
 
   if (lotteryEntries[userId]) {
-    return await postMessage({ room, message: `@${nickname} you already picked ${lotteryEntries[userId]}` })
+    return await postMessage({ room, message: `${nickname} you already picked ${lotteryEntries[userId]}` })
   }
 
   const balance = await getUserWallet(userId)
   if (balance < cost) {
     return await postMessage({
       room,
-      message: `@${nickname} you need $${cost}, but you only have $${balance}.`
+      message: `${nickname} you need $${cost}, but you only have $${balance}.`
     })
   }
 
-  const success = await removeFromUserWallet(userId, cost)
+  const success = removeFromUserWallet(userId, cost)
   if (!success) {
-    return await postMessage({ room, message: `@${nickname} error charging wallet.` })
+    return await postMessage({ room, message: `${nickname} error charging wallet.` })
   }
 
   lotteryEntries[userId] = number
-  await postMessage({ room, message: `@${nickname} entered with #${number}. Good luck! 💸` })
+  await postMessage({ room, message: `${nickname} entered with #${number}. Good luck! 💸` })
 }
 
 // ✅ Draw and process winning number
