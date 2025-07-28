@@ -1,9 +1,7 @@
-# Exclude dependencies and local secrets
+# Keep it minimal so src/ makes it in
 node_modules
 npm-debug.log*
 yarn-debug.log*
 .env*
-
-# Optional: editor and OS cruft
 .DS_Store
 .vscode/
