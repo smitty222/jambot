@@ -1,3 +1,14 @@
+import fs from 'fs';
+import path from 'path';
+
+// DEBUG: list files in src/database at startup
+try {
+  const files = fs.readdirSync(path.join(__dirname, 'database'));
+  console.log('Contents of src/database at runtime:', files);
+} catch (err) {
+  console.error('Could not read src/database:', err);
+}
+
 import 'dotenv/config';
 import express from 'express';
 import { Bot, getCurrentDJUUIDs } from './libs/bot.js';
@@ -52,6 +63,5 @@ app.get('/health', (req, res) => {
 const port = process.env.PORT || 3000;
 app.listen(port, '0.0.0.0', () =>
   console.log(`Listening on ${port}`));
-
 
 export { roomBot };
