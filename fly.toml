@@ -15,12 +15,14 @@ primary_region = "atl"
   min_machines_running = 1
   processes         = ["app"]
 
-  [[http_service.checks]]
-    interval = "30s"
-    timeout  = "5s"
-    method   = "get"
-    path     = "/health"
-    protocol = "http"
+  # Health‑check disabled for debug:
+  # [[http_service.checks]]
+  #   interval = "30s"
+  #   timeout  = "5s"
+  #   method   = "get"
+  #   path     = "/health"
+  #   protocol = "http"
+
 
 # Temporarily disable Fly healthchecks so our debug container stays up
 [checks]
