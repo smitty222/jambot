@@ -7,21 +7,16 @@ primary_region = "atl"
   source      = "data_volume"
   destination = "/data"
 
+[processes]
+  app = "npm start"
+
 [http_service]
-  internal_port     = 3000
-  force_https       = true
-  auto_stop_machines = "off"
+  internal_port       = 3000
+  force_https         = true
+  auto_stop_machines  = "off"
   auto_start_machines = true
   min_machines_running = 1
-  processes         = ["app"]
-
-  # Health‑check disabled for debug:
-  # [[http_service.checks]]
-  #   interval = "30s"
-  #   timeout  = "5s"
-  #   method   = "get"
-  #   path     = "/health"
-  #   protocol = "http"
+  processes           = ["app"]
 
 [[vm]]
   memory   = "1gb"
