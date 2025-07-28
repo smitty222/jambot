@@ -1,24 +1,78 @@
-# syntax=docker/dockerfile:1
-FROM node:20-alpine
+# macOS
+**/.DS_Store
+**/.AppleDouble
+**/.LSOverride
+**/Icon
+**/._*
+**/.DocumentRevisions-V100
+**/.fseventsd
+**/.Spotlight-V100
+**/.TemporaryItems
+**/.Trashes
+**/.VolumeIcon.icns
+**/.com.apple.timemachine.donotpresent
+**/.AppleDB
+**/.AppleDesktop
+**/Network Trash Folder
+**/Temporary Items
+**/.apdisk
+**/*.icloud
 
-# Set working directory
-WORKDIR /app
+# Node logs and runtime files
+**/logs
+**/*.log
+**/npm-debug.log*
+**/yarn-debug.log*
+**/pnpm-debug.log*
+**/report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+**/pids
+**/*.pid
+**/*.seed
+**/*.pid.lock
 
-# Copy dependency definitions
-COPY package*.json ./
+# Coverage & build artifacts
+**/coverage
+**/.nyc_output
+**/.grunt
+**/build/Release
 
-# Install dependencies (omit dev in production)
-RUN npm ci --omit=dev
+# Dependencies
+**/node_modules
+**/jspm_packages
+**/web_modules
 
-# Copy application source
-COPY . .
+# Caches
+**/.cache
+**/.parcel-cache
+**/.next
+**/.nuxt
+**/.cache
+**/.svelte-kit
+**/.docusaurus
+**/.serverless
+**/.webpack
+**/.rpt2_cache
 
-# (Optional) Debug: list contents of src/database to verify dbUserManager.js is present
-RUN echo "Contents of /app/src/database:" \
-    && ls -R /app/src/database
+# Env files
+**/.env
+**/.env.*.local
 
-# Expose the application port
-EXPOSE 3000
+# Editor directories and files
+**/.vscode/*
+!**/.vscode/settings.json
+!**/.vscode/launch.json
+!**/.vscode/tasks.json
+!**/.vscode/extensions.json
+!**/.vscode/*.code-snippets
+**/.history
+**/*.code-workspace
 
-# Start the application
-CMD ["npm", "start"]
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile
+
+# Fly config
+fly.toml
