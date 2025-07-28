@@ -23,11 +23,6 @@ primary_region = "atl"
   #   path     = "/health"
   #   protocol = "http"
 
-
-# Temporarily disable Fly healthchecks so our debug container stays up
-[checks]
-disable_check = true
-
 [[vm]]
   memory   = "1gb"
   cpu_kind = "shared"
