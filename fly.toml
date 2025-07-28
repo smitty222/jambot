@@ -1,24 +1,22 @@
-app = "jamflowbot-v2"
-primary_region = "atl"
+# fly.toml app configuration file generated for jamflowbot-allen-v2 on 2025-07-28T17:31:58-04:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'jamflowbot-allen-v2'
+primary_region = 'atl'
 
 [build]
 
-[[mounts]]
-  source      = "data_volume"
-  destination = "/data"
-
-[processes]
-  app = "npm start"
-
 [http_service]
-  internal_port       = 3000
-  force_https         = true
-  auto_stop_machines  = "off"
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = 'stop'
   auto_start_machines = true
-  min_machines_running = 1
-  processes           = ["app"]
+  min_machines_running = 0
+  processes = ['app']
 
 [[vm]]
-  memory   = "1gb"
-  cpu_kind = "shared"
-  cpus     = 1
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
