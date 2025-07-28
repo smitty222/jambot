@@ -22,4 +22,5 @@ RUN echo "Contents of /app/src/database:" && ls -R /app/src/database
 EXPOSE 3000
 
 # Launch the bot
-CMD ["npm", "start"]
+# DEBUG ENTRYPOINT: list database folder and sleep so VM stays up
+CMD ["sh", "-c", "echo \"Contents of /app/src/database:\" && ls -R /app/src/database && sleep infinity"]
