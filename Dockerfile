@@ -1,25 +1,19 @@
-# syntax=docker/dockerfile:1
-# Use a lightweight Alpine image
-FROM node:20-alpine
-
-# Set production environment
+# Use Node.js 20 base image
+FROM node:20
 ENV NODE_ENV=production
 
 # Set working directory
 WORKDIR /app
 
-# Copy dependency definitions and install only production dependencies
-COPY package*.json ./
-RUN npm ci --omit=dev
+# Install only production dependencies
+COPY ["package.json", "package-lock.json*", "./"]
+RUN npm install --production
 
-# Copy application source code
+# Copy all project files
 COPY . .
 
-# (Optional) Debug: verify database folder contents at build time
-RUN echo "Contents of /app/src/database:" && ls -R /app/src/database
-
-# Expose application port
+# Expose the port
 EXPOSE 3000
 
-# Start the bot normally; runtime debug is handled in code
+# Start the bot
 CMD ["npm", "start"]
