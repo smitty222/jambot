@@ -8,19 +8,18 @@ ENV NODE_ENV=production
 # Set working directory
 WORKDIR /app
 
-# Copy dependency definitions and install only production deps
+# Copy dependency definitions and install only production dependencies
 COPY package*.json ./
 RUN npm ci --omit=dev
 
 # Copy application source code
 COPY . .
 
-# (Debug) Verify database folder is included in build context
+# (Optional) Debug: verify database folder contents at build time
 RUN echo "Contents of /app/src/database:" && ls -R /app/src/database
 
 # Expose application port
 EXPOSE 3000
 
-# Launch the bot
-# DEBUG ENTRYPOINT: list database folder and sleep so VM stays up
-CMD ["sh", "-c", "echo \"Contents of /app/src/database:\" && ls -R /app/src/database && sleep infinity"]
+# Start the bot normally; runtime debug is handled in code
+CMD ["npm", "start"]
