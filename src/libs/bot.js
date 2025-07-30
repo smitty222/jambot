@@ -198,7 +198,8 @@ async processNewMessages() {
         await handlers.message(
           { message: txt, sender, receiverType: 'group' },
           this.roomUUID,
-          this.state
+          this.state,
+          this
         );
       }
 

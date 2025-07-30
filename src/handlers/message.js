@@ -70,7 +70,7 @@ export async function handleDirectMessage(payload) {
   }
 }
 
-export default async (payload, room, state) => {
+export default async (payload, room, state, roomBot) => {
   console.log('[MessageHandler]', payload)
 
   if (!payload?.message) return
