@@ -1917,7 +1917,7 @@ else if (payload.message.startsWith('/addavatar')) {
     const theme    = rawTheme.replace(/\w\S*/g, txt => txt[0].toUpperCase() + txt.slice(1).toLowerCase());
 
     // 1) Update in‐memory and disk
-    bot.currentTheme            = theme;
+    roomBot.currentTheme            = theme;
     roomThemes[room]            = theme;
     themeManager.setTheme(room, theme);
 
