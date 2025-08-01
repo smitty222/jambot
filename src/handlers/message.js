@@ -33,11 +33,12 @@ import * as themeManager from '../utils/themeManager.js'
 import { getUserSongReviews } from '../database/dbroomstatsmanager.js'
 import { fetchOddsForSport, formatOddsMessage } from '../utils/sportsBetAPI.js'
 import { saveOddsForSport, getOddsForSport } from '../utils/bettingOdds.js'
-import { startHorseRace, handleHorseBet, isWaitingForEntries, handleHorseEntryAttempt } from '../games/horserace/handlers/commands.js'
+import { startHorseRace, handleHorseBet, isWaitingForEntries, handleHorseEntryAttempt, handleHorseHelpCommand, handleHorseStatsCommand, handleTopHorsesCommand, handleMyHorsesCommand } from '../games/horserace/handlers/commands.js'
 import { QueueManager } from '../utils/queueManager.js'
 import db from '../database/db.js'
 import { handleAddAvatarCommand } from './addAvatar.js'
 import { getCurrentState } from '../database/dbcurrent.js'
+import { handleThemeCommand } from '../database/dbtheme.js'
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
 export const roomThemes = {}
@@ -694,27 +695,25 @@ Please refresh your page for tha queue to update`
       room,
       message: 'Games:\n- /trivia: Play Trivia\n- /lottery: Play the Lottery\n- /roulette: Play Roulette\n- /slots: Play Slots\n- /blackjack: Play Blackjack\n- /horserace\n- /slotinfo: Display slots payout info\n- /lotto (#):Insert number to get amount of times won\n- /lottostats: Get most won lottery numbers \n- /jackpot: Slots progressive jackpot value'
     })
-  } else if (payload.message.startsWith('/theme')) {
+ } else if (/^(\/theme|\/settheme|\/removetheme)\b/i.test(payload.message.trim())) {
+    console.log('[MessageHandler] routing to theme handler:', payload.message);
+
     try {
-      const theme = roomThemes[room]
-      if (theme) {
-        await postMessage({
-          room,
-          message: `Current theme: ${theme}`
-        })
-      } else {
-        await postMessage({
-          room,
-          message: 'No theme set for the room.'
-        })
-      }
-    } catch (error) {
-      console.error('Error fetching theme:', error)
+      // note: handler expects { sender, room, message }
+      await handleThemeCommand({
+        sender:  payload.sender,
+        room,
+        message: payload.message
+      });
+    } catch (err) {
+      console.error('[MessageHandler] theme handler threw:', err);
+      // optional fallback message:
       await postMessage({
         room,
-        message: 'An error occurred while fetching the theme. Please try again.'
-      })
+        message: '⚠️ Theme command failed—please try again.'
+      });
     }
+    return; 
   } else if (payload.message.startsWith('/djbeers')) {
   try {
     const senderUUID = payload.sender;
@@ -1902,94 +1901,6 @@ else if (payload.message.startsWith('/randomavatar')) {
 ////////////////////////// Add Avatar //////////////////////////
 else if (payload.message.startsWith('/addavatar')) {
   await handleAddAvatarCommand(payload.sender, room, postMessage)
-
-
-  } else if (payload.message.startsWith('/settheme')) {
-  try {
-    const senderUuid = payload.sender;
-    const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken);
-    if (!isAuthorized) {
-      await postMessage({ room, message: 'You need to be a moderator to execute this command.' });
-      return;
-    }
-
-    const rawTheme = payload.message.replace('/settheme', '').trim();
-    const theme    = rawTheme.replace(/\w\S*/g, txt => txt[0].toUpperCase() + txt.slice(1).toLowerCase());
-
-    // 1) Update in‐memory and disk
-    roomBot.currentTheme            = theme;
-    roomThemes[room]            = theme;
-    themeManager.setTheme(room, theme);
-
-    // 2) Choose design/lineup based on theme
-    const lower = theme.toLowerCase();
-    let updatePayload = null;
-
-    if (['albums','album monday','album day'].includes(lower)) {
-      updatePayload = { design: 'FERRY_BUILDING', numberOfDjs: 1 };
-    } else if (['covers','cover friday'].includes(lower)) {
-      updatePayload = { design: 'FESTIVAL',       numberOfDjs: 4 };
-    } else if (lower === 'country') {
-      updatePayload = { design: 'BARN',           numberOfDjs: 4 };
-    } else if (lower === 'rock') {
-      updatePayload = { design: 'UNDERGROUND',    numberOfDjs: 4 };
-    } else if (lower === 'happy hour') {
-      updatePayload = { design: 'TOMORROWLAND',   numberOfDjs: 5 };
-    } else if (lower === 'rap') {
-      updatePayload = { design: 'CLUB',           numberOfDjs: 4 };
-    } else if (lower === 'name game') {
-      updatePayload = { design: 'FESTIVAL',       numberOfDjs: 5 };
-    }
-
-    // 3) Patch the room if needed
-    if (updatePayload) {
-      await updateRoomInfo(updatePayload);
-    }
-
-    // 4) Confirm to chat
-    await postMessage({ room, message: `Theme set to: ${theme}` });
-
-  } catch (error) {
-    console.error('Error setting theme:', error);
-    await postMessage({ room, message: `Error: ${error.message}` });
-  }
-
-    
- } else if (payload.message.startsWith('/removetheme')) {
-  try {
-    const senderUuid = payload.sender;
-    const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken);
-    if (!isAuthorized) {
-      await postMessage({
-        room,
-        message: 'You need to be a moderator or owner to execute this command.'
-      });
-      return;
-    }
-
-    // Reset to default theme "Just Jam"
-    const defaultTheme = 'Just Jam';
-    roomThemes[room]   = defaultTheme;
-    bot.currentTheme   = defaultTheme;
-    themeManager.setTheme(room, defaultTheme);
-
-    // PATCH just-jams with only the allowed fields:
-    await updateRoomInfo({
-      design:      'YACHT',
-      numberOfDjs: 3
-    });
-
-    await postMessage({
-      room,
-      message: `Theme has been reset to: ${defaultTheme}`
-    });
-  } catch (error) {
-    console.error('Error resetting theme:', error);
-    await postMessage({
-      room,
-      message: 'An error occurred while resetting the theme. Please try again.'
-    });
-  }
 }
   else if (payload.message === '/reviewhelp') {
     const helpMessage = `🎧 **How Reviews Work**  
@@ -2033,8 +1944,8 @@ else if (payload.message.startsWith('/addavatar')) {
   }
 
   // 1️⃣ Try in-memory first
-  let song = (bot.currentSong && bot.currentSong.trackName && bot.currentSong.artistName)
-    ? bot.currentSong
+  let song = (roomBot.currentSong && roomBot.currentSong.trackName && roomBot.currentSong.artistName)
+    ? roomBot.currentSong
     : null;
 
   // 2️⃣ Fall back to DB if needed
@@ -2324,8 +2235,8 @@ else if (payload.message.startsWith('/addavatar')) {
   }
 
   // 2️⃣ Try in-memory first
-  let album = (bot.currentAlbum && bot.currentAlbum.albumID && bot.currentAlbum.albumName)
-    ? bot.currentAlbum
+  let album = (roomBot.currentAlbum && roomBot.currentAlbum.albumID && roomBot.currentAlbum.albumName)
+    ? roomBot.currentAlbum
     : null;
 
   // 3️⃣ Fallback to DB if needed
@@ -2760,8 +2671,8 @@ else if (payload.message.startsWith('/addavatar')) {
     }
   } else if (payload.message.startsWith('/song')) {
   // 1) Try in-memory first
-  let song = bot.currentSong && bot.currentSong.trackName
-    ? bot.currentSong
+  let song = roomBot.currentSong && roomBot.currentSong.trackName
+    ? roomBot.currentSong
     : null;
 
   // 2) Fall back to DB if nothing in memory
@@ -2893,8 +2804,8 @@ else if (payload.message.startsWith('/addavatar')) {
 
   } else if (payload.message === '/album') {
   // 1️⃣ Try in‐memory first
-  let song = (bot.currentSong && bot.currentSong.trackName)
-    ? bot.currentSong
+  let song = (roomBot.currentSong && roomBot.currentSong.trackName)
+    ? roomBot.currentSong
     : null;
 
   // 2️⃣ DB fallback
@@ -2937,7 +2848,7 @@ else if (payload.message.startsWith('/addavatar')) {
 
 } else if (payload.message.startsWith('/art')) {
   // 1️⃣ In‐memory first
-  let artUrl = bot.currentSong?.albumArt || null;
+  let artUrl = roomBot.currentSong?.albumArt || null;
 
   // 2️⃣ DB fallback
   if (!artUrl) {
@@ -2956,8 +2867,8 @@ else if (payload.message.startsWith('/addavatar')) {
 
   } else if (payload.message.startsWith('/score')) {
   // 1️⃣ In-memory first
-  let song = (bot.currentSong && bot.currentSong.trackName)
-    ? bot.currentSong
+  let song = (roomBot.currentSong && roomBot.currentSong.trackName)
+    ? roomBot.currentSong
     : null;
 
   // 2️⃣ DB fallback

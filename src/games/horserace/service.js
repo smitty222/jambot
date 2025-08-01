@@ -1,34 +1,33 @@
-// src/games/horserace/service.js
-
 import { EventEmitter } from 'events';
 
-// ─── Event Bus ───────────────────────────────────────────────────────────────
-// Used to emit and listen for “betsClosed” so the simulation can start
+/**
+ * Event bus for the horse race lifecycle.
+ */
 export const bus = new EventEmitter();
 
-// ─── safeCall retry-wrapper ──────────────────────────────────────────────────
 /**
- * Wrap any async function call with retries + delay between attempts.
- *
- * @param {Function} fn        The async function to call
- * @param {Array}    args      Arguments to pass to fn
- * @param {number}   retries   How many retries (default: 2)
- * @param {number}   delayMs   Milliseconds to wait between retries (default: 500)
- * @returns {Promise<*>}       Resolves with fn(...args) or rejects after all retries
+ * Executes an async function with retry support.
+ * @param {Function} fn - Async function to call.
+ * @param {Array} args - Arguments for fn.
+ * @param {number} retries - Number of retry attempts.
+ * @param {number} delayMs - Delay between retries in ms.
+ * @returns {Promise<*>} Result of fn.
+ * @throws Error when all attempts fail.
  */
 export async function safeCall(fn, args = [], retries = 2, delayMs = 500) {
   let lastError;
-  for (let attempt = 0; attempt <= retries; attempt++) {
+  for (let i = 0; i <= retries; i++) {
     try {
       return await fn(...args);
     } catch (err) {
       lastError = err;
-      if (attempt < retries) {
-        // Wait before retrying
-        await new Promise(res => setTimeout(res, delayMs));
-      }
+      if (i < retries) await new Promise(res => setTimeout(res, delayMs));
     }
   }
-  // All retries failed
-  throw lastError;
+
+  const error = new Error(
+    `${fn.name || 'anonymous'} failed after ${retries + 1} attempts: ${lastError.message}`
+  );
+  error.cause = lastError;
+  throw error;
 }
