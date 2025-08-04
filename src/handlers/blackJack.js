@@ -47,7 +47,7 @@ function getCardValue(card) {
   return parseInt(card.value)
 }
 
-function canSplitHand(hand) {
+export function canSplitHand(hand) {
   return hand.length === 2 && getCardValue(hand[0]) === getCardValue(hand[1])
 }
 

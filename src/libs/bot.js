@@ -313,108 +313,106 @@ async processNewMessages() {
       }
 
       // --- Handle playedSong event ---
-      if (payload.name === 'playedSong') {
+if (payload.name === 'playedSong') {
 
-        const currentDJs = getCurrentDJUUIDs(this.state);
+  const currentDJs = getCurrentDJUUIDs(this.state);
+  if (currentDJs.length === 0) {
+    console.log('No DJs on stage, skipping playedSong processing.');
+    return;
+  }
 
-          if (currentDJs.length === 0) {
-          console.log('No DJs on stage, skipping playedSong processing.');
-          return;
-          }
-        try {
-          // Fetch full song info from room-service API
-          const currentlyPlaying = await fetchCurrentlyPlayingSong()
+  try {
+    // Fetch full song info from room-service API
+    const currentlyPlaying = await fetchCurrentlyPlayingSong();
 
-          // Set currentSong using full data, fallback to payload data if missing
-          this.currentSong = {
-            trackName: currentlyPlaying.trackName || payload.data?.song?.trackName || 'Unknown',
-            artistName: currentlyPlaying.artistName || payload.data?.song?.artistName || 'Unknown',
-            songId: currentlyPlaying.songId || payload.data?.song?.songId || '',
-            songDuration: currentlyPlaying.duration || payload.data?.song?.duration || 'Unknown',
-            isrc: currentlyPlaying.isrc || 'Unknown',
-            explicit: currentlyPlaying.explicit || false,
-            albumName: currentlyPlaying.albumName || 'Unknown',
-            releaseDate: currentlyPlaying.releaseDate || 'Unknown',
-            thumbnails: currentlyPlaying.thumbnails || {},
-            links: currentlyPlaying.links || {},
-            musicProviders: currentlyPlaying.musicProviders || {},
-            playbackToken: currentlyPlaying.playbackToken || null,
-            status: currentlyPlaying.status || null,
-            spotifyTrackId: '',
-            albumType: 'Unknown',
-            trackNumber: 'Unknown',
-            totalTracks: 'Unknown',
-            albumArt: '',
-            popularity: 0,
-            previewUrl: '',
-            albumID: 'Unknown'
-          }
+    // Set currentSong using full data, fallback to payload data if missing
+    this.currentSong = {
+      trackName:      currentlyPlaying.trackName    || payload.data?.song?.trackName    || 'Unknown',
+      artistName:     currentlyPlaying.artistName   || payload.data?.song?.artistName  || 'Unknown',
+      songId:         currentlyPlaying.songId       || payload.data?.song?.songId      || '',
+      songDuration:   currentlyPlaying.duration     || payload.data?.song?.duration    || 'Unknown',
+      isrc:           currentlyPlaying.isrc         || 'Unknown',
+      explicit:       currentlyPlaying.explicit     || false,
+      albumName:      currentlyPlaying.albumName    || 'Unknown',
+      releaseDate:    currentlyPlaying.releaseDate  || 'Unknown',
+      thumbnails:     currentlyPlaying.thumbnails   || {},
+      links:          currentlyPlaying.links        || {},
+      musicProviders: currentlyPlaying.musicProviders || {},
+      playbackToken:  currentlyPlaying.playbackToken || null,
+      status:         currentlyPlaying.status       || null,
+      spotifyTrackId: '',
+      albumType:      'Unknown',
+      trackNumber:    'Unknown',
+      totalTracks:    'Unknown',
+      albumArt:       '',
+      popularity:     0,
+      previewUrl:     '',
+      albumID:        'Unknown'
+    };
 
-          const songDurationMs = parseDurationToMs(this.currentSong.songDuration);
-          const challengeStartMs = Math.max(0, songDurationMs - 40000); // 30 seconds before end
+    const songDurationMs   = parseDurationToMs(this.currentSong.songDuration);
+    const challengeStartMs = Math.max(0, songDurationMs - 40000); // 40s before end
+    this.currentSong.challengeStartMs = challengeStartMs;
 
-          this.currentSong.challengeStartMs = challengeStartMs;
+    // If Spotify info exists, enrich currentSong further
+    if (this.currentSong.musicProviders.spotify) {
+      const spotifyTrackId  = this.currentSong.musicProviders.spotify;
+      const spotifyDetails  = await spotifyTrackInfo(spotifyTrackId);
 
-          // If Spotify info exists, enrich currentSong further
-          if (this.currentSong.musicProviders.spotify) {
-            const spotifyTrackId = this.currentSong.musicProviders.spotify
-            const spotifyDetails = await spotifyTrackInfo(spotifyTrackId)
+      if (spotifyDetails) {
+        this.currentSong = {
+          ...this.currentSong,
+          spotifyTrackId,
+          albumType:   spotifyDetails.spotifyAlbumType   || 'Unknown',
+          trackNumber: spotifyDetails.spotifyTrackNumber || 'Unknown',
+          totalTracks: spotifyDetails.spotifyTotalTracks || 'Unknown',
+          popularity:  spotifyDetails.spotifyPopularity   || 0,
+          previewUrl:  spotifyDetails.spotifyPreviewUrl   || '',
+          isrc:        spotifyDetails.spotifyIsrc         || this.currentSong.isrc,
+          albumID:     spotifyDetails.spotifyAlbumID     || 'Unknown',
+          albumArt:    spotifyDetails.spotifyAlbumArt    || ''
+        };
 
-            if (spotifyDetails) {
-              this.currentSong = {
-                ...this.currentSong,
-                spotifyTrackId,
-                albumType: spotifyDetails.spotifyAlbumType || 'Unknown',
-                trackNumber: spotifyDetails.spotifyTrackNumber || 'Unknown',
-                totalTracks: spotifyDetails.spotifyTotalTracks || 'Unknown',
-                popularity: spotifyDetails.spotifyPopularity || 0,
-                previewUrl: spotifyDetails.spotifyPreviewUrl || '',
-                isrc: spotifyDetails.spotifyIsrc || this.currentSong.isrc || 'Unknown',
-                albumID: spotifyDetails.spotifyAlbumID || 'Unknown',
-                albumArt: spotifyDetails.spotifyAlbumArt || ''
-              }
+        // ── ALWAYS update currentAlbum here ──
+        this.currentAlbum = {
+          albumID:     spotifyDetails.spotifyAlbumID,
+          albumName:   spotifyDetails.spotifyAlbumName,
+          artistName:  spotifyDetails.spotifyArtistName,
+          releaseDate: spotifyDetails.spotifyReleaseDate,
+          albumArt:    spotifyDetails.spotifyAlbumArt,
+          trackCount:  spotifyDetails.spotifyTotalTracks
+        };
+        console.log('✔️  Updated currentAlbum:', this.currentAlbum);
 
-              // Album theme logic (optional)
-              if (roomThemes[this.roomUUID]?.toLowerCase().includes('album')) {
-                if (
-                  this.currentSong.trackNumber === 1 ||
-                  !this.currentAlbum ||
-                  this.currentAlbum.albumID !== this.currentSong.albumID
-                ) {
-                  this.currentAlbum = {
-                    albumID: spotifyDetails.spotifyAlbumID,
-                    albumName: spotifyDetails.spotifyAlbumName,
-                    albumArt: spotifyDetails.spotifyAlbumArt,
-                    artistName: spotifyDetails.spotifyArtistName,
-                    trackCount: spotifyDetails.spotifyTotalTracks,
-                    releaseDate: spotifyDetails.spotifyReleaseDate
-                  }
-                  console.log('Set new album review data:', this.currentAlbum)
-                }
-              }
-            }
-          }
+        // Album-theme messaging (if enabled)
+        const theme       = (roomThemes[this.roomUUID] || '').toLowerCase();
+        const albumThemes = ['album monday', 'albums', 'album day'];
+        if (albumThemes.includes(theme)) {
+          await handleAlbumTheme(payload);
+        }
+      }
+    }
 
-              // Persist the latest state
-            try {
-              saveCurrentState({
-                currentSong:  this.currentSong,
-                currentAlbum: this.currentAlbum
-              });
-              console.log('✔️ Saved currentSong/currentAlbum to DB');
-            } catch (err) {
-              console.error('Failed to save current state:', err);
-            }
+    // Persist the latest state
+    try {
+      saveCurrentState({
+        currentSong:  this.currentSong,
+        currentAlbum: this.currentAlbum
+      });
+      console.log('✔️ Saved currentSong/currentAlbum to DB');
+    } catch (err) {
+      console.error('Failed to save current state:', err);
+    }
 
-          const theme = (roomThemes[this.roomUUID] || '').toLowerCase()
-          const albumThemes = ['album monday', 'albums', 'album day']
-          const isAlbumTheme = albumThemes.includes(theme)
+    const theme       = (roomThemes[this.roomUUID] || '').toLowerCase();
+    const albumThemes = ['album monday', 'albums', 'album day'];
+    const isAlbumTheme = albumThemes.includes(theme);
 
-          if (isAlbumTheme) {
-            await handleAlbumTheme(payload) // Album theme gets its own message
-          } else {
-           await announceNowPlaying(this.roomUUID)
-          }
+    if (isAlbumTheme) {
+      await handleAlbumTheme(payload); // Album theme gets its own message
+    } else {
+      await announceNowPlaying(this.roomUUID);
+    }
           // Log the song stats
           try {
             logCurrentSong(this.currentSong, 0, 0, 0)

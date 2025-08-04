@@ -91,21 +91,22 @@ export function getNicknamesFromWallets() {
 }
 
 
-export async function addDollarsByNickname(nickname, amount) {
+export async function addDollarsByUUID(userUuid, amount) {
   if (typeof amount !== 'number' || amount <= 0) {
-    console.error('Invalid amount:', amount)
-    return
+    console.error('Invalid amount:', amount);
+    return;
   }
 
-  const row = db.prepare('SELECT uuid FROM users WHERE LOWER(nickname) = ?').get(nickname.toLowerCase())
-  if (!row) {
-    console.error(`User with nickname ${nickname} not found.`)
-    return
-  }
+  // Lookup the nickname (optional, but nice for logging)
+  const row = db.prepare('SELECT nickname FROM users WHERE uuid = ?').get(userUuid);
 
-  await addToUserWallet(row.uuid, amount, nickname)
-  console.log(`Added $${amount} to ${nickname}'s wallet.`)
+  const nickname = row?.nickname || 'Unknown';
+
+  await addToUserWallet(userUuid, amount, nickname);
+
+  console.log(`Added $${amount} to ${nickname}'s wallet (${userUuid}).`);
 }
+
 
 export function getBalanceByNickname(nickname) {
   const row = db.prepare(`

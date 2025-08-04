@@ -17,9 +17,9 @@ import {
   showAllBets,
   rouletteGameActive
 } from './roulette.js'
-import { getBalanceByNickname, getNicknamesFromWallets, addDollarsByNickname, loadWallets, removeFromUserWallet, getUserWallet } from '../database/dbwalletmanager.js'
+import { getBalanceByNickname, getNicknamesFromWallets, addDollarsByUUID, loadWallets, removeFromUserWallet, getUserWallet } from '../database/dbwalletmanager.js'
 import { getJackpotValue, handleSlotsCommand } from './slots.js'
-import { joinTable, handleBlackjackBet, handleHit, handleStand, gameState } from '../handlers/blackJack.js'
+import { joinTable, handleBlackjackBet, handleHit, handleStand, gameState, canSplitHand } from '../handlers/blackJack.js'
 import { updateAfkStatus, isUserAfkAuthorized, userTokens } from './afk.js'
 import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand, handleRandomCyberCommand, handleVibesGuyCommand, handleFacesCommand } from './avatarCommands.js'
 import { markUser, getMarkedUser} from '../utils/removalQueue.js'
@@ -39,6 +39,11 @@ import db from '../database/db.js'
 import { handleAddAvatarCommand } from './addAvatar.js'
 import { getCurrentState } from '../database/dbcurrent.js'
 import { handleThemeCommand } from '../database/dbtheme.js'
+import { routeCrapsMessage } from '../games/craps/message.js'
+import { crapsState } from '../games/craps/crapsState.js'
+import '../games/craps/crapsController.js';
+
+
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
 export const roomThemes = {}
@@ -53,7 +58,6 @@ const queueManager = new QueueManager(
 export async function getUserNickname(userId) {
   return `<@uid:${userId}>`
 }
-
 
 export async function handleDirectMessage(payload) {
   const sender = payload.sender
@@ -76,7 +80,7 @@ export default async (payload, room, state, roomBot) => {
 
   if (!payload?.message) return
 
-
+  const txt = payload.message.trim();
 
    // ─── HORSE‐RACE ENTRY & COMMANDS ────────────────────────────────────────
 
@@ -112,6 +116,45 @@ export default async (payload, room, state, roomBot) => {
 
   // ─── END HORSE‐RACE BLOCK ────────────────────────────────────────────────
 
+
+ // ─── CRAPS ENTRY & COMMANDS ────────────────────────────────────────────
+
+  // 1) Help / rules
+  if (/^\/craps\s+(help|rules)\b/i.test(txt)) {
+    console.log('▶ dispatch → routeCrapsMessage');
+    return routeCrapsMessage(payload);
+  }
+
+  // 2) Start
+  if (/^\/craps\s+start\b/i.test(txt)) {
+    console.log('▶ dispatch → routeCrapsMessage');
+    return routeCrapsMessage(payload);
+  }
+
+  // 3) Join
+  if (crapsState.canJoinTable && /^\/join\b/i.test(txt)) {
+    console.log('▶ dispatch → routeCrapsMessage');
+    return routeCrapsMessage(payload);
+  }
+
+  // 4) Craps-related bets (valid during any betting window)
+if (crapsState.isBetting && /^\/(pass|dontpass|come|place)\b/i.test(txt)) {
+  console.log('▶ dispatch → routeCrapsMessage');
+  return routeCrapsMessage(payload);
+}
+
+
+  // 5) Dice roll (valid during both AWAIT_ROLL and POINT phases)
+  if (
+    !crapsState.isBetting &&
+    ['AWAIT_ROLL', 'POINT'].includes(crapsState.phase) &&
+    /^\/roll\b/i.test(txt)
+  ) {
+    console.log('▶ dispatch → routeCrapsMessage');
+    return routeCrapsMessage(payload);
+  }
+
+// ─── END CRAPS BLOCK ────────────────────────────────────────────────────
 
   // Handle Gifs Sent in Chat
   if (payload.message.type === 'ChatGif') {
@@ -1798,48 +1841,58 @@ if (payload.message.startsWith('/table')) {
       }
     }
 
-  if (payload.message.startsWith('/addmoney')) {
-    const senderUuid = payload.sender
-    const userIsOwner = await isUserOwner(senderUuid, ttlUserToken) // Renamed variable
+   else if (payload.message.startsWith('/addmoney')) {
+  const senderUuid = payload.sender;
+  const userIsOwner = await isUserOwner(senderUuid, ttlUserToken);
 
-    if (!userIsOwner) { // Use the new variable name here
-      await postMessage({
-        room,
-        message: 'Only Rsmitty can use this command.'
-      })
-      return // Exit if the user is not authorized
-    }
-
-    // Split the message to extract nickname and amount
-    const args = payload.message.split(' ').slice(1) // Get arguments after the command
-    if (args.length !== 2) {
-      await postMessage({
-        room,
-        message: 'Usage: /addmoney <nickname> <amount>'
-      })
-      return // Exit if the arguments are not valid
-    }
-
-    const nickname = args[0] // First argument is the nickname
-    const amount = parseFloat(args[1]) // Second argument is the amount
-
-    // Check if the amount is valid
-    if (isNaN(amount) || amount <= 0) {
-      await postMessage({
-        room,
-        message: 'Please provide a valid amount greater than zero.'
-      })
-      return // Exit if the amount is invalid
-    }
-
-    // Call the addDollarsByNickname function
-    await addDollarsByNickname(nickname, amount)
-
-    // Confirm to the user that the amount has been added
+  if (!userIsOwner) {
     await postMessage({
       room,
-      message: `Added $${amount} to ${nickname}'s wallet.`
-    })
+      message: 'Only Rsmitty can use this command.'
+    });
+    return;
+  }
+
+  const args = payload.message.split(' ').slice(1);
+  if (args.length !== 2) {
+    await postMessage({
+      room,
+      message: 'Usage: /addmoney <@User> <amount>'
+    });
+    return;
+  }
+
+  const mention = args[0];
+  const amount = parseFloat(args[1]);
+
+  if (isNaN(amount) || amount <= 0) {
+    await postMessage({
+      room,
+      message: 'Please provide a valid amount greater than zero.'
+    });
+    return;
+  }
+
+  // Extract the UID from the format <UID:uuid>
+  const uidMatch = mention.match(/<@uid:([\w-]+)>/i);
+  if (!uidMatch) {
+    await postMessage({
+      room,
+      message: 'Please mention a user like this: @User'
+    });
+    return;
+  }
+
+  const userUuid = uidMatch[1];
+
+  // Call the addDollarsByUUID function
+  await addDollarsByUUID(userUuid, amount);
+
+  // Confirm to the room
+  await postMessage({
+    room,
+    message: `💸 Added $${amount} to user <@uid:${userUuid}>'s wallet.`
+  });
   
   /// ///////////////// BOT PROFILE UPDATES //////////////////////
 } else if (payload.message.startsWith('/bot1')) {
@@ -2675,19 +2728,20 @@ else if (payload.message.startsWith('/addavatar')) {
     ? roomBot.currentSong
     : null;
 
-  // 2) Fall back to DB if nothing in memory
-  if (!song) {
-    const row = getCurrentState();
-    if (row && row.trackName) {
-      song = {
-        trackName:      row.trackName,
-        artistName:     row.artistName,
-        spotifyUrl:     row.spotifyUrl,
-        songDuration:   row.songDuration,
-        songId:         row.songId
-      };
-    }
+  // new fallback (correct)
+if (!song) {
+  const row = getCurrentState();
+  if (row?.currentSong?.trackName) {
+    const cs = row.currentSong;
+    song = {
+      trackName:    cs.trackName,
+      artistName:   cs.artistName,
+      spotifyUrl:   cs.spotifyUrl,
+      songDuration: cs.songDuration,
+      songId:       cs.songId
+    };
   }
+}
 
   if (song) {
     const details = [
@@ -2803,46 +2857,36 @@ else if (payload.message.startsWith('/addavatar')) {
   }
 
   } else if (payload.message === '/album') {
-  // 1️⃣ Try in‐memory first
-  let song = (roomBot.currentSong && roomBot.currentSong.trackName)
-    ? roomBot.currentSong
+  // 1) In-memory first
+  let album = roomBot.currentAlbum?.albumName
+    ? roomBot.currentAlbum
     : null;
 
-  // 2️⃣ DB fallback
-  if (!song) {
+  // 2) DB fallback
+  if (!album) {
     const row = getCurrentState();
-    if (row && row.trackName) {
-      song = {
-        trackName:   row.trackName,
-        albumName:   row.albumName,
-        artistName:  row.artistName,
-        trackNumber: row.trackNumber,
-        totalTracks: row.totalTracks,
-        albumArt:    row.albumArt
-      };
+    if (row?.currentAlbum?.albumName) {
+      album = row.currentAlbum;
     }
   }
 
-  if (song) {
-    const albumDetails = [
-      `🎨 Album Art: ${song.albumArt || 'N/A'}`,
-      `💿 Album Name: ${song.albumName}`,
-      `👤 Artist: ${song.artistName}`,
-      `🎵 Track: ${song.trackName}`,
-      `🔢 Track ${song.trackNumber} of ${song.totalTracks}`
-    ].join('\n');
+  if (album?.albumName) {
+    // Build text payload (no image URL in here)
+    const lines = [
+      `💿 Album: ${album.albumName}`,
+      `👤 Artist: ${album.artistName}`,
+      album.releaseDate ? `📅 Released: ${album.releaseDate}` : null
+    ].filter(Boolean);
+    await postMessage({ room, message: lines.join('\n') });
 
-    // send text
-    await postMessage({ room, message: albumDetails });
-
-    // send image if we have one
-    if (song.albumArt) {
-      await postMessage({ room, images: [song.albumArt] });
+    // Send only the image
+    if (album.albumArt) {
+      await postMessage({ room, images: [ album.albumArt ] });
     }
   } else {
     await postMessage({
       room,
-      message: 'No song is currently playing or track info is missing.'
+      message: 'No album is currently playing or album info is missing.'
     });
   }
 
