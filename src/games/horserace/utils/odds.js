@@ -1,87 +1,43 @@
-// src/games/horserace/utils/odds.js
+// horserace/utils/odds.js
 
-/**
- * Round `value` to the nearest multiple of `step`.
- * @param {number} value
- * @param {number} [step=0.05]
- * @returns {number}
- */
 function roundTo(value, step = 0.05) {
   return Math.round(value / step) * step;
 }
 
 /**
- * Compute dynamic odds based on performance & ownership.
- *
- * @param {object}  horse
- * @param {number}  horse.baseOdds
- * @param {number}  [horse.wins=0]
- * @param {number}  [horse.racesParticipated=1]
- * @param {string}  [horse.ownerId]
- * @param {number}  [horse.careerEarnings=0]
- * @param {number}  [horse.price=100]
- * @returns {number}  Decimal odds, never below floor.
+ * Compute dynamic decimal odds from baseOdds + basic form.
+ * Owner horses get slightly tighter odds than bots.
  */
 export function getCurrentOdds(horse) {
-  const {
-    name = '<unknown>',
-    baseOdds,
-    wins = 0,
-    racesParticipated = 1,
-    ownerId,
-    careerEarnings = 0,
-    price = 100,
-  } = horse;
+  const base = Number(horse?.baseOdds ?? 3.0);
 
-  const winRate = wins / racesParticipated;
-  console.log(`[ODDS_UTIL] getCurrentOdds('${name}') → baseOdds=${baseOdds}, wins=${wins}, races=${racesParticipated}, winRate=${winRate.toFixed(2)}`);
+  const wins  = Number(horse?.wins ?? 0);
+  const races = Number(horse?.racesParticipated ?? 0);
+  const form  = races > 0 ? wins / races : 0;
 
-  let odds;
-  if (ownerId && ownerId !== 'allen') {
-    // User-owned horses: mix ROI + form
-    const roi = (careerEarnings / (racesParticipated * price)) || 0;
-    odds = baseOdds / (1 + winRate * 0.4 + roi * 0.6);
-    const raw = Math.max(1.1, roundTo(odds, 0.05));
-    console.log(`[ODDS_UTIL] getCurrentOdds('${name}') → ownerId detected, roi=${roi.toFixed(2)}, rawOdds=${raw}`);
-    return raw;
-  } else {
-    // Bot horses: only form
-    odds = baseOdds / (1 + winRate * 0.6);
-    const raw = Math.max(1.2, roundTo(odds, 0.05));
-    console.log(`[ODDS_UTIL] getCurrentOdds('${name}') → bot horse, rawOdds=${raw}`);
-    return raw;
-  }
+  // Tweak: better form -> lower odds
+  let dec = base * (1.0 - Math.min(0.4, form * 0.35));
+
+  // Nudge for owner vs bot
+  const isBot = !horse?.ownerId || horse.ownerId === 'allen';
+  dec *= isBot ? 1.0 : 0.95;
+
+  // Guardrails
+  dec = Math.max(1.2, roundTo(dec, 0.05));
+  return dec;
 }
 
 /**
- * Format odds for display, both decimal and (simple) fraction.
- *
- * In 'fraction' mode we round the decimal to the nearest integer,
- * then display as "N/1" (e.g. 5.0 → "5/1", 4.3 → "4/1").
- *
- * @param {number}  dec    Decimal odds (e.g. 2.5)
- * @param {'decimal'|'dec'|'fraction'|'frac'} [mode='fraction']
- * @returns {string}
+ * Format odds as "N/1" (fraction-ish) or decimal string.
+ * @param {number} dec
+ * @param {'fraction'|'frac'|'decimal'|'dec'} [mode='fraction']
  */
 export function formatOdds(dec, mode = 'fraction') {
-  const m = mode.toLowerCase();
-  console.log(`[ODDS_UTIL] formatOdds(dec=${dec}, mode='${m}')`);
-
-  if (m === 'fraction' || m === 'frac') {
-    // Round to nearest whole number, then display N/1
-    const whole = Math.round(dec);
-    const out = `${whole}/1`;
-    console.log(`[ODDS_UTIL] formatOdds → fraction output='${out}'`);
-    return out;
+  const d = Number(dec || 0);
+  if (mode === 'decimal' || mode === 'dec') {
+    return d.toFixed(2);
   }
-
-  if (m === 'decimal' || m === 'dec') {
-    // Always show one decimal place ("1.0" not "1")
-    const out = dec.toFixed(1);
-    console.log(`[ODDS_UTIL] formatOdds → decimal output='${out}'`);
-    return out;
-  }
-
-  console.error(`[ODDS_UTIL] formatOdds → unsupported mode '${mode}'`);
-  throw new Error(`formatOdds: unsupported mode "${mode}"`);
+  // crude but readable: 4.3 -> "4/1"
+  const n = Math.max(1, Math.round(d));
+  return `${n}/1`;
 }

@@ -1,269 +1,379 @@
-
 // src/games/craps/service.js
 import { EventEmitter } from 'events';
-import { rollDice } from './utils/dice.js';
-import { crapsState } from './crapsState.js';
+import { crapsState, PHASES } from './crapsState.js';
 import { addToUserWallet, removeFromUserWallet } from '../../database/dbwalletmanager.js';
-import { getUserNickname } from '../../handlers/message.js';
 
-const JOIN_MS = 30_000;
-const BET_MS = 30_000;
+const POINT_NUMBERS = new Set([4, 5, 6, 8, 9, 10]);
+
+function ensureUserMapSlot(map, userId) {
+  if (!map[userId]) map[userId] = 0;
+}
+
+function ensureNumberMapSlot(map, userId) {
+  if (!map[userId]) map[userId] = { 4:0, 5:0, 6:0, 8:0, 9:0, 10:0 };
+}
+
+function placeProfitRatio(n) {
+  // Profit ratios for Place wins (profit only, not including stake)
+  // 4/10 → 9:5; 5/9 → 7:5; 6/8 → 7:6
+  if (n === 4 || n === 10) return 9/5;
+  if (n === 5 || n === 9)  return 7/5;
+  if (n === 6 || n === 8)  return 7/6;
+  return 0;
+}
+
+function resetBets() {
+  crapsState.passBets = Object.create(null);
+  crapsState.dontPassBets = Object.create(null);
+  crapsState.comePending = Object.create(null);
+  crapsState.comeOn = Object.create(null);
+  crapsState.placeBets = Object.create(null);
+}
 
 export class CrapsTable extends EventEmitter {
   constructor() {
     super();
   }
 
-  startRound() {
-    console.log('[CrapsTable] → startRound: entering JOIN phase');
-    crapsState.passBets = {};
-    crapsState.dontPassBets = {};
-    crapsState.comeBets = {};
-    crapsState.placeBets = {};
+  // ----- Round / Betting control -----
+  startRound({ betWindowMs = 12000 } = {}) {
+    if (!crapsState.tableUsers.length) {
+      this.emit('systemNotice', 'No players at the table. Type `/join` to sit.');
+      return;
+    }
+
+    // New round baseline
+    crapsState.phase = PHASES.COME_OUT;
     crapsState.point = null;
-    crapsState.phase = 'JOIN';
-    crapsState.canJoinTable = true;
     crapsState.isBetting = false;
-    crapsState.isRolling = false;
-    crapsState.currentShooterRollCount = 0;
+    crapsState.canJoinTable = true;
+    crapsState.rollsThisRound = 0;
+    crapsState.lastRoll = null;
+    clearTimeout(crapsState.bettingTimeout);
+    resetBets();
+
     this.emit('roundStart');
 
-    clearTimeout(crapsState.bettingTimeout);
-    crapsState.bettingTimeout = setTimeout(() => this._startComeOut(), JOIN_MS);
+    this.openBetting({ phase: PHASES.COME_OUT, betWindowMs });
   }
 
-  _startComeOut() {
-    console.log('[CrapsTable] → _startComeOut: entering COME_OUT phase');
-    crapsState.phase = 'COME_OUT';
-    crapsState.canJoinTable = false;
+  openBetting({ phase = crapsState.phase, betWindowMs = 10000 } = {}) {
+    if (phase !== crapsState.phase) return;
+
+    // Toggle bets ON and announce
     crapsState.isBetting = true;
-    crapsState.isRolling = false;
-    this.emit('betsOpen', { phase: 'COME_OUT', ms: BET_MS });
+    this.emit('betsOpen', { phase, durationMs: betWindowMs });
 
     clearTimeout(crapsState.bettingTimeout);
-    crapsState.bettingTimeout = setTimeout(() => this._closeBetsAndAwaitRoll(), BET_MS);
-  }
-
-  _closeBetsAndAwaitRoll() {
-    console.log('[CrapsTable] → _closeBetsAndAwaitRoll: closing COME_OUT bets');
-    crapsState.isBetting = false;
-    crapsState.phase = 'AWAIT_ROLL';
-    crapsState.isRolling = false;
-    this.emit('betsClosed', { phase: 'COME_OUT' });
-  }
-
-  async doRoll() {
-    if (crapsState.isRolling) {
-      console.log('[CrapsTable] → doRoll: roll ignored, already rolling');
-      return;
-    }
-
-    crapsState.isRolling = true;
-    crapsState.currentShooterRollCount++;
-
-    const { d1, d2, total } = rollDice();
-    console.log(`[CrapsTable] → doRoll: rolled ${d1} + ${d2} = ${total} in phase ${crapsState.phase}`);
-
-    this.emit('rollResult', { d1, d2, total });
-
-    const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-    const finish = async (resultType) => {
-      const passKeys = Object.keys(crapsState.passBets);
-      const dpKeys = Object.keys(crapsState.dontPassBets);
-      const resultData = {
-        outcome: resultType,
-        roll: total,
-        passWinners: resultType === 'pass' ? passKeys : [],
-        passLosers: resultType === 'dontpass' ? passKeys : [],
-        dpWinners: resultType === 'dontpass' ? dpKeys : [],
-        dpLosers: resultType === 'pass' ? dpKeys : [],
-        pushOn12: total === 12 && resultType === 'push'
-      };
-
-      await wait(1200);
-      this._endRound(resultData);
-    };
-
-    if (['COME_OUT', 'AWAIT_ROLL'].includes(crapsState.phase)) {
-      if ([7, 11].includes(total)) return await finish('pass');
-      if ([2, 3].includes(total)) return await finish('dontpass');
-      if (total === 12) return await finish('push');
-
-      await wait(1000);
-      if (!crapsState.point) this._startPointPhase(total);
-      crapsState.isRolling = false;
-      return;
-    }
-
-    if (crapsState.phase === 'POINT') {
-      await wait(1000);
-
-      this.resolveComeBets(total);
-      this.resolvePlaceBets(total);
-
-      if (total === crapsState.point) return await finish('pass');
-      if (total === 7) return await finish('dontpass');
-
-      crapsState.isRolling = false;
-    }
-  }
-
-  _startPointPhase(point) {
-    console.log(`[CrapsTable] → _startPointPhase: setting point to ${point}`);
-    crapsState.phase = 'POINT';
-    crapsState.point = point;
-    crapsState.isBetting = true;
-
-    this.emit('betsOpen', { phase: 'POINT' });
-
     crapsState.bettingTimeout = setTimeout(() => {
       crapsState.isBetting = false;
-      const shooterId = crapsState.tableUsers[crapsState.currentShooter];
-      this.emit('betsClosed', { shooter: shooterId });
-    }, BET_MS);
+      this.emit('betsClosed', { phase });
+    }, betWindowMs);
   }
 
-  _endRound(resultData) {
-    console.log('[CrapsTable] → _endRound: resolving round and rotating shooter', resultData);
-    this.emit('roundEnd', resultData);
-    clearTimeout(crapsState.bettingTimeout);
-
-    const currentShooterId = crapsState.tableUsers[crapsState.currentShooter];
-    crapsState.shooterHistory ??= new Set();
-    crapsState.shooterHistory.add(currentShooterId);
-
-    const numPlayers = crapsState.tableUsers.length;
-
-    if (!crapsState.records) crapsState.records = { maxRolls: 0, shooter: null };
-
-    if (crapsState.currentShooterRollCount > crapsState.records.maxRolls) {
-      crapsState.records.maxRolls = crapsState.currentShooterRollCount;
-      crapsState.records.shooter = currentShooterId;
+  // ----- Seat / table management -----
+  addPlayer(userId) {
+    if (!crapsState.canJoinTable) return { ok: false, reason: 'JOIN_CLOSED' };
+    if (!crapsState.tableUsers.includes(userId)) {
+      crapsState.tableUsers.push(userId);
+      // Initialize their maps
+      ensureUserMapSlot(crapsState.passBets, userId);
+      ensureUserMapSlot(crapsState.dontPassBets, userId);
+      ensureUserMapSlot(crapsState.comePending, userId);
+      ensureNumberMapSlot(crapsState.comeOn, userId);
+      ensureNumberMapSlot(crapsState.placeBets, userId);
     }
+    return { ok: true };
+  }
 
-    crapsState.phase = 'IDLE';
-    crapsState.canJoinTable = false;
-    crapsState.isRolling = false;
-    crapsState.point = null;
-    crapsState.passBets = {};
-    crapsState.dontPassBets = {};
-    crapsState.comeBets = {};
-    crapsState.placeBets = {};
-    crapsState.currentShooterRollCount = 0;
+  nextShooter() {
+    if (!crapsState.tableUsers.length) return null;
+    crapsState.currentShooter = (crapsState.currentShooter + 1) % crapsState.tableUsers.length;
+    return crapsState.tableUsers[crapsState.currentShooter];
+  }
 
-    if (numPlayers <= 1) {
-      crapsState.currentShooter = 0;
-      crapsState.shooterHistory = new Set();
-      crapsState.tableUsers = [];
+  getShooter() {
+    if (!crapsState.tableUsers.length) return null;
+    return crapsState.tableUsers[crapsState.currentShooter % crapsState.tableUsers.length];
+  }
+
+  // ----- Bet placement (stake deducted HERE exactly once) -----
+  async placePass(userId, amount) {
+    if (crapsState.phase !== PHASES.COME_OUT || !crapsState.isBetting) {
+      return { ok: false, reason: 'NOT_ALLOWED_NOW' };
+    }
+    if (!(amount > 0)) return { ok: false, reason: 'BAD_AMOUNT' };
+
+    const removed = await removeFromUserWallet(userId, amount);
+    if (removed === false) return { ok: false, reason: 'INSUFFICIENT_FUNDS' };
+
+    ensureUserMapSlot(crapsState.passBets, userId);
+    crapsState.passBets[userId] += amount;
+    return { ok: true };
+  }
+
+  async placeDontPass(userId, amount) {
+    if (crapsState.phase !== PHASES.COME_OUT || !crapsState.isBetting) {
+      return { ok: false, reason: 'NOT_ALLOWED_NOW' };
+    }
+    if (!(amount > 0)) return { ok: false, reason: 'BAD_AMOUNT' };
+
+    const removed = await removeFromUserWallet(userId, amount);
+    if (removed === false) return { ok: false, reason: 'INSUFFICIENT_FUNDS' };
+
+    ensureUserMapSlot(crapsState.dontPassBets, userId);
+    crapsState.dontPassBets[userId] += amount;
+    return { ok: true };
+  }
+
+  async placeCome(userId, amount) {
+    if (crapsState.phase !== PHASES.POINT || !crapsState.isBetting) {
+      return { ok: false, reason: 'NOT_ALLOWED_NOW' };
+    }
+    if (!(amount > 0)) return { ok: false, reason: 'BAD_AMOUNT' };
+
+    const removed = await removeFromUserWallet(userId, amount);
+    if (removed === false) return { ok: false, reason: 'INSUFFICIENT_FUNDS' };
+
+    ensureUserMapSlot(crapsState.comePending, userId);
+    crapsState.comePending[userId] += amount;
+    this.emit('comePlaced', { userId, amount });
+    return { ok: true };
+  }
+
+  async placePlace(userId, number, amount) {
+    if (crapsState.phase !== PHASES.POINT || !crapsState.isBetting) {
+      return { ok: false, reason: 'NOT_ALLOWED_NOW' };
+    }
+    number = Number(number);
+    if (!POINT_NUMBERS.has(number)) return { ok: false, reason: 'BAD_NUMBER' };
+    if (!(amount > 0)) return { ok: false, reason: 'BAD_AMOUNT' };
+
+    const removed = await removeFromUserWallet(userId, amount);
+    if (removed === false) return { ok: false, reason: 'INSUFFICIENT_FUNDS' };
+
+    ensureNumberMapSlot(crapsState.placeBets, userId);
+    crapsState.placeBets[userId][number] += amount;
+    this.emit('placePlaced', { userId, number, amount });
+    return { ok: true };
+  }
+
+  async removePlace(userId, number) {
+    number = Number(number);
+    if (!POINT_NUMBERS.has(number)) return { ok: false, reason: 'BAD_NUMBER' };
+    ensureNumberMapSlot(crapsState.placeBets, userId);
+    const stake = crapsState.placeBets[userId][number] || 0;
+    if (!stake) return { ok: false, reason: 'NONE' };
+
+    crapsState.placeBets[userId][number] = 0;
+    await addToUserWallet(userId, stake, 'Remove place bet (refund)');
+    this.emit('placeRemoved', { userId, number, amount: stake });
+    return { ok: true };
+  }
+
+  // ----- Roll handling -----
+  async roll(shooterId) {
+    if (crapsState.isBetting) {
+      this.emit('systemNotice', 'Betting is still open — wait for bets to close.');
+      return;
+    }
+    const current = this.getShooter();
+    if (!current || current !== shooterId) {
+      this.emit('systemNotice', 'Only the shooter can /roll right now.');
       return;
     }
 
-    const everyoneHadTurn = crapsState.tableUsers.every(uid =>
-      crapsState.shooterHistory.has(uid)
-    );
+    // Dice
+    const d1 = 1 + Math.floor(Math.random() * 6);
+    const d2 = 1 + Math.floor(Math.random() * 6);
+    const total = d1 + d2;
+    crapsState.lastRoll = { d1, d2, total };
+    crapsState.rollsThisRound += 1;
+    this.emit('roll', { d1, d2, total });
 
-    if (everyoneHadTurn) {
-      crapsState.currentShooter = 0;
-      crapsState.shooterHistory = new Set();
-      crapsState.tableUsers = [];
-      return;
+    if (crapsState.phase === PHASES.COME_OUT) {
+      await this._resolveComeOut(total);
+    } else {
+      await this._resolvePointPhase(total);
     }
-
-    crapsState.currentShooter = (crapsState.currentShooter + 1) % numPlayers;
-    setTimeout(() => this.startRound(), 5000);
   }
 
-  resolveComeBets(total) {
-    for (const [userId, bets] of Object.entries(crapsState.comeBets)) {
-      for (const bet of bets) {
-        if (bet.status === 'awaiting') {
-          if ([2, 3, 12].includes(total)) {
-            bet.status = 'lost';
-            removeFromUserWallet(userId, bet.amount);
-            this.emit('comeLoss', {
-              user: userId,
-              amount: bet.amount,
-              reason: `Come-out roll was ${total}`
-            });
-          } else if ([7, 11].includes(total)) {
-            bet.status = 'won';
-            addToUserWallet(userId, bet.amount * 2);
-            this.emit('comeWin', {
-              user: userId,
-              amount: bet.amount,
-              reason: `Come-out roll was ${total}`
-            });
-          } else {
-            bet.status = 'active';
-            bet.point = total;
-            this.emit('comeMove', {
-              user: userId,
-              amount: bet.amount,
-              newPoint: total
-            });
-          }
-        } else if (bet.status === 'active') {
-          if (total === bet.point) {
-            bet.status = 'won';
-            addToUserWallet(userId, bet.amount * 2);
-            this.emit('comeWin', {
-              user: userId,
-              amount: bet.amount,
-              point: bet.point,
-              reason: `Hit point ${bet.point}`
-            });
-          } else if (total === 7) {
-            bet.status = 'lost';
-            removeFromUserWallet(userId, bet.amount);
-            this.emit('comeLoss', {
-              user: userId,
-              amount: bet.amount,
-              point: bet.point,
-              reason: `7-out`
-            });
+  async _resolveComeOut(total) {
+    if (total === 7 || total === 11) {
+      // Pass wins, DP loses
+      this.emit('lineResult', {
+        stage: 'COME_OUT',
+        outcome: 'NATURAL',
+        passWinners: { ...crapsState.passBets },
+        passLosers: {},
+        dpWinners: {},
+        dpLosers: { ...crapsState.dontPassBets },
+        dpPushes: {},
+      });
+      return this._endRound({ reason: 'NATURAL' });
+
+    } else if (total === 2 || total === 3) {
+      // Pass loses, DP wins
+      this.emit('lineResult', {
+        stage: 'COME_OUT',
+        outcome: 'CRAPS_2_3',
+        passWinners: {},
+        passLosers: { ...crapsState.passBets },
+        dpWinners: { ...crapsState.dontPassBets },
+        dpLosers: {},
+        dpPushes: {},
+      });
+      return this._endRound({ reason: 'CRAPS' });
+
+    } else if (total === 12) {
+      // Pass loses; DP pushes on 12
+      this.emit('lineResult', {
+        stage: 'COME_OUT',
+        outcome: 'CRAPS_12',
+        passWinners: {},
+        passLosers: { ...crapsState.passBets },
+        dpWinners: {},
+        dpLosers: {},
+        dpPushes: { ...crapsState.dontPassBets },
+      });
+      return this._endRound({ reason: 'CRAPS_12' });
+    }
+
+    // Establish point
+    if (POINT_NUMBERS.has(total)) {
+      crapsState.point = total;
+      crapsState.phase = PHASES.POINT;
+      this.emit('pointEstablished', { point: total });
+
+      // Re-open betting for come/place
+      this.openBetting({ phase: PHASES.POINT, betWindowMs: 9000 });
+    } else {
+      // Shouldn't happen in regular dice, but guard anyway
+      this.emit('systemNotice', `Unexpected come-out total ${total}.`);
+    }
+  }
+
+  async _resolvePointPhase(total) {
+    // 7-out resolves *everything*
+    if (total === 7) {
+      // Come-on bets lose
+      for (const userId of Object.keys(crapsState.comeOn)) {
+        const nums = crapsState.comeOn[userId];
+        for (const n of [4,5,6,8,9,10]) {
+          if (nums[n] > 0) {
+            this.emit('comeLoss', { userId, number: n, amount: nums[n], reason: 'SEVEN_OUT' });
+            nums[n] = 0;
           }
         }
       }
+
+      // Place bets lose
+      for (const userId of Object.keys(crapsState.placeBets)) {
+        const nums = crapsState.placeBets[userId];
+        for (const n of [4,5,6,8,9,10]) {
+          if (nums[n] > 0) {
+            this.emit('placeLoss', { userId, number: n, amount: nums[n], reason: 'SEVEN_OUT' });
+            nums[n] = 0;
+          }
+        }
+      }
+
+      // Line bets: pass loses, DP wins (controller pays)
+      this.emit('lineResult', {
+        stage: 'POINT',
+        outcome: 'SEVEN_OUT',
+        passWinners: {},
+        passLosers: { ...crapsState.passBets },
+        dpWinners: { ...crapsState.dontPassBets },
+        dpLosers: {},
+        dpPushes: {},
+      });
+      return this._endRound({ reason: 'SEVEN_OUT' });
     }
-  }
 
-  async resolvePlaceBets(total) {
-  for (const [userId, numbers] of Object.entries(crapsState.placeBets)) {
-    for (const num of Object.keys(numbers)) {
-      const betAmt = numbers[num];
-      const pointNum = parseInt(num);
+    // Resolve COMEs that were just placed (pending)
+    for (const userId of Object.keys(crapsState.comePending)) {
+      const amt = crapsState.comePending[userId] || 0;
+      if (!amt) continue;
 
-      if (pointNum === total) {
-        const winnings = betAmt * 2;
-        await addToUserWallet(userId, winnings);
-
-        const nick = await getUserNickname(userId);
-        this.emit('placeWin', {
-          user: userId,
-          number: pointNum,
-          amount: betAmt,
-          winnings,
-          nickname: nick
-        });
-
-        delete numbers[num]; // 💸 remove after win
-      } else if (total === 7) {
-        await removeFromUserWallet(userId, betAmt);
-
-        const nick = await getUserNickname(userId);
-        this.emit('placeLoss', {
-          user: userId,
-          number: pointNum,
-          amount: betAmt,
-          nickname: nick
-        });
-
-        delete numbers[num]; // ☠️ remove after loss
+      if (total === 7 || total === 11) {
+        // Instant win (even money payout)
+        await addToUserWallet(userId, amt * 2, 'Come win');
+        this.emit('comeWin', { userId, kind: 'instant', amount: amt, roll: total });
+        crapsState.comePending[userId] = 0;
+      } else if (total === 2 || total === 3 || total === 12) {
+        // Loses (stake already removed on placement)
+        this.emit('comeLoss', { userId, number: total, amount: amt, reason: 'COME_OUT_LOSS' });
+        crapsState.comePending[userId] = 0;
+      } else if (POINT_NUMBERS.has(total)) {
+        // Move to that number
+        ensureNumberMapSlot(crapsState.comeOn, userId);
+        crapsState.comeOn[userId][total] += amt;
+        this.emit('comeMove', { userId, number: total, amount: amt });
+        crapsState.comePending[userId] = 0;
       }
     }
+
+    // Resolve COMEs "on numbers" that just hit
+    if (POINT_NUMBERS.has(total)) {
+      for (const userId of Object.keys(crapsState.comeOn)) {
+        const amt = (crapsState.comeOn[userId] && crapsState.comeOn[userId][total]) || 0;
+        if (amt > 0) {
+          await addToUserWallet(userId, amt * 2, `Come on ${total} win`);
+          this.emit('comeWin', { userId, kind: 'number', number: total, amount: amt });
+          crapsState.comeOn[userId][total] = 0;
+        }
+      }
+    }
+
+    // Resolve PLACE wins (pay odds)
+    if (POINT_NUMBERS.has(total)) {
+      const ratio = placeProfitRatio(total);
+      for (const userId of Object.keys(crapsState.placeBets)) {
+        const stake = crapsState.placeBets[userId][total] || 0;
+        if (stake > 0) {
+          const totalReturn = stake * (1 + ratio);
+          await addToUserWallet(userId, totalReturn, `Place ${total} win`);
+          this.emit('placeWin', { userId, number: total, amount: stake, payout: totalReturn });
+          crapsState.placeBets[userId][total] = 0;
+        }
+      }
+    }
+
+    // Point made ends round (pass wins, DP loses)
+    if (crapsState.point && total === crapsState.point) {
+      this.emit('lineResult', {
+        stage: 'POINT',
+        outcome: 'POINT_MADE',
+        passWinners: { ...crapsState.passBets },
+        passLosers: {},
+        dpWinners: {},
+        dpLosers: { ...crapsState.dontPassBets },
+        dpPushes: {},
+      });
+      return this._endRound({ reason: 'POINT_MADE', point: crapsState.point });
+    }
+
+    // Neither 7 nor the point: open next betting window
+    this.openBetting({ phase: PHASES.POINT, betWindowMs: 8000 });
   }
-}
+
+  async _endRound({ reason }) {
+    clearTimeout(crapsState.bettingTimeout);
+    crapsState.isBetting = false;
+    crapsState.canJoinTable = false;
+
+    // Records
+    if (crapsState.rollsThisRound > crapsState.records.maxRolls.count) {
+      crapsState.records.maxRolls = {
+        count: crapsState.rollsThisRound,
+        shooterId: this.getShooter(),
+      };
+      this.emit('newRecord', { ...crapsState.records.maxRolls });
+    }
+
+    this.emit('roundEnd', { reason, rolls: crapsState.rollsThisRound, shooterId: this.getShooter() });
+  }
 }
 
 export const table = new CrapsTable();

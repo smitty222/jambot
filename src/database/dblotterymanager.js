@@ -134,20 +134,24 @@ async function drawWinningNumber() {
 }
 
 // ✅ Get winners list from DB
+// ✅ Get winners list from DB
 export function getLotteryWinners(limit = 20) {
   const rows = db.prepare(`
-    SELECT * FROM lottery_winners
+    SELECT userId, nickname, winningNumber, amountWon, timestamp
+    FROM lottery_winners
     ORDER BY timestamp DESC
     LIMIT ?
   `).all(limit)
 
   return rows.map(row => ({
+    userId: row.userId,                           // ← keep it!
     nickname: row.nickname || 'Unknown',
     winningNumber: row.winningNumber,
     amountWon: row.amountWon,
     date: new Date(row.timestamp).toLocaleString()
   }))
 }
+
 
 // ✅ Top drawn numbers
 export function getLotteryNumberStats(limit = 5) {

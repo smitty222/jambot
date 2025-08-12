@@ -1,215 +1,180 @@
 // src/games/craps/crapsController.js
-
 import { table } from './service.js';
+import { crapsState, PHASES } from './crapsState.js';
 import { postMessage } from '../../libs/cometchat.js';
-import { addToUserWallet, removeFromUserWallet } from '../../database/dbwalletmanager.js';
+import { addToUserWallet } from '../../database/dbwalletmanager.js';
 import { getUserNickname } from '../../handlers/message.js';
-import { crapsState } from './crapsState.js';
 
 const ROOM = process.env.ROOM_UUID;
+
 console.log('[crapsController] Loaded — registering event listeners');
 
-function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+async function nick(userId) {
+  try { return await getUserNickname(userId); }
+  catch { return 'Player'; }
 }
 
-async function safeSay(message) {
-  try {
-    await postMessage({ room: ROOM, message });
-  } catch (err) {
-    console.error('[crapsController] postMessage failed:', err);
+function sumMap(m) {
+  return Object.values(m || {}).reduce((a,b)=>a + (b||0), 0);
+}
+
+function* eachEntry(m) {
+  for (const k of Object.keys(m || {})) yield [k, m[k]];
+}
+
+async function payLineWinners({ passWinners, dpWinners, dpPushes }) {
+  // Winners: pay stake + profit (even money) => add stake * 2
+  for (const [uid, amt] of eachEntry(passWinners)) {
+    if (amt > 0) await addToUserWallet(uid, amt * 2, 'Pass line win');
+  }
+  for (const [uid, amt] of eachEntry(dpWinners)) {
+    if (amt > 0) await addToUserWallet(uid, amt * 2, 'Don’t Pass win');
+  }
+  // Pushes: refund stake
+  for (const [uid, amt] of eachEntry(dpPushes)) {
+    if (amt > 0) await addToUserWallet(uid, amt, 'Don’t Pass push refund');
   }
 }
 
-async function getShooter() {
-  const shooterId = crapsState.tableUsers[crapsState.currentShooter];
-  const nick = shooterId ? await getUserNickname(shooterId) : 'Unknown';
-  return { shooterId, nick };
+function resetLineBets() {
+  crapsState.passBets = Object.create(null);
+  crapsState.dontPassBets = Object.create(null);
 }
 
-// ─── Event Listeners ────────────────────────────────────────────
-
-table.on('roundStart', async () => {
-  const { nick } = await getShooter();
-  await safeSay(
-    `🎲 A new game begins. Place your bets.\n` +
-    `💺 Sit down with \`/craps join\` (30s)\n` +
-    `🪑 Current table: ${nick}`
-  );
+table.on('systemNotice', async (text) => {
+  await postMessage({ room: ROOM, message: `ℹ️ ${text}` });
 });
 
-table.on('betsOpen', async ({ phase }) => {
-  const { nick } = await getShooter();
+table.on('roundStart', async () => {
+  const shooterId = table.getShooter();
+  const shooterName = shooterId ? await nick(shooterId) : 'Shooter';
+  await postMessage({
+    room: ROOM,
+    message:
+`🏁 **New round started!**
+- Shooter: **${shooterName}**
+- Join with \`/join\`
+- When betting opens:
+  • Come-out: \`/pass [amt]\`, \`/dontpass [amt]\`
+  • Point: \`/come [amt]\`, \`/place [4|5|6|8|9|10] [amt]\``
+  });
+});
 
-  if (phase === 'COME_OUT') {
-    await safeSay(
-      `💰 Bets open for 30 seconds!\n🎯 Shooter: ${nick} — choose wisely...\n` +
-      '➕ /pass <amt> to bet with the shooter or \n➖ /dontpass <amt> to bet against the shooter'
-    );
-  } else if (phase === 'POINT') {
-   
-  }
+table.on('betsOpen', async ({ phase, durationMs }) => {
+  const shooterId = table.getShooter();
+  const shooterName = shooterId ? await nick(shooterId) : 'Shooter';
+  const label = phase === PHASES.COME_OUT ? 'Come-out' : 'Point';
+  await postMessage({
+    room: ROOM,
+    message:
+`🟩 **Bets OPEN** (${label}) — ~${Math.floor(durationMs/1000)}s
+- Shooter: **${shooterName}**
+- Use commands:
+  ${phase === PHASES.COME_OUT ? '• `/pass [amt]`, `/dontpass [amt]`' : '• `/come [amt]`, `/place [num] [amt]`'}`,
+  });
 });
 
 table.on('betsClosed', async () => {
-  const { nick } = await getShooter();
-  await safeSay(`⌛ Bets closed. ${nick}, it's time... \`/roll\``);
+  const shooterName = await nick(table.getShooter());
+  await postMessage({
+    room: ROOM,
+    message: `🟥 **Bets CLOSED.** ${shooterName}, type \`/roll\` when ready 🎲`,
+  });
 });
 
-table.on('rollResult', async ({ d1, d2, total, outcome }) => {
-  await safeSay(`🎲 Rolling...`);
-  await delay(1000);
-  await safeSay(`🎲 🎲 ${d1} + ${d2} = **${total}**`);
-  await delay(400);
-
-  if (outcome) return;
-
-  const isNewPoint = crapsState.phase === 'POINT' && total === crapsState.point;
-
-  if (isNewPoint) {
-    await safeSay(`🎯 Point is set to ${total}. The shooter must hit ${total} before rolling a 7.`);
-    await delay(300);
-    await safeSay(`💸 New bets open (30s): /come <amt>, /place <num> <amt>`);
-    return;
-  }
-
-  // In POINT phase, check if anything hit
-  if (crapsState.phase === 'POINT') {
-    const totalStr = String(total);
-
-    const didPlaceHit = Object.values(crapsState.placeBets || {}).some(bets =>
-      Object.keys(bets).includes(totalStr)
-    );
-
-    const didComeHit = Object.values(crapsState.comeBets || {}).some(bets =>
-      bets.some(b =>
-        (b.status === 'awaiting' && [7, 11, 2, 3, 12].includes(total)) ||
-        (b.status === 'active' && (total === b.point || total === 7))
-      )
-    );
-
-    const hitPoint = total === crapsState.point;
-    const hitSeven = total === 7;
-
-    if (!didPlaceHit && !didComeHit && !hitPoint && !hitSeven) {
-      await delay(500);
-      await safeSay(`🌀 No action this time\n🔁 Shooter, roll again`);
-    }
-  }
+table.on('roll', async ({ d1, d2, total }) => {
+  await postMessage({ room: ROOM, message: `🎲 **Roll:** \`${d1}\` + \`${d2}\` = **${total}**` });
 });
 
-
-table.on('placeWin', async ({ user, number, amount }) => {
-  const payout = amount * 2;
-  await addToUserWallet(user, payout);
-  const nick = await getUserNickname(user);
-  await delay(400);
-  await safeSay(`🎯 **${nick}** hits ${number} and wins $${payout}!`);
+table.on('pointEstablished', async ({ point }) => {
+  await postMessage({ room: ROOM, message: `📍 **Point is ${point}.** Place and Come bets now available.` });
 });
 
-table.on('placeLoss', async ({ user, number, amount }) => {
-  await removeFromUserWallet(user, amount);
-  const nick = await getUserNickname(user);
-  await delay(400);
-  await safeSay(`💥 **${nick}** loses Place bet on ${number}.`);
+table.on('comePlaced', async ({ userId, amount }) => {
+  await postMessage({ room: ROOM, message: `🟦 Come bet placed: **${await nick(userId)}** $${amount}` });
 });
 
-table.on('roundEnd', async ({
-  outcome,
-  roll,
-  passWinners = [],
-  passLosers = [],
-  dpWinners = [],
-  dpLosers = [],
-  pushOn12 = false
-}) => {
-  await delay(1000);
+table.on('placePlaced', async ({ userId, number, amount }) => {
+  await postMessage({ room: ROOM, message: `🟨 Place bet: **${await nick(userId)}** $${amount} on **${number}**` });
+});
 
-  if (pushOn12) {
-    await safeSay('🔄 Push on 12 — Don’t Pass bets returned.');
+table.on('placeRemoved', async ({ userId, number, amount }) => {
+  await postMessage({ room: ROOM, message: `↩️ Place bet removed: **${await nick(userId)}** got $${amount} back from **${number}**` });
+});
+
+table.on('comeMove', async ({ userId, number, amount }) => {
+  await postMessage({ room: ROOM, message: `➡️ **${await nick(userId)}** moved Come $${amount} to **${number}**` });
+});
+
+table.on('comeWin', async (evt) => {
+  const who = await nick(evt.userId);
+  if (evt.kind === 'instant') {
+    await postMessage({ room: ROOM, message: `✅ Come **wins instantly** for **${who}** (+$${evt.amount})` });
   } else {
-    await safeSay(`🏁 Final result: **${outcome.toUpperCase()}** (roll: ${roll})`);
+    await postMessage({ room: ROOM, message: `✅ Come on **${evt.number}** hits for **${who}** (+$${evt.amount})` });
   }
+});
 
-  // PASS LINE
-  for (const user of passWinners) {
-    const amt = crapsState.passBets[user] || 0;
-    if (amt > 0) {
-      await addToUserWallet(user, amt * 2);
-      const nick = await getUserNickname(user);
-      await delay(300);
-      await safeSay(`✅ **${nick}** wins $${amt} on Pass Line`);
-    }
-  }
+table.on('comeLoss', async ({ userId, number, amount, reason }) => {
+  const who = await nick(userId);
+  const why = reason === 'SEVEN_OUT' ? '7-out' : 'come-out loss';
+  await postMessage({ room: ROOM, message: `❌ Come ${why} for **${who}** ($${amount})${number ? ` on ${number}` : ''}` });
+});
 
-  for (const user of passLosers) {
-    const amt = crapsState.passBets[user] || 0;
-    if (amt > 0) {
-      await removeFromUserWallet(user, amt);
-      const nick = await getUserNickname(user);
-      await delay(300);
-      await safeSay(`💥 **${nick}** loses $${amt} on Pass Line`);
-    }
-  }
+table.on('placeWin', async ({ userId, number, amount, payout }) => {
+  await postMessage({ room: ROOM, message: `✅ Place on **${number}** wins for **${await nick(userId)}** (stake $${amount} → $${payout.toFixed(2)})` });
+});
 
-  // DON'T PASS
-  for (const user of dpWinners) {
-    const amt = crapsState.dontPassBets[user] || 0;
-    if (amt > 0) {
-      await addToUserWallet(user, amt * 2);
-      const nick = await getUserNickname(user);
-      await delay(300);
-      await safeSay(`🛡️ **${nick}** wins $${amt} on Don't Pass`);
-    }
-  }
+table.on('placeLoss', async ({ userId, number, amount, reason }) => {
+  const who = await nick(userId);
+  const why = reason === 'SEVEN_OUT' ? '7-out' : 'loss';
+  await postMessage({ room: ROOM, message: `❌ Place ${why} for **${who}** on **${number}** ($${amount})` });
+});
 
-  for (const user of dpLosers) {
-    const amt = crapsState.dontPassBets[user] || 0;
-    if (amt > 0) {
-      await removeFromUserWallet(user, amt);
-      const nick = await getUserNickname(user);
-      await delay(300);
-      await safeSay(`☠️ **${nick}** loses $${amt} on Don't Pass`);
-    }
-  }
+table.on('lineResult', async (res) => {
+  const { stage, outcome, passWinners, passLosers, dpWinners, dpLosers, dpPushes } = res;
 
-  // COME BETS
-  for (const [userId, bets] of Object.entries(crapsState.comeBets || {})) {
-    const nick = await getUserNickname(userId);
-    for (const bet of bets) {
-      if (bet.status === 'won') {
-        await addToUserWallet(userId, bet.amount * 2);
-        await delay(300);
-        await safeSay(`🎉 **${nick}** wins $${bet.amount} from Come bet on ${bet.point}`);
-      } else if (bet.status === 'lost') {
-        await removeFromUserWallet(userId, bet.amount);
-        await delay(300);
-        await safeSay(`💀 **${nick}** loses $${bet.amount} Come bet on ${bet.point}`);
-      }
-    }
-  }
+  // Pay winners & refund pushes (controller owns Pass/DP wallet ops)
+  await payLineWinners({ passWinners, dpWinners, dpPushes });
 
-  // UNRESOLVED PLACE BETS
-  for (const [userId, numbers] of Object.entries(crapsState.placeBets || {})) {
-    const nick = await getUserNickname(userId);
-    for (const [num, amt] of Object.entries(numbers)) {
-      await removeFromUserWallet(userId, amt);
-      await delay(300);
-      await safeSay(`❌ **${nick}** loses $${amt} unhit Place bet on ${num}`);
-    }
-  }
+  const passWinSum = sumMap(passWinners);
+  const passLoseSum = sumMap(passLosers);
+  const dpWinSum = sumMap(dpWinners);
+  const dpLoseSum = sumMap(dpLosers);
+  const dpPushSum = sumMap(dpPushes);
 
-  // WRAP-UP
-  const shooterSet = crapsState.shooterHistory || new Set();
-  const tableUsers = crapsState.tableUsers || [];
+  const lines = [
+    `🧮 **Line result (${stage} → ${outcome})**`,
+    passWinSum ? `• Pass paid: $${passWinSum}` : null,
+    passLoseSum ? `• Pass lost: $${passLoseSum}` : null,
+    dpWinSum ? `• Don't Pass paid: $${dpWinSum}` : null,
+    dpLoseSum ? `• Don't Pass lost: $${dpLoseSum}` : null,
+    dpPushSum ? `• Don't Pass push refunded: $${dpPushSum}` : null,
+  ].filter(Boolean);
 
-  if (tableUsers.length <= 1 || shooterSet.size === tableUsers.length) {
-    await delay(1200);
-    await safeSay(`💬 Type \`/craps start\` to begin again`);
-  } else {
-    await delay(800);
-    await safeSay(`🔁 Next shooter coming up...`);
-    await delay(1200);
-    await safeSay(`💬 Type \`/craps start\` to begin again`);
-  }
+  await postMessage({ room: ROOM, message: lines.join('\n') });
+
+  // Clear line bets after settlement
+  resetLineBets();
+});
+
+table.on('newRecord', async ({ count, shooterId }) => {
+  const who = await nick(shooterId);
+  await postMessage({ room: ROOM, message: `🏆 **New record!** ${who} rolled **${count}** times in a single round.` });
+});
+
+table.on('roundEnd', async ({ reason, rolls, shooterId }) => {
+  const who = await nick(shooterId);
+  await postMessage({
+    room: ROOM,
+    message:
+`⛳ **Round over** (${reason})
+- Shooter: **${who}**
+- Rolls: **${rolls}**
+
+Type \`/craps start\` to begin the next round.`
+  });
+
+  // Rotate shooter for next round
+  table.nextShooter();
 });

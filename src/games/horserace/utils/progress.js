@@ -1,71 +1,167 @@
-/**
- * Generate the finish-line header for the track display.
- * @param {number} barLength - Number of blocks in the track.
- * @returns {string}
- */
-export function generateTrackHeader(barLength = 10) {
-  return '🏁' + '─'.repeat(barLength) + 'FINISH';
+// src/games/horserace/utils/progress.js
+// CometChat-optimized renderers with names on the RIGHT.
+// New: 'solid' style — compact solid rail with subtle ':' ticks.
+
+const SHADE_FULL  = '█';
+const SHADE_EMPTY = '░';
+const FILL        = '=';
+const EMPTY       = '.';
+const MARKER      = '●';
+
+function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+function truncName(s, max = 24) { s = String(s || ''); return s.length <= max ? s : s.slice(0, max - 1) + '…'; }
+
+// Simple header for non-rail styles
+export function header(barLength = 12) {
+  return '|' + '-'.repeat(barLength) + '|';
+}
+
+// Header that matches the rail layout visually.
+// Group separators appear every `groupSize` cells to reduce visual noise.
+function headerRail(cells = 12, cellWidth = 1, sep = '|', groupSize = 3) {
+  const cell = '-'.repeat(cellWidth);
+  const parts = [];
+  for (let i = 0; i < cells; i++) {
+    parts.push(cell);
+    if ((i + 1) % groupSize === 0 && i < cells - 1) parts.push(sep);
+  }
+  return sep + parts.join('') + sep;
+}
+
+// Optional subtle tick marks inside shaded/fill bars
+function overlayTicks(str, every, tickChar = '|') {
+  if (!every || every <= 0) return str;
+  const arr = str.split('');
+  for (let i = every; i < arr.length; i += every) {
+    if (i >= 0 && i < arr.length) arr[i] = tickChar;
+  }
+  return arr.join('');
+}
+
+function renderShade(pct, len, { ticksEvery = 0, tickChar = '|' } = {}) {
+  const filled = Math.round(clamp01(pct) * len);
+  const base = SHADE_FULL.repeat(filled) + SHADE_EMPTY.repeat(Math.max(0, len - filled));
+  return overlayTicks(base, ticksEvery, tickChar);
+}
+
+function renderFill(pct, len) {
+  const filled = Math.round(clamp01(pct) * len);
+  return FILL.repeat(filled) + EMPTY.repeat(Math.max(0, len - filled));
+}
+
+function renderMarker(pct, len) {
+  const pos = Math.round(clamp01(pct) * (len - 1));
+  const out = EMPTY.repeat(len).split('');
+  out[pos] = MARKER;
+  return out.join('');
+}
+
+function renderSegmented(pct, len) {
+  const legs  = 4;
+  const segLen = Math.max(2, Math.floor(len / legs));
+  const total = segLen * legs;
+  const p = clamp01(pct) * total;
+  let bar = '';
+  for (let i = 0; i < legs; i++) {
+    const start = i * segLen;
+    const partial = (p > start && p < start + segLen)
+      ? Math.floor(p - start)
+      : Math.max(0, Math.min(segLen, Math.floor(p - start)));
+    bar += FILL.repeat(partial) + EMPTY.repeat(segLen - partial);
+    if (i < legs - 1) bar += ':'; // separator
+  }
+  const pad = Math.max(0, len - (segLen * legs + (legs - 1)));
+  return bar + EMPTY.repeat(pad);
+}
+
+// RAIL renderer — grouped pipes:  |███|██░|…|
+function renderRail(pct, cells = 12, cellWidth = 1, sep = '|', groupSize = 3) {
+  const filledCells = Math.round(clamp01(pct) * cells);
+  const pieces = [];
+  for (let i = 0; i < cells; i++) {
+    const cellChar = (i < filledCells ? SHADE_FULL : SHADE_EMPTY);
+    pieces.push(cellChar.repeat(cellWidth));
+    if ((i + 1) % groupSize === 0 && i < cells - 1) pieces.push(sep);
+  }
+  return sep + pieces.join('') + sep;
 }
 
 /**
- * Generate an emoji progress bar for each horse (static use or final display).
- * @param {Array<{ index: number, name: string, progress: number }>} raceState
- * @param {boolean} [showWinner=false]
- * @param {number} [barLength=10]
- * @param {number} [staticScale=3]
- * @returns {string}
+ * Universal, monospace-safe progress renderer with names on the right.
+ *
+ * @param {Array<{index:number,name:string,progress:number}>} raceState
+ * @param {{
+ *   barLength?:number,             // for 'rail' = cell count; others = chars
+ *   finishDistance?:number,
+ *   winnerIndex?:number,
+ *   style?:'rail'|'solid'|'shaded'|'fill'|'marker'|'segmented',
+ *   ticksEvery?:number,            // shaded/solid only
+ *   tickChar?:string,              // shaded/solid only
+ *   nameWidth?:number,
+ *   cellWidth?:number,             // rail only (default 1)
+ *   groupSize?:number              // rail only (default 3)
+ * }} opts
  */
-export function generateVisualProgress(
+export function renderProgress(
   raceState,
-  showWinner = false,
-  barLength = 10,
-  staticScale = 3
+  {
+    barLength = 12,
+    finishDistance = 1.0,
+    winnerIndex = null,
+    style = 'rail',
+    ticksEvery = 0,
+    tickChar = '|',
+    nameWidth = 24,
+    cellWidth = 1,
+    groupSize = 3
+  } = {}
 ) {
-  const actualMax = Math.max(...raceState.map(h => h.progress));
-  const scale     = showWinner ? actualMax : staticScale;
-  const leaders   = raceState
-    .filter(h => Math.abs(h.progress - actualMax) < 1e-6)
-    .map(h => h.index);
+  if (!raceState?.length) return '';
 
-  const FILLED = '▮';
-  const EMPTY  = '▯';
+  const rows = raceState.map((h, i) => {
+    const pct   = clamp01((h.progress || 0) / (finishDistance || 1));
 
-  return raceState
-    .map(h => {
-      const ratio  = scale > 0 ? h.progress / scale : 0;
-      const filled = Math.min(barLength, Math.round(ratio * barLength));
-      const empty  = barLength - filled;
-      const bar    = FILLED.repeat(filled) + EMPTY.repeat(empty);
-      const trophy = showWinner && leaders.includes(h.index) ? ' 🏆' : '';
-      const idx    = `${h.index+1}`.padStart(2);
-      return `${idx} │ ${bar} │ ${h.name}${trophy}`;
-    })
-    .join('\n');
-}
+    let headLine;
+    let barStr;
+    if (style === 'rail') {
+      headLine = headerRail(barLength, cellWidth, '|', groupSize);
+      barStr   = renderRail(pct, barLength, cellWidth, '|', groupSize);
+    } else {
+      headLine = header(barLength);
+      const draw =
+        style === 'solid'
+          ? (p) => renderShade(p, barLength, { ticksEvery, tickChar }) // solid: compact rail with ':' ticks
+          : style === 'shaded'
+            ? (p) => renderShade(p, barLength, { ticksEvery, tickChar })
+            : style === 'marker'
+              ? (p) => renderMarker(p, barLength)
+              : style === 'segmented'
+                ? (p) => renderSegmented(p, barLength)
+                : (p) => renderFill(p, barLength);
+      barStr = '|' + draw(pct) + '|';
+    }
 
+    const idx   = String(i + 1).padStart(2, ' ');
+    const crown = (i === winnerIndex) ? ' 🏆' : '';
+    const line  = `${idx} ${barStr} ${truncName(h.name, nameWidth)}${crown}`;
 
-/**
- * Generate a clean progress display based on distance filled, not speed.
- * @param {Array<{ index:number, progress:number }>} lastState
- * @param {Array<{ index:number, name:string, progress:number }>} curState
- * @param {number} [barLength=10]
- * @returns {{ header: string, lanes: string[] }}
- */
-export function generateColoredTrack(
-  lastState,
-  curState,
-  barLength = 10
-) {
-  const maxProg = Math.max(...curState.map(h => h.progress), 1);
-  const header = generateTrackHeader(barLength);
-
-  const lanes = curState.map(h => {
-    const filled = Math.min(barLength, Math.round((h.progress / maxProg) * barLength));
-    const blocks = '🟩'.repeat(filled) + '⬜'.repeat(barLength - filled);
-    const idxLabel = `${h.index + 1}`.padStart(2, ' ');
-    const nameLabel = h.name.padEnd(12);
-    return `${idxLabel} │ ${nameLabel} │ ▶${blocks}`;
+    return { headLine, line };
   });
 
-  return { header, lanes };
+  const headerLine = rows[0]?.headLine || header(barLength);
+  return [headerLine, ...rows.map(r => r.line)].join('\n');
+}
+
+/**
+ * CometChat-friendly racecard with aligned columns.
+ */
+export function renderRacecard(entries, { nameWidth = 20, oddsWidth = 6 } = {}) {
+  const pad = (s, n) => String(s || '').padEnd(n, ' ');
+  const header = `#  ${pad('Horse', nameWidth)}  ${pad('Odds', oddsWidth)}`;
+  const line   = '-'.repeat(header.length);
+  const rows = entries.map((e, i) => {
+    const num = String(i + 1).padStart(2, ' ');
+    return `${num} ${pad(e.name, nameWidth)}  ${pad(e.odds, oddsWidth)}`;
+  });
+  return [header, line, ...rows].join('\n');
 }

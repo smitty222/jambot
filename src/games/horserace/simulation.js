@@ -1,163 +1,161 @@
 // src/games/horserace/simulation.js
+// 4-leg race with internal micro-ticks for smooth movement.
+// Slower cadence for drama; final frame nudges winner to the line.
 
-import { postMessage }       from '../../libs/cometchat.js';
-import { addToUserWallet }   from '../../database/dbwalletmanager.js';
-import { getUserNickname }   from '../../handlers/message.js';
-import { updateHorseStats }  from '../../database/dbhorses.js';
-import { safeCall }          from './service.js';
-import { generateVisualProgress } from './utils/progress.js';
+import { bus, safeCall } from './service.js';
+import { addToUserWallet } from '../../database/dbwalletmanager.js';
+import { updateHorseStats } from '../../database/dbhorses.js';
 
-const ROOM = process.env.ROOM_UUID;
-const TURNS = 4;
-const START_DELAY = 3000;
-const TURN_DELAY = 5000;
-const FINAL_DELAY = 1500;
-const START_GIF = 'https://media.giphy.com/media/f8zTTGjUFf5El00t2E/giphy.gif';
+export const LEGS = 4;
 
-const delay = ms => new Promise(res => setTimeout(res, ms));
+// Timing / feel — slower for suspense
+const LEG_DELAY_MS      = 4800; // was 3500
+const SUBTICKS_PER_LEG  = 8;    // smooth movement
+const FINISH            = 1.0;
+const SOFT_CAP_FRACTION = 0.94;
 
-// Generate a normally distributed random number via Box–Muller
-function randNormal(mean = 0, sd = 1) {
-  const u1 = Math.random();
-  const u2 = Math.random();
-  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2) * sd + mean;
+// Movement dials
+const MOMENTUM_BLEND   = 0.40;
+const NOISE_SD         = 0.045;
+const LEADER_PULL      = 0.09;
+const ENERGY_AMPLITUDE = 0.07;
+const LANE_BIAS_RANGE  = 0.012;
+const LATE_KICK_PROB   = 0.45;
+const LATE_KICK_BOOST  = [1.08, 1.16];
+const LATE_KICK_LEG    = 3;
+
+// Leg distances (sum ≈ 1.0)
+const LEG_WEIGHTS = [0.22, 0.28, 0.22, 0.28];
+
+const TOTAL_SUBTICKS = LEGS * SUBTICKS_PER_LEG;
+const BASELINE_PER_SUBTICK = FINISH / (TOTAL_SUBTICKS + 1);
+
+function rand() { return Math.random(); }
+function randRange(a, b) { return a + (b - a) * rand(); }
+function randn(mean = 0, sd = 1) {
+  let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random();
+  return mean + sd * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 
-/**
- * Generate a quick commentary based on current leaders
- */
-function generateCommentary(turn, state) {
-  const sorted = [...state].sort((a, b) => b.progress - a.progress);
-  const leader = sorted[0];
-  const runnerUp = sorted[1];
-  const gap = runnerUp ? (leader.progress - runnerUp.progress).toFixed(2) : '0.00';
-  if (turn === 1) return `🎤 And they're off! ${leader.name} bursts into the lead.`;
-  if (gap > 0.5) return `🎤 ${leader.name} is pulling away by ${gap} units!`;
-  return `🎤 Tight contest! ${leader.name} leads by ${gap} units.`;
+function speedFromOdds(decOdds) {
+  const f = 1.0 + (3.0 - Number(decOdds || 3.0)) * 0.12; // ~0.85..1.15
+  return Math.max(0.85, Math.min(1.15, f));
 }
 
 export async function runRace({ horses, horseBets }) {
-  try {
-    console.log('Starting race with horses:', horses);
-    await safeCall(postMessage, [{ room: ROOM, message: `🏇 And they’re off!`, images: [START_GIF] }]);
-    await delay(START_DELAY);
+  const state = horses.map((h, idx) => ({
+    index: idx,
+    name: h.name,
+    progress: 0,
+    lastDelta: 0,
+    speed: speedFromOdds(Number(h.odds || 3.0)) * randRange(0.965, 1.035),
+    wavePhase: rand(),
+    laneBias: randRange(-LANE_BIAS_RANGE, LANE_BIAS_RANGE) / TOTAL_SUBTICKS,
+    kickLeg: null, kickBoost: 1.0
+  }));
 
-    // Initialize race state: compute per-horse parameters
-    const raceState = horses.map((h, i) => {
-      const oddsWeight = 1 / (h.odds || 1);
-      const winRate    = (h.wins || 0) / ((h.racesParticipated || 0) || 1);
-      const factor     = oddsWeight * 0.8 + winRate * 0.2;
-      const baseMean   = 1 + (factor - 1) * 0.5;
-      const baseSd     = 0.1 + (1 - factor) * 0.3;
-      const decayRate  = 1 - factor * 0.1;
+  for (const h of state) {
+    if (rand() < LATE_KICK_PROB) {
+      h.kickLeg = LATE_KICK_LEG;
+      h.kickBoost = randRange(LATE_KICK_BOOST[0], LATE_KICK_BOOST[1]);
+    }
+  }
 
-      console.log(`Horse ${h.name} params:`,
-        { oddsWeight: oddsWeight.toFixed(3), winRate: winRate.toFixed(3), factor: factor.toFixed(3), baseMean: baseMean.toFixed(3), baseSd: baseSd.toFixed(3), decayRate: decayRate.toFixed(3) });
+  for (let leg = 0; leg < LEGS; leg++) {
+    const legWeight   = LEG_WEIGHTS[leg] ?? (1 / LEGS);
+    const perTickScale = (legWeight * TOTAL_SUBTICKS) / SUBTICKS_PER_LEG;
 
-      return {
-        index: i,
-        name: h.name,
-        odds: h.odds,
-        progress: 0,
-        stamina: 1,
-        baseMean,
-        baseSd,
-        decayRate,
-      };
+    for (let s = 0; s < SUBTICKS_PER_LEG; s++) {
+      const avg = state.reduce((sum, h) => sum + h.progress, 0) / state.length;
+
+      for (const h of state) {
+        const raceFrac = (leg * SUBTICKS_PER_LEG + s + 1) / TOTAL_SUBTICKS;
+        const energy   = 1 + ENERGY_AMPLITUDE * Math.cos(2 * Math.PI * (raceFrac + h.wavePhase));
+        const kick     = (h.kickLeg === leg) ? h.kickBoost : 1.0;
+
+        const raw     = BASELINE_PER_SUBTICK * perTickScale * h.speed * energy * kick * (1 + randn(0, NOISE_SD));
+        const blended = MOMENTUM_BLEND * h.lastDelta + (1 - MOMENTUM_BLEND) * Math.max(0, raw);
+
+        const diff = h.progress - avg;
+        const band = 1 - Math.max(-LEADER_PULL, Math.min(LEADER_PULL, diff * 0.9));
+
+        let delta = Math.max(0, blended * band) + h.laneBias;
+
+        const isFinalLeg = (leg === LEGS - 1);
+        let next = h.progress + delta;
+        if (!isFinalLeg && next > SOFT_CAP_FRACTION) {
+          next = SOFT_CAP_FRACTION - Math.random() * 0.006;
+          delta = Math.max(0, next - h.progress);
+        }
+
+        h.progress = Math.min(FINISH, next);
+        h.lastDelta = delta;
+      }
+    }
+
+    bus.emit('turn', {
+      turnIndex: leg,
+      raceState: state.map(x => ({ index: x.index, name: x.name, progress: x.progress })),
+      finishDistance: FINISH
     });
 
-    // Run each turn with logs and commentary
-    for (let turn = 0; turn < TURNS; turn++) {
-      const trackEvent = randNormal(1, 0.03);
-      console.log(`Turn ${turn+1} trackEvent=${trackEvent.toFixed(3)}`);
-
-      raceState.forEach(h => {
-        const raw   = randNormal(h.baseMean, h.baseSd);
-        const moved = Math.max(0, raw * h.stamina * trackEvent);
-        console.log(`Horse ${h.name} raw=${raw.toFixed(3)}, stamina=${h.stamina.toFixed(3)}, moved=${moved.toFixed(3)}`);
-        h.progress += moved;
-        h.stamina  *= h.decayRate;
-      });
-
-      // Display bars: clamp visuals to 100% but retain raw progress
-      const bars = generateVisualProgress(raceState, false, 10, TURNS).split('\n');
-      const message = ['```', `🏁 Turn ${turn + 1}`, ...bars, '```'].join('\n');
-      await safeCall(postMessage, [{ room: ROOM, message }]);
-
-      // Post-turn commentary
-      const commentary = generateCommentary(turn + 1, raceState);
-      await safeCall(postMessage, [{ room: ROOM, message: commentary }]);
-
-      await delay(TURN_DELAY);
-    }
-
-    await delay(FINAL_DELAY);
-
-    // Determine close finishes (within threshold)
-    const maxProg = Math.max(...raceState.map(h => h.progress));
-    console.log('Final progresses:', raceState.map(h => ({ name: h.name, progress: h.progress.toFixed(3) })));    
-    const threshold = 0.1; // close finish threshold
-    const close = raceState
-      .filter(h => maxProg - h.progress <= threshold)
-      .map(h => h.index);
-
-    let winnerIdx;
-    if (close.length > 1) {
-      await safeCall(postMessage, [{ room: ROOM, message: `📸 PHOTO FINISH! Too close to call...` }]);
-      console.log('Photo finish candidates:', close);
-      const pick = close[Math.floor(Math.random() * close.length)];
-      console.log('Picked winner:', pick);
-      winnerIdx = pick;
-      await safeCall(postMessage, [{ room: ROOM, message: `🎬 After photo review, winner is #${pick+1} **${horses[pick].name}**! 🥇` }]);
-    } else {
-      winnerIdx = close[0];
-    }
-
-    await finalizeStatsAndPayouts(winnerIdx, horses, horseBets, raceState);
-  } catch (err) {
-    console.error('runRace failed:', err);
-    await safeCall(postMessage, [{ room: ROOM, message: `❌ Race simulation error.` }]);
+    await new Promise(r => setTimeout(r, LEG_DELAY_MS));
   }
-}
 
-async function finalizeStatsAndPayouts(winnerIdx, horses, horseBets, raceState) {
+  const maxProg = Math.max(...state.map(h => h.progress));
+  const close = state.map((h, i) => ({ i, d: maxProg - h.progress }))
+                     .filter(x => x.d <= (1 / 16))
+                     .map(x => x.i);
+
+  const winnerIdx = close.length > 1
+    ? close[Math.floor(Math.random() * close.length)]
+    : state.reduce((m, h, i, arr) => (h.progress >= arr[m].progress ? i : m), 0);
+
+  state[winnerIdx].progress = FINISH;
+
+  const payouts = {};
+  for (const [userId, slips] of Object.entries(horseBets || {})) {
+    let sum = 0;
+    for (const s of slips) {
+      if (s.horseIndex === winnerIdx) {
+        const dec = Number(horses[winnerIdx].odds || 3.0);
+        sum += Math.floor(s.amount * dec);
+      }
+    }
+    if (sum > 0) {
+      payouts[userId] = (payouts[userId] || 0) + sum;
+      await safeCall(addToUserWallet, [userId, sum]);
+    }
+  }
+
   try {
-    // Final display
-    const finalBar = generateVisualProgress(raceState, true, 10, TURNS);
-    await safeCall(postMessage, [{ room: ROOM, message: finalBar }]);
-
-    // Announce winner
-    const winner = horses[winnerIdx];
-    await safeCall(postMessage, [{ room: ROOM, message: `🏆 **WINNER!** #${winnerIdx+1} **${winner.name}**! 🎉` }]);
-
-    // Update stats
-    await Promise.all(horses.map((h, idx) => safeCall(updateHorseStats, [{
-      ...h,
-      racesParticipated: (h.racesParticipated || 0) + 1,
-      wins: (h.wins || 0) + (idx === winnerIdx ? 1 : 0),
-      retired: h.ownerId && ((h.racesParticipated || 0) + 1) >= (h.careerLength || Infinity) && !h.retired
-    }])));
-
-    // Payouts: check all user bets
-    for (const [userId, bets] of Object.entries(horseBets)) {
-      const hitBets = bets.filter(b => b.horseIndex === winnerIdx);
-      if (!hitBets.length) continue;
-      // sum all wins for this user
-      const totalWon = hitBets.reduce((sum, b) => sum + Math.floor(b.amount * winner.odds), 0);
-      await safeCall(addToUserWallet, [userId, totalWon]);
-      const nick = await safeCall(getUserNickname, [userId]);
-      await safeCall(postMessage, [{ room: ROOM, message: `💰 ${nick} won $${totalWon}!` }]);
+    for (let i = 0; i < horses.length; i++) {
+      const src = horses[i];
+      const isWin = i === winnerIdx;
+      await safeCall(updateHorseStats, [src.id, {
+        racesParticipated: (src.racesParticipated || 0) + 1,
+        wins: (src.wins || 0) + (isWin ? 1 : 0),
+      }]);
     }
-
-    // Owner bonus
-    if (winner.ownerId && winner.price > 0) {
-      const bonus = Math.floor(winner.price * 0.1);
-      await safeCall(addToUserWallet, [winner.ownerId, bonus]);
-      const ownerNick = await safeCall(getUserNickname, [winner.ownerId]);
-      await safeCall(postMessage, [{ room: ROOM, message: `🏇 Owner ${ownerNick} earned $${bonus} bonus!` }]);
-    }
-  } catch (err) {
-    console.error('finalizeStats failed:', err);
-    await safeCall(postMessage, [{ room: ROOM, message: `❌ Post-race processing failed.` }]);
+  } catch (e) {
+    console.warn('[simulation] updateHorseStats failed:', e?.message);
   }
+
+  let ownerBonus = null;
+  const winner = horses[winnerIdx];
+  if (winner?.ownerId && Number(winner?.price) > 0) {
+    const bonus = Math.floor(Number(winner.price) * 0.10);
+    if (bonus > 0) {
+      await safeCall(addToUserWallet, [winner.ownerId, bonus]);
+      ownerBonus = { ownerId: winner.ownerId, amount: bonus };
+    }
+  }
+
+  bus.emit('raceFinished', {
+    winnerIdx,
+    raceState: state.map(x => ({ index: x.index, name: x.name, progress: x.progress })),
+    payouts,
+    ownerBonus,
+    finishDistance: FINISH
+  });
 }

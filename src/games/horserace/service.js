@@ -1,33 +1,29 @@
+// horserace/service.js
 import { EventEmitter } from 'events';
 
-/**
- * Event bus for the horse race lifecycle.
- */
+/** Global event bus for the horse race lifecycle. */
 export const bus = new EventEmitter();
 
 /**
- * Executes an async function with retry support.
- * @param {Function} fn - Async function to call.
- * @param {Array} args - Arguments for fn.
- * @param {number} retries - Number of retry attempts.
- * @param {number} delayMs - Delay between retries in ms.
- * @returns {Promise<*>} Result of fn.
- * @throws Error when all attempts fail.
+ * Retry wrapper for async calls with tiny backoff.
+ * @param {Function} fn
+ * @param {Array} [args=[]]
+ * @param {number} [retries=1]
+ * @param {number} [delayMs=120]
  */
-export async function safeCall(fn, args = [], retries = 2, delayMs = 500) {
+export async function safeCall(fn, args = [], retries = 1, delayMs = 120) {
   let lastError;
   for (let i = 0; i <= retries; i++) {
     try {
       return await fn(...args);
     } catch (err) {
       lastError = err;
-      if (i < retries) await new Promise(res => setTimeout(res, delayMs));
+      if (i < retries) {
+        await new Promise(r => setTimeout(r, delayMs));
+      }
     }
   }
-
-  const error = new Error(
-    `${fn.name || 'anonymous'} failed after ${retries + 1} attempts: ${lastError.message}`
-  );
+  const error = new Error(`${fn.name || 'anonymous'} failed after ${retries + 1} attempts: ${lastError?.message}`);
   error.cause = lastError;
   throw error;
 }
