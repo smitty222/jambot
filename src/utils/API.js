@@ -1444,5 +1444,43 @@ const fetchDMsFromUser = async (userUUID) => {
   }
 }
 
+// Needs GENIUS_TOKEN (client access token) in env
+const H = { Authorization: `Bearer ${process.env.GENIUS_TOKEN}` };
+
+const searchSong = async (q) => {
+  const url = `https://api.genius.com/search?q=${encodeURIComponent(q)}`;
+  const r = await fetch(url, { headers: H });
+  const j = await r.json();
+  return j.response.hits; // [{ result: {...} }]
+};
+
+const getSong = async (id, fmt = 'plain') => {
+  const url = `https://api.genius.com/songs/${id}?text_format=${fmt}`;
+  const r = await fetch(url, { headers: H });
+  return (await r.json()).response.song;
+};
+
+// Example: title + artist → About text (plain & html)
+export async function getGeniusAbout({ title, artist }) {
+  const hits = await searchSong(`${title} ${artist}`);
+  const best = hits?.find(h =>
+    h.type === 'song' &&
+    h.result?.primary_artist?.name?.toLowerCase().includes(artist.toLowerCase())
+  )?.result || hits?.[0]?.result;
+
+  if (!best) return { aboutPlain: null, aboutHtml: null, songId: null };
+
+  const song = await getSong(best.id, 'plain,html');
+  const aboutPlain = song?.description?.plain?.trim() || null;
+  const aboutHtml  = song?.description?.html  || null;
+
+  // Optional fallback: some songs also include a description annotation object
+  // (useful if `description.plain` is empty)
+  const descAnno   = song?.description_annotation || null;
+
+  return { songId: song.id, aboutPlain, aboutHtml, descAnno };
+}
+
+
 
 export { getAccessToken, getSimilarArtists, getTrackTags, currentsongduration, spotifyTrackInfo, fetchTrackDetails, isUserAuthorized, fetchUserRoles, fetchRecentSongs, fetchCurrentUsers, fetchSpotifyPlaylistTracks, fetchCurrentlyPlayingSong, fetchSongData, DeleteQueueSong, fetchAllUserQueueSongIDsWithUUID, searchSpotify, getSenderNickname }

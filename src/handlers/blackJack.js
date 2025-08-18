@@ -6,7 +6,8 @@ const PLAYER_DECISION_TIMEOUT = 30000
 
 export const gameState = {
   tableUsers: [],
-  active: false,
+  active: false, // kept for compatibility; mirrors phase === 'playing'
+  phase: 'idle', // 'idle' | 'betting' | 'playing' | 'settling'
   playerBets: {},
   playerHands: {},
   dealerHand: [],
@@ -19,9 +20,10 @@ export const gameState = {
   awaitingInput: false,
   stats: {},
   doubledDown: new Set(),
-  surrendered: new Set(),
+  surrendered: new Set(), // used only for real surrenders
   splitHands: {},
-  splitIndex: {}
+  splitIndex: {},
+  naturalBlackjackPaid: new Set() // players already settled due to natural BJ
 }
 
 function delay(ms) {
@@ -105,12 +107,33 @@ function getFullTableView() {
 }
 
 function allPlayersHaveBet() {
-  return gameState.tableUsers.every(user => gameState.playerBets[user] > 0)
+  return gameState.tableUsers.length > 0 &&
+         gameState.tableUsers.every(user => (gameState.playerBets[user] ?? 0) > 0)
 }
 
+/** ── New: explicitly open betting phase (idempotent) ─────────────────── */
+async function openBetting() {
+  if (gameState.phase !== 'idle') return
+  gameState.phase = 'betting'
+  gameState.canJoinTable = true
+  await postMessage({
+    room: process.env.ROOM_UUID,
+    message: `🎲 Blackjack opened! Type **/join** to sit, then **/bet <amount>**. Betting closes in ${(BETTING_TIMEOUT_DURATION/1000)}s.`
+  })
+}
+
+/** Allow joining only while betting is open (unchanged behavior otherwise) */
 async function joinTable(userUUID, nickname) {
   const room = process.env.ROOM_UUID
-  if (!gameState.canJoinTable) return postMessage({ room, message: `${nickname}, the game has already started.` })
+
+  // If nothing has started yet, move to betting phase on first join
+  if (gameState.phase === 'idle') {
+    await openBetting()
+  }
+
+  if (!gameState.canJoinTable || gameState.phase !== 'betting') {
+    return postMessage({ room, message: `${nickname}, the round already started. Please wait for the next one.` })
+  }
 
   if (!gameState.tableUsers.includes(userUUID)) {
     gameState.tableUsers.push(userUUID)
@@ -132,15 +155,39 @@ async function leaveTable(userUUID) {
     delete gameState.playerBets[userUUID]
     delete gameState.playerHands[userUUID]
     delete gameState.userNicknames[userUUID]
+    delete gameState.splitHands[userUUID]
+    delete gameState.splitIndex[userUUID]
+    gameState.doubledDown.delete(userUUID)
+    gameState.surrendered.delete(userUUID)
+    gameState.naturalBlackjackPaid.delete(userUUID)
     await postMessage({ room, message: `${nickname} has left the blackjack table.` })
   }
 }
 
+/** ── Most important change: anyone can bet during the betting phase ──── */
 async function handleBlackjackBet(userUUID, betAmount, nickname) {
   const room = process.env.ROOM_UUID
+
+  // If no round exists yet, this first bet opens betting and auto-joins user
+  if (gameState.phase === 'idle') {
+    await openBetting()
+  }
+
+  if (gameState.phase !== 'betting') {
+    return postMessage({ room, message: `${nickname}, betting is closed for this round.` })
+  }
+
+  // Auto-join on bet if not seated yet
+  if (!gameState.tableUsers.includes(userUUID)) {
+    await joinTable(userUUID, nickname)
+  }
+
   const balance = await getUserWallet(userUUID)
-  if (gameState.playerBets[userUUID] > 0) {
+  if ((gameState.playerBets[userUUID] ?? 0) > 0) {
     return postMessage({ room, message: `${nickname}, you've already placed a bet.` })
+  }
+  if (!Number.isFinite(betAmount) || betAmount <= 0) {
+    return postMessage({ room, message: `${nickname}, please enter a valid bet amount.` })
   }
   if (balance < betAmount) {
     return postMessage({ room, message: `${nickname}, not enough funds to bet $${betAmount}.` })
@@ -152,29 +199,48 @@ async function handleBlackjackBet(userUUID, betAmount, nickname) {
 
   await postMessage({ room, message: `${nickname} placed a bet of $${betAmount}.` })
 
-  if (allPlayersHaveBet()) {
-    clearTimeout(gameState.bettingTimeout)
-    await startGame()
-  } else if (!gameState.bettingTimeout) {
+  // Start/extend the betting window once the first valid bet is in
+  if (!gameState.bettingTimeout) {
     gameState.bettingTimeout = setTimeout(async () => {
+      // Remove anyone who never bet
       for (const user of [...gameState.tableUsers]) {
         if (!gameState.playerBets[user]) await leaveTable(user)
       }
-      await postMessage({ room, message: `Time's up! Starting with remaining players.` })
+      if (gameState.tableUsers.length === 0) {
+        await postMessage({ room, message: `No active bettors. Round cancelled.` })
+        return resetGame()
+      }
+      await postMessage({ room, message: `⏰ Betting closed. Dealing...` })
       await startGame()
     }, BETTING_TIMEOUT_DURATION)
+  }
+
+  // If everyone seated has now bet, start immediately
+  if (allPlayersHaveBet()) {
+    clearTimeout(gameState.bettingTimeout)
+    gameState.bettingTimeout = null
+    await postMessage({ room, message: `All bets in. Dealing now!` })
+    await startGame()
   }
 }
 
 async function startGame() {
   const room = process.env.ROOM_UUID
+  if (gameState.phase !== 'betting') return // double-guard
+  clearTimeout(gameState.bettingTimeout); gameState.bettingTimeout = null
+
+  gameState.phase = 'playing'
+  gameState.active = true
+  gameState.canJoinTable = false
+
   gameState.deck = createDeck()
   shuffleDeck(gameState.deck)
   gameState.dealerHand = [gameState.deck.pop(), gameState.deck.pop()]
 
   await postMessage({ room, message: `🃏 Dealing cards...` })
-  await delay(1500)
+  await delay(1000)
 
+  // Deal to players
   for (const user of gameState.tableUsers) {
     const hand = [gameState.deck.pop(), gameState.deck.pop()]
     const nickname = gameState.userNicknames[user]
@@ -183,14 +249,14 @@ async function startGame() {
     await postMessage({ room, message: `${nickname}'s hand: ${formatHandWithValue(hand)}` })
 
     if (calculateHandValue(hand) === 21) {
+      // Pay immediately (3:2 -> original bet + 1.5x winnings = 2.5x total)
       const payout = Math.floor(gameState.playerBets[user] * 2.5)
       await addToUserWallet(user, payout)
       await postMessage({ room, message: `🎉 ${nickname} has a natural blackjack! (+$${payout})` })
-      gameState.surrendered.add(user)
+      gameState.naturalBlackjackPaid.add(user)
     }
   }
 
-  gameState.active = true
   gameState.currentPlayerIndex = 0
   await postMessage({ room, message: `Dealer's visible card: ${getCardEmoji(gameState.dealerHand[0])}` })
   await promptPlayerTurn()
@@ -198,10 +264,21 @@ async function startGame() {
 
 async function promptPlayerTurn() {
   const room = process.env.ROOM_UUID
+  if (gameState.phase !== 'playing') return
+
+  // Skip players who already got paid for natural BJ
+  while (gameState.currentPlayerIndex < gameState.tableUsers.length &&
+         (gameState.naturalBlackjackPaid.has(gameState.tableUsers[gameState.currentPlayerIndex]) ||
+          !gameState.playerHands[gameState.tableUsers[gameState.currentPlayerIndex]])) {
+    gameState.currentPlayerIndex++
+  }
+
+  if (gameState.currentPlayerIndex >= gameState.tableUsers.length) {
+    return playDealerTurn()
+  }
+
   const user = gameState.tableUsers[gameState.currentPlayerIndex]
   const nickname = gameState.userNicknames[user] || user
-
-  if (gameState.surrendered.has(user)) return handleNextPlayer()
 
   const hand = gameState.playerHands[user]
   gameState.awaitingInput = true
@@ -211,6 +288,7 @@ async function promptPlayerTurn() {
     message: `🎯 It's your turn, ${nickname}!\n${formatHandWithValue(hand)}\n\nType /hit, /stand, /double, /surrender, or /split`
   })
 
+  clearTimeout(gameState.turnTimeout)
   gameState.turnTimeout = setTimeout(async () => {
     await postMessage({ room, message: `😴 ${nickname} took too long. Auto-standing.` })
     await handleStand(user, nickname)
@@ -276,11 +354,15 @@ async function handleSurrender(userUUID, nickname) {
 
 async function handleDouble(userUUID, nickname) {
   if (!validateTurn(userUUID, nickname)) return
-  if (gameState.playerHands[userUUID].length !== 2) return postMessage({ room: process.env.ROOM_UUID, message: `${nickname}, you can only double on your first turn.` })
+  if (gameState.playerHands[userUUID].length !== 2) {
+    return postMessage({ room: process.env.ROOM_UUID, message: `${nickname}, you can only double on your first turn.` })
+  }
 
   const extraBet = gameState.playerBets[userUUID]
   const balance = await getUserWallet(userUUID)
-  if (balance < extraBet) return postMessage({ room: process.env.ROOM_UUID, message: `${nickname}, not enough balance to double.` })
+  if (balance < extraBet) {
+    return postMessage({ room: process.env.ROOM_UUID, message: `${nickname}, not enough balance to double.` })
+  }
 
   await removeFromUserWallet(userUUID, extraBet)
   gameState.playerBets[userUUID] *= 2
@@ -293,6 +375,10 @@ async function handleDouble(userUUID, nickname) {
 }
 
 function validateTurn(userUUID, nickname) {
+  if (gameState.phase !== 'playing') {
+    postMessage({ room: process.env.ROOM_UUID, message: `${nickname}, no active turn right now.` })
+    return false
+  }
   if (gameState.tableUsers[gameState.currentPlayerIndex] !== userUUID) {
     postMessage({ room: process.env.ROOM_UUID, message: `⛔ It's not your turn, ${nickname}.` })
     return false
@@ -312,6 +398,7 @@ async function handleNextPlayer() {
 
 async function playDealerTurn() {
   const room = process.env.ROOM_UUID
+  gameState.phase = 'settling'
   await postMessage({ room, message: `🃍 Dealer's turn.` })
 
   while (calculateHandValue(gameState.dealerHand) < 17 && gameState.deck.length) {
@@ -326,6 +413,9 @@ async function playDealerTurn() {
     const nickname = gameState.userNicknames[user]
     const bet = gameState.playerBets[user]
 
+    // Skip anyone already paid for natural blackjack
+    if (gameState.naturalBlackjackPaid.has(user)) continue
+    // Skip true surrenders (already refunded half)
     if (gameState.surrendered.has(user)) continue
 
     const hands = gameState.splitHands[user] || [gameState.playerHands[user]]
@@ -359,22 +449,25 @@ function endGameDueToDeck() {
 }
 
 function resetGame() {
+  clearTimeout(gameState.bettingTimeout); gameState.bettingTimeout = null
+  clearTimeout(gameState.turnTimeout); gameState.turnTimeout = null
+
   Object.assign(gameState, {
     tableUsers: [],
     active: false,
+    phase: 'idle',
     playerBets: {},
     playerHands: {},
     dealerHand: [],
     deck: [],
     currentPlayerIndex: 0,
     canJoinTable: true,
-    bettingTimeout: null,
-    turnTimeout: null,
     awaitingInput: false,
     doubledDown: new Set(),
     surrendered: new Set(),
     splitHands: {},
-    splitIndex: {}
+    splitIndex: {},
+    naturalBlackjackPaid: new Set()
   })
 }
 

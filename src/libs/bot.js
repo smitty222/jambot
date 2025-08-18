@@ -1,3 +1,4 @@
+// src/libs/bot.js
 import fastJson from 'fast-json-patch'
 import { SocketClient } from 'ttfm-socket'
 import { joinChat, getMessages, postMessage } from '../libs/cometchat.js'
@@ -28,8 +29,39 @@ import { saveCurrentState } from '../database/dbcurrent.js'
 import { askQuestion } from './ai.js'
 import db from '../database/db.js'
 
-const startTimeStamp = Math.floor(Date.now() / 1000)
+const startTimeStamp = Math.floor(Date.now() / 1000) // seconds
 const botUUID = process.env.BOT_USER_UUID
+
+// ───────────────────────────────────────────────────────────
+// Cursor persistence (tiny table)
+// ───────────────────────────────────────────────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS message_cursors (
+    scope TEXT PRIMARY KEY,
+    ts INTEGER NOT NULL
+  );
+`)
+
+function loadCursor(scope, fallbackSec) {
+  try {
+    const row = db.prepare(`SELECT ts FROM message_cursors WHERE scope = ?`).get(scope)
+    return row?.ts ?? fallbackSec
+  } catch (e) {
+    logger.warn('[cursor] load failed', { scope, e })
+    return fallbackSec
+  }
+}
+
+function saveCursor(scope, ts) {
+  try {
+    db.prepare(`
+      INSERT INTO message_cursors(scope, ts) VALUES(?, ?)
+      ON CONFLICT(scope) DO UPDATE SET ts = excluded.ts
+    `).run(scope, Math.floor(Number(ts) || 0))
+  } catch (e) {
+    logger.warn('[cursor] save failed', { scope, e })
+  }
+}
 
 // ───────────────────────────────────────────────────────────
 // Theme resolution (DB-first) + album predicate
@@ -47,31 +79,20 @@ function getThemeFromDB(roomUUID) {
 }
 
 function resolveRoomTheme(roomUUID) {
-  // 1) DB (your /settheme writes here)
   const dbTheme = getThemeFromDB(roomUUID)
-  if (dbTheme) {
-    console.log(`[Theme] resolved from DB: "${dbTheme}"`)
-    return dbTheme
-  }
+  if (dbTheme) { console.log(`[Theme] resolved from DB: "${dbTheme}"`); return dbTheme }
 
-  // 2) Fallbacks (existing in-memory helpers)
   const tm = themeManager.getTheme(roomUUID)
-  if (tm) {
-    console.log(`[Theme] resolved from themeManager: "${tm}"`)
-    return tm
-  }
+  if (tm) { console.log(`[Theme] resolved from themeManager: "${tm}"`); return tm }
+
   const rt = roomThemes[roomUUID]
-  if (rt) {
-    console.log(`[Theme] resolved from roomThemes: "${rt}"`)
-    return rt
-  }
+  if (rt) { console.log(`[Theme] resolved from roomThemes: "${rt}"`); return rt }
 
   console.log('[Theme] no theme found, defaulting to empty')
   return ''
 }
 
 export function isAlbumThemeActive(roomUUID) {
-  // optional override to test flow quickly
   if (['1','true','yes','on'].includes(String(process.env.FORCE_ALBUM_THEME || '').toLowerCase())) {
     console.log('[Theme] FORCE_ALBUM_THEME=on → albumActive=true')
     return true
@@ -84,7 +105,7 @@ export function isAlbumThemeActive(roomUUID) {
 }
 
 // ───────────────────────────────────────────────────────────
-// AI helpers: Build a tiny, safe blurb + resilient ask
+// AI blurb helpers
 // ───────────────────────────────────────────────────────────
 export function buildSongBlurbPrompt(song, tone = 'neutral') {
   const {
@@ -97,7 +118,19 @@ export function buildSongBlurbPrompt(song, tone = 'neutral') {
       ? 'Tone: nerdy—include one micro fact (sample, key, or label).'
       : 'Tone: neutral, informative.'
 
-  return `You are a music room bot. Write ONE ultra-brief blurb (max 160 characters) about the current song.\nOnly include facts you are highly confident in (>=90%) such as year, subgenre, if it is a remix/cover/sample, notable chart peak, country of origin, or producer.\nIf unsure, skip the fact and describe the vibe/genre succinctly. No links, no hashtags, no quotes, no extra lines. Output ONLY the blurb text.\n${toneLine}\n\nSong metadata:\nTitle: ${trackName || 'Unknown'}\nArtist: ${artistName || 'Unknown'}\nAlbum: ${albumName || 'Unknown'}\nRelease: ${releaseDate || 'Unknown'}\nISRC: ${isrc || 'Unknown'}\nSpotify popularity: ${popularity ?? 'Unknown'}\nOptional: BPM ${bpm ?? 'Unknown'}, Key ${key ?? 'Unknown'}, Genres ${genres ?? 'Unknown'}, Notes ${notes ?? ''}`
+  return `You are a music room bot. Write ONE ultra-brief blurb (max 160 characters) about the current song.
+Only include facts you are highly confident in (>=90%) such as year, subgenre, if it is a remix/cover/sample, notable chart peak, country of origin, or producer.
+If unsure, skip the fact and describe the vibe/genre succinctly. No links, no hashtags, no quotes, no extra lines. Output ONLY the blurb text.
+${toneLine}
+
+Song metadata:
+Title: ${trackName || 'Unknown'}
+Artist: ${artistName || 'Unknown'}
+Album: ${albumName || 'Unknown'}
+Release: ${releaseDate || 'Unknown'}
+ISRC: ${isrc || 'Unknown'}
+Spotify popularity: ${popularity ?? 'Unknown'}
+Optional: BPM ${bpm ?? 'Unknown'}, Key ${key ?? 'Unknown'}, Genres ${genres ?? 'Unknown'}, Notes ${notes ?? ''}`
 }
 
 function extractText(reply) {
@@ -124,6 +157,31 @@ async function safeAskQuestion(prompt) {
 }
 
 // ───────────────────────────────────────────────────────────
+// Polling helpers
+// ───────────────────────────────────────────────────────────
+function toSec(ts) {
+  const n = Number(ts)
+  if (!Number.isFinite(n)) return 0
+  return n > 2e10 ? Math.floor(n / 1000) : Math.floor(n) // ms → sec
+}
+
+function normalizeMessages(raw) {
+  if (!raw) return []
+  const body = (raw && typeof raw === 'object' && 'data' in raw && !Array.isArray(raw.data)) ? raw.data : raw
+  if (Array.isArray(body)) return body
+  if (Array.isArray(body.data)) return body.data
+  if (Array.isArray(body.messages)) return body.messages
+  if (Array.isArray(body.items)) return body.items
+  if (Array.isArray(body.results)) return body.results
+  if (Array.isArray(body?.data?.messages)) return body.data.messages
+  if (Array.isArray(body?.data?.items))    return body.data.items
+  if (Array.isArray(body?.result?.messages)) return body.result.messages
+  if (Array.isArray(body?.data?.data)) return body.data.data
+  if (typeof body === 'object' && (body.id || body.message || body.text)) return [body]
+  return []
+}
+
+// ───────────────────────────────────────────────────────────
 // Bot
 // ───────────────────────────────────────────────────────────
 export class Bot {
@@ -138,7 +196,12 @@ export class Bot {
     this.tokenRole = process.env.TOKEN_ROLE
     this.userUUID = process.env.BOT_USER_UUID
 
-    this.lastMessageIDs = {}
+    // Load persisted cursors (fallback to boot time)
+    this.lastMessageIDs = {
+      room: loadCursor('room', startTimeStamp),
+      dm:   loadCursor('dm',   startTimeStamp)
+    }
+
     this.currentTheme = themeManager.getTheme(this.roomUUID) || ''
     this.socket = null
     this.playlistId = process.env.DEFAULT_PLAYLIST_ID
@@ -165,18 +228,15 @@ export class Bot {
 
     this.lastPlayedSong = { songId: null, timestamp: 0 }
 
-    // de-dupe album theme posts & blurbs per song
     this._lastAlbumThemeSongId = null
     this._lastBlurbBySongId = new Map()
   }
 
-  // --- AutoBop / AutoDJ toggles ---
   async enableAutoBop() { this.autobop = true }
   async disableAutoBop() { this.autobop = false }
   async enableAutoDJ() { this.autoDJ = true }
   async disableAutoDJ() { this.autoDJ = false }
 
-  // --- Connect to room and setup socket ---
   async connect() {
     logger.debug('Connecting to room')
     try {
@@ -189,7 +249,6 @@ export class Bot {
     }
   }
 
-  // --- Utility ---
   getCurrentSpotifyUrl() {
     return this.currentSong?.spotifyUrl || null
   }
@@ -205,51 +264,134 @@ export class Bot {
     this.recentSpotifyTrackIds.unshift(trackId)
   }
 
+  async getRandomSong() {
+    try {
+      const playlistId = process.env.DEFAULT_PLAYLIST_ID
+      const tracks = await fetchSpotifyPlaylistTracks(playlistId)
+      if (!tracks || tracks.length === 0) throw new Error('No tracks found in the selected source.')
+      const randomTrack = tracks[Math.floor(Math.random() * tracks.length)]
+      const song = (this.convertTracks ? await this.convertTracks(randomTrack) : randomTrack)
+      return song
+    } catch (error) {
+      console.error('Error getting random song:', error)
+      throw error
+    }
+  }
+
+  async generateSongPayload() {
+    const spotifyTrackId = await getPopularSpotifyTrackID()
+    if (!spotifyTrackId) throw new Error('No popular Spotify track ID found.')
+    const songData = await fetchSongData(spotifyTrackId)
+    if (!songData || !songData.id) throw new Error('Invalid song data received.')
+    return {
+      songId: songData.id,
+      trackName: songData.trackName,
+      artistName: songData.artistName,
+      duration: songData.duration,
+      isrc: songData.isrc || '',
+      explicit: songData.explicit || false,
+      genre: songData.genre || '',
+      links: songData.links || {},
+      musicProviders: songData.musicProviders || {},
+      thumbnails: songData.thumbnails || {},
+      playbackToken: songData.playbackToken || null,
+      album: songData.album || {},
+      artist: songData.artist || {},
+      status: songData.status || 'PENDING_UPLOAD',
+      updatedAt: songData.updatedAt
+    }
+  }
+
+  /**
+   * Robust poller with lookback, counters, and cursor persistence.
+   */
   async processNewMessages() {
     if (this._processingMessages) return
     this._processingMessages = true
+    this._emptyPolls = this._emptyPolls ?? 0
+
     try {
-      this.lastMessageIDs = {
-        room: this.lastMessageIDs?.room ?? startTimeStamp,
-        dm: this.lastMessageIDs?.dm ?? startTimeStamp
-      }
-      this._seenMessageIds = this._seenMessageIds || new Set()
+      const handleStream = async (scope) => {
+        const isGroup = scope === 'group'
+        const sinceSec = toSec(isGroup ? this.lastMessageIDs.room : this.lastMessageIDs.dm)
+        const lookbackSec = (this._emptyPolls >= 3) ? Math.max(sinceSec - 120, startTimeStamp) : sinceSec
+        const who = isGroup ? this.roomUUID : botUUID
 
-      // Group chat
-      {
-        const oldTs = this.lastMessageIDs.room
-        const msgs = (await getMessages(this.roomUUID, oldTs, 'group')).data || []
-        let maxTs = oldTs
-        for (const { id, sentAt, data, sender } of msgs) {
-          if (!id || !sentAt || !data?.text) continue
-          if (this._seenMessageIds.has(id)) continue
-          this._seenMessageIds.add(id)
-          maxTs = Math.max(maxTs, sentAt + 1)
-          const txt = data.text.trim()
-          if (!txt || !sender || sender === botUUID) continue
-          if ([botUUID, process.env.CHAT_REPLY_ID].includes(sender)) continue
-          await handlers.message({ message: txt, sender, receiverType: 'group' }, this.roomUUID, this.state, this)
+        const raw = await getMessages(who, lookbackSec, scope)
+        const msgs = normalizeMessages(raw?.data ?? raw)
+
+        let gotAny = false
+        let maxSec = sinceSec
+        let processed = 0
+
+        for (const m of msgs) {
+          try {
+            const id =
+              m?.id ?? m?._id ?? m?.guid ?? m?.messageId ?? m?.meta?.id
+            const sentAtSec = toSec(
+              m?.sentAt ?? m?.timestamp ?? m?.createdAt ?? m?.data?.sentAt
+            )
+            const text = (m?.data?.text ?? m?.text ?? m?.message ?? '').trim()
+            const sender =
+              m?.sender ?? m?.senderId ?? m?.from ?? m?.ownerUid ??
+              m?.entities?.sender?.uid ?? m?.entities?.sender?.id
+
+            if (!id || !sentAtSec || !text) continue
+            if (this._seenMessageIds?.has(id)) continue
+            this._seenMessageIds = this._seenMessageIds || new Set()
+            this._seenMessageIds.add(id)
+
+            maxSec = Math.max(maxSec, sentAtSec + 1)
+            gotAny = true
+            processed++
+
+            if (!sender || sender === botUUID) continue
+            if ([botUUID, process.env.CHAT_REPLY_ID].includes(sender)) continue
+
+            if (isGroup) {
+              await handlers.message(
+                { message: text, sender, receiverType: 'group' },
+                this.roomUUID,
+                this.state,
+                this
+              )
+            } else {
+              const senderName =
+                m?.data?.entities?.sender?.name ??
+                m?.senderName ??
+                'Unknown'
+
+              addTrackedUser(sender)
+
+              await handlers.message(
+                { message: text, sender, senderName, receiverType: 'user' },
+                sender,
+                this.state
+              )
+            }
+          } catch (err) {
+            logger.error(`processNewMessages[${scope}] per-message error`, { err })
+          }
         }
-        if (maxTs !== oldTs) this.lastMessageIDs.room = maxTs
+
+        // advance + persist cursor if progressed
+        if (isGroup && maxSec !== sinceSec) {
+          this.lastMessageIDs.room = maxSec
+          saveCursor('room', maxSec)
+        }
+        if (!isGroup && maxSec !== sinceSec) {
+          this.lastMessageIDs.dm = maxSec
+          saveCursor('dm', maxSec)
+        }
+
+        logger.debug(`poll[${scope}] processed=${processed} emptyPolls=${this._emptyPolls} since=${sinceSec} -> ${maxSec}`)
+        return gotAny
       }
 
-      // Direct messages
-      {
-        const oldTs = this.lastMessageIDs.dm
-        const msgs = (await getMessages(botUUID, oldTs, 'user')).data || []
-        let maxTs = oldTs
-        for (const { id, sentAt, data, sender } of msgs) {
-          if (!id || !sentAt || !data?.text) continue
-          if (this._seenMessageIds.has(id)) continue
-          this._seenMessageIds.add(id)
-          maxTs = Math.max(maxTs, sentAt + 1)
-          const txt = data.text.trim()
-          if (!txt || !sender || sender === botUUID) continue
-          addTrackedUser(sender)
-          await handlers.message({ message: txt, sender, senderName: data.entities?.sender?.name ?? 'Unknown', receiverType: 'user' }, sender, this.state)
-        }
-        if (maxTs !== oldTs) this.lastMessageIDs.dm = maxTs
-      }
+      const gotGroup = await handleStream('group')
+      const gotDMs   = await handleStream('user')
+
+      this._emptyPolls = (gotGroup || gotDMs) ? 0 : Math.min(this._emptyPolls + 1, 10)
     } catch (err) {
       logger.error('Error in processNewMessages:', err)
     } finally {
@@ -257,14 +399,13 @@ export class Bot {
     }
   }
 
-  // --- Setup socket event listeners ---
+  // Socket listeners (unchanged)
   configureListeners() {
     const self = this
     logger.debug('Setting up listeners')
 
     this.socket.on('statefulMessage', async (payload) => {
       try {
-        // Pre-create nested paths before patch apply
         for (const op of payload.statePatch) {
           if (!op.path || !op.path.startsWith('/')) continue
           const parts = op.path.split('/').slice(1)
@@ -296,7 +437,6 @@ export class Bot {
         }
       }
 
-       // --- Handle playedSong event ---
       if (payload.name === 'playedSong') {
         const currentDJs = getCurrentDJUUIDs(this.state)
         if (currentDJs.length === 0) {
@@ -364,20 +504,17 @@ export class Bot {
           try { saveCurrentState({ currentSong: this.currentSong, currentAlbum: this.currentAlbum }) }
           catch (err) { console.error('Failed to save current state:', err) }
 
-          // DB-first theme check here (async)
           const albumActive = await isAlbumThemeActive(this.roomUUID)
           const songIdForDedupe = this.currentSong.songId || this.currentSong.spotifyTrackId || this.currentSong.trackName
           console.log(`[AlbumTheme] active=${albumActive} | song="${this.currentSong.trackName}" id="${songIdForDedupe}"`)
 
           if (albumActive) {
             if (this._lastAlbumThemeSongId !== songIdForDedupe) {
-              // fire-and-forget (don’t block the rest)
               handleAlbumTheme({ roomUUID: this.roomUUID, rawPayload: payload })
                 .catch(err => console.error('[AlbumTheme] handleAlbumTheme error:', err))
               this._lastAlbumThemeSongId = songIdForDedupe
             }
           } else {
-            // this already soft-times out AI so it won’t block
             announceNowPlaying(this.roomUUID).catch(err =>
               logger.error('announceNowPlaying failed:', err)
             )
@@ -438,34 +575,13 @@ export class Bot {
       }
     })
   }
-  // --- Get current room users ---
+
   async storeCurrentRoomUsers() {
     try {
       const currentUsers = await fetchCurrentUsers()
       this.currentRoomUsers = currentUsers
     } catch (error) {
       console.error('Error fetching and storing current room users:', error.message)
-    }
-  }
-
-  // --- Random song helpers (used by AutoDJ) ---
-  async getRandomSong(useSuggestions = false) {
-    try {
-      let tracks
-      if (useSuggestions) {
-        const recentTracks = this.recentSpotifyTrackIds.slice(0, 5)
-        tracks = await fetchSpotifyRecommendations([], [], recentTracks, 5)
-      } else {
-        const playlistId = process.env.DEFAULT_PLAYLIST_ID
-        tracks = await fetchSpotifyPlaylistTracks(playlistId)
-      }
-      if (!tracks || tracks.length === 0) throw new Error('No tracks found in the selected source.')
-      const randomTrack = tracks[Math.floor(Math.random() * tracks.length)]
-      const song = await this.convertTracks(randomTrack) // assumes you have this method elsewhere
-      return song
-    } catch (error) {
-      console.error('Error getting random song:', error)
-      throw error
     }
   }
 
@@ -511,23 +627,6 @@ export class Bot {
     }
   }
 
-  async addUserDJ(userUuid, tokenRole = 'User') {
-    try {
-      if (!userUuid) { console.error('❌ [addUserDJ] Invalid userUuid:', userUuid); return }
-      const currentDJs = getCurrentDJUUIDs(this.state)
-      if (currentDJs.includes(userUuid)) { console.log(`ℹ️ User ${userUuid} is already on stage.`); return }
-      if (userUuid === this.userUUID) { console.warn('⚠️ [addUserDJ] Use addDJ for the bot.'); return }
-      if (!this.socket) throw new Error('SocketClient not initialized. Please call connect() first.')
-      await this.socket.action('addDj', {
-        roomUuid: process.env.ROOM_UUID,
-        userUuid: String(userUuid),
-        tokenRole
-      })
-      console.log(`✅ [addUserDJ] Successfully added user ${String(userUuid)} to DJ lineup.`)
-    } catch (error) {
-      logger.error('❌ [addUserDJ] Error adding user to DJ lineup:', error)
-    }
-  }
 
   async addDJ(userUuid, tokenRole = 'DJ') {
     try {
@@ -620,7 +719,7 @@ export class Bot {
   }
 }
 
-// helpers shared in this file
+// helpers
 export function getCurrentDJUUIDs(state) {
   if (!state) return []
   const visible = Array.isArray(state.visibleDjs) ? state.visibleDjs : []
@@ -642,3 +741,7 @@ export function whoIsCurrentDJ(state) {
   const currentDJUuid = getCurrentDJ(state)
   return currentDJUuid === process.env.BOT_USER_UUID ? 'bot' : 'user'
 }
+
+  
+
+

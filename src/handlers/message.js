@@ -6,7 +6,14 @@ import { logger } from '../utils/logging.js'
 import { getAlbumsByArtist, getAlbumTracks, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSongData, updateRoomInfo, isUserOwner, searchSpotify, getSenderNickname, getMLBScores, getNHLScores, getNBAScores, getTopHomeRunLeaders, getSimilarTracks, getTopChartTracks, addSongsToCrate, getUserToken, clearUserQueueCrate, getUserQueueCrateId} from '../utils/API.js'
 import { handleLotteryCommand, handleLotteryNumber, handleTopLotteryStatsCommand, handleSingleNumberQuery, handleLotteryCheck, LotteryGameActive, getLotteryWinners } from '../database/dblotterymanager.js'
 import { enableSongStats, disableSongStats, isSongStatsEnabled, saveSongReview, getAverageRating} from '../utils/voteCounts.js'
-import { enableGreetingMessages, disableGreetingMessages, greetingMessagesEnabled } from './userJoined.js'
+import {
+  enableGreetingMessages,
+  disableGreetingMessages,
+  greetingMessagesEnabled,
+  enableAIGreeting,
+  disableAIGreeting,
+  aiGreetingEnabled
+} from '../handlers/userJoined.js'
 import { getCurrentDJ, getCurrentDJUUIDs } from '../libs/bot.js'
 import { readRecentSongs } from '../database/dbrecentsongsmanager.js'
 import { addTracksToPlaylist, removeTrackFromPlaylist } from '../utils/playlistUpdate.js'
@@ -28,8 +35,7 @@ import { askMagic8Ball } from './magic8Ball.js'
 import { storeItems } from '../libs/jamflowStore.js'
 import { saveAlbumReview, getTopAlbumReviews, getUserAlbumReviews } from '../database/dbalbumstatsmanager.js'
 import { placeSportsBet, resolveCompletedBets } from '../utils/sportsBet.js'
-import { setTheme } from '../utils/themeManager.js'
-import * as themeManager from '../utils/themeManager.js'
+import { handleThemeCommand } from '../database/dbtheme.js'
 import { getUserSongReviews } from '../database/dbroomstatsmanager.js'
 import { fetchOddsForSport, formatOddsMessage } from '../utils/sportsBetAPI.js'
 import { saveOddsForSport, getOddsForSport } from '../utils/bettingOdds.js'
@@ -37,12 +43,9 @@ import { startHorseRace, handleHorseBet, isWaitingForEntries, handleHorseEntryAt
 import { QueueManager } from '../utils/queueManager.js'
 import db from '../database/db.js'
 import { handleAddAvatarCommand } from './addAvatar.js'
-import { getCurrentState } from '../database/dbcurrent.js'
-import { handleThemeCommand } from '../database/dbtheme.js'
-import { routeCrapsMessage } from '../games/craps/message.js'
-import '../games/craps/crapsController.js'; 
 import { enableNowPlayingInfoBlurb, disableNowPlayingInfoBlurb, isNowPlayingInfoBlurbEnabled, setNowPlayingInfoBlurbTone, getNowPlayingInfoBlurbTone } from '../utils/announceNowPlaying.js'
-
+import { routeCrapsMessage } from '../games/craps/craps.single.js'
+import '../games/craps/craps.single.js'
 
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
@@ -135,6 +138,14 @@ export default async (payload, room, state, roomBot) => {
 
   const txt = payload.message.trim();
 
+
+  // 🔧 sanity check route
+  if (/^\/ping\b/i.test(txt)) {
+    const room = payload.receiverType === 'user' ? roomOrPeer : roomOrPeer; // both work
+    await postMessage({ room, message: 'pong ✅' });
+    return;
+  }
+
    // ─── HORSE‐RACE ENTRY & COMMANDS ────────────────────────────────────────
 
   // A) If we're in the 30s entry window, ANY non‐slash chat is an entry
@@ -176,6 +187,8 @@ if (/^\/(craps|join|roll|pass|dontpass|come|place|removeplace)\b/i.test(txt)) {
   console.log('▶ dispatch → routeCrapsMessage');
   return routeCrapsMessage(payload);
 }
+
+
 // ─── END CRAPS BLOCK ──────────────────────────
 
   // Handle Gifs Sent in Chat
@@ -350,7 +363,7 @@ if (
     }
 
     // default: ask AI with timeout
-    const responseText = await safeAskQuestion(context, askQuestion, logger)
+    const responseText = await safeAskQuestion(question, askQuestion, logger)
     console.log('AI Reply:', responseText)
     logger.info(`AI Reply: ${responseText}`)
     await postMessage({ room, message: responseText })
@@ -840,6 +853,25 @@ Please refresh your page for tha queue to update`
         message: `testing!`
       });
 
+    
+  } else if (payload.message.startsWith('/crapsrecord')) {
+    const row = db.prepare(`
+      SELECT maxRolls, shooterNickname, shooterId, achievedAt
+      FROM craps_records
+      WHERE roomId = ?
+    `).get(room);
+
+    const count = row?.maxRolls ?? 0;
+    let who = row?.shooterNickname || '—';
+    if (!row?.shooterNickname && row?.shooterId) {
+      who = await getUserNickname(row.shooterId).catch(() => 'Someone');
+    }
+    const when = row?.achievedAt || '—';
+
+    return postMessage({
+      room: room,
+      message: `🏆 **Current record:** ${count} roll(s) by **${who}**\n🗓️ Set: ${when}`
+    });
   
     /// /////////////// General Commands ////////////////
   } else if (payload.message.startsWith('/games')) {
@@ -847,25 +879,20 @@ Please refresh your page for tha queue to update`
       room,
       message: 'Games:\n- /trivia: Play Trivia\n- /lottery: Play the Lottery\n- /roulette: Play Roulette\n- /slots: Play Slots\n- /blackjack: Play Blackjack\n- /horserace\n- /slotinfo: Display slots payout info\n- /lotto (#):Insert number to get amount of times won\n- /lottostats: Get most won lottery numbers \n- /jackpot: Slots progressive jackpot value'
     })
- } else if (/^(\/theme|\/settheme|\/removetheme)\b/i.test(payload.message.trim())) {
-    console.log('[MessageHandler] routing to theme handler:', payload.message);
+} else if (/^(\/theme|\/settheme|\/removetheme)\b/i.test(payload.message.trim())) {
+  console.log('[MessageHandler] routing to theme handler:', payload.message)
+  try {
+    await handleThemeCommand({
+      sender:  payload.sender,
+      room,
+      message: payload.message
+    })
+  } catch (err) {
+    console.error('[MessageHandler] theme handler threw:', err)
+    await postMessage({ room, message: '⚠️ Theme command failed—please try again.' })
+  }
+  return
 
-    try {
-      // note: handler expects { sender, room, message }
-      await handleThemeCommand({
-        sender:  payload.sender,
-        room,
-        message: payload.message
-      });
-    } catch (err) {
-      console.error('[MessageHandler] theme handler threw:', err);
-      // optional fallback message:
-      await postMessage({
-        room,
-        message: '⚠️ Theme command failed—please try again.'
-      });
-    }
-    return; 
   } else if (payload.message.startsWith('/djbeers')) {
   try {
     const senderUUID = payload.sender;
@@ -2632,7 +2659,6 @@ else if (payload.message.startsWith('/addavatar')) {
 `ℹ️ Info Blurb Tone
 - Current: ${current}
 - Available: ${tones.join(', ')}
-- Aliases: ${aliases.join(', ')}
 - Set: /infotone <tone>`
       })
       return
@@ -2761,37 +2787,66 @@ else if (payload.message.startsWith('/addavatar')) {
         message: `Error: ${error.message}`
       })
     }
-  // Command to turn on greeting messages
-  } else if (payload.message.startsWith('/greeton')) {
-    try {
-      enableGreetingMessages()
-      await postMessage({
-        room,
-        message: 'Greeting messages enabled'
-      })
-    } catch (error) {
-      console.error('Error enabling greeting messages:', error)
-      await postMessage({
-        room,
-        message: `Error: ${error.message}`
-      })
-    }
+} else if (/^\/greet(\b|$)/i.test(payload.message)) {
+  const room = process.env.ROOM_UUID
+  const parts = payload.message.trim().split(/\s+/)
+  const sub = (parts[1] || '').toLowerCase()
 
-    // Command to turn off greeting messages
-  } else if (payload.message.startsWith('/greetoff')) {
-    try {
-      disableGreetingMessages()
-      await postMessage({
-        room,
-        message: 'Greeting messages disabled'
-      })
-    } catch (error) {
-      console.error('Error disabling greeting messages:', error)
-      await postMessage({
-        room,
-        message: `Error: ${error.message}`
-      })
-    }
+  if (sub === 'standard') {
+    enableGreetingMessages()
+    disableAIGreeting()
+    await postMessage({
+      room,
+      message: '👋 Greeting mode: **STANDARD** (Standard=ON, AI=OFF). Custom greets still take priority.'
+    })
+    return
+  }
+
+  if (sub === 'ai') {
+    // AI greets first; standard stays ON for fallback
+    enableGreetingMessages()
+    enableAIGreeting()
+    await postMessage({
+      room,
+      message: '🧠 Greeting mode: **AI** (AI=ON, Standard=ON as fallback). Custom greets still take priority.'
+    })
+    return
+  }
+
+  if (sub === 'status') {
+    await postMessage({
+      room,
+      message:
+        `📊 Greeting status:\n` +
+        `• Standard: ${greetingMessagesEnabled ? 'ON' : 'OFF'}\n` +
+        `• AI: ${aiGreetingEnabled ? 'ON' : 'OFF'}\n` +
+        `Precedence: custom > AI (if ON) > standard (if ON)`
+    })
+    return
+  }
+
+  if (sub === 'off' || payload.message.toLowerCase() === '/greetoff') {
+    disableAIGreeting()
+    disableGreetingMessages()
+    await postMessage({
+      room,
+      message: '🙈 Greeting mode: **OFF** (Standard=OFF, AI=OFF). Custom greets still fire if configured.'
+    })
+    return
+  }
+
+  // Help / usage
+  await postMessage({
+    room,
+    message:
+      `Usage:\n` +
+      `• /greet standard — Standard greeting ON, AI OFF\n` +
+      `• /greet ai — AI greeting ON (standard kept ON as fallback)\n` +
+      `• /greet status — Show current settings\n` +
+      `• /greetoff — Turn both OFF\n\n` +
+      `Current: Standard=${greetingMessagesEnabled ? 'ON' : 'OFF'}, AI=${aiGreetingEnabled ? 'ON' : 'OFF'}`
+  })
+  return
 
     // --- Info blurb ON ---
 } else if (/^\/infoon\b/i.test(payload.message)) {
@@ -2861,7 +2916,7 @@ else if (payload.message.startsWith('/addavatar')) {
 
     // No args → show current + usage
     if (args.length === 0) {
-  const tones = ['neutral','playful','cratedigger','hype','classy','chartbot','djtech','vibe'];
+  const tones = ['- neutral\n','- playful\n','- cratedigger\n','- hype\n','- classy\n','- chartbot\n','- djtech\n','- vibe\n'];
   const aliases = ['nerd→cratedigger','fun→playful','chart→chartbot','tech→djtech','chill→vibe'];
 
   await postMessage({
@@ -2870,7 +2925,6 @@ else if (payload.message.startsWith('/addavatar')) {
       `ℹ️ Info Blurb Tone
       • Current: ${current}
       • Available: ${tones.join(', ')}
-      • Aliases: ${aliases.join(', ')}
       • Set: /infotone <tone>`
   });
   return;

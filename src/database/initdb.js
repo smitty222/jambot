@@ -98,17 +98,6 @@ db.exec(`
   )
 `)
 
-// Lottery winners table
-db.exec(`
-  CREATE TABLE IF NOT EXISTS lottery_winners (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    userId TEXT NOT NULL,
-    nickname TEXT,
-    winningNumber INTEGER,
-    amountWon REAL,
-    timestamp TEXT
-  )
-`);
 // Lottery stats table
 db.exec(`
   CREATE TABLE IF NOT EXISTS lottery_stats (
@@ -200,6 +189,17 @@ CREATE TABLE IF NOT EXISTS current_state (
   albumTypeField  TEXT,
   albumIsrc       TEXT
 );
+`)
+
+// Craps record table (per room)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS craps_records (
+    roomId TEXT PRIMARY KEY,
+    maxRolls INTEGER DEFAULT 0,
+    shooterId TEXT,
+    shooterNickname TEXT,
+    achievedAt TEXT
+  )
 `)
 
 
