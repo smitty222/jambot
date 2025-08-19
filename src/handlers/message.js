@@ -28,7 +28,7 @@ import { getBalanceByNickname, getNicknamesFromWallets, addDollarsByUUID, loadWa
 import { getJackpotValue, handleSlotsCommand } from './slots.js'
 import { joinTable, handleBlackjackBet, handleHit, handleStand, gameState, canSplitHand } from '../handlers/blackJack.js'
 import { updateAfkStatus, isUserAfkAuthorized, userTokens } from './afk.js'
-import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand, handleRandomCyberCommand, handleVibesGuyCommand, handleFacesCommand, handleDoDoCommand, handleFlowerPowerCommand, handleDumDumCommand } from './avatarCommands.js'
+import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand, handleRandomCyberCommand, handleVibesGuyCommand, handleFacesCommand, handleDoDoCommand, handleFlowerPowerCommand, handleDumDumCommand, handleRandomCosmicCommand } from './avatarCommands.js'
 import { markUser, getMarkedUser} from '../utils/removalQueue.js'
 import {extractUserFromText, isLotteryQuestion} from '../database/dblotteryquestionparser.js'
 import { askMagic8Ball } from './magic8Ball.js'
@@ -43,6 +43,7 @@ import { startHorseRace, handleHorseBet, isWaitingForEntries, handleHorseEntryAt
 import { QueueManager } from '../utils/queueManager.js'
 import db from '../database/db.js'
 import { handleAddAvatarCommand } from './addAvatar.js'
+import { handleRemoveAvatarCommand } from './removeAvatar.js'
 import { enableNowPlayingInfoBlurb, disableNowPlayingInfoBlurb, isNowPlayingInfoBlurbEnabled, setNowPlayingInfoBlurbTone, getNowPlayingInfoBlurbTone } from '../utils/announceNowPlaying.js'
 import { routeCrapsMessage } from '../games/craps/craps.single.js'
 import '../games/craps/craps.single.js'
@@ -2066,15 +2067,38 @@ if (payload.message.startsWith('/table')) {
   else if (payload.message.startsWith('/cyber')) {
     await handleRandomCyberCommand(payload.sender, room, postMessage)
   }
+  else if (payload.message.startsWith('/cosmic')) {
+    await handleRandomCosmicCommand(payload.sender, room, postMessage)
+  }
 
 else if (payload.message.startsWith('/randomavatar')) {
   await handleRandomAvatarCommand(payload.sender, room, postMessage)
 }
 
 ////////////////////////// Add Avatar //////////////////////////
-else if (payload.message.startsWith('/addavatar')) {
-  await handleAddAvatarCommand(payload.sender, room, postMessage)
+
+else if (/^\/addavatar\b/i.test(payload.message)) {
+  const roomId = payload.room ?? process.env.ROOM_UUID;
+
+  try {
+    await handleAddAvatarCommand(
+      { sender: payload.sender, message: payload.message, room: roomId },
+      postMessage
+    );
+  } catch (err) {
+    console.error('[router]/addavatar failed:', err);
+    await postMessage({ room: roomId, message: '❌ /addavatar crashed — check logs.' });
+  }
 }
+
+else if (/^\/removeavatar\b/i.test(payload.message)) {
+  const roomId = payload.room ?? process.env.ROOM_UUID;
+  await handleRemoveAvatarCommand(
+    { sender: payload.sender, message: payload.message, room: roomId },
+    postMessage
+  );
+}
+
   else if (payload.message === '/reviewhelp') {
     const helpMessage = `🎧 **How Reviews Work**  
   You can rate each song from **1 to 6** while it plays. 

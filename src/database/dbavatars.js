@@ -22,3 +22,9 @@ export function insertAvatarSlug(slug) {
   `)
   stmt.run(slug)
 }
+
+export function removeAvatarSlug(slug) {
+  const stmt = db.prepare('DELETE FROM avatars WHERE slug = ?');
+  const info = stmt.run(slug);
+  return info.changes; // 0 if not found, >0 if deleted
+}
