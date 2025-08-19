@@ -28,7 +28,7 @@ import { getBalanceByNickname, getNicknamesFromWallets, addDollarsByUUID, loadWa
 import { getJackpotValue, handleSlotsCommand } from './slots.js'
 import { joinTable, handleBlackjackBet, handleHit, handleStand, gameState, canSplitHand } from '../handlers/blackJack.js'
 import { updateAfkStatus, isUserAfkAuthorized, userTokens } from './afk.js'
-import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand, handleRandomCyberCommand, handleVibesGuyCommand, handleFacesCommand } from './avatarCommands.js'
+import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand, handleRandomCyberCommand, handleVibesGuyCommand, handleFacesCommand, handleDoDoCommand, handleFlowerPowerCommand, handleDumDumCommand } from './avatarCommands.js'
 import { markUser, getMarkedUser} from '../utils/removalQueue.js'
 import {extractUserFromText, isLotteryQuestion} from '../database/dblotteryquestionparser.js'
 import { askMagic8Ball } from './magic8Ball.js'
@@ -2049,6 +2049,15 @@ if (payload.message.startsWith('/table')) {
   }
   else if (payload.message.startsWith('/duck')) {
     await handleDuckCommand(payload.sender, room, postMessage)
+  }
+  else if (payload.message.startsWith('/dodo')) {
+    await handleDoDoCommand(payload.sender, room, postMessage)
+  }
+  else if (payload.message.startsWith('/flowerpower')) {
+    await handleFlowerPowerCommand(payload.sender, room, postMessage)
+  }
+  else if (payload.message.startsWith('/dumdum' || '/dumbdumb')) {
+    await handleDumDumCommand(payload.sender, room, postMessage)
   }
 
   else if (payload.message.startsWith('/spacebear')) {

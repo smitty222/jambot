@@ -265,12 +265,51 @@ const userTokenMap = {
       await postMessage({ room, message: 'Sorry, this command is only available to authorized dino users 🦖.' })
       return
     }
-  
     try {
       await updateUserAvatar(userToken, 'dj-FACES-1', '#007CF0')
       await postMessage({ room, message: 'Smile!' })
     } catch (error) {
       await postMessage({ room, message: `Something went wrong transforming you into a smiley face` })
+    }
+  }
+  export async function handleDoDoCommand(senderUuid, room, postMessage) {
+    const userToken = userTokenMap[senderUuid]
+    if (!userToken) {
+      await postMessage({ room, message: 'Sorry, this command is only available to people i like' })
+      return
+    }
+    try {
+      await updateUserAvatar(userToken, 'lennnie-01', '#A67C52')
+      await postMessage({ room, message: 'The DoDo bird...Proof you don’t need wings to elevate the room' })
+    } catch (error) {
+      await postMessage({ room, message: `Something went wrong transforming you into a dodo bird` })
+    }
+  }
+  export async function handleDumDumCommand(senderUuid, room, postMessage) {
+    const userToken = userTokenMap[senderUuid]
+    if (!userToken) {
+      await postMessage({ room, message: 'Sorry, this command is only available to people i like' })
+      return
+    }
+    try {
+      await updateUserAvatar(userToken, 'stadiumseason-03', '#767573ff')
+      await postMessage({ room, message: 'dum dum want gum gum 🗿' })
+    } catch (error) {
+      await postMessage({ room, message: `Something went wrong transforming you...dum dum` })
+    }
+  }
+
+  export async function handleFlowerPowerCommand(senderUuid, room, postMessage) {
+    const userToken = userTokenMap[senderUuid]
+    if (!userToken) {
+      await postMessage({ room, message: 'Sorry, this command is only available to people i like' })
+      return
+    }
+    try {
+      await updateUserAvatar(userToken, 'dj-petalsupply-1', '#ef55ddff')
+      await postMessage({ room, message: 'You’ve gone full Flower Power—expect photosynthesis-level energy' })
+    } catch (error) {
+      await postMessage({ room, message: `Something went wrong transforming you into a flower` })
     }
   }
   
