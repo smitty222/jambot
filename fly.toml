@@ -3,7 +3,7 @@
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'jamflowbot-allen-v2'
+app = 'jamflowbot-allen-v3-5'
 primary_region = 'atl'
 
 [build]
