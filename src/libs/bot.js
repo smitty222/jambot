@@ -29,39 +29,11 @@ import { saveCurrentState } from '../database/dbcurrent.js'
 import { askQuestion } from './ai.js'
 import db from '../database/db.js'
 
-const startTimeStamp = Math.floor(Date.now() / 1000) // seconds
+// ───────────────────────────────────────────────────────────
+// Ephemeral baseline & identity
+// ───────────────────────────────────────────────────────────
+const startTimeStamp = Math.floor(Date.now() / 1000) // seconds (baseline "now")
 const botUUID = process.env.BOT_USER_UUID
-
-// ───────────────────────────────────────────────────────────
-// Cursor persistence (tiny table)
-// ───────────────────────────────────────────────────────────
-db.exec(`
-  CREATE TABLE IF NOT EXISTS message_cursors (
-    scope TEXT PRIMARY KEY,
-    ts INTEGER NOT NULL
-  );
-`)
-
-function loadCursor(scope, fallbackSec) {
-  try {
-    const row = db.prepare(`SELECT ts FROM message_cursors WHERE scope = ?`).get(scope)
-    return row?.ts ?? fallbackSec
-  } catch (e) {
-    logger.warn('[cursor] load failed', { scope, e })
-    return fallbackSec
-  }
-}
-
-function saveCursor(scope, ts) {
-  try {
-    db.prepare(`
-      INSERT INTO message_cursors(scope, ts) VALUES(?, ?)
-      ON CONFLICT(scope) DO UPDATE SET ts = excluded.ts
-    `).run(scope, Math.floor(Number(ts) || 0))
-  } catch (e) {
-    logger.warn('[cursor] save failed', { scope, e })
-  }
-}
 
 // ───────────────────────────────────────────────────────────
 // Theme resolution (DB-first) + album predicate
@@ -182,6 +154,30 @@ function normalizeMessages(raw) {
 }
 
 // ───────────────────────────────────────────────────────────
+// In-memory TTL de-dupe (prevents unbounded Set growth)
+// ───────────────────────────────────────────────────────────
+class TTLSeenSet {
+  constructor(ttlMs = 10 * 60 * 1000, max = 5000) {
+    this.ttl = ttlMs
+    this.max = max
+    this.map = new Map()
+    this._pruneTimer = setInterval(() => this.prune(), Math.min(60_000, ttlMs))
+    this._pruneTimer.unref?.()
+  }
+  has(id) { const v = id && this.map.get(id); return !!v && v > Date.now() }
+  add(id) {
+    if (!id) return
+    if (this.map.size >= this.max) {
+      const drop = Math.ceil(this.max * 0.1)
+      for (const k of this.map.keys()) { this.map.delete(k); if (this.map.size <= this.max - drop) break }
+    }
+    this.map.set(id, Date.now() + this.ttl)
+  }
+  prune() { const now = Date.now(); for (const [k, exp] of this.map.entries()) if (exp <= now) this.map.delete(k) }
+  clear() { clearInterval(this._pruneTimer); this.map.clear() }
+}
+
+// ───────────────────────────────────────────────────────────
 // Bot
 // ───────────────────────────────────────────────────────────
 export class Bot {
@@ -196,14 +192,16 @@ export class Bot {
     this.tokenRole = process.env.TOKEN_ROLE
     this.userUUID = process.env.BOT_USER_UUID
 
-    // Load persisted cursors (fallback to boot time)
+    // Ephemeral cursors: start "now" for both group & DM streams
     this.lastMessageIDs = {
-      room: loadCursor('room', startTimeStamp),
-      dm:   loadCursor('dm',   startTimeStamp)
+      room: startTimeStamp,
+      dm:   startTimeStamp
     }
 
     this.currentTheme = themeManager.getTheme(this.roomUUID) || ''
     this.socket = null
+    this._listenersConfigured = false
+
     this.playlistId = process.env.DEFAULT_PLAYLIST_ID
     this.spotifyCredentials = process.env.SPOTIFY_CREDENTIALS
 
@@ -230,23 +228,58 @@ export class Bot {
 
     this._lastAlbumThemeSongId = null
     this._lastBlurbBySongId = new Map()
+
+    // De-dupe cache, startup guard, and reconnect backoff
+    this._seen = new TTLSeenSet()
+    this._startupTimeMs = Date.now()
+    this._reconnectBackoffMs = 1000
+    this._maxBackoffMs = 30_000
   }
 
-  async enableAutoBop() { this.autobop = true }
-  async disableAutoBop() { this.autobop = false }
-  async enableAutoDJ() { this.autoDJ = true }
-  async disableAutoDJ() { this.autoDJ = false }
+  // Readiness bits for /ready (if you use them)
+  isConnected() { return !!this.socket }
+  canSend() { return !!this.socket }
 
   async connect() {
     logger.debug('Connecting to room')
     try {
       await joinChat(this.roomUUID)
+
+      // fresh socket
+      try { this.socket?.removeAllListeners?.() } catch {}
+      try { this.socket?.close?.() } catch {}
       this.socket = new SocketClient('https://socket.prod.tt.fm')
+
+      // reconnect handler with backoff
+      this.socket.on?.('disconnect', () => this._scheduleReconnect())
+
+      // join the room
       const connection = await this.socket.joinRoom(process.env.TTL_USER_TOKEN, { roomUuid: this.roomUUID })
       this.state = connection.state
+
+      // configure listeners exactly once
+      this.configureListeners()
+
+      // reset backoff on success
+      this._reconnectBackoffMs = 1000
+      logger.info('[bot] connected and ready (ephemeral cursor)')
     } catch (error) {
       logger.error('Error connecting to room:', error)
+      this._scheduleReconnect()
     }
+  }
+
+  _scheduleReconnect() {
+    const jitter = (ms) => Math.floor(ms * (0.75 + Math.random() * 0.5))
+    const wait = jitter(this._reconnectBackoffMs)
+    logger.warn(`[bot] scheduling reconnect in ~${wait}ms`)
+    setTimeout(() => {
+      this.connect().catch((err) => {
+        logger.error('[bot] reconnect failed', { err })
+        this._reconnectBackoffMs = Math.min(this._reconnectBackoffMs * 2, this._maxBackoffMs)
+        this._scheduleReconnect()
+      })
+    }, wait)
   }
 
   getCurrentSpotifyUrl() {
@@ -278,6 +311,7 @@ export class Bot {
     }
   }
 
+  // NOTE: unified generateSongPayload (removed duplicate definition)
   async generateSongPayload() {
     const spotifyTrackId = await getPopularSpotifyTrackID()
     if (!spotifyTrackId) throw new Error('No popular Spotify track ID found.')
@@ -303,7 +337,8 @@ export class Bot {
   }
 
   /**
-   * Robust poller with lookback, counters, and cursor persistence.
+   * Robust poller (ephemeral): no DB cursor, no history replay.
+   * Uses a small lookback when idle but never earlier than startup.
    */
   async processNewMessages() {
     if (this._processingMessages) return
@@ -314,9 +349,14 @@ export class Bot {
       const handleStream = async (scope) => {
         const isGroup = scope === 'group'
         const sinceSec = toSec(isGroup ? this.lastMessageIDs.room : this.lastMessageIDs.dm)
-        const lookbackSec = (this._emptyPolls >= 3) ? Math.max(sinceSec - 120, startTimeStamp) : sinceSec
-        const who = isGroup ? this.roomUUID : botUUID
 
+        // On idle, look back slightly to catch clock skew – but never before startup.
+        const lookbackSec = Math.max(
+          this._emptyPolls >= 3 ? (sinceSec - 120) : sinceSec,
+          startTimeStamp
+        )
+
+        const who = isGroup ? this.roomUUID : botUUID
         const raw = await getMessages(who, lookbackSec, scope)
         const msgs = normalizeMessages(raw?.data ?? raw)
 
@@ -326,25 +366,27 @@ export class Bot {
 
         for (const m of msgs) {
           try {
-            const id =
-              m?.id ?? m?._id ?? m?.guid ?? m?.messageId ?? m?.meta?.id
-            const sentAtSec = toSec(
-              m?.sentAt ?? m?.timestamp ?? m?.createdAt ?? m?.data?.sentAt
-            )
+            const id = m?.id ?? m?._id ?? m?.guid ?? m?.messageId ?? m?.meta?.id
+            const sentAtSec = toSec(m?.sentAt ?? m?.timestamp ?? m?.createdAt ?? m?.data?.sentAt)
             const text = (m?.data?.text ?? m?.text ?? m?.message ?? '').trim()
             const sender =
               m?.sender ?? m?.senderId ?? m?.from ?? m?.ownerUid ??
               m?.entities?.sender?.uid ?? m?.entities?.sender?.id
 
             if (!id || !sentAtSec || !text) continue
-            if (this._seenMessageIds?.has(id)) continue
-            this._seenMessageIds = this._seenMessageIds || new Set()
-            this._seenMessageIds.add(id)
+
+            // In-run de-dupe (TTL)
+            if (this._seen.has(id)) continue
+            this._seen.add(id)
+
+            // Ignore messages older than startup by >60s (belt & suspenders)
+            if (sentAtSec < Math.floor(this._startupTimeMs / 1000) - 60) continue
 
             maxSec = Math.max(maxSec, sentAtSec + 1)
             gotAny = true
             processed++
 
+            // Skip our own messages (CometChat/Turntable echoes)
             if (!sender || sender === botUUID) continue
             if ([botUUID, process.env.CHAT_REPLY_ID].includes(sender)) continue
 
@@ -374,15 +416,9 @@ export class Bot {
           }
         }
 
-        // advance + persist cursor if progressed
-        if (isGroup && maxSec !== sinceSec) {
-          this.lastMessageIDs.room = maxSec
-          saveCursor('room', maxSec)
-        }
-        if (!isGroup && maxSec !== sinceSec) {
-          this.lastMessageIDs.dm = maxSec
-          saveCursor('dm', maxSec)
-        }
+        // advance ephemeral cursor if progressed (no DB writes)
+        if (isGroup && maxSec !== sinceSec) this.lastMessageIDs.room = maxSec
+        if (!isGroup && maxSec !== sinceSec) this.lastMessageIDs.dm = maxSec
 
         logger.debug(`poll[${scope}] processed=${processed} emptyPolls=${this._emptyPolls} since=${sinceSec} -> ${maxSec}`)
         return gotAny
@@ -399,8 +435,11 @@ export class Bot {
     }
   }
 
-  // Socket listeners (unchanged)
+  // Socket listeners
   configureListeners() {
+    if (this._listenersConfigured || !this.socket) return
+    this._listenersConfigured = true
+
     const self = this
     logger.debug('Setting up listeners')
 
@@ -585,30 +624,6 @@ export class Bot {
     }
   }
 
-  async generateSongPayload() {
-    const spotifyTrackId = await getPopularSpotifyTrackID()
-    if (!spotifyTrackId) throw new Error('No popular Spotify track ID found.')
-    const songData = await fetchSongData(spotifyTrackId)
-    if (!songData || !songData.id) throw new Error('Invalid song data received.')
-    return {
-      songId: songData.id,
-      trackName: songData.trackName,
-      artistName: songData.artistName,
-      duration: songData.duration,
-      isrc: songData.isrc || '',
-      explicit: songData.explicit || false,
-      genre: songData.genre || '',
-      links: songData.links || {},
-      musicProviders: songData.musicProviders || {},
-      thumbnails: songData.thumbnails || {},
-      playbackToken: songData.playbackToken || null,
-      album: songData.album || {},
-      artist: songData.artist || {},
-      status: songData.status || 'PENDING_UPLOAD',
-      updatedAt: songData.updatedAt
-    }
-  }
-
   async updateNextSong(userUuid) {
     try {
       const songPayload = await this.generateSongPayload()
@@ -626,7 +641,6 @@ export class Bot {
       logger.error('Error updating next song for DJ:', error)
     }
   }
-
 
   async addDJ(userUuid, tokenRole = 'DJ') {
     try {
@@ -741,7 +755,3 @@ export function whoIsCurrentDJ(state) {
   const currentDJUuid = getCurrentDJ(state)
   return currentDJUuid === process.env.BOT_USER_UUID ? 'bot' : 'user'
 }
-
-  
-
-
