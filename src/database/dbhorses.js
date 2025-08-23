@@ -1,4 +1,4 @@
-import db from '../database/db.js'
+import db from './db.js'
 
 export function getAllHorses() {
   return db.prepare(`SELECT * FROM horses`).all()

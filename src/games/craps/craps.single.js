@@ -74,15 +74,7 @@ function ensureCrapsRecordRow() {
 }
 
 try {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS craps_records (
-      roomId TEXT PRIMARY KEY,
-      maxRolls INTEGER DEFAULT 0,
-      shooterId TEXT,
-      shooterNickname TEXT,
-      achievedAt TEXT
-    )
-  `);
+
 } catch (e) { console.error('[craps] ensure schema failed:', e); }
 
 function hydrateRecordIntoState() {

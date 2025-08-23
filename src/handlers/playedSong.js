@@ -9,10 +9,9 @@ import { QueueManager } from '../utils/queueManager.js'
 
 // DB handles
 import db from '../database/db.js'
-import sqlite3 from 'sqlite3'
-import { open as sqliteOpen } from 'sqlite'
 
-const queueManager = new QueueManager('src/data/djQueue.json', getUserNickname)
+
+const queueManager = new QueueManager(getUserNickname)
 
 const stageLock = { locked: false, userUuid: null, timeout: null }
 

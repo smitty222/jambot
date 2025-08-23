@@ -41,16 +41,11 @@ export function getUserWallet(userUUID) {
 }
 
 export function removeFromUserWallet(userUUID, amount) {
-  const current = getUserWallet(userUUID)
-  const newBalance = Math.max(0, roundToTenth(current - amount))
-
-  db.prepare(`
-    INSERT INTO wallets (uuid, balance)
-    VALUES (?, ?)
-    ON CONFLICT(uuid) DO UPDATE SET balance = ?
-  `).run(userUUID, newBalance, newBalance)
-
-  return true
+  const current = getUserWallet(userUUID);
+  if (current < amount) return false;
+  const newBalance = Math.round((current - amount) * 10) / 10;
+  db.prepare(`UPDATE wallets SET balance = ? WHERE uuid = ?`).run(newBalance, userUUID);
+  return true;
 }
 
 export async function addToUserWallet(userUUID, amount, nickname = null) {

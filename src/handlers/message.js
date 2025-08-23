@@ -1,3 +1,4 @@
+import * as themeManager from '../utils/themeManager.js';
 // message.js
 import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
 import { askQuestion, setCurrentSong } from '../libs/ai.js'
@@ -50,7 +51,7 @@ import '../games/craps/craps.single.js'
 
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
-export const roomThemes = {}
+export const /*deprecated_roomThemes*/roomThemes = {}
 const usersToBeRemoved = {}
 const userstagedive = {}
 
@@ -3392,3 +3393,15 @@ if (!song) {
 
 
 export { usersToBeRemoved, userstagedive }
+
+
+// Shim around themeManager to prevent drift between memory and DB
+export function getTheme(roomId) {
+  return themeManager.getTheme(roomId);
+}
+export function setTheme(roomId, theme) {
+  return themeManager.setTheme(roomId, theme);
+}
+export function removeTheme(roomId) {
+  return themeManager.removeTheme(roomId);
+}

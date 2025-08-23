@@ -1,5 +1,7 @@
 // src/index.js
 import 'dotenv/config';
+import './database/initdb.js';
+import './database/seedavatars.js';
 import express from 'express';
 import { Bot, getCurrentDJUUIDs } from './libs/bot.js';
 import { updateCurrentUsers } from './utils/currentUsers.js';
