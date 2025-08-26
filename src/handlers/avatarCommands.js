@@ -1,6 +1,6 @@
 import { updateUserAvatar } from '../utils/API.js'
-import { getAllAvatarSlugs, getAvatarsBySlugs, getRandomAvatarSlug } from '../database/dbavatars.js'
-
+import {getAvatarsBySlugs, getRandomAvatarSlug } from '../database/dbavatars.js'
+import { setChatIdentity } from '../libs/cometchat.js';
 
 const userTokenMap = {
     '072b0bb3-518e-4422-97fd-13dc53e8ae7e': process.env.IAN_USER_TOKEN,
@@ -16,150 +16,218 @@ const userTokenMap = {
     '#FFDEAD', '#C0FDFB', '#FAF3DD', '#FDCB82'
   ];
 
-  /////////////////////////// Bot Updates /////////////////////////////
-  
-  export async function handleBotRandomAvatarCommand(room, postMessage, ttlUserToken) {
-    const avatarId = getRandomAvatarSlug()
-    const color = randomColors[Math.floor(Math.random() * randomColors.length)]
-  
-    const randomReplies = [
-      'Feeling fresh 🤖',
-      'New look, who dis?',
-      'Just changed into something more comfortable...',
-      'Style upgraded ✨',
-      'Bot makeover complete!',
-      "Shapeshift complete. You never saw me. 👻",
-      "I'm undercover now. 🤫",
-      "Cloaking protocol activated. 🛸",
-      "Incognito mode: engaged. 🕶️",
-      "Just blending in with the crowd. 😎",
-      "They'll never recognize me now. 🌀",
-      "Now you see me, now you don’t. 🎩✨"
-    ]
-    const randomMessage = randomReplies[Math.floor(Math.random() * randomReplies.length)]
-  
-    try {
-      await updateUserAvatar(ttlUserToken, avatarId, color)
-      await postMessage({ room, message: randomMessage })
-    } catch (error) {
-      await postMessage({ room, message: `Failed to update bot avatar: ${error.message}` })
-    }
+ /////////////////////////// Bot Updates /////////////////////////////
+
+export async function handleBotRandomAvatarCommand(room, postMessage, ttlUserToken) {
+  const avatarId = getRandomAvatarSlug();
+  const color = randomColors[Math.floor(Math.random() * randomColors.length)];
+
+  const randomReplies = [
+    'Feeling fresh 🤖',
+    'New look, who dis?',
+    'Just changed into something more comfortable...',
+    'Style upgraded ✨',
+    'Bot makeover complete!',
+    "Shapeshift complete. You never saw me. 👻",
+    "I'm undercover now. 🤫",
+    "Cloaking protocol activated. 🛸",
+    "Incognito mode: engaged. 🕶️",
+    "Just blending in with the crowd. 😎",
+    "They'll never recognize me now. 🌀",
+    "Now you see me, now you don’t. 🎩✨"
+  ];
+  const randomMessage = randomReplies[Math.floor(Math.random() * randomReplies.length)];
+
+  try {
+    await updateUserAvatar(ttlUserToken, avatarId, color);     // 1) platform
+    setChatIdentity({ avatarId, color });                      // 2) live chat meta
+    await postMessage({ room, message: randomMessage, identity: { avatarId, color } }); // 3) one-off override
+  } catch (error) {
+    await postMessage({ room, message: `Failed to update bot avatar: ${error.message}` });
   }
-  
-  export async function handleBotDinoCommand(room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
-    const isMod = await isUserAuthorized(senderUuid, ttlUserToken)
-    if (!isMod) {
-      await postMessage({ room, message: 'You need to be a moderator to execute this command.' })
-      return
-    }
-  
-    try {
-      await updateUserAvatar(ttlUserToken, 'jurassic-05', '#8B6C5C')
-      await postMessage({ room, message: 'Bot profile updating!' })
-    } catch (error) {
-      await postMessage({ room, message: `Failed to update bot profile` })
-    }
-  }
-  export async function handleBotDuckCommand(room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
-    const isMod = await isUserAuthorized(senderUuid, ttlUserToken)
-    if (!isMod) {
-      await postMessage({ room, message: 'You need to be a moderator to execute this command.' })
-      return
-    }
-  
-    try {
-      await updateUserAvatar(ttlUserToken, 'stadiumseason-02', '#FFDE21')
-      await postMessage({ room, message: 'Quack Quack 🦆🧼🫧' })
-    } catch (error) {
-      await postMessage({ room, message: `Failed to update bot profile` })
-    }
-  }
-  export async function handleBotAlienCommand(room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
-    const isMod = await isUserAuthorized(senderUuid, ttlUserToken)
-    if (!isMod) {
-      await postMessage({ room, message: 'You need to be a moderator to execute this command.' })
-      return
-    }
-  
-    try {
-      await updateUserAvatar(ttlUserToken, 'season-0001-underground-thehuman', '#39FF14')
-      await postMessage({ room, message: '👽 Alien transformation complete! Take me to your leader. 🚀' })
-    } catch (error) {
-      await postMessage({ room, message: `Failed to update bot profile` })
-    }
-  }
-  export async function handleBotAlien2Command(room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
-    const isMod = await isUserAuthorized(senderUuid, ttlUserToken)
-    if (!isMod) {
-      await postMessage({ room, message: 'You need to be a moderator to execute this command.' })
-      return
-    }
-  
-    try {
-      await updateUserAvatar(ttlUserToken, 'stadiumseason-01', '#39FF14')
-      await postMessage({ room, message: '🌌 Beep boop. I’m not from around here... 👾' })
-    } catch (error) {
-      await postMessage({ room, message: `Failed to update bot profile` })
-    }
+}
+
+export async function handleBotDinoCommand(room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
+  const isMod = await isUserAuthorized(senderUuid, ttlUserToken);
+  if (!isMod) {
+    await postMessage({ room, message: 'You need to be a moderator to execute this command.' });
+    return;
   }
 
-  export async function handleBotWalrusCommand(room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
-    const isMod = await isUserAuthorized(senderUuid, ttlUserToken)
-    if (!isMod) {
-      await postMessage({ room, message: 'You need to be a moderator to execute this command.' })
-      return
-    }
-  
-    try {
-      await updateUserAvatar(ttlUserToken, 'winter-07', '#8de2ff')
-      await postMessage({ room, message: '🦭 Don’t mind me… just lounging like a majestic sea sausage.🧊' })
-    } catch (error) {
-      await postMessage({ room, message: `Failed to update bot profile` })
-    }
+  const avatarId = 'jurassic-05';
+  const color = '#8B6C5C';
+
+  try {
+    await updateUserAvatar(ttlUserToken, avatarId, color);
+    setChatIdentity({ avatarId, color });
+    await postMessage({ room, message: 'Roar!', identity: { avatarId, color } });
+  } catch {
+    await postMessage({ room, message: `Failed to update bot profile` });
+  }
+}
+
+export async function handleBotDuckCommand(room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
+  const isMod = await isUserAuthorized(senderUuid, ttlUserToken);
+  if (!isMod) {
+    await postMessage({ room, message: 'You need to be a moderator to execute this command.' });
+    return;
   }
 
-  export async function handleBotPenguinCommand(room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
-    const isMod = await isUserAuthorized(senderUuid, ttlUserToken)
-    if (!isMod) {
-      await postMessage({ room, message: 'You need to be a moderator to execute this command.' })
-      return
-    }
-  
-    try {
-      await updateUserAvatar(ttlUserToken, 'pinguclub-03', '#B026FF')
-      await postMessage({ room, message: '💜🐧 Initiating purple penguin protocol… waddling in style now.' })
-    } catch (error) {
-      await postMessage({ room, message: `Failed to update bot profile` })
-    }
+  const avatarId = 'stadiumseason-02';
+  const color = '#FFDE21';
+
+  try {
+    await updateUserAvatar(ttlUserToken, avatarId, color);
+    setChatIdentity({ avatarId, color });
+    await postMessage({ room, message: 'Quack Quack 🦆🧼🫧', identity: { avatarId, color } });
+  } catch {
+    await postMessage({ room, message: `Failed to update bot profile` });
   }
-  export async function handleBot2Command(room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
-    const isMod = await isUserAuthorized(senderUuid, ttlUserToken)
-    if (!isMod) {
-      await postMessage({ room, message: 'You need to be a moderator to execute this command.' })
-      return
-    }
-  
-    try {
-      await updateUserAvatar(ttlUserToken, 'bot-2', '#FF5F1F')
-      await postMessage({ room, message: '⚙️🟠 They said I needed a fresh coat… I went full fire.🤖' })
-    } catch (error) {
-      await postMessage({ room, message: `Failed to update bot profile` })
-    }
+}
+
+export async function handleBotAlienCommand(room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
+  const isMod = await isUserAuthorized(senderUuid, ttlUserToken);
+  if (!isMod) {
+    await postMessage({ room, message: 'You need to be a moderator to execute this command.' });
+    return;
   }
-  export async function handleBot1Command(room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
-    const isMod = await isUserAuthorized(senderUuid, ttlUserToken)
-    if (!isMod) {
-      await postMessage({ room, message: 'You need to be a moderator to execute this command.' })
-      return
-    }
-  
-    try {
-      await updateUserAvatar(ttlUserToken, 'bot-01', '#04D9FF')
-      await postMessage({ room, message: '💙🤖 Classic look, timeless tech.' })
-    } catch (error) {
-      await postMessage({ room, message: `Failed to update bot profile` })
-    }
+
+  const avatarId = 'season-0001-underground-thehuman';
+  const color = '#39FF14';
+
+  try {
+    await updateUserAvatar(ttlUserToken, avatarId, color);
+    setChatIdentity({ avatarId, color });
+    await postMessage({ room, message: '👽 Alien transformation complete! Take me to your leader. 🚀', identity: { avatarId, color } });
+  } catch {
+    await postMessage({ room, message: `Failed to update bot profile` });
   }
+}
+
+export async function handleBotAlien2Command(room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
+  const isMod = await isUserAuthorized(senderUuid, ttlUserToken);
+  if (!isMod) {
+    await postMessage({ room, message: 'You need to be a moderator to execute this command.' });
+    return;
+  }
+
+  const avatarId = 'stadiumseason-01';
+  const color = '#39FF14';
+
+  try {
+    await updateUserAvatar(ttlUserToken, avatarId, color);
+    setChatIdentity({ avatarId, color });
+    await postMessage({ room, message: '🌌 Beep boop. I’m not from around here... 👾', identity: { avatarId, color } });
+  } catch {
+    await postMessage({ room, message: `Failed to update bot profile` });
+  }
+}
+
+export async function handleBotWalrusCommand(room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
+  const isMod = await isUserAuthorized(senderUuid, ttlUserToken);
+  if (!isMod) {
+    await postMessage({ room, message: 'You need to be a moderator to execute this command.' });
+    return;
+  }
+
+  const avatarId = 'winter-07';
+  const color = '#8DE2FF';
+
+  try {
+    await updateUserAvatar(ttlUserToken, avatarId, color);
+    setChatIdentity({ avatarId, color });
+    await postMessage({ room, message: '🦭 Don’t mind me… just lounging like a majestic sea sausage.🧊', identity: { avatarId, color } });
+  } catch {
+    await postMessage({ room, message: `Failed to update bot profile` });
+  }
+}
+
+export async function handleBotPenguinCommand(room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
+  const isMod = await isUserAuthorized(senderUuid, ttlUserToken);
+  if (!isMod) {
+    await postMessage({ room, message: 'You need to be a moderator to execute this command.' });
+    return;
+  }
+
+  const avatarId = 'pinguclub-03';
+  const color = '#B026FF';
+
+  try {
+    await updateUserAvatar(ttlUserToken, avatarId, color);
+    setChatIdentity({ avatarId, color });
+    await postMessage({ room, message: '💜🐧 Initiating purple penguin protocol… waddling in style now.', identity: { avatarId, color } });
+  } catch {
+    await postMessage({ room, message: `Failed to update bot profile` });
+  }
+}
+
+export async function handleBot2Command(room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
+  const isMod = await isUserAuthorized(senderUuid, ttlUserToken);
+  if (!isMod) {
+    await postMessage({ room, message: 'You need to be a moderator to execute this command.' });
+    return;
+  }
+
+  const avatarId = 'bot-2';
+  const color = '#FF5F1F';
+
+  try {
+    await updateUserAvatar(ttlUserToken, avatarId, color);
+    setChatIdentity({ avatarId, color });
+    await postMessage({ room, message: '⚙️🟠 They said I needed a fresh coat… I went full fire.🤖', identity: { avatarId, color } });
+  } catch {
+    await postMessage({ room, message: `Failed to update bot profile` });
+  }
+}
+
+export async function handleBot3Command(room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
+  const isMod = await isUserAuthorized(senderUuid, ttlUserToken);
+  if (!isMod) {
+    await postMessage({ room, message: 'You need to be a moderator to execute this command.' });
+    return;
+  }
+
+  const avatarId = 'lovable-pixel';
+  const color = '#FF4D97FF'; // hot magenta to match Pixel accents
+
+  try {
+    console.log('[bot3] attempt', { senderUuid, avatar: avatarId, color });
+    await updateUserAvatar(ttlUserToken, avatarId, color);
+    setChatIdentity({ avatarId, color });
+    console.log('[bot3] success', { senderUuid, avatar: avatarId });
+
+    await postMessage({ room, message: '🤖💖 Pixel mode engaged — LED grin, latency zero.', identity: { avatarId, color } });
+  } catch (error) {
+    console.error('[handleBot3Command] update failed', {
+      senderUuid,
+      avatarTried: avatarId,
+      colorTried: color,
+      error: error?.message || String(error),
+      stack: error?.stack
+    });
+    await postMessage({ room, message: 'Failed to update bot profile' });
+  }
+}
+
+export async function handleBot1Command(room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
+  const isMod = await isUserAuthorized(senderUuid, ttlUserToken);
+  if (!isMod) {
+    await postMessage({ room, message: 'You need to be a moderator to execute this command.' });
+    return;
+  }
+
+  const avatarId = 'bot-01';
+  const color = '#04D9FF';
+
+  try {
+    await updateUserAvatar(ttlUserToken, avatarId, color);
+    setChatIdentity({ avatarId, color });
+    await postMessage({ room, message: '💙🤖 Classic look, timeless tech.', identity: { avatarId, color } });
+  } catch {
+    await postMessage({ room, message: `Failed to update bot profile` });
+  }
+}
+
 
   /////////////////////////////// User Updates //////////////////////////////
   export async function handleDinoCommand(senderUuid, room, postMessage) {
@@ -576,6 +644,86 @@ const COLOR_BY_SLUG = {
 
   function slugToTitle(slug) {
     return slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
+}
+
+export async function handleRandomLovableCommand(senderUuid, room, postMessage) {
+  const userToken = userTokenMap[senderUuid];
+  if (!userToken) {
+    await postMessage({ room, message: 'Sorry, this command is only available to authorized users 🎭.' });
+    return;
+  }
+
+  // L→R from the screenshot
+  const allowedSlugs = [
+    'lovable-figgy',
+    'lovable-loop',
+    'lovable-nova',
+    'lovable-pixel',
+    'lovable-bee'
+  ];
+
+  // 🎨 Per-avatar chat colors (opaque 8-digit hex), tuned to the artwork
+  const COLOR_BY_SLUG = {
+    'lovable-figgy': '#9B5DE5FF', // amethyst purple (Figgy body/ears)
+    'lovable-loop':  '#FF8C00FF', // vivid orange (Loop shorts/accents)
+    'lovable-nova':  '#00E6D3FF', // neon aqua/teal (Nova suit accents)
+    'lovable-pixel': '#FF4D97FF', // hot magenta-pink (Pixel cheeks/trim)
+    'lovable-bee':   '#FFD54FFF'  // honey gold (Bee vibe)
+  };
+
+  // Fallback palette if a slug ever misses
+  const LOVE_COLORS = [
+    '#A0C4FFFF', '#F15BB5FF', '#9B5DE5FF', '#00BBF9FF', '#00F5D4FF'
+  ];
+
+  // 🗣️ Unique one-liners
+  const AVATAR_LINES = {
+    'lovable-figgy': '🫧 Figgy materializes—mischief meter pegged at 11.',
+    'lovable-loop':  '🔁 Loop locks the hard hat—constructing certified bops.',
+    'lovable-nova':  '🌟 Nova ignites—tiny astronaut, galaxy-sized energy.',
+    'lovable-pixel': '🤖 Pixel online—LED smile, latency zero.',
+    'lovable-vee': '💜 Vee vibes in—soft glow, big heart, bigger jams.'
+  };
+
+  const filtered = getAvatarsBySlugs(allowedSlugs);
+  if (!filtered || filtered.length === 0) {
+    await postMessage({ room, message: 'No avatars found in your allowed list. 🫤' });
+    return;
+  }
+
+  // pick one at random
+  const chosen = filtered[Math.floor(Math.random() * filtered.length)];
+  const slug = chosen?.slug;
+  if (!slug) {
+    console.warn('[lovable] No slug on selected avatar object:', chosen);
+    await postMessage({ room, message: 'No avatars available right now 😬' });
+    return;
+  }
+
+  const color = COLOR_BY_SLUG[slug] ?? LOVE_COLORS[Math.floor(Math.random() * LOVE_COLORS.length)];
+  const line  = AVATAR_LINES[slug] ?? `💖 ${slugToTitle(slug)} equipped—spreading wholesome waves.`;
+
+  // logs for debugging
+  console.log('[lovable] attempt', { senderUuid, slug, color, title: slugToTitle(slug) });
+
+  try {
+    await updateUserAvatar(userToken, slug, color);
+    console.log('[lovable] success', { senderUuid, slug, color });
+    await postMessage({ room, message: line });
+  } catch (error) {
+    console.error('[handleRandomLovableCommand] update failed', {
+      senderUuid,
+      slugTried: slug,
+      colorTried: color,
+      error: error?.message || String(error),
+      stack: error?.stack
+    });
+    await postMessage({ room, message: 'Failed to update avatar 😞' });
+  }
+
+  function slugToTitle(s) {
+    return s.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   }
 }
 

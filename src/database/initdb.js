@@ -1,8 +1,7 @@
 // src/libs/initDb.js
 import db from './db.js'
 
-
-// Users table
+// Users
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     uuid TEXT PRIMARY KEY,
@@ -10,7 +9,7 @@ db.exec(`
   )
 `)
 
-// Wallets table
+// Wallets
 db.exec(`
   CREATE TABLE IF NOT EXISTS wallets (
     uuid TEXT PRIMARY KEY,
@@ -18,7 +17,7 @@ db.exec(`
   )
 `)
 
-// Lottery winners table
+// Lottery winners
 db.exec(`
   CREATE TABLE IF NOT EXISTS lottery_winners (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,7 +29,7 @@ db.exec(`
   )
 `)
 
-// Recent songs table
+// Recent songs
 db.exec(`
   CREATE TABLE IF NOT EXISTS recent_songs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,7 +47,7 @@ db.exec(`
   )
 `)
 
-// Room Stats Table
+// Room stats
 db.exec(`
   CREATE TABLE IF NOT EXISTS room_stats (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,21 +60,24 @@ db.exec(`
     likes INTEGER DEFAULT 0,
     dislikes INTEGER DEFAULT 0,
     stars INTEGER DEFAULT 0,
-    lastPlayed TEXT
+    lastPlayed TEXT,
+    averageReview REAL
   )
-`);
+`)
 
+// Song reviews
 db.exec(`
   CREATE TABLE IF NOT EXISTS song_reviews (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     songId TEXT NOT NULL,
     userId TEXT NOT NULL,
     rating INTEGER,
+    createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(songId, userId)
   )
-`);
+`)
 
-// Albums table
+// Albums
 db.exec(`
   CREATE TABLE IF NOT EXISTS album_stats (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,7 +89,7 @@ db.exec(`
   )
 `)
 
-// Album Reviews table
+// Album reviews
 db.exec(`
   CREATE TABLE IF NOT EXISTS album_reviews (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -98,13 +100,15 @@ db.exec(`
   )
 `)
 
-// Lottery stats table
+// Lottery stats
 db.exec(`
   CREATE TABLE IF NOT EXISTS lottery_stats (
-  number INTEGER PRIMARY KEY,
-  count INTEGER DEFAULT 0
+    number INTEGER PRIMARY KEY,
+    count INTEGER DEFAULT 0
   )
-`);
+`)
+
+// DJ queue
 db.exec(`
   CREATE TABLE IF NOT EXISTS dj_queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -114,27 +118,27 @@ db.exec(`
   )
 `)
 
-// Themes table
+// Themes
 db.exec(`
   CREATE TABLE IF NOT EXISTS themes (
     roomId TEXT PRIMARY KEY,
     theme TEXT
   )
 `)
-// Jackpot Table (singleton row)
+
+// Jackpot (singleton)
 db.exec(`
   CREATE TABLE IF NOT EXISTS jackpot (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     progressiveJackpot REAL DEFAULT 100
   )
 `)
-
-// Ensure row exists with id=1
 db.exec(`
   INSERT OR IGNORE INTO jackpot (id, progressiveJackpot)
   VALUES (1, 100)
 `)
 
+// Horses
 db.exec(`
   CREATE TABLE IF NOT EXISTS horses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -155,43 +159,46 @@ db.exec(`
   )
 `)
 
+// Avatars
 db.exec(`
   CREATE TABLE IF NOT EXISTS avatars (
     slug TEXT PRIMARY KEY
-  );
-`)
-db.exec(`
-CREATE TABLE IF NOT EXISTS current_state (
-  id              INTEGER PRIMARY KEY CHECK (id = 1),
-  -- Song fields
-  songId          TEXT,
-  trackName       TEXT,
-  spotifyTrackId  TEXT,
-  spotifyUrl      TEXT,
-  artistName      TEXT,
-  albumName       TEXT,
-  releaseDate     TEXT,
-  albumType       TEXT,
-  trackNumber     TEXT,
-  totalTracks     TEXT,
-  songDuration    TEXT,
-  albumArt        TEXT,
-  popularity      REAL,
-  previewUrl      TEXT,
-  isrc            TEXT,
-  albumID         TEXT,
-  -- Album fields
-  albumAlbumID    TEXT,
-  albumNameField  TEXT,
-  albumArtistName TEXT,
-  albumReleaseDate TEXT,
-  albumArtField   TEXT,
-  albumTypeField  TEXT,
-  albumIsrc       TEXT
-);
+  )
 `)
 
-// Craps record table (per room)
+// Current state (singleton row)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS current_state (
+    id              INTEGER PRIMARY KEY CHECK (id = 1),
+    -- Song fields
+    songId          TEXT,
+    trackName       TEXT,
+    spotifyTrackId  TEXT,
+    spotifyUrl      TEXT,
+    artistName      TEXT,
+    albumName       TEXT,
+    releaseDate     TEXT,
+    albumType       TEXT,
+    trackNumber     TEXT,
+    totalTracks     TEXT,
+    songDuration    TEXT,
+    albumArt        TEXT,
+    popularity      REAL,
+    previewUrl      TEXT,
+    isrc            TEXT,
+    albumID         TEXT,
+    -- Album fields
+    albumAlbumID    TEXT,
+    albumNameField  TEXT,
+    albumArtistName TEXT,
+    albumReleaseDate TEXT,
+    albumArtField   TEXT,
+    albumTypeField  TEXT,
+    albumIsrc       TEXT
+  )
+`)
+
+// Craps records (per room)
 db.exec(`
   CREATE TABLE IF NOT EXISTS craps_records (
     roomId TEXT PRIMARY KEY,
@@ -202,5 +209,40 @@ db.exec(`
   )
 `)
 
+// ───────────────────────────────────────────────────────────────
+// Lightweight migrations for existing DBs (idempotent)
+// ───────────────────────────────────────────────────────────────
+function hasColumn(table, name) {
+  const cols = db.prepare('PRAGMA table_info(' + table + ')').all()
+  return cols.some(c => c.name === name)
+}
+
+// room_stats.averageReview
+try {
+  if (!hasColumn('room_stats', 'averageReview')) {
+    db.exec('ALTER TABLE room_stats ADD COLUMN averageReview REAL;')
+    console.log('✅ Added room_stats.averageReview')
+  }
+} catch (e) {
+  console.warn('⚠️ Could not add room_stats.averageReview:', e.message)
+}
+
+// song_reviews.createdAt (older DBs can’t add with default; add without)
+// fresh installs already have DEFAULT CURRENT_TIMESTAMP from CREATE TABLE above
+try {
+  if (!hasColumn('song_reviews', 'createdAt')) {
+    db.exec('ALTER TABLE song_reviews ADD COLUMN createdAt TEXT;')
+    console.log('✅ Added song_reviews.createdAt (no default)')
+  }
+} catch (e) {
+  console.warn('⚠️ Could not add song_reviews.createdAt:', e.message)
+}
+
+// Ensure unique index (for older DBs created without named index)
+try {
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS ux_song_reviews ON song_reviews(songId, userId);')
+} catch (e) {
+  console.warn('⚠️ Could not create ux_song_reviews index:', e.message)
+}
 
 console.log('✅ Database initialized')

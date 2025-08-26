@@ -29,7 +29,7 @@ import { getBalanceByNickname, getNicknamesFromWallets, addDollarsByUUID, loadWa
 import { getJackpotValue, handleSlotsCommand } from './slots.js'
 import { joinTable, handleBlackjackBet, handleHit, handleStand, gameState, canSplitHand } from '../handlers/blackJack.js'
 import { updateAfkStatus, isUserAfkAuthorized, userTokens } from './afk.js'
-import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand, handleRandomCyberCommand, handleVibesGuyCommand, handleFacesCommand, handleDoDoCommand, handleFlowerPowerCommand, handleDumDumCommand, handleRandomCosmicCommand } from './avatarCommands.js'
+import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand, handleRandomCyberCommand, handleVibesGuyCommand, handleFacesCommand, handleDoDoCommand, handleFlowerPowerCommand, handleDumDumCommand, handleRandomCosmicCommand, handleRandomLovableCommand, handleBot3Command } from './avatarCommands.js'
 import { markUser, getMarkedUser} from '../utils/removalQueue.js'
 import {extractUserFromText, isLotteryQuestion} from '../database/dblotteryquestionparser.js'
 import { askMagic8Ball } from './magic8Ball.js'
@@ -48,6 +48,9 @@ import { handleRemoveAvatarCommand } from './removeAvatar.js'
 import { enableNowPlayingInfoBlurb, disableNowPlayingInfoBlurb, isNowPlayingInfoBlurbEnabled, setNowPlayingInfoBlurbTone, getNowPlayingInfoBlurbTone } from '../utils/announceNowPlaying.js'
 import { routeCrapsMessage } from '../games/craps/craps.single.js'
 import '../games/craps/craps.single.js'
+
+// ✅ Added: import getCurrentState for DB fallbacks used in review/rating flows
+import { getCurrentState } from '../database/dbcurrent.js'
 
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
@@ -134,21 +137,19 @@ export async function handleDirectMessage(payload) {
 }
 
 export default async (payload, room, state, roomBot) => {
-  console.log('[MessageHandler]', payload)
+  console.log('[MessageHandler]', payload);
 
-  if (!payload?.message) return
+  if (!payload?.message) return;
 
   const txt = payload.message.trim();
 
-
   // 🔧 sanity check route
   if (/^\/ping\b/i.test(txt)) {
-    const room = payload.receiverType === 'user' ? roomOrPeer : roomOrPeer; // both work
     await postMessage({ room, message: 'pong ✅' });
     return;
   }
 
-   // ─── HORSE‐RACE ENTRY & COMMANDS ────────────────────────────────────────
+  // ─── HORSE‐RACE ENTRY & COMMANDS ────────────────────────────────────────
 
   // A) If we're in the 30s entry window, ANY non‐slash chat is an entry
   if (isWaitingForEntries() && !payload.message.startsWith('/')) {
@@ -182,447 +183,447 @@ export default async (payload, room, state, roomBot) => {
 
   // ─── END HORSE‐RACE BLOCK ────────────────────────────────────────────────
 
+  // Send ALL craps-related commands straight to the router.
+  // The router/service will validate timing, funds, shooter-only roll, etc.
+  if (/^\/(craps|join|roll|pass|dontpass|come|place|removeplace)\b/i.test(txt)) {
+    console.log('▶ dispatch → routeCrapsMessage');
+    return routeCrapsMessage(payload);
+  }
 
- // Send ALL craps-related commands straight to the router.
-// The router/service will validate timing, funds, shooter-only roll, etc.
-if (/^\/(craps|join|roll|pass|dontpass|come|place|removeplace)\b/i.test(txt)) {
-  console.log('▶ dispatch → routeCrapsMessage');
-  return routeCrapsMessage(payload);
-}
-
-
-// ─── END CRAPS BLOCK ──────────────────────────
+  // ─── END CRAPS BLOCK ──────────────────────────
 
   // Handle Gifs Sent in Chat
   if (payload.message.type === 'ChatGif') {
-    logger.info('Received a GIF message:', payload.message)
-    return
+    logger.info('Received a GIF message:', payload.message);
+    return;
   }
-
-
 
   // --- AI helpers -----------------------------------------------------------
-function expandSongQuestion(rawQ, song) {
-  if (!song) return rawQ
-  const parts = []
-  if (song.trackName) parts.push(`Track: ${song.trackName}`)
-  if (song.artistName) parts.push(`Artist: ${song.artistName}`)
-  if (song.albumName && song.albumName !== 'Unknown') parts.push(`Album: ${song.albumName}`)
-  if (song.releaseDate && song.releaseDate !== 'Unknown') parts.push(`Release: ${song.releaseDate}`)
-  if (song.isrc) parts.push(`ISRC: ${song.isrc}`)
-  if (song.popularity != null) parts.push(`Spotify popularity: ${song.popularity}`)
-  const links = song?.links?.spotify?.url || song?.links?.appleMusic?.url || song?.links?.youtube?.url
-  const linkLine = links ? `Link: ${links}` : ''
+  function expandSongQuestion(rawQ, song) {
+    if (!song) return rawQ;
+    const parts = [];
+    if (song.trackName) parts.push(`Track: ${song.trackName}`);
+    if (song.artistName) parts.push(`Artist: ${song.artistName}`);
+    if (song.albumName && song.albumName !== 'Unknown') parts.push(`Album: ${song.albumName}`);
+    if (song.releaseDate && song.releaseDate !== 'Unknown') parts.push(`Release: ${song.releaseDate}`);
+    if (song.isrc) parts.push(`ISRC: ${song.isrc}`);
+    if (song.popularity != null) parts.push(`Spotify popularity: ${song.popularity}`);
+    const links = song?.links?.spotify?.url || song?.links?.appleMusic?.url || song?.links?.youtube?.url;
+    const linkLine = links ? `Link: ${links}` : '';
 
-  const songCard = `${parts.join(' | ')}${linkLine ? `\n${linkLine}` : ''}`
+    const songCard = `${parts.join(' | ')}${linkLine ? `\n${linkLine}` : ''}`;
 
-  // replace common phrasings; keep the user’s tone around it
-  let q = rawQ
-    .replace(/\b(tell me about|what is|what's|info on|details about)\s+(this song)\b/gi, '$1 THE_SONG')
-    .replace(/\b(this song|this track|current song|song that is playing)\b/gi, 'THE_SONG')
+    // replace common phrasings; keep the user’s tone around it
+    let q = rawQ
+      .replace(/\b(tell me about|what is|what's|info on|details about)\s+(this song)\b/gi, '$1 THE_SONG')
+      .replace(/\b(this song|this track|current song|song that is playing)\b/gi, 'THE_SONG');
 
-  return q.replace(/THE_SONG/g, `this song:\n${songCard}\n\nPlease give a short, fun blurb with notable facts (samples, origin, chart peaks, vibe), then 1 similar-track rec.`);
-}
-
-function extractText(reply) {
-  if (!reply) return null
-  if (typeof reply === 'string') return reply
-  if (reply.text) return reply.text
-  if (reply.candidates?.[0]?.content?.parts?.[0]?.text) return reply.candidates[0].content.parts[0].text
-  return null
-}
-
-async function safeAskQuestion(prompt, askFn, logger) {
-  try {
-    const result = await Promise.race([
-      askFn(prompt),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('AI_TIMEOUT')), 15000))
-    ])
-    const txt = extractText(result)
-    if (!txt) throw new Error('AI_EMPTY_RESPONSE')
-    return txt.trim()
-  } catch (err) {
-    logger?.error?.(`[AI] ${err.message || err}`, { err })
-    return "My AI brain buffered too long. Try again in a sec. 😅"
+    return q.replace(
+      /THE_SONG/g,
+      `this song:\n${songCard}\n\nPlease give a short, fun blurb with notable facts (samples, origin, chart peaks, vibe), then 1 similar-track rec.`
+    );
   }
-}
 
+  function extractText(reply) {
+    if (!reply) return null;
+    if (typeof reply === 'string') return reply;
+    if (reply.text) return reply.text;
+    if (reply.candidates?.[0]?.content?.parts?.[0]?.text) return reply.candidates[0].content.parts[0].text;
+    return null;
+  }
+
+  async function safeAskQuestion(prompt, askFn, logger) {
+    try {
+      const result = await Promise.race([
+        askFn(prompt),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('AI_TIMEOUT')), 15000))
+      ]);
+      const txt = extractText(result);
+      if (!txt) throw new Error('AI_EMPTY_RESPONSE');
+      return txt.trim();
+    } catch (err) {
+      logger?.error?.(`[AI] ${err.message || err}`, { err });
+      return 'My AI brain buffered too long. Try again in a sec. 😅';
+    }
+  }
 
   // Safer bot-mention check stays the same
-const isMentioned = (message) => {
-  if (typeof message !== 'string') return false
-  return (
-    message.includes(`<@uid:${process.env.BOT_USER_UUID}>`) ||
-    message.includes(`@${process.env.CHAT_NAME}`)
-  )
-}
+  const isMentioned = (message) => {
+    if (typeof message !== 'string') return false;
+    return (
+      message.includes(`<@uid:${process.env.BOT_USER_UUID}>`) ||
+      message.includes(`@${process.env.CHAT_NAME}`)
+    );
+  };
 
-if (
-  isMentioned(payload.message) &&
-  payload.sender &&
-  payload.sender !== process.env.BOT_USER_UUID &&   // ✅ compare directly to UUID
-  !payload.message.includes('played')
-) {
-  try {
-    const question = payload.message
-      .replace(`<@uid:${process.env.BOT_USER_UUID}>`, '')
-      .replace(`@${process.env.CHAT_NAME}`, '')
-      .trim()
-      .toLowerCase()
+  if (
+    isMentioned(payload.message) &&
+    payload.sender &&
+    payload.sender !== process.env.BOT_USER_UUID &&   // ✅ compare directly to UUID
+    !payload.message.includes('played')
+  ) {
+    try {
+      const question = payload.message
+        .replace(`<@uid:${process.env.BOT_USER_UUID}>`, '')
+        .replace(`@${process.env.CHAT_NAME}`, '')
+        .trim()
+        .toLowerCase();
 
-    console.log(`Received question: "${question}"`)
-    logger.info(`Received question: "${question}" from ${payload.sender}`)
+      console.log(`Received question: "${question}"`);
+      logger.info(`Received question: "${question}" from ${payload.sender}`);
 
-    // quick one-offs (also fix the OR bug in includes)
-    if (question === 'you good?') {
-      await postMessage({ room, message: "Couldn't be better" })
-      return
-    }
-
-    if (question === 'hide') {
-      try {
-        await handleBotRandomAvatarCommand(room, postMessage, process.env.TTL_USER_TOKEN)
-      } catch (err) {
-        console.error('Error updating bot avatar for hide command:', err)
-        await postMessage({ room, message: "I tried to hide but tripped over my own code. 🤕" })
-      }
-      return
-    }
-
-    if (question.includes('dj with us') || question.includes('dj with me')) {
-      await postMessage({ room, message: "Let's get it" })
-      await roomBot.enableAutoDJ()
-      await roomBot.addDJ(true)
-      return
-    }
-
-    if (question.includes('get tf off the stage') || question.includes('stop djing')) {
-      await postMessage({ room, message: 'Damn...alright' })
-      await roomBot.removeDJ(process.env.BOT_USER_UUID)
-      return
-    }
-
-    if (question.includes('9+10') || question.includes('9 + 10')) {  // ✅
-      await postMessage({ room, message: '21...are you stoopid?' })
-      return
-    }
-
-    if (question.includes('are you a bot?') || question.includes('are you a bot')) { // ✅
-      await postMessage({ room, message: 'I am not' })
-      return
-    }
-
-    if (isLotteryQuestion(question)) {
-      const userInput = extractUserFromText(question)
-      if (userInput) {
-        await handleLotteryCheck(room, userInput)
-        return
-      } else {
-        await postMessage({ room, message: "Who do you want me to check?" })
-        return
-      }
-    }
-
-    if (question.includes('spin the wheel') || question.includes('spin that wheel')) {
-      await startRouletteGame(payload)
-      return
-    }
- 
-    // --- SONG INTENT -----------------------------------------------------
-    if (
-      question.includes('song is this') ||
-      question.includes('this song') ||
-      question.includes('song is playing') ||
-      question.includes('what’s this song') || question.includes("what's this song")
-    ) {
-      const currentSong = roomBot.currentSong
-      if (!currentSong) {
-        await postMessage({ room, message: 'No song is currently playing.' })
-        return
+      // quick one-offs (also fix the OR bug in includes)
+      if (question === 'you good?') {
+        await postMessage({ room, message: "Couldn't be better" });
+        return;
       }
 
-      console.log(`Current song details: ${JSON.stringify(currentSong)}`)
-      logger.info(`Current song details: ${JSON.stringify(currentSong)}`)
+      if (question === 'hide') {
+        try {
+          await handleBotRandomAvatarCommand(room, postMessage, process.env.TTL_USER_TOKEN);
+        } catch (err) {
+          console.error('Error updating bot avatar for hide command:', err);
+          await postMessage({ room, message: 'I tried to hide but tripped over my own code. 🤕' });
+        }
+        return;
+      }
 
-      setCurrentSong(currentSong)
+      if (question.includes('dj with us') || question.includes('dj with me')) {
+        await postMessage({ room, message: "Let's get it" });
+        await roomBot.enableAutoDJ();
+        await roomBot.addDJ(true);
+        return;
+      }
 
-      const prompt = expandSongQuestion(question, currentSong)
-      console.log('Expanded prompt for AI:', prompt)
-      logger.info('Expanded prompt for AI prepared')
+      if (question.includes('get tf off the stage') || question.includes('stop djing')) {
+        await postMessage({ room, message: 'Damn...alright' });
+        await roomBot.removeDJ(process.env.BOT_USER_UUID);
+        return;
+      }
 
-      const aiReplyText = await safeAskQuestion(prompt, askQuestion, logger)
-      console.log('AI Reply:', aiReplyText)
-      logger.info(`AI Reply: ${aiReplyText}`)
+      if (question.includes('9+10') || question.includes('9 + 10')) {  // ✅
+        await postMessage({ room, message: '21...are you stoopid?' });
+        return;
+      }
 
-      await postMessage({ room, message: aiReplyText })
-      return
+      if (question.includes('are you a bot?') || question.includes('are you a bot')) { // ✅
+        await postMessage({ room, message: 'I am not' });
+        return;
+      }
+
+      if (isLotteryQuestion(question)) {
+        const userInput = extractUserFromText(question);
+        if (userInput) {
+          await handleLotteryCheck(room, userInput);
+          return;
+        } else {
+          await postMessage({ room, message: 'Who do you want me to check?' });
+          return;
+        }
+      }
+
+      if (question.includes('spin the wheel') || question.includes('spin that wheel')) {
+        await startRouletteGame(payload);
+        return;
+      }
+
+      // --- SONG INTENT -----------------------------------------------------
+      if (
+        question.includes('song is this') ||
+        question.includes('this song') ||
+        question.includes('song is playing') ||
+        question.includes('what’s this song') || question.includes("what's this song")
+      ) {
+        const currentSong = roomBot.currentSong;
+        if (!currentSong) {
+          await postMessage({ room, message: 'No song is currently playing.' });
+          return;
+        }
+
+        console.log(`Current song details: ${JSON.stringify(currentSong)}`);
+        logger.info(`Current song details: ${JSON.stringify(currentSong)}`);
+
+        setCurrentSong(currentSong);
+
+        const prompt = expandSongQuestion(question, currentSong);
+        console.log('Expanded prompt for AI:', prompt);
+        logger.info('Expanded prompt for AI prepared');
+
+        const aiReplyText = await safeAskQuestion(prompt, askQuestion, logger);
+        console.log('AI Reply:', aiReplyText);
+        logger.info(`AI Reply: ${aiReplyText}`);
+
+        await postMessage({ room, message: aiReplyText });
+        return;
+      }
+
+      // --- OTHER CONTEXT (e.g., popularity explanation) -------------------
+      if (question.includes('yankees')) {
+        await postMessage({ room, message: 'Who cares?' });
+        return;
+      }
+
+      // default: ask AI with timeout
+      const responseText = await safeAskQuestion(question, askQuestion, logger);
+      console.log('AI Reply:', responseText);
+      logger.info(`AI Reply: ${responseText}`);
+      await postMessage({ room, message: responseText });
+
+    } catch (err) {
+      console.error('AI mention handler failed:', err);
+      logger.error(`AI mention handler failed: ${err?.message || err}`);
+      await postMessage({ room, message: 'My AI hiccuped. Try again.' });
     }
 
-    // --- OTHER CONTEXT (e.g., popularity explanation) -------------------
-    if (question.includes('yankees')) {
-      await postMessage({ room, message: "Who cares?" })
-      return
+  } else if (payload.message.startsWith('/searchalbum')) {
+    const args = payload.message.split(' ').slice(1);
+    const artistName = args.join(' ');
+
+    if (!artistName) {
+      await postMessage({
+        room,
+        message: 'Please provide an artist name. Usage: `/searchalbums Mac Miller`'
+      });
+      return;
     }
 
-    // default: ask AI with timeout
-    const responseText = await safeAskQuestion(question, askQuestion, logger)
-    console.log('AI Reply:', responseText)
-    logger.info(`AI Reply: ${responseText}`)
-    await postMessage({ room, message: responseText })
+    const albums = await getAlbumsByArtist(artistName);
 
-  } catch (err) {
-    console.error('AI mention handler failed:', err)
-    logger.error(`AI mention handler failed: ${err?.message || err}`)
-    await postMessage({ room, message: "My AI hiccuped. Try again." })
-  }
+    if (!albums.length) {
+      await postMessage({
+        room,
+        message: `No albums found for "${artistName}".`
+      });
+      return;
+    }
 
+    const albumList = albums.map((album, index) => {
+      return `\`${index + 1}.\` *${album.name}* — \`ID: ${album.id}\``;
+    }).join('\n');
 
-   } else if (payload.message.startsWith('/searchalbum')) {
-  const args = payload.message.split(' ').slice(1)
-  const artistName = args.join(' ')
-
-  if (!artistName) {
+    await sendDirectMessage(payload.sender, `🎶 Albums for "${artistName}":\n${albumList}`);
     await postMessage({
       room,
-      message: 'Please provide an artist name. Usage: `/searchalbums Mac Miller`'
-    })
-    return
-  }
+      message: `<@uid:${payload.sender}> I sent you a private message`
+    });
 
-  const albums = await getAlbumsByArtist(artistName)
-
-  if (!albums.length) {
-    await postMessage({
-      room,
-      message: `No albums found for "${artistName}".`
-    })
-    return
-  }
-
-  const albumList = albums.map((album, index) => {
-  return `\`${index + 1}.\` *${album.name}* — \`ID: ${album.id}\``;
-}).join('\n');
-
-  await sendDirectMessage(payload.sender,`🎶 Albums for "${artistName}":\n${albumList}`)
-  await postMessage({
-    room,
-    message: `<@uid:${payload.sender}> I sent you a private message`
-  })
   } else if (payload.message.startsWith('/qalbum')) {
-  const albumId = payload.message.split(' ')[1]?.trim();
-  const room = process.env.ROOM_UUID;
+    const albumId = payload.message.split(' ')[1]?.trim();
+    const room = process.env.ROOM_UUID;
 
-  if (!albumId) {
-    await postMessage({
-      room,
-      message:
+    if (!albumId) {
+      await postMessage({
+        room,
+        message:
 `⚠️ *Missing Album ID*
 
 Please provide a valid Spotify album ID.  
 Example: \`/qalbum 4aawyAB9vmqN3uQ7FjRGTy\``
-    });
-    return;
-  }
+      });
+      return;
+    }
 
-  const token = getUserToken(payload.sender);
-  if (!token) {
-    await postMessage({
-      room,
-      message:
+    const token = getUserToken(payload.sender);
+    if (!token) {
+      await postMessage({
+        room,
+        message:
 `🔐 *Spotify account not linked*
 
 We couldn’t find your access token.  
 Please contact an admin to link your account to use this command.`
-    });
-    return;
-  }
-
-  try {
-    // Step 1: Clear user queue
-    await postMessage({
-      room,
-      message: `📁 *Clearing your current queue...*\n📡 Fetching album from Spotify...`
-    });
-
-    await clearUserQueueCrate(payload.sender);
-
-    // Step 2: Get fresh queue ID
-    const crateInfo = await getUserQueueCrateId(payload.sender);
-    const crateId = crateInfo?.crateUuid;
-    if (!crateId) {
-      await postMessage({
-        room,
-        message: `❌ *Failed to retrieve your queue ID. Please try again later.*`
       });
       return;
     }
 
-    // Step 3: Fetch album tracks
-    const tracks = await getAlbumTracks(albumId);
-    if (!tracks || tracks.length === 0) {
+    try {
+      // Step 1: Clear user queue
       await postMessage({
         room,
-        message: `❌ *No tracks found for album \`${albumId}\`.*`
+        message: `📁 *Clearing your current queue...*\n📡 Fetching album from Spotify...`
       });
-      return;
-    }
 
-    // Step 4: Format for queue
-    const formattedTracks = tracks.map(track => ({
-      musicProvider: 'spotify',
-      songId: track.id,
-      artistName: track.artists.map(a => a.name).join(', '),
-      trackName: track.name,
-      duration: Math.floor(track.duration_ms / 1000),
-      explicit: track.explicit,
-      isrc: track.external_ids?.isrc || '',
-      playbackToken: '',
-      genre: ''
-    }));
+      await clearUserQueueCrate(payload.sender);
 
-    // Step 5: Add to queue
-    await addSongsToCrate(crateId, formattedTracks, true, token);
+      // Step 2: Get fresh queue ID
+      const crateInfo = await getUserQueueCrateId(payload.sender);
+      const crateId = crateInfo?.crateUuid;
+      if (!crateId) {
+        await postMessage({
+          room,
+          message: `❌ *Failed to retrieve your queue ID. Please try again later.*`
+        });
+        return;
+      }
 
-    await postMessage({
-      room,
-      message:
+      // Step 3: Fetch album tracks
+      const tracks = await getAlbumTracks(albumId);
+      if (!tracks || tracks.length === 0) {
+        await postMessage({
+          room,
+          message: `❌ *No tracks found for album \`${albumId}\`.*`
+        });
+        return;
+      }
+
+      // Step 4: Format for queue
+      const formattedTracks = tracks.map(track => ({
+        musicProvider: 'spotify',
+        songId: track.id,
+        artistName: track.artists.map(a => a.name).join(', '),
+        trackName: track.name,
+        duration: Math.floor(track.duration_ms / 1000),
+        explicit: track.explicit,
+        isrc: track.external_ids?.isrc || '',
+        playbackToken: '',
+        genre: ''
+      }));
+
+      // Step 5: Add to queue
+      await addSongsToCrate(crateId, formattedTracks, true, token);
+
+      await postMessage({
+        room,
+        message:
 `✅ *Album Queued!*
 
 🎵 Added *${formattedTracks.length} track(s)* from album \`${albumId}\` to your queue.  
 Please refresh your page for tha queue to update`
-    });
+      });
 
-  } catch (error) {
-    await postMessage({
-      room,
-      message:
+    } catch (error) {
+      await postMessage({
+        room,
+        message:
 `❌ *Something went wrong while queuing your album*  
 \`\`\`${error.message}\`\`\``
-    });
-  }
-
+      });
+    }
 
     /// //////////// LOTTERY GAME ////////////////////////////////////////////
   } else if (payload.message.startsWith('/lottery')) {
     try {
-      const GifUrl = 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExMm11bGZ0M3RraXg5Z3Z4ZzZpNjU4ZDR4Y2QwMzc0NWwyaWFlNWU4byZlcD12MV9naWZzX3NlYXJjaCZjdD1n/Ps8XflhsT5EVa/giphy.gif'
+      const GifUrl = 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExMm11bGZ0M3RraXg5Z3Z4ZzZpNjU4ZDR4Y2QwMzc0NWwyaWFlNWU4byZlcD12MV9naWZzX3NlYXJjaCZjdD1n/Ps8XflhsT5EVa/giphy.gif';
       await postMessage({
         room,
         message: '',
         images: [GifUrl]
-      })
+      });
     } catch (error) {
-      console.error('Error processing command', error.message)
+      console.error('Error processing command', error.message);
       await postMessage({
         room,
         message: 'An error occurred while processing the command. Please try again.'
-      })
+      });
     }
-    await handleLotteryCommand(payload)
+    await handleLotteryCommand(payload);
+
   } else if (LotteryGameActive) {
-    await handleLotteryNumber(payload)
+    await handleLotteryNumber(payload);
 
   } else if (payload.message.startsWith('/lottostats')) {
-      await handleTopLotteryStatsCommand(room)
+    await handleTopLotteryStatsCommand(room);
 
   } else if (/^\/lotto\s+#?\d{1,3}/.test(payload.message)) {
-     console.log('Routing to handleSingleNumberQuery with message:', payload.message)
-    await handleSingleNumberQuery(room, payload.message)
-    
+    console.log('Routing to handleSingleNumberQuery with message:', payload.message);
+    await handleSingleNumberQuery(room, payload.message);
+
     // ===== /commands (readable overview with hyphens) =====
-} else if (/^\/commands\b/i.test(payload.message)) {
-  try {
-    const isMod = await isUserAuthorized(payload.sender, ttlUserToken)
-    const arg = payload.message.trim().split(/\s+/)[1]?.toLowerCase()
-    const wantModInline = /^(mod|mods|moderator|admin)$/.test(arg || '')
-    const showAll = /^(all|everything)$/.test(arg || '')
+  } else if (/^\/commands\b/i.test(payload.message)) {
+    try {
+      const isMod = await isUserAuthorized(payload.sender, ttlUserToken);
+      const arg = payload.message.trim().split(/\s+/)[1]?.toLowerCase();
+      const wantModInline = /^(mod|mods|moderator|admin)$/.test(arg || '');
+      const showAll = /^(all|everything)$/.test(arg || '');
 
-    const sections = []
+      const sections = [];
 
-    // Essentials
-    sections.push([
-      '— Essentials —',
-      '- `/theme` — Show current room theme',
-      '- `/games` — List available games',
-      '- `/escortme` — Stagedive after your next song',
-      '- `/dive` — Stagedive now',
-      '- `/djbeer` — Give the DJ a beer 🍺',
-    ].join('\n'))
-
-    // Music & Stats
-    sections.push([
-      '— Music & Stats —',
-      '- `/album` — Album info for the current song',
-      '- `/score` — Spotify popularity score',
-      '- `/reviewhelp` — How to review songs ⭐',
-      '- `/suggestsongs` — Songs suggested by Allen',
-    ].join('\n'))
-
-    // Wallet / Lotteries
-    sections.push([
-      '— Wallet & Lotto —',
-      '- `/bankroll` — Top wallet leaders 💰',
-      '- `/lottowinners` — Lottery ball winners 🎱',
-      '- `/lottostats` - Most Drawn Lotto Numbers',
-    ].join('\n'))
-
-    // Fun / GIFs
-    sections.push([
-      '— Fun —',
-      '- `/gifs` — Show GIF commands',
-      '- `/djbeer` — Beer again (because, priorities) 🍺',
-    ].join('\n'))
-
-    // Mod teaser (only show if mod or explicitly requested)
-    if (isMod || wantModInline || showAll) {
+      // Essentials
       sections.push([
-        '— Moderator Quick Toggles —',
-        '- `/status` — Show bot toggles status',
-        '- `/bopon` | `/bopoff` — Auto-like on/off',
-        '- `/songstatson` | `/songstatsoff`',
-        '- `/greeton` | `/greetoff` — Greeting on/off',
-        '- `/infoon` | `/infooff` | `/infotoggle` — Info blurb on/off',
-        '- `/infotone <tone>` — Set info blurb tone (neutral, playful, cratedigger, hype, classy, chartbot, djtech, vibe)',
-        '- `/settheme <name>` | `/removetheme`',
-        '- `/room <style>` — Change room look (classic, ferry, barn, yacht, festival, stadium, theater)',
-        '- `/addDJ` | `/removeDJ`',
-      ].join('\n'))
-    } else {
-      sections.push('— Moderator Commands —\n- Mods can DM `/mod` to receive the full list.')
+        '— Essentials —',
+        '- `/theme` — Show current room theme',
+        '- `/games` — List available games',
+        '- `/escortme` — Stagedive after your next song',
+        '- `/dive` — Stagedive now',
+        '- `/djbeer` — Give the DJ a beer 🍺',
+      ].join('\n'));
+
+      // Music & Stats
+      sections.push([
+        '— Music & Stats —',
+        '- `/album` — Album info for the current song',
+        '- `/score` — Spotify popularity score',
+        '- `/reviewhelp` — How to review songs ⭐',
+        '- `/suggestsongs` — Songs suggested by Allen',
+      ].join('\n'));
+
+      // Wallet / Lotteries
+      sections.push([
+        '— Wallet & Lotto —',
+        '- `/bankroll` — Top wallet leaders 💰',
+        '- `/lottowinners` — Lottery ball winners 🎱',
+        '- `/lottostats` - Most Drawn Lotto Numbers',
+      ].join('\n'));
+
+      // Fun / GIFs
+      sections.push([
+        '— Fun —',
+        '- `/gifs` — Show GIF commands',
+        '- `/djbeer` — Beer again (because, priorities) 🍺',
+      ].join('\n'));
+
+      // Mod teaser (only show if mod or explicitly requested)
+      if (isMod || wantModInline || showAll) {
+        sections.push([
+          '— Moderator Quick Toggles —',
+          '- `/status` — Show bot toggles status',
+          '- `/bopon` | `/bopoff` — Auto-like on/off',
+          '- `/songstatson` | `/songstatsoff`',
+          '- `/greeton` | `/greetoff` — Greeting on/off',
+          '- `/infoon` | `/infooff` | `/infotoggle` — Info blurb on/off',
+          '- `/infotone <tone>` — Set info blurb tone (neutral, playful, cratedigger, hype, classy, chartbot, djtech, vibe)',
+          '- `/settheme <name>` | `/removetheme`',
+          '- `/room <style>` — Change room look (classic, ferry, barn, yacht, festival, stadium, theater)',
+          '- `/addDJ` | `/removeDJ`',
+        ].join('\n'));
+      } else {
+        sections.push('— Moderator Commands —\n- Mods can DM `/mod` to receive the full list.');
+      }
+
+      const message = ['📖 Commands', ...sections].join('\n\n');
+      await postMessage({ room, message });
+
+      // If a mod asked `/commands mod`, also DM them the full sheet
+      if (wantModInline && isMod) {
+        const modSheet = buildModSheet();
+        await sendDirectMessage(payload.sender, modSheet);
+        await postMessage({ room, message: 'Mod Commands sent via DM' });
+      }
+    } catch (err) {
+      console.error('Error in /commands:', err);
+      await postMessage({ room, message: 'Error showing commands.' });
     }
 
-    const message = ['📖 Commands', ...sections].join('\n\n')
-    await postMessage({ room, message })
-
-    // If a mod asked `/commands mod`, also DM them the full sheet
-    if (wantModInline && isMod) {
-      const modSheet = buildModSheet()
-      await sendDirectMessage(payload.sender, modSheet)
-      await postMessage({ room, message: 'Mod Commands sent via DM' })
+  // ===== /mod (DM full moderator sheet, grouped & de-duped) =====
+  } else if (payload.message.startsWith('/mod')) {
+    try {
+      const isAuthorized = await isUserAuthorized(payload.sender, ttlUserToken);
+      if (!isAuthorized) {
+        await postMessage({ room, message: 'You need to be a moderator to execute this command.' });
+        return;
+      }
+      const modMessage = buildModSheet();
+      await sendDirectMessage(payload.sender, modMessage);
+      await postMessage({ room, message: 'Mod Commands sent via DM' });
+    } catch (error) {
+      console.error('Error sending /mod sheet:', error);
+      await postMessage({ room, message: 'Error sending mod commands.' });
     }
-  } catch (err) {
-    console.error('Error in /commands:', err)
-    await postMessage({ room, message: 'Error showing commands.' })
   }
 
-// ===== /mod (DM full moderator sheet, grouped & de-duped) =====
-} else if (payload.message.startsWith('/mod')) {
-  try {
-    const isAuthorized = await isUserAuthorized(payload.sender, ttlUserToken)
-    if (!isAuthorized) {
-      await postMessage({ room, message: 'You need to be a moderator to execute this command.' })
-      return
-    }
-    const modMessage = buildModSheet()
-    await sendDirectMessage(payload.sender, modMessage)
-    await postMessage({ room, message: 'Mod Commands sent via DM' })
-  } catch (error) {
-    console.error('Error sending /mod sheet:', error)
-    await postMessage({ room, message: 'Error sending mod commands.' })
-  }
 
 // ===== /gifs (simple readable list with hyphens) =====
-} else if (payload.message.startsWith('/gifs')) {
+else if (payload.message.startsWith('/gifs')) {
   await postMessage({
     room,
     message:
@@ -635,12 +636,12 @@ Please refresh your page for tha queue to update`
 - /tomatoes
 - /cheers`
   })
-    
+
   /////////////// YAY SPORTS!! ////////////////////////
   } else if (payload.message===('/MLB')) {
     const parts = payload.message.trim().split(' ');
     const requestedDate = parts[1]; // optional, format: YYYY-MM-DD
-  
+
     try {
       // Ensure getMLBScores is properly called and returns a response
       const response = await getMLBScores(requestedDate);
@@ -711,13 +712,13 @@ Please refresh your page for tha queue to update`
         message: '⚠️ Could not retrieve derby standings. Make sure teams are created first.'
       });
     }
-  
-  
-    
+
+
+
   } else if (payload.message.startsWith('/NHL')) {
     const parts = payload.message.trim().split(' ');
     const requestedDate = parts[1]; // optional, format: YYYY-MM-DD
-  
+
     try {
       // Ensure getNHLscores is properly called and returns a response
       const response = await getNHLScores(requestedDate);
@@ -735,7 +736,7 @@ Please refresh your page for tha queue to update`
   } else if (payload.message.startsWith('/NBA')) {
     const parts = payload.message.trim().split(' ');
     const requestedDate = parts[1]; // optional, format: YYYY-MM-DD
-  
+
     try {
       // Ensure getNBAscores is properly called and returns a response
       const response = await getNBAScores(requestedDate);
@@ -757,9 +758,9 @@ Please refresh your page for tha queue to update`
       const sport = 'baseball_mlb';
       const data = await fetchOddsForSport(sport);
       if (!data) throw new Error('No data returned');
-  
+
       saveOddsForSport(sport, data);
-  
+
       const oddsMsg = formatOddsMessage(data, sport);
       await postMessage({ room, message: oddsMsg });
     } catch (error) {
@@ -769,14 +770,14 @@ Please refresh your page for tha queue to update`
     }  
 
   } else if (payload.message.startsWith('/sportsbet')) {
-    const args = payload.message.trim().split(/\s+/);
+    const args = payload.message.trim().split(/\\s+/);
     const senderUUID = payload.sender;
     const nickname = await getSenderNickname(senderUUID);
     const room = process.env.ROOM_UUID;
-  
+
     console.log('⚡ /sportsbet command received');
     console.log('Arguments:', args);
-  
+
     if (args.length < 6) {
       await postMessage({
         room,
@@ -784,7 +785,7 @@ Please refresh your page for tha queue to update`
       });
       return;
     }
-  
+
     const sportAlias = args[1].toLowerCase();
     const sportMap = {
       mlb: 'baseball_mlb',
@@ -793,18 +794,18 @@ Please refresh your page for tha queue to update`
       nhl: 'icehockey_nhl'
     };
     const sport = sportMap[sportAlias];
-  
+
     if (!sport) {
       await postMessage({ room, message: 'Unsupported sport. Try: mlb, nba, nfl, nhl' });
       return;
     }
-  
+
     const rawIndex = parseInt(args[2], 10);
     const index = rawIndex - 1; // convert to 0-based index
     const team = args[3];
     const betType = args[4].toLowerCase(); // 'ml' or 'spread'
     const amount = parseFloat(args[5]);
-  
+
     if (isNaN(index) || !team || isNaN(amount) || amount <= 0) {
       await postMessage({
         room,
@@ -812,7 +813,7 @@ Please refresh your page for tha queue to update`
       });
       return;
     }
-  
+
     const oddsData = getOddsForSport(sport);
     if (!oddsData || index < 0 || index >= oddsData.length) {
       await postMessage({
@@ -821,7 +822,7 @@ Please refresh your page for tha queue to update`
       });
       return;
     }
-  
+
     const balance = await getUserWallet(senderUUID);
     if (amount > balance) {
       await postMessage({
@@ -830,13 +831,13 @@ Please refresh your page for tha queue to update`
       });
       return;
     }
-  
+
     const result = await placeSportsBet(senderUUID, index, team, betType, amount, sport);
-  
+
     if (typeof result === 'string' && result.startsWith('✅')) {
       await removeFromUserWallet(senderUUID, amount);
     }
-  
+
     console.log('Bet Result:', result);
     await postMessage({ room, message: result });
 
@@ -847,7 +848,7 @@ Please refresh your page for tha queue to update`
       message: 'Open bets have been resolved'
     });
     return;
-  
+
     //////////////////////////// ////////////////////////////
     } else if (payload.message.startsWith('/test')) {
       await postMessage({
@@ -855,7 +856,7 @@ Please refresh your page for tha queue to update`
         message: `testing!`
       });
 
-    
+
   } else if (payload.message.startsWith('/crapsrecord')) {
     const row = db.prepare(`
       SELECT maxRolls, shooterNickname, shooterId, achievedAt
@@ -874,27 +875,27 @@ Please refresh your page for tha queue to update`
       room: room,
       message: `🏆 **Current record:** ${count} roll(s) by **${who}**\n🗓️ Set: ${when}`
     });
-  
+
     /// /////////////// General Commands ////////////////
   } else if (payload.message.startsWith('/games')) {
     await postMessage({
       room,
       message: 'Games:\n- /trivia: Play Trivia\n- /lottery: Play the Lottery\n- /roulette: Play Roulette\n- /slots: Play Slots\n- /blackjack: Play Blackjack\n- /horserace\n- /slotinfo: Display slots payout info\n- /lotto (#):Insert number to get amount of times won\n- /lottostats: Get most won lottery numbers \n- /jackpot: Slots progressive jackpot value'
     })
-} else if (/^(\/theme|\/settheme|\/removetheme)\b/i.test(payload.message.trim())) {
-  console.log('[MessageHandler] routing to theme handler:', payload.message)
+} else if (/^\/(?:theme|settheme|removetheme)\b/i.test(payload.message.trim())) {
+  console.log('[MessageHandler] routing to theme handler:', payload.message);
   try {
     await handleThemeCommand({
       sender:  payload.sender,
       room,
       message: payload.message
-    })
+    });
   } catch (err) {
-    console.error('[MessageHandler] theme handler threw:', err)
-    await postMessage({ room, message: '⚠️ Theme command failed—please try again.' })
+    console.error('[MessageHandler] theme handler threw:', err);
+    await postMessage({ room, message: '⚠️ Theme command failed—please try again.' });
   }
-  return
-
+  return;
+  
   } else if (payload.message.startsWith('/djbeers')) {
   try {
     const senderUUID = payload.sender;
@@ -1071,15 +1072,15 @@ Please refresh your page for tha queue to update`
   await postMessage({ room, message: `🎶 Current Queue:\n${list}` })
 }
 
-    
+
    else if (payload.message.startsWith('/dive')) {
       try {
         const userUuid = payload.sender
         const senderName = await getSenderNickname(userUuid)
-    
+
         // Get the UUID of the DJ currently playing a song
         const currentDJ = getCurrentDJ(state) // This returns a UUID
-    
+
         if (userUuid === currentDJ) {
           // They're playing the current song, mark them for removal after it ends
           if (getMarkedUser() === userUuid) {
@@ -1089,7 +1090,7 @@ Please refresh your page for tha queue to update`
             })
           } else {
             markUser(userUuid)  // Store UUID for post-song removal
-    
+
             await postMessage({
               room,
               message: `${senderName}, you'll dive off stage after this track. 🌊`
@@ -1102,7 +1103,7 @@ Please refresh your page for tha queue to update`
       } catch (error) {
         console.error('Error handling /dive command:', error)
       }
-    
+
   } else if (payload.message.startsWith('/escortme')) {
     try {
       const senderUUID = payload.sender
@@ -1987,7 +1988,7 @@ if (payload.message.startsWith('/table')) {
   }
 
   // Extract the UID from the format <UID:uuid>
-  const uidMatch = mention.match(/<@uid:([\w-]+)>/i);
+  const uidMatch = mention.match(/<@uid:([\\w-]+)>/i);
   if (!uidMatch) {
     await postMessage({
       room,
@@ -2006,7 +2007,7 @@ if (payload.message.startsWith('/table')) {
     room,
     message: `💸 Added $${amount} to user <@uid:${userUuid}>'s wallet.`
   });
-  
+
   /// ///////////////// BOT PROFILE UPDATES //////////////////////
 } else if (payload.message.startsWith('/bot1')) {
   await handleBot1Command(room, postMessage, isUserAuthorized, payload.sender, ttlUserToken)
@@ -2014,21 +2015,24 @@ if (payload.message.startsWith('/table')) {
 } else if (payload.message.startsWith('/bot2')) {
   await handleBot2Command(room, postMessage, isUserAuthorized, payload.sender, ttlUserToken)
 
+  } else if (payload.message.startsWith('/bot3')) {
+  await handleBot3Command(room, postMessage, isUserAuthorized, payload.sender, ttlUserToken)
+
   } else if (payload.message.startsWith('/botpenguin')) {
     await handleBotPenguinCommand(room, postMessage, isUserAuthorized, payload.sender, ttlUserToken)
-  
+
   } else if (payload.message.startsWith('/botwalrus')) {
     await handleBotWalrusCommand(room, postMessage, isUserAuthorized, payload.sender, ttlUserToken)
-  
+
   } else if (payload.message.startsWith('/botalien2')) {
     await handleBotAlien2Command(room, postMessage, isUserAuthorized, payload.sender, ttlUserToken)
-  
+
   } else if (payload.message.startsWith('/botalien1')) {
     await handleBotAlienCommand(room, postMessage, isUserAuthorized, payload.sender, ttlUserToken)
-  
+
   } else if (payload.message.startsWith('/botduck')) {
     await handleBotDuckCommand(room, postMessage, isUserAuthorized, payload.sender, ttlUserToken)
-  
+
   } else if (payload.message.startsWith('/botdino')) {
       await handleBotDinoCommand(room, postMessage, isUserAuthorized, payload.sender, ttlUserToken)
     }
@@ -2071,14 +2075,16 @@ if (payload.message.startsWith('/table')) {
   else if (payload.message.startsWith('/cosmic')) {
     await handleRandomCosmicCommand(payload.sender, room, postMessage)
   }
+  else if (payload.message.startsWith('/lovable')) {
+    await handleRandomLovableCommand(payload.sender, room, postMessage)
+  }
 
 else if (payload.message.startsWith('/randomavatar')) {
   await handleRandomAvatarCommand(payload.sender, room, postMessage)
 }
 
 ////////////////////////// Add Avatar //////////////////////////
-
-else if (/^\/addavatar\b/i.test(payload.message)) {
+ else if (/^\/addavatar\b/i.test(payload.message)) {
   const roomId = payload.room ?? process.env.ROOM_UUID;
 
   try {
@@ -2090,28 +2096,26 @@ else if (/^\/addavatar\b/i.test(payload.message)) {
     console.error('[router]/addavatar failed:', err);
     await postMessage({ room: roomId, message: '❌ /addavatar crashed — check logs.' });
   }
-}
 
-else if (/^\/removeavatar\b/i.test(payload.message)) {
+} else if (/^\/removeavatar\b/i.test(payload.message)) {
   const roomId = payload.room ?? process.env.ROOM_UUID;
   await handleRemoveAvatarCommand(
     { sender: payload.sender, message: payload.message, room: roomId },
     postMessage
   );
-}
 
-  else if (payload.message === '/reviewhelp') {
-    const helpMessage = `🎧 **How Reviews Work**  
+} else if (payload.message === '/reviewhelp') {
+  const helpMessage = `🎧 **How Reviews Work**  
   You can rate each song from **1 to 6** while it plays. 
   Each number has a specific meaning:
-  
+
   1️⃣ – **Terrible**: Actively disliked it  
   2️⃣ – **Bad**: Not for me  
   3️⃣ – **Okay**: Meh, it's fine  
   4️⃣ – **Good**: I liked it  
   5️⃣ – **Great**: Really enjoyed it  
   6️⃣ – **Banger**: Loved it, elite track
-  
+
   📝 **Commands**:  
   /review <1-6> – Submit a review for the current song  
   /rating – See the average rating for the current song
@@ -2121,84 +2125,89 @@ else if (/^\/removeavatar\b/i.test(payload.message)) {
   /topalbums – See the top 5 highest rated albums 
   /mytopalbums – See your personal top 5 highest rated albums 
 
-  Reviews contribute to the song’s overall score in the stats. Thanks for sharing your taste! 🎶`
-  
-    await postMessage({
-      room,
-      message: helpMessage
-    })
-  }
+  Reviews contribute to the song’s overall score in the stats. Thanks for sharing your taste! 🎶`;
+
+  await postMessage({ room, message: helpMessage });
+}
+
 
    else if (payload.message.startsWith('/review')) {
-  const rating = parseInt(payload.message.replace('/review', '').trim(), 10);
   const sender = payload.sender;
 
-  if (isNaN(rating) || rating < 1 || rating > 6) {
-    await postMessage({
-      room,
-      message: `${await getUserNickname(sender)} please enter a number between 1 and 6 to review the song.`
-    });
+  // Parse rating from '/review 5' or '/review5'
+  const ratingStr = payload.message.slice(7).trim();
+  const rating = Number.parseInt(ratingStr, 10);
+
+  if (!Number.isInteger(rating) || rating < 1 || rating > 6) {
+    try {
+      await postMessage({
+        room,
+        message: `${await getUserNickname(sender)} please enter a number between 1 and 6 to review the song.`
+      });
+    } catch { /* ignore nickname failure */ }
     return;
   }
 
   // 1️⃣ Try in-memory first
-  let song = (roomBot.currentSong && roomBot.currentSong.trackName && roomBot.currentSong.artistName)
+  let song = (roomBot.currentSong?.trackName && roomBot.currentSong?.artistName)
     ? roomBot.currentSong
     : null;
 
   // 2️⃣ Fall back to DB if needed
   if (!song) {
-    const row = getCurrentState();
-    if (row && row.trackName && row.artistName) {
+    const row = getCurrentState?.();
+    if (row?.trackName && row?.artistName) {
       song = {
-        songId:     row.songId,
+        songId:     row.songId ?? null,
         trackName:  row.trackName,
         artistName: row.artistName,
-        albumName:  row.albumName,
-        // any other fields your saveSongReview needs…
+        albumName:  row.albumName ?? null,
       };
     }
   }
 
   if (!song) {
-    await postMessage({
-      room,
-      message: `No song is currently playing. Try again in a moment.`
-    });
+    await postMessage({ room, message: `No song is currently playing. Try again in a moment.` });
     return;
   }
 
-  // Call your existing review saver
-  const result = await saveSongReview({
-    currentSong: song,
+  // 🔐 Normalize the identity you pass to saveSongReview
+  const payloadForSave = {
+    currentSong: {
+      songId:     song.songId ?? null,
+      trackName:  song.trackName,
+      artistName: song.artistName,
+      albumName:  song.albumName ?? null,
+    },
     rating,
     userId: sender
-  });
+  };
 
-  if (result.success) {
-    await postMessage({
-      room,
-      message: `<@uid:${sender}> thanks! Your ${rating}/6 song review has been saved.`
-    });
-  } else if (result.reason === 'duplicate') {
-    await postMessage({
-      room,
-      message: `<@uid:${sender}> you've already reviewed this song.`
-    });
-  } else if (result.reason === 'not_found') {
-    await postMessage({
-      room,
-      message: `Song not found in stats.`
-    });
+  let result;
+  try {
+    result = await saveSongReview(payloadForSave);
+  } catch (err) {
+    logger?.error?.('[reviews] saveSongReview threw', { err: String(err), payload: payloadForSave });
+    await postMessage({ room, message: `Couldn't save your review, please try again later.` });
+    return;
+  }
+
+  // Enforce a stable contract from saveSongReview
+  if (result?.success === true) {
+    await postMessage({ room, message: `<@uid:${sender}> thanks! Your ${rating}/6 song review has been saved.` });
+  } else if (result?.reason === 'duplicate') {
+    await postMessage({ room, message: `<@uid:${sender}> you've already reviewed this song.` });
+  } else if (result?.reason === 'not_found') {
+    await postMessage({ room, message: `Song not found in stats.` });
   } else {
-    await postMessage({
-      room,
-      message: `Oops! Couldn't save your review. Try again later.`
-    });
+    logger?.warn?.('[reviews] Unexpected result from saveSongReview', { result });
+    await postMessage({ room, message: `Couldn't save your review, please try again later.` });
   }
-  }
+}
+
   else if (payload.message.startsWith('/topsongs')) {
   try {
+    // 🔧 Removed spotifyTrackId filter so songs without that field aren't dropped
     const topReviewedSongs = db.prepare(`
       SELECT 
         rs.trackName,
@@ -2208,7 +2217,6 @@ else if (/^\/removeavatar\b/i.test(payload.message)) {
         COUNT(sr.rating) AS reviewCount
       FROM room_stats rs
       JOIN song_reviews sr ON rs.songId = sr.songId
-      WHERE rs.spotifyTrackId IS NOT NULL
       GROUP BY rs.songId
       HAVING reviewCount > 0
       ORDER BY averageReview DESC
@@ -2221,36 +2229,45 @@ else if (/^\/removeavatar\b/i.test(payload.message)) {
     }
 
     const numberEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣']
-    const customDataSongs = []
 
     for (let i = 0; i < topReviewedSongs.length; i++) {
       const song = topReviewedSongs[i]
       const emoji = numberEmojis[i] || `#${i + 1}`
 
       try {
-        const songData = await fetchSongData(song.spotifyTrackId)
+        // If we have a spotifyTrackId, enrich the card; else post plain text
+        if (song.spotifyTrackId) {
+          const songData = await fetchSongData(song.spotifyTrackId)
+          const reviewText = `${parseFloat(song.averageReview).toFixed(1)}⭐ from ${song.reviewCount} review${song.reviewCount > 1 ? 's' : ''}`
+          const songLabel = `*${song.artistName} – ${song.trackName}*`
 
-        const reviewText = `${parseFloat(song.averageReview).toFixed(1)}⭐ from ${song.reviewCount} review${song.reviewCount > 1 ? 's' : ''}`
-        const songLabel = `*${song.artistName} – ${song.trackName}*`
-
-        await postMessage({
-          room,
-          message: `${emoji} ${songLabel} (${reviewText})`,
-          customData: {
-            songs: [
-              {
-                song: {
-                  ...songData,
-                  musicProviders: songData.musicProvidersIds,
-                  status: 'SUCCESS'
+          await postMessage({
+            room,
+            message: `${emoji} ${songLabel} (${reviewText})`,
+            customData: {
+              songs: [
+                {
+                  song: {
+                    ...songData,
+                    musicProviders: songData.musicProvidersIds,
+                    status: 'SUCCESS'
+                  }
                 }
-              }
-            ]
-          }
-        })
+              ]
+            }
+          })
+        } else {
+          const reviewText = `${parseFloat(song.averageReview).toFixed(1)}⭐ from ${song.reviewCount} review${song.reviewCount > 1 ? 's' : ''}`
+          const songLabel = `*${song.artistName} – ${song.trackName}*`
+          await postMessage({ room, message: `${emoji} ${songLabel} (${reviewText})` })
+        }
 
       } catch (err) {
         console.error(`❌ Failed to fetch song data for ${song.trackName}:`, err.message)
+        // Fallback to text if the fetch fails
+        const reviewText = `${parseFloat(song.averageReview).toFixed(1)}⭐ from ${song.reviewCount} review${song.reviewCount > 1 ? 's' : ''}`
+        const songLabel = `*${song.artistName} – ${song.trackName}*`
+        await postMessage({ room, message: `${emoji} ${songLabel} (${reviewText})` })
       }
     }
   } catch (err) {
@@ -2261,32 +2278,32 @@ else if (/^\/removeavatar\b/i.test(payload.message)) {
     })
   }
 }
-  
+
   else if (payload.message.startsWith('/mytopsongs')) {
     const userId = payload.sender
     const topSongs = getUserSongReviews(userId, 5)
-  
+
     if (!topSongs.length) {
       await postMessage({
         room,
-        message: `${await getUserNickname(userId)} you haven't rated any songs yet. Start rating with /songreview! 🎵`
+        message: `${await getUserNickname(userId)} you haven't rated any songs yet. Start rating with /review! 🎵`
       })
       return
     }
-  
+
     const numberEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣']
     const customDataSongs = []
-  
+
     for (let i = 0; i < topSongs.length; i++) {
       const song = topSongs[i]
       const emoji = numberEmojis[i] || `#${i + 1}`
-  
+
       try {
         const songData = await fetchSongData(song.spotifyTrackId)
-  
+
         const songLabel = `*${song.artistName} – ${song.trackName}*`
         const ratingText = `Your rating: ${song.rating}/6 ⭐`
-  
+
         // Send each song message with custom data
         await postMessage({
           room,
@@ -2303,7 +2320,7 @@ else if (/^\/removeavatar\b/i.test(payload.message)) {
             ]
           }
         })
-  
+
         // Optionally collect for bulk post later
         customDataSongs.push({
           song: {
@@ -2312,14 +2329,14 @@ else if (/^\/removeavatar\b/i.test(payload.message)) {
             status: 'SUCCESS'
           }
         })
-  
+
       } catch (err) {
         console.error(`Failed to fetch song data for ${song.trackName}:`, err.message)
       }
     }
-  
-  
-  
+
+
+
 } else if (payload.message.startsWith('/topalbums')) {
   const numberEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣']
   const topAlbums =  getTopAlbumReviews(5)
@@ -2402,9 +2419,31 @@ else if (/^\/removeavatar\b/i.test(payload.message)) {
       })
       return
     }
-  
-    const ratingInfo = await getAverageRating(currentSong)
-  
+
+    // ✅ Ensure we resolve a songId before querying reviews
+    let songId = currentSong.songId
+    if (!songId) {
+      const row = db.prepare(`
+        SELECT songId
+        FROM room_stats
+        WHERE LOWER(TRIM(trackName)) = LOWER(TRIM(?))
+          AND LOWER(TRIM(artistName)) = LOWER(TRIM(?))
+        ORDER BY id DESC
+        LIMIT 1
+      `).get(currentSong.trackName, currentSong.artistName)
+      songId = row?.songId
+    }
+
+    if (!songId) {
+      await postMessage({
+        room,
+        message: `No reviews for "${currentSong.trackName}" by ${currentSong.artistName} yet.`
+      })
+      return
+    }
+
+    const ratingInfo = await getAverageRating({ songId })  // pass only songId as expected by util
+
     if (!ratingInfo.found) {
       await postMessage({
         room,
@@ -2416,7 +2455,7 @@ else if (/^\/removeavatar\b/i.test(payload.message)) {
         message: `"${currentSong.trackName}" by ${currentSong.artistName} has an average rating of ${ratingInfo.average}/6 from ${ratingInfo.count} review${ratingInfo.count === 1 ? '' : 's'}.`
       })
     }
-  
+
 
 
  } else if (payload.message.startsWith('/albumreview')) {
@@ -2484,7 +2523,7 @@ else if (/^\/removeavatar\b/i.test(payload.message)) {
     });
   }
 }
-      
+
    else if (payload.message.startsWith('/room')) {
     try {
       const senderUuid = payload.sender
@@ -2658,7 +2697,7 @@ else if (/^\/removeavatar\b/i.test(payload.message)) {
     });
   }
 
- } else if (/^\/infotone\b/i.test(payload.message)) {
+ } else if (/^\/infotone\\b/i.test(payload.message)) {
   try {
     const senderUuid = payload.sender
     const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken)
@@ -2680,11 +2719,11 @@ else if (/^\/removeavatar\b/i.test(payload.message)) {
       vibe: 'vibe', chill: 'vibe'
     }
 
-    const args = payload.message.trim().split(/\s+/).slice(1)
+    const args = payload.message.trim().split(/\\s+/).slice(1)
     const current = getNowPlayingInfoBlurbTone()
 
     // No args or help → show current + options
-    if (args.length === 0 || /^(help|\?)$/i.test(args[0] || '')) {
+    if (args.length === 0 || /^(help|\\?)$/i.test(args[0] || '')) {
       const tones = VALID_TONES
       const aliases = ['nerd→cratedigger','fun→playful','chart→chartbot','tech→djtech','chill→vibe']
       await postMessage({
@@ -2821,9 +2860,9 @@ else if (/^\/removeavatar\b/i.test(payload.message)) {
         message: `Error: ${error.message}`
       })
     }
-} else if (/^\/greet(\b|$)/i.test(payload.message)) {
+} else if (/^\/greet(\\b|$)/i.test(payload.message)) {
   const room = process.env.ROOM_UUID
-  const parts = payload.message.trim().split(/\s+/)
+  const parts = payload.message.trim().split(/\\s+/)
   const sub = (parts[1] || '').toLowerCase()
 
   if (sub === 'standard') {
@@ -2883,7 +2922,7 @@ else if (/^\/removeavatar\b/i.test(payload.message)) {
   return
 
     // --- Info blurb ON ---
-} else if (/^\/infoon\b/i.test(payload.message)) {
+} else if (/^\/infoon\\b/i.test(payload.message)) {
   try {
     const senderUuid = payload.sender
     const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken)
@@ -2899,7 +2938,7 @@ else if (/^\/removeavatar\b/i.test(payload.message)) {
   }
 
 // --- Info blurb OFF ---
-} else if (/^\/infooff\b/i.test(payload.message)) {
+} else if (/^\/infooff\\b/i.test(payload.message)) {
   try {
     const senderUuid = payload.sender
     const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken)
@@ -2915,7 +2954,7 @@ else if (/^\/removeavatar\b/i.test(payload.message)) {
   }
 
 // --- One-command toggle ---
-} else if (/^\/infotoggle\b/i.test(payload.message)) {
+} else if (/^\/infotoggle\\b/i.test(payload.message)) {
   try {
     const senderUuid = payload.sender
     const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken)
@@ -2935,58 +2974,67 @@ else if (/^\/removeavatar\b/i.test(payload.message)) {
     await postMessage({ room, message: `Error: ${error.message}` })
   }
 
-// --- Set tone: /infotone neutral|playful|nerd ---
-} else if (/^\/infotone\b/i.test(payload.message)) {
+// --- Set tone: /infotone [tone] ---
+} else if (/^\/infotone\b/i.test(txt)) {
   try {
-    const senderUuid = payload.sender
-    const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken)
+    const senderUuid = payload.sender;
+    const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken);
     if (!isAuthorized) {
-      await postMessage({ room, message: 'You need to be a moderator to execute this command.' })
-      return
+      await postMessage({ room, message: 'You need to be a moderator to execute this command.' });
+      return;
     }
 
-    const args = payload.message.trim().split(/\s+/).slice(1)
-    const current = getNowPlayingInfoBlurbTone()
-
-    // No args → show current + usage
-    if (args.length === 0) {
-  const tones = ['- neutral\n','- playful\n','- cratedigger\n','- hype\n','- classy\n','- chartbot\n','- djtech\n','- vibe\n'];
-  const aliases = ['nerd→cratedigger','fun→playful','chart→chartbot','tech→djtech','chill→vibe'];
-
-  await postMessage({
-    room,
-    message:
-      `ℹ️ Info Blurb Tone
-      • Current: ${current}
-      • Available: ${tones.join(', ')}
-      • Set: /infotone <tone>`
-  });
-  return;
-}
-
-
-    // aliases
-    const alias = {
+    const VALID_TONES = ['neutral','playful','cratedigger','hype','classy','chartbot','djtech','vibe'];
+    const ALIAS = {
+      // friendly aliases
       n: 'neutral', neutral: 'neutral',
       p: 'playful', fun: 'playful', playful: 'playful',
-      nerd: 'nerd', geek: 'nerd'
-    }
-    const wanted = alias[args[0].toLowerCase()]
+      nerd: 'cratedigger', geek: 'cratedigger', crate: 'cratedigger', digger: 'cratedigger',
+      chart: 'chartbot', charts: 'chartbot', chartbot: 'chartbot',
+      tech: 'djtech', djtech: 'djtech',
+      chill: 'vibe', vibe: 'vibe'
+    };
 
-    if (!wanted) {
-      await postMessage({ room, message: 'Usage: /infotone neutral|playful|nerd' })
-      return
+    const args = txt.split(/\s+/).slice(1);
+    const current = getNowPlayingInfoBlurbTone();
+
+    // No args → show current + available
+    if (args.length === 0) {
+      await postMessage({
+        room,
+        message:
+`ℹ️ Info Blurb Tone
+• Current: ${current}
+• Available: ${VALID_TONES.join(', ')}
+Set with: /infotone <tone>`
+      });
+      return;
     }
 
-    setNowPlayingInfoBlurbTone(wanted) // persists to DB
-    await postMessage({ room, message: `Info blurb tone set to **${wanted}**.` })
+    const raw = (args[0] || '').toLowerCase();
+    const wanted = ALIAS[raw] || raw;
+
+    if (!VALID_TONES.includes(wanted)) {
+      await postMessage({
+        room,
+        message:
+`Invalid tone.
+• Current: ${current}
+• Available: ${VALID_TONES.join(', ')}
+Set with: /infotone <tone>`
+      });
+      return;
+    }
+
+    setNowPlayingInfoBlurbTone(wanted); // persists to DB
+    await postMessage({ room, message: `Info blurb tone set to ${wanted}.` });
   } catch (error) {
-    console.error('Error setting info blurb tone:', error)
-    await postMessage({ room, message: 'Error setting info blurb tone. Try again.' })
+    console.error('Error setting info blurb tone:', error);
+    await postMessage({ room, message: 'Error setting info blurb tone. Try again.' });
   }
-  
+
     /// ////////////// SPOTIFY STUFF ////////////////////////////
-  
+
   } else if (payload.message.startsWith('/song')) {
   // 1) Try in-memory first
   let song = roomBot.currentSong && roomBot.currentSong.trackName
@@ -3026,43 +3074,123 @@ if (!song) {
   }
 
   } else if (payload.message.startsWith('/stats')) {
-  const currentSong = roomBot.currentSong
+  const currentSong = roomBot.currentSong;
 
   if (!currentSong || !currentSong.songId) {
-    await postMessage({
-      room,
-      message: 'No song is currently playing or missing songId.'
-    })
-    return
+    await postMessage({ room, message: 'No song is currently playing or missing songId.' });
+    return;
   }
+
+  // Helpers
+  const TZ = 'America/New_York';
+  const fmtDate = (iso) => {
+    if (!iso) return '—';
+    try { return new Date(iso).toLocaleString('en-US', { timeZone: TZ }); } catch { return String(iso); }
+  };
+  const pct = (num, den) => den > 0 ? Math.round((num / den) * 100) : 0;
+  const perPlay = (num, den) => den > 0 ? (num / den).toFixed(2) : '0.00';
+
+  // Accept "mm:ss", seconds, or milliseconds; fallback to live song duration fields
+  const formatDuration = (raw, fallbacks = []) => {
+    let d = raw;
+    for (const fb of fallbacks) if (d == null || d === '' || d === '0') d = fb;
+    if (d == null) return '—';
+    if (typeof d === 'string') {
+      const s = d.trim();
+      if (!s) return '—';
+      if (s.includes(':')) return s; // already mm:ss
+      const n = Number(s);
+      if (!Number.isFinite(n)) return '—';
+      d = n;
+    }
+    if (typeof d === 'number') {
+      if (d <= 0) return '—';
+      const totalSec = d < 1000 ? Math.round(d) : Math.round(d / 1000);
+      const m = Math.floor(totalSec / 60);
+      const s = String(totalSec % 60).padStart(2, '0');
+      return `${m}:${s}`;
+    }
+    return '—';
+  };
 
   try {
-    const songStats = db
-      .prepare('SELECT * FROM room_stats WHERE songId = ?')
-      .get(currentSong.songId)
+    // Try by songId; fallback to names if needed
+    let songStats = db.prepare(`
+      SELECT trackName, artistName, songId, songDuration, playCount, likes, dislikes, stars, lastPlayed, averageReview
+      FROM room_stats
+      WHERE songId = ?
+    `).get(currentSong.songId);
 
-    if (songStats) {
-      const message = `📊 Stats for "${songStats.trackName}" by ${songStats.artistName}\n\n` +
-        `🟢 Plays: ${songStats.playCount}\n` +
-        `👍 Likes: ${songStats.likes}\n` +
-        `👎 Dislikes: ${songStats.dislikes}\n` +
-        `⭐ Stars: ${songStats.stars || 0}\n` +
-        `🕒 Last Played: ${new Date(songStats.lastPlayed).toLocaleString()}`
-
-      await postMessage({ room, message })
-    } else {
-      await postMessage({
-        room,
-        message: 'No stats found for this song yet.'
-      })
+    if (!songStats && currentSong.trackName && currentSong.artistName) {
+      songStats = db.prepare(`
+        SELECT trackName, artistName, songId, songDuration, playCount, likes, dislikes, stars, lastPlayed, averageReview
+        FROM room_stats
+        WHERE LOWER(TRIM(trackName))  = LOWER(TRIM(?))
+          AND LOWER(TRIM(artistName)) = LOWER(TRIM(?))
+        ORDER BY id DESC
+        LIMIT 1
+      `).get(currentSong.trackName, currentSong.artistName);
     }
+
+    if (!songStats) {
+      await postMessage({ room, message: 'No stats found for this song yet.' });
+      return;
+    }
+
+    // Reviews count
+    const reviewRow = db.prepare(`
+      SELECT COUNT(*) AS cnt
+      FROM song_reviews
+      WHERE songId = ?
+    `).get(songStats.songId ?? currentSong.songId);
+    const reviewsCount = reviewRow?.cnt ?? 0;
+
+    // First played (by names)
+    const bounds = db.prepare(`
+      SELECT MIN(playedAt) AS firstPlayed
+      FROM recent_songs
+      WHERE LOWER(TRIM(trackName))  = LOWER(TRIM(?))
+        AND LOWER(TRIM(artistName)) = LOWER(TRIM(?))
+    `).get(songStats.trackName, songStats.artistName) || {};
+
+    const plays     = songStats.playCount ?? 0;
+    const likes     = songStats.likes ?? 0;
+    const dislikes  = songStats.dislikes ?? 0;
+    const hearts    = songStats.stars ?? 0; // "stars" column == ❤️
+    const net       = likes - dislikes;     // 👍 minus 👎
+    const netPP     = perPlay(net, plays);
+
+    const likeRate  = pct(likes, plays);
+    const disRate   = pct(dislikes, plays);
+    const heartRate = pct(hearts, plays);
+    const heartsPP  = perPlay(hearts, plays);
+    const engagePP  = perPlay(likes + dislikes + hearts, plays);
+
+    const avg = songStats.averageReview != null ? Number(songStats.averageReview).toFixed(2) : null;
+    const durationStr = formatDuration(
+      songStats.songDuration,
+      [currentSong.songDuration, currentSong.duration]
+    );
+
+    const lines = [
+      `📊 "${songStats.trackName}" — ${songStats.artistName}`,
+      `⏱️ Duration: ${durationStr}`,
+      `🟢 Plays: ${plays}`,
+      `👍 Likes: ${likes}`,
+      `👎 Dislikes: ${dislikes}`,
+      `❤️ Hearts: ${hearts}`,
+      `📈 Like%: ${likeRate}%`,
+      `📉 Dislike%: ${disRate}%`,
+      `⭐ Avg Review: ${avg ? `${avg}/6` : '—'}  (🧾 ${reviewsCount})`,
+      `📆 First Played: ${fmtDate(bounds.firstPlayed)}`
+    ];
+
+    await postMessage({ room, message: lines.join('\n') });
   } catch (error) {
-    console.error('Error querying song stats from DB:', error.message)
-    await postMessage({
-      room,
-      message: 'Error retrieving song stats.'
-    })
+    console.error('Error retrieving song stats:', error);
+    await postMessage({ room, message: 'Error retrieving song stats.' });
   }
+
   } else if (payload.message.startsWith('/mostplayed')) {
   try {
     const topPlayed = db.prepare(`
@@ -3203,9 +3331,9 @@ if (!song) {
   }
 
   } else if (payload.message.startsWith('/suggestsongs')) {
-  
+
     const recentSongs = readRecentSongs();
-  
+
     if (!recentSongs || recentSongs.length === 0) {
       await postMessage({
         room,
@@ -3213,34 +3341,34 @@ if (!song) {
       });
       return;
     }
-  
+
     const suggestedTracks = [];
     const seenArtists = new Set();
     const seenTracks = new Set();
-  
+
     for (const song of recentSongs.slice(0, 5)) {
       const { artistName, trackName } = song;
       const similar = await getSimilarTracks(artistName, trackName);
-  
+
       for (const suggestion of similar) {
         const artist = suggestion.artistName.trim().toLowerCase();
         const track = suggestion.trackName.trim().toLowerCase();
         const uniqueKey = `${artist} - ${track}`;
-  
+
         if (seenArtists.has(artist) || seenTracks.has(uniqueKey)) continue;
-  
+
         seenArtists.add(artist);
         seenTracks.add(uniqueKey);
         suggestedTracks.push(suggestion);
-  
+
         if (suggestedTracks.length >= 5) break;
       }
-  
+
       if (suggestedTracks.length >= 5) break;
     }
-  
+
     const customDataSongs = [];
-  
+
     for (const { trackName, artistName } of suggestedTracks) {
       try {
         const trackDetails = await searchSpotify(artistName, trackName);
@@ -3258,7 +3386,7 @@ if (!song) {
         console.warn(`❌ Failed to process ${trackName} by ${artistName}:`, err.message);
       }
     }
-  
+
     if (customDataSongs.length > 0) {
       await postMessage({
         room,
@@ -3276,7 +3404,7 @@ if (!song) {
   } else if (payload.message.startsWith('/blacklist+')) {
     try {
       const currentSong = roomBot.currentSong
-  
+
       if (!currentSong || !currentSong.trackName || !currentSong.artistName) {
         await postMessage({
           room,
@@ -3284,19 +3412,19 @@ if (!song) {
         })
         return
       }
-  
+
       const fs = await import('fs')
       const path = await import('path')
       const blacklistPath = path.join(process.cwd(), 'src/data/songBlacklist.json')
-  
+
       const fullName = `${currentSong.artistName} - ${currentSong.trackName}`
-  
+
       let blacklist = []
       if (fs.existsSync(blacklistPath)) {
         const raw = fs.readFileSync(blacklistPath, 'utf8')
         blacklist = JSON.parse(raw)
       }
-  
+
       if (blacklist.includes(fullName)) {
         await postMessage({
           room,
@@ -3317,7 +3445,7 @@ if (!song) {
         message: '🚫 Failed to update blacklist.'
       })
     }
-    
+
    /// /////////////  Trivia Stuff /////////////////////////////
 } else if (payload.message.startsWith('/triviastart')) {
   const parts = payload.message.trim().split(' ')
@@ -3332,34 +3460,42 @@ if (!song) {
 ////////////////////////////////// JAMFLOW STORE ///////////////////////////////////
 
 } else if (payload.message.startsWith('/store')) {
-  let storeMessage = '🛒 **Welcome to the JamFlow Store** 🛒\n\nHere’s what you can spend your hard-earned dollars on today:\n';
+  const roomId = payload.room ?? process.env.ROOM_UUID;
+
+  const lines = [];
+  lines.push('🛒 **Welcome to the JamFlow Store** 🛒');
+  lines.push('');
+  lines.push("Here's what you can spend your hard-earned dollars on today:");
+  lines.push('');
 
   for (const [command, value] of Object.entries(storeItems)) {
     if (command.startsWith('---')) {
-      storeMessage += `\n\n__**${command.replace(/---/g, '').trim()}**__\n_${value}_\n`;
+      lines.push('');
+      lines.push(`__**${command.replace(/---/g, '').trim()}**__`);
+      lines.push(`_${value}_`);
+      lines.push('');
     } else {
       const costText = typeof value.cost === 'number' ? `$${value.cost}` : value.cost;
-      storeMessage += `\`${command}\` — ${value.desc} (${costText})\n`;
+      lines.push(`\`${command}\` — ${value.desc} (${costText})`);
     }
   }
 
-  storeMessage += `\n🧾 Type any command to get started.`;
+  lines.push('');
+  lines.push('🧾 Type any command to get started.');
 
-  await postMessage({
-    room: payload.room || process.env.ROOM_UUID,
-    message: storeMessage
-  });
+  const storeMessage = lines.join('\n');
+  await postMessage({ room: roomId, message: storeMessage });
 
-  await postMessage({ room, message: storeMessage })
 } else if (payload.message.startsWith('/8ball')) {
+  const roomId = payload.room ?? process.env.ROOM_UUID;
+
   const input = payload.message.trim();
-  const args = input.split(' ').slice(1).join(' ').trim(); // get everything after '/8ball'
+  const args = input.split(' ').slice(1).join(' ').trim(); // everything after '/8ball'
 
   if (!args) {
-    // User typed only '/8ball' with no question
     await postMessage({
-      room,
-      message: `🎱 You need to ask a question after the command! Try: /8ball Will I win today?`
+      room: roomId,
+      message: '🎱 You need to ask a question after the command! Try: /8ball Will I win today?'
     });
     return; // Do NOT charge
   }
@@ -3371,37 +3507,25 @@ if (!song) {
   const balance = await getUserWallet(uuid);
   if (balance < cost) {
     await postMessage({
-      room,
+      room: roomId,
       message: `💸 Not enough funds! You need $${cost}, but you only have $${balance}.`
     });
     return;
   }
 
   // Deduct cost
-  await removeFromUserWallet(uuid, cost);
+  removeFromUserWallet(uuid, cost);
 
   // Get nickname and answer
   const nickname = await getUserNickname(uuid);
   const answer = await askMagic8Ball(uuid, args);
 
   await postMessage({
-    room,
-    message: `🎱 ${nickname} \nMagic 8-Ball says: *${answer}*(Cost: $${cost})`
+    room: roomId,
+    message: `🎱 ${nickname}\nMagic 8-Ball says: *${answer}* (Cost: $${cost})`
   });
 }
-  }
-
+}
 
 export { usersToBeRemoved, userstagedive }
 
-
-// Shim around themeManager to prevent drift between memory and DB
-export function getTheme(roomId) {
-  return themeManager.getTheme(roomId);
-}
-export function setTheme(roomId, theme) {
-  return themeManager.setTheme(roomId, theme);
-}
-export function removeTheme(roomId) {
-  return themeManager.removeTheme(roomId);
-}
