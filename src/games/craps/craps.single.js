@@ -444,8 +444,6 @@ const DRAMA = {
   afterRoundOver: 700
 };
 
-console.log('[crapsController] Loaded — registering event listeners');
-
 async function nick(userId) { try { return await getUserNickname(userId); } catch { return 'Player'; } }
 function sumMap(m) { return Object.values(m || {}).reduce((a,b)=>a + (b||0), 0); }
 function* eachEntry(m) { for (const k of Object.keys(m || {})) yield [k, m[k]]; }

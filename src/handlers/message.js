@@ -49,6 +49,14 @@ import { enableNowPlayingInfoBlurb, disableNowPlayingInfoBlurb, isNowPlayingInfo
 import { routeCrapsMessage } from '../games/craps/craps.single.js'
 import '../games/craps/craps.single.js'
 
+
+// --- DM helper: minimal auth wrapper ---
+async function sendAuthenticatedDM(userUuid, text) {
+  // If you later want to restrict who can DM, hook auth here.
+  return sendDirectMessage(userUuid, text);
+}
+
+
 // ✅ Added: import getCurrentState for DB fallbacks used in review/rating flows
 import { getCurrentState } from '../database/dbcurrent.js'
 
@@ -119,29 +127,156 @@ function buildModSheet() {
   ].join('\n')
 }
 
+// --- DM admin allow list & helpers -----------------------------------------
+const DM_ALLOW_LIST = new Set(
+  (process.env.DM_ALLOW_LIST || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+);
+
+function parseUidFromMention(s) {
+  if (!s) return '';
+  const m = /<@uid:([\w-]+)>/i.exec(s);
+  return m?.[1] || s.trim();
+}
+
+async function isDmAdmin(uuid) {
+  if (!uuid) return false;
+  // 1) Explicit allow list
+  if (DM_ALLOW_LIST.has(uuid)) return true;
+  // 2) Room moderators (your existing auth)
+  try {
+    if (await isUserAuthorized(uuid, ttlUserToken)) return true;
+  } catch { /* noop */ }
+  // 3) Owner / test accounts
+  if (uuid === process.env.CHAT_OWNER_ID) return true;
+  if (uuid === process.env.CHAT_TEST_USER_ID) return true;
+  return false;
+}
+
 
 export async function handleDirectMessage(payload) {
-  const sender = payload.sender
-  const text = payload.data?.text?.trim() || ''
+  try {
+    // Normalize sender
+    const senderRaw =
+      payload?.sender ?? payload?.senderId ?? payload?.from ?? payload?.data?.sender;
+    const sender =
+      typeof senderRaw === 'string'
+        ? senderRaw
+        : senderRaw?.uid || senderRaw?.id || senderRaw?.userUuid || senderRaw?.userId || '';
 
-  console.log(`[DM] from ${sender}: ${text}`)
+    // Normalize text
+    const rawText = (payload?.message ?? payload?.data?.text ?? payload?.text ?? '').toString();
+    const text = rawText.trim();
+    if (!sender || !text) return;
 
-  if (text.startsWith('/help')) {
-    await sendAuthenticatedDM(sender, `Here are some things I can do:\n• /balance\n• /lottery\n• /help`)
-  } else if (text.startsWith('/balance')) {
-    const balance = 1000
-    await sendAuthenticatedDM(sender, `💰 Your balance is $${balance}`)
-  } else {
-    await sendAuthenticatedDM(sender, `🤖 Unknown DM command: "${text}"`)
+    console.log(`[DM] from ${sender}: ${text}`);
+
+    // Ignore our own messages
+    const botUid = process.env.BOT_USER_UUID || process.env.CHAT_USER_ID;
+    if (botUid && sender === botUid) return;
+
+    // Parse "/command args"
+    const m = text.match(/^\/(\S+)(?:\s+([\s\S]*))?$/);
+    if (!m) {
+      await sendAuthenticatedDM(sender, `🤖 Unknown DM input. Try \`/help\`.`);
+      return;
+    }
+    const cmd = m[1].toLowerCase();
+    const args = (m[2] || '').trim();
+
+    // Public DM commands (anyone)
+    if (cmd === 'help') {
+      await sendAuthenticatedDM(sender,
+        [
+          'DM Commands:',
+          '• /help — show this',
+          '• /whoami — show your UUID',
+          '• /balance — show your wallet',
+          '',
+          'Admin-only:',
+          '• /say <message> — post in the room',
+          '• /addmoney <@User|uuid> <amount> — credit wallet'
+        ].join('\n')
+      );
+      return;
+    }
+
+    // Admin-only DM commands
+    const admin = await isDmAdmin(sender);
+
+    if (cmd === 'say') {
+      if (!admin) {
+        await sendAuthenticatedDM(sender, `⛔ You’re not allowed to use /say.`);
+        return;
+      }
+      if (!args) {
+        await sendAuthenticatedDM(sender, `Usage: /say <message>`);
+        return;
+      }
+      await postMessage({ room: process.env.ROOM_UUID, message: args });
+      await sendAuthenticatedDM(sender, `✅ Posted to room.`);
+      return;
+    }
+
+    if (cmd === 'addmoney') {
+      if (!admin) {
+        await sendAuthenticatedDM(sender, `⛔ You’re not allowed to use /addmoney.`);
+        return;
+      }
+      const [whoRaw, amountRaw] = args.split(/\s+/, 2);
+      const userUuid = parseUidFromMention(whoRaw);
+      const amount = Number(amountRaw);
+      if (!userUuid || !Number.isFinite(amount) || amount <= 0) {
+        await sendAuthenticatedDM(sender, `Usage: /addmoney <@User|uuid> <amount>`);
+        return;
+      }
+      try {
+        await addDollarsByUUID(userUuid, amount);
+        await sendAuthenticatedDM(sender, `✅ Added $${amount} to <@uid:${userUuid}>.`);
+        await postMessage({
+          room: process.env.ROOM_UUID,
+          message: `💸 Admin credited $${amount} to <@uid:${userUuid}>`
+        });
+      } catch (e) {
+        await sendAuthenticatedDM(sender, `❌ Failed to add money: ${e?.message || e}`);
+      }
+      return;
+    }
+
+    // Unknown DM command
+    await sendAuthenticatedDM(sender, `🤖 Unknown DM command: \`${cmd}\`. Try \`/help\`.`);
+  } catch (err) {
+    console.error('DM handler error:', err);
   }
 }
 
+
+
 export default async (payload, room, state, roomBot) => {
-  console.log('[MessageHandler]', payload);
+  console.log('[MessageHandler]', {
+    receiverType: payload?.receiverType ?? payload?.receiver_type,
+    sender: payload?.sender
+  });
 
-  if (!payload?.message) return;
+  // 🚦 Route DMs straight to the DM handler and exit
+  const rt = (payload?.receiverType ?? payload?.receiver_type ?? '')
+    .toString()
+    .toLowerCase();
 
-  const txt = payload.message.trim();
+  if (rt === 'user') {
+    try {
+      await handleDirectMessage(payload);
+    } catch (err) {
+      console.error('DM handler error:', err);
+    }
+    return; // important: skip group logic for DMs
+  }
+
+  // ── group/room path ───────────────────────────────────────────
+  const txt = (payload?.message ?? payload?.data?.text ?? '').trim();
+  if (!txt) return;
 
   // 🔧 sanity check route
   if (/^\/ping\b/i.test(txt)) {

@@ -1,7 +1,14 @@
 // src/libs/bot.js
 import fastJson from 'fast-json-patch'
 import { SocketClient } from 'ttfm-socket'
-import { joinChat, getMessages, postMessage } from '../libs/cometchat.js'
+import {
+  joinChat,
+  getMessages,
+  postMessage,
+  sendDirectMessage,
+  getDirectMessagesForPeers,
+  getConfiguredDMPeers
+} from '../libs/cometchat.js'
 import { logger } from '../utils/logging.js'
 import { handlers } from '../handlers/index.js'
 import {
@@ -45,34 +52,31 @@ function getThemeFromDB(roomUUID) {
     const row = db.prepare(`SELECT theme FROM themes WHERE roomId = ?`).get(roomUUID)
     if (row?.theme) return String(row.theme)
   } catch (e) {
-    console.warn('[Theme][DB] lookup error:', e?.message || e)
+    logger.error('[Theme][DB] lookup error:', e?.message || e)
   }
   return null
 }
 
 function resolveRoomTheme(roomUUID) {
   const dbTheme = getThemeFromDB(roomUUID)
-  if (dbTheme) { console.log(`[Theme] resolved from DB: "${dbTheme}"`); return dbTheme }
+  if (dbTheme) return dbTheme
 
   const tm = themeManager.getTheme(roomUUID)
-  if (tm) { console.log(`[Theme] resolved from themeManager: "${tm}"`); return tm }
+  if (tm) return tm
 
   const rt = roomThemes[roomUUID]
-  if (rt) { console.log(`[Theme] resolved from roomThemes: "${rt}"`); return rt }
+  if (rt) return rt
 
-  console.log('[Theme] no theme found, defaulting to empty')
   return ''
 }
 
 export function isAlbumThemeActive(roomUUID) {
   if (['1','true','yes','on'].includes(String(process.env.FORCE_ALBUM_THEME || '').toLowerCase())) {
-    console.log('[Theme] FORCE_ALBUM_THEME=on → albumActive=true')
     return true
   }
   const raw = resolveRoomTheme(roomUUID)
   const t = raw.toLowerCase().trim()
   const active = ALBUM_THEMES.has(t) || /\balbums?\b/.test(t)
-  console.log(`[Theme] resolved="${t}" → albumActive=${active}`)
   return active
 }
 
@@ -178,6 +182,61 @@ class TTLSeenSet {
 }
 
 // ───────────────────────────────────────────────────────────
+// DM/group classification helpers (NEW)
+// ───────────────────────────────────────────────────────────
+const COMETCHAT_BOT_UID = process.env.BOT_USER_UUID || process.env.CHAT_USER_ID
+
+const getUid = (x) => {
+  if (!x) return null
+  if (typeof x === 'string') return x
+  return x.uid || x.id || x.user?.uid || x.user || null
+}
+
+const getSentAt = (m) => {
+  const c =
+    m?.sentAt ??
+    m?.sent_at ??
+    m?.timestamp ??
+    m?.sent_at_ms ??
+    m?.data?.sentAt ??
+    m?.data?.sent_at ??
+    0
+  return toSec(c)
+}
+
+const guessReceiverType = (m) => {
+  const rt = m?.receiverType || m?.receiver_type
+  if (rt) return String(rt).toLowerCase()
+  const cid = m?.conversationId || m?.conversation_id || ''
+  if (cid.includes('_user_')) return 'user'
+  const rec = m?.receiver || m?.to || m?.toUser || null
+  if (rec && getUid(rec)) return 'user'
+  return 'group'
+}
+
+const peerFromConversationId = (cid, botUid) => {
+  if (!cid) return null
+  const idx = cid.indexOf('_user_')
+  if (idx === -1) return null
+  const left = cid.slice(0, idx)
+  const right = cid.slice(idx + '_user_'.length)
+  if (left === botUid) return right
+  if (right === botUid) return left
+  return left !== botUid ? left : right
+}
+
+const deriveDmPeer = (m, hintedPeer) => {
+  if (hintedPeer) return hintedPeer
+  const sender = getUid(m?.sender)
+  const receiver = getUid(m?.receiver)
+  if (sender && sender !== COMETCHAT_BOT_UID) return sender
+  if (receiver && receiver !== COMETCHAT_BOT_UID) return receiver
+  const cid = m?.conversationId || m?.conversation_id
+  const fromCid = peerFromConversationId(cid, COMETCHAT_BOT_UID)
+  return fromCid || receiver || sender || null
+}
+
+// ───────────────────────────────────────────────────────────
 // Bot
 // ───────────────────────────────────────────────────────────
 export class Bot {
@@ -234,6 +293,23 @@ export class Bot {
     this._startupTimeMs = Date.now()
     this._reconnectBackoffMs = 1000
     this._maxBackoffMs = 30_000
+
+    // DM infra
+    this._processingMessages = false
+    this._dmCandidates = new Set()
+    this._dmPeers = new Set(getConfiguredDMPeers())   // from CHAT_DM_PEERS or fallbacks
+    this._dmSinceByPeer = {}
+    for (const p of this._dmPeers) this._dmSinceByPeer[p] = startTimeStamp
+
+    this.lastDmUser = null
+  }
+
+  // Allow external code to register a DM peer (auto-discovery)
+  addDMPeer(uid) {
+    if (!uid || uid === COMETCHAT_BOT_UID) return
+    this._dmPeers.add(uid)
+    this._dmCandidates.add(uid)
+    if (!this._dmSinceByPeer[uid]) this._dmSinceByPeer[uid] = toSec(this.lastMessageIDs.dm)
   }
 
   // Readiness bits for /ready (if you use them)
@@ -241,28 +317,21 @@ export class Bot {
   canSend() { return !!this.socket }
 
   async connect() {
-    logger.debug('Connecting to room')
     try {
       await joinChat(this.roomUUID)
 
-      // fresh socket
       try { this.socket?.removeAllListeners?.() } catch {}
       try { this.socket?.close?.() } catch {}
       this.socket = new SocketClient('https://socket.prod.tt.fm')
 
-      // reconnect handler with backoff
       this.socket.on?.('disconnect', () => this._scheduleReconnect())
 
-      // join the room
       const connection = await this.socket.joinRoom(process.env.TTL_USER_TOKEN, { roomUuid: this.roomUUID })
       this.state = connection.state
 
-      // configure listeners exactly once
       this.configureListeners()
 
-      // reset backoff on success
       this._reconnectBackoffMs = 1000
-      logger.info('[bot] connected and ready (ephemeral cursor)')
     } catch (error) {
       logger.error('Error connecting to room:', error)
       this._scheduleReconnect()
@@ -272,7 +341,6 @@ export class Bot {
   _scheduleReconnect() {
     const jitter = (ms) => Math.floor(ms * (0.75 + Math.random() * 0.5))
     const wait = jitter(this._reconnectBackoffMs)
-    logger.warn(`[bot] scheduling reconnect in ~${wait}ms`)
     setTimeout(() => {
       this.connect().catch((err) => {
         logger.error('[bot] reconnect failed', { err })
@@ -289,7 +357,6 @@ export class Bot {
   updateRecentSpotifyTrackIds(trackId) {
     const currentDJ = getCurrentDJ(this.state)
     if (currentDJ === this.userUUID) {
-      console.log('Bot is the current DJ; not updating recentSpotifyTrackIds.')
       return
     }
     if (!trackId) return
@@ -337,97 +404,143 @@ export class Bot {
   }
 
   /**
-   * Robust poller (ephemeral): no DB cursor, no history replay.
-   * Uses a small lookback when idle but never earlier than startup.
+   * Poller: group + DM inbox (bot) — robust DM handling via conversationId & candidates.
    */
   async processNewMessages() {
     if (this._processingMessages) return
     this._processingMessages = true
-    this._emptyPolls = this._emptyPolls ?? 0
+
+    const addDmCandidate = (uid) => this.addDMPeer(uid)
+    for (const u of getConfiguredDMPeers()) this.addDMPeer(u)
 
     try {
-      const handleStream = async (scope) => {
-        const isGroup = scope === 'group'
-        const sinceSec = toSec(isGroup ? this.lastMessageIDs.room : this.lastMessageIDs.dm)
-
-        // On idle, look back slightly to catch clock skew – but never before startup.
-        const lookbackSec = Math.max(
-          this._emptyPolls >= 3 ? (sinceSec - 120) : sinceSec,
-          startTimeStamp
-        )
-
-        const who = isGroup ? this.roomUUID : botUUID
-        const raw = await getMessages(who, lookbackSec, scope)
-        const msgs = normalizeMessages(raw?.data ?? raw)
-
-        let gotAny = false
+      // ───────────── GROUP ─────────────
+      {
+        const sinceSec = toSec(this.lastMessageIDs.room)
+        const raw = await getMessages(this.roomUUID, sinceSec, 'group')
+        const msgs = Array.isArray(raw) ? raw : normalizeMessages(raw)
         let maxSec = sinceSec
-        let processed = 0
 
         for (const m of msgs) {
           try {
             const id = m?.id ?? m?._id ?? m?.guid ?? m?.messageId ?? m?.meta?.id
-            const sentAtSec = toSec(m?.sentAt ?? m?.timestamp ?? m?.createdAt ?? m?.data?.sentAt)
+            const sentAtSec = getSentAt(m) || sinceSec
             const text = (m?.data?.text ?? m?.text ?? m?.message ?? '').trim()
-            const sender =
-              m?.sender ?? m?.senderId ?? m?.from ?? m?.ownerUid ??
-              m?.entities?.sender?.uid ?? m?.entities?.sender?.id
+            const senderObj =
+              m?.sender ?? m?.from ?? m?.entities?.sender?.entity ?? m?.entities?.sender ?? null
+            const sender = getUid(senderObj)
 
             if (!id || !sentAtSec || !text) continue
-
-            // In-run de-dupe (TTL)
             if (this._seen.has(id)) continue
             this._seen.add(id)
 
-            // Ignore messages older than startup by >60s (belt & suspenders)
             if (sentAtSec < Math.floor(this._startupTimeMs / 1000) - 60) continue
 
             maxSec = Math.max(maxSec, sentAtSec + 1)
-            gotAny = true
-            processed++
 
-            // Skip our own messages (CometChat/Turntable echoes)
-            if (!sender || sender === botUUID) continue
-            if ([botUUID, process.env.CHAT_REPLY_ID].includes(sender)) continue
+            if (!sender || sender === COMETCHAT_BOT_UID) continue
 
-            if (isGroup) {
-              await handlers.message(
-                { message: text, sender, receiverType: 'group' },
-                this.roomUUID,
-                this.state,
-                this
-              )
-            } else {
-              const senderName =
-                m?.data?.entities?.sender?.name ??
-                m?.senderName ??
-                'Unknown'
+            this.addDMPeer(sender)
 
-              addTrackedUser(sender)
-
-              await handlers.message(
-                { message: text, sender, senderName, receiverType: 'user' },
-                sender,
-                this.state
-              )
-            }
+            await handlers.message(
+              { message: text, sender, receiverType: 'group' },
+              this.roomUUID,
+              this.state,
+              this
+            )
           } catch (err) {
-            logger.error(`processNewMessages[${scope}] per-message error`, { err })
+            logger.error(`processNewMessages[group] per-message error`, { err })
           }
         }
 
-        // advance ephemeral cursor if progressed (no DB writes)
-        if (isGroup && maxSec !== sinceSec) this.lastMessageIDs.room = maxSec
-        if (!isGroup && maxSec !== sinceSec) this.lastMessageIDs.dm = maxSec
-
-        logger.debug(`poll[${scope}] processed=${processed} emptyPolls=${this._emptyPolls} since=${sinceSec} -> ${maxSec}`)
-        return gotAny
+        if (maxSec !== sinceSec) this.lastMessageIDs.room = maxSec
       }
 
-      const gotGroup = await handleStream('group')
-      const gotDMs   = await handleStream('user')
+      // ───────────── DMs ─────────────
+      {
+        const globalSince = toSec(this.lastMessageIDs.dm)
 
-      this._emptyPolls = (gotGroup || gotDMs) ? 0 : Math.min(this._emptyPolls + 1, 10)
+        const peers = new Set([...this._dmPeers, ...this._dmCandidates])
+        if (this.lastDmUser) peers.add(this.lastDmUser)
+
+        let merged = []
+        let maxGlobal = globalSince
+
+        if (peers.size > 0) {
+          const sinceByPeer = {}
+          for (const p of peers) sinceByPeer[p] = toSec(this._dmSinceByPeer[p] ?? globalSince)
+
+          const { maxTsByPeer, flat } =
+            await getDirectMessagesForPeers([...peers], sinceByPeer, globalSince)
+
+          merged = (flat || []).slice().sort((a, b) => getSentAt(a) - getSentAt(b))
+
+          for (const p of Object.keys(maxTsByPeer || {})) {
+            const next = Math.max(globalSince, toSec(maxTsByPeer[p] || 0) + 1)
+            this._dmSinceByPeer[p] = next
+            if (next > maxGlobal) maxGlobal = next
+          }
+        } else {
+          try {
+            const arr = await getMessages(undefined, globalSince, 'user')
+            merged = Array.isArray(arr) ? arr : normalizeMessages(arr)
+          } catch (e) {
+            logger.error('DM poll (broad inbox) error', { e })
+          }
+        }
+
+        for (const m of merged) {
+          try {
+            const id =
+              m?.id ?? m?._id ?? m?.guid ?? m?.messageId ?? m?.meta?.id
+            const sentAtSec = getSentAt(m) || globalSince
+            const text = (m?.data?.text ?? m?.text ?? m?.message ?? '').trim()
+            if (!id || !sentAtSec || !text) continue
+            if (this._seen.has(id)) continue
+            this._seen.add(id)
+            if (sentAtSec < Math.floor(this._startupTimeMs / 1000) - 60) continue
+
+            const channel = guessReceiverType(m)
+            if (channel !== 'user') continue
+
+            const senderObj =
+              m?.sender ?? m?.from ?? m?.entities?.sender?.entity ?? m?.entities?.sender ?? null
+            const sender = getUid(senderObj)
+
+            if (sender === COMETCHAT_BOT_UID) continue
+
+            const peerUid = deriveDmPeer(m, sender && sender !== COMETCHAT_BOT_UID ? sender : null)
+            if (!peerUid) continue
+
+            this.addDMPeer(peerUid)
+            this.lastDmUser = peerUid
+            this._dmSinceByPeer[peerUid] = Math.max(this._dmSinceByPeer[peerUid] ?? globalSince, sentAtSec + 1)
+            if (this._dmSinceByPeer[peerUid] > maxGlobal) maxGlobal = this._dmSinceByPeer[peerUid]
+
+            const senderName =
+              m?.data?.entities?.sender?.name ??
+              m?.senderName ??
+              'Unknown'
+
+            const cmd = text.toLowerCase()
+            if (cmd === '/ping' || cmd === 'ping') {
+              try { await sendDirectMessage(peerUid, 'pong 🏓') }
+              catch (e) { logger.error('Failed to send pong DM:', e) }
+              continue
+            }
+
+            await handlers.message(
+              { message: text, sender: peerUid, senderName, receiverType: 'user' },
+              peerUid,
+              this.state
+            )
+          } catch (err) {
+            logger.error(`processNewMessages[user] per-message error`, { err })
+          }
+        }
+
+        if (maxGlobal !== globalSince) this.lastMessageIDs.dm = maxGlobal
+      }
     } catch (err) {
       logger.error('Error in processNewMessages:', err)
     } finally {
@@ -441,7 +554,6 @@ export class Bot {
     this._listenersConfigured = true
 
     const self = this
-    logger.debug('Setting up listeners')
 
     this.socket.on('statefulMessage', async (payload) => {
       try {
@@ -463,11 +575,11 @@ export class Bot {
         return
       }
 
-      if (payload.name !== 'votedOnSong') logger.debug(`State updated for ${payload.name}`)
-
       if (payload.name === 'addedDj') {
         const addedDjPatch = payload.statePatch.find(p => p.path.includes('/djs/') && p.op === 'add' && p.value?.uuid)
-        if (addedDjPatch) console.log(`DJ added: ${addedDjPatch.value.uuid}`)
+        if (addedDjPatch) {
+          // no non-error logs
+        }
       }
 
       if (payload.name === 'userJoined') {
@@ -479,7 +591,6 @@ export class Bot {
       if (payload.name === 'playedSong') {
         const currentDJs = getCurrentDJUUIDs(this.state)
         if (currentDJs.length === 0) {
-          console.log('No DJs on stage, skipping playedSong processing.')
           return
         }
 
@@ -545,7 +656,6 @@ export class Bot {
 
           const albumActive = await isAlbumThemeActive(this.roomUUID)
           const songIdForDedupe = this.currentSong.songId || this.currentSong.spotifyTrackId || this.currentSong.trackName
-          console.log(`[AlbumTheme] active=${albumActive} | song="${this.currentSong.trackName}" id="${songIdForDedupe}"`)
 
           if (albumActive) {
             if (this._lastAlbumThemeSongId !== songIdForDedupe) {
@@ -630,7 +740,6 @@ export class Bot {
       if (!this.socket) throw new Error('SocketClient not initialized. Please call connect() first.')
 
       const targetUuid = (typeof userUuid === 'string' && userUuid.length > 10) ? userUuid : this.userUUID
-      logger.debug(`Updating next song for DJ: ${targetUuid} to: ${songPayload.trackName}`)
 
       await this.socket.action('updateNextSong', {
         roomUuid: process.env.ROOM_UUID,
@@ -645,7 +754,7 @@ export class Bot {
   async addDJ(userUuid, tokenRole = 'DJ') {
     try {
       const currentDJs = getCurrentDJUUIDs(this.state)
-      if (currentDJs.includes(userUuid)) { console.log(`User ${userUuid} is already on stage as a DJ.`); return false }
+      if (currentDJs.includes(userUuid)) { return false }
 
       const spotifyTrackId = await getPopularSpotifyTrackID()
       if (!spotifyTrackId) throw new Error('No popular Spotify track ID found.')
@@ -684,11 +793,9 @@ export class Bot {
     try {
       const djUuid = (userUuid === process.env.BOT_USER_UUID) ? null : userUuid
       if (djUuid === null && !this.state?.djs?.some(dj => dj.uuid === process.env.BOT_USER_UUID)) {
-        logger.debug('Bot is not a DJ, no action required.')
         return
       }
       if (!this.socket) throw new Error('SocketClient not initialized. Please call connect() first.')
-      logger.debug(`Removing DJ: ${djUuid || 'Bot'} from the lineup.`)
       await this.socket.action('removeDj', {
         roomUuid: process.env.ROOM_UUID,
         userUuid: process.env.BOT_USER_UUID,

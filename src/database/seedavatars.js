@@ -17,7 +17,6 @@ async function seedAvatars() {
       db.prepare(`INSERT OR IGNORE INTO avatars (slug) VALUES (?)`).run(slug)
     }
 
-    console.log('✅ Avatar slugs imported into DB')
   } catch (err) {
     console.error('❌ Failed to seed avatars:', err.message)
   }
