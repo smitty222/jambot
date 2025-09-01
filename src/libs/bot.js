@@ -37,6 +37,15 @@ import { askQuestion } from './ai.js'
 import db from '../database/db.js'
 
 // ───────────────────────────────────────────────────────────
+// Tunables (env overrides)
+// ───────────────────────────────────────────────────────────
+const SEEN_TTL_MS = Number(process.env.BOT_SEEN_TTL_MS ?? 10 * 60 * 1000)
+const SEEN_MAX = Number(process.env.BOT_SEEN_MAX ?? 5000)
+const DM_MAX_MERGED = Number(process.env.BOT_DM_MAX_MERGED ?? 400) // cap merged DM batch to avoid spikes
+const POLL_YIELD_EVERY = Number(process.env.BOT_POLL_YIELD_EVERY ?? 50) // cooperative yield every N msgs
+const STARTUP_BACKLOG_GRACE_S = Number(process.env.BOT_STARTUP_GRACE_S ?? 60)
+
+// ───────────────────────────────────────────────────────────
 // Ephemeral baseline & identity
 // ───────────────────────────────────────────────────────────
 const startTimeStamp = Math.floor(Date.now() / 1000) // seconds (baseline "now")
@@ -161,7 +170,7 @@ function normalizeMessages(raw) {
 // In-memory TTL de-dupe (prevents unbounded Set growth)
 // ───────────────────────────────────────────────────────────
 class TTLSeenSet {
-  constructor(ttlMs = 10 * 60 * 1000, max = 5000) {
+  constructor(ttlMs = SEEN_TTL_MS, max = SEEN_MAX) {
     this.ttl = ttlMs
     this.max = max
     this.map = new Map()
@@ -182,7 +191,7 @@ class TTLSeenSet {
 }
 
 // ───────────────────────────────────────────────────────────
-// DM/group classification helpers (NEW)
+// DM/group classification helpers
 // ───────────────────────────────────────────────────────────
 const COMETCHAT_BOT_UID = process.env.BOT_USER_UUID || process.env.CHAT_USER_ID
 
@@ -289,7 +298,7 @@ export class Bot {
     this._lastBlurbBySongId = new Map()
 
     // De-dupe cache, startup guard, and reconnect backoff
-    this._seen = new TTLSeenSet()
+    this._seen = new TTLSeenSet(SEEN_TTL_MS, SEEN_MAX)
     this._startupTimeMs = Date.now()
     this._reconnectBackoffMs = 1000
     this._maxBackoffMs = 30_000
@@ -312,7 +321,7 @@ export class Bot {
     if (!this._dmSinceByPeer[uid]) this._dmSinceByPeer[uid] = toSec(this.lastMessageIDs.dm)
   }
 
-  // Readiness bits for /ready (if you use them)
+  // Readiness bits for /ready
   isConnected() { return !!this.socket }
   canSend() { return !!this.socket }
 
@@ -350,15 +359,11 @@ export class Bot {
     }, wait)
   }
 
-  getCurrentSpotifyUrl() {
-    return this.currentSong?.spotifyUrl || null
-  }
+  getCurrentSpotifyUrl() { return this.currentSong?.spotifyUrl || null }
 
   updateRecentSpotifyTrackIds(trackId) {
     const currentDJ = getCurrentDJ(this.state)
-    if (currentDJ === this.userUUID) {
-      return
-    }
+    if (currentDJ === this.userUUID) return
     if (!trackId) return
     if (this.recentSpotifyTrackIds.length >= 5) this.recentSpotifyTrackIds.pop()
     this.recentSpotifyTrackIds.unshift(trackId)
@@ -373,7 +378,7 @@ export class Bot {
       const song = (this.convertTracks ? await this.convertTracks(randomTrack) : randomTrack)
       return song
     } catch (error) {
-      console.error('Error getting random song:', error)
+      logger.error('Error getting random song:', error)
       throw error
     }
   }
@@ -403,14 +408,26 @@ export class Bot {
     }
   }
 
+  _isStale(sentAtSec, baselineSec) {
+    const grace = STARTUP_BACKLOG_GRACE_S
+    return sentAtSec < Math.floor(this._startupTimeMs / 1000) - grace || sentAtSec < baselineSec
+  }
+
+  async _cooperativeYieldIfNeeded(count) {
+    if (count % POLL_YIELD_EVERY === 0) {
+      await new Promise((r) => setImmediate(r))
+    }
+  }
+
   /**
    * Poller: group + DM inbox (bot) — robust DM handling via conversationId & candidates.
+   * Includes cooperative yielding & batch caps to avoid event-loop starvation.
    */
   async processNewMessages() {
     if (this._processingMessages) return
     this._processingMessages = true
 
-    const addDmCandidate = (uid) => this.addDMPeer(uid)
+    // Seed from configured peers (CHAT_DM_PEERS or fallbacks)
     for (const u of getConfiguredDMPeers()) this.addDMPeer(u)
 
     try {
@@ -420,26 +437,31 @@ export class Bot {
         const raw = await getMessages(this.roomUUID, sinceSec, 'group')
         const msgs = Array.isArray(raw) ? raw : normalizeMessages(raw)
         let maxSec = sinceSec
+        let processed = 0
 
         for (const m of msgs) {
           try {
             const id = m?.id ?? m?._id ?? m?.guid ?? m?.messageId ?? m?.meta?.id
             const sentAtSec = getSentAt(m) || sinceSec
-            const text = (m?.data?.text ?? m?.text ?? m?.message ?? '').trim()
-            const senderObj =
-              m?.sender ?? m?.from ?? m?.entities?.sender?.entity ?? m?.entities?.sender ?? null
-            const sender = getUid(senderObj)
 
+            // Extract text cheaply; avoid .trim() unless it's a string
+            const rawText = m?.data?.text ?? m?.text ?? m?.message
+            if (typeof rawText !== 'string') continue
+            const text = rawText.trim()
             if (!id || !sentAtSec || !text) continue
+
             if (this._seen.has(id)) continue
             this._seen.add(id)
-
-            if (sentAtSec < Math.floor(this._startupTimeMs / 1000) - 60) continue
+            if (this._isStale(sentAtSec, sinceSec)) continue
 
             maxSec = Math.max(maxSec, sentAtSec + 1)
 
+            const senderObj =
+              m?.sender ?? m?.from ?? m?.entities?.sender?.entity ?? m?.entities?.sender ?? null
+            const sender = getUid(senderObj)
             if (!sender || sender === COMETCHAT_BOT_UID) continue
 
+            // mark user as a DM peer (auto-discovers)
             this.addDMPeer(sender)
 
             await handlers.message(
@@ -448,8 +470,11 @@ export class Bot {
               this.state,
               this
             )
+
+            processed++
+            await this._cooperativeYieldIfNeeded(processed)
           } catch (err) {
-            logger.error(`processNewMessages[group] per-message error`, { err })
+            logger.error('processNewMessages[group] per-message error', { err })
           }
         }
 
@@ -473,7 +498,11 @@ export class Bot {
           const { maxTsByPeer, flat } =
             await getDirectMessagesForPeers([...peers], sinceByPeer, globalSince)
 
-          merged = (flat || []).slice().sort((a, b) => getSentAt(a) - getSentAt(b))
+          merged = Array.isArray(flat) ? flat : []
+          if (merged.length > 1) merged.sort((a, b) => getSentAt(a) - getSentAt(b))
+          if (merged.length > DM_MAX_MERGED) {
+            merged = merged.slice(merged.length - DM_MAX_MERGED) // keep most recent N
+          }
 
           for (const p of Object.keys(maxTsByPeer || {})) {
             const next = Math.max(globalSince, toSec(maxTsByPeer[p] || 0) + 1)
@@ -489,24 +518,27 @@ export class Bot {
           }
         }
 
+        let processed = 0
         for (const m of merged) {
           try {
-            const id =
-              m?.id ?? m?._id ?? m?.guid ?? m?.messageId ?? m?.meta?.id
+            const id = m?.id ?? m?._id ?? m?.guid ?? m?.messageId ?? m?.meta?.id
             const sentAtSec = getSentAt(m) || globalSince
-            const text = (m?.data?.text ?? m?.text ?? m?.message ?? '').trim()
+
+            const rawText = m?.data?.text ?? m?.text ?? m?.message
+            if (typeof rawText !== 'string') continue
+            const text = rawText.trim()
             if (!id || !sentAtSec || !text) continue
+
             if (this._seen.has(id)) continue
             this._seen.add(id)
-            if (sentAtSec < Math.floor(this._startupTimeMs / 1000) - 60) continue
+            if (this._isStale(sentAtSec, globalSince)) continue
 
             const channel = guessReceiverType(m)
-            if (channel !== 'user') continue
+            if (channel !== 'user') continue // only DMs here
 
             const senderObj =
               m?.sender ?? m?.from ?? m?.entities?.sender?.entity ?? m?.entities?.sender ?? null
             const sender = getUid(senderObj)
-
             if (sender === COMETCHAT_BOT_UID) continue
 
             const peerUid = deriveDmPeer(m, sender && sender !== COMETCHAT_BOT_UID ? sender : null)
@@ -517,25 +549,33 @@ export class Bot {
             this._dmSinceByPeer[peerUid] = Math.max(this._dmSinceByPeer[peerUid] ?? globalSince, sentAtSec + 1)
             if (this._dmSinceByPeer[peerUid] > maxGlobal) maxGlobal = this._dmSinceByPeer[peerUid]
 
+            // Fast path for ping
+            if (text.length <= 5) {
+              const lc = text.toLowerCase()
+              if (lc === '/ping' || lc === 'ping') {
+                try { await sendDirectMessage(peerUid, 'pong 🏓') }
+                catch (e) { logger.error('Failed to send pong DM:', e) }
+                processed++
+                await this._cooperativeYieldIfNeeded(processed)
+                continue
+              }
+            }
+
             const senderName =
               m?.data?.entities?.sender?.name ??
               m?.senderName ??
               'Unknown'
-
-            const cmd = text.toLowerCase()
-            if (cmd === '/ping' || cmd === 'ping') {
-              try { await sendDirectMessage(peerUid, 'pong 🏓') }
-              catch (e) { logger.error('Failed to send pong DM:', e) }
-              continue
-            }
 
             await handlers.message(
               { message: text, sender: peerUid, senderName, receiverType: 'user' },
               peerUid,
               this.state
             )
+
+            processed++
+            await this._cooperativeYieldIfNeeded(processed)
           } catch (err) {
-            logger.error(`processNewMessages[user] per-message error`, { err })
+            logger.error('processNewMessages[user] per-message error', { err })
           }
         }
 
@@ -575,13 +615,6 @@ export class Bot {
         return
       }
 
-      if (payload.name === 'addedDj') {
-        const addedDjPatch = payload.statePatch.find(p => p.path.includes('/djs/') && p.op === 'add' && p.value?.uuid)
-        if (addedDjPatch) {
-          // no non-error logs
-        }
-      }
-
       if (payload.name === 'userJoined') {
         try { await handleUserJoinedWithStatePatch(payload) } catch (error) {
           logger.error('Error handling userJoined event:', error)
@@ -590,9 +623,7 @@ export class Bot {
 
       if (payload.name === 'playedSong') {
         const currentDJs = getCurrentDJUUIDs(this.state)
-        if (currentDJs.length === 0) {
-          return
-        }
+        if (currentDJs.length === 0) return
 
         try {
           const currentlyPlaying = await fetchCurrentlyPlayingSong()
@@ -624,7 +655,7 @@ export class Bot {
           const songDurationMs = parseDurationToMs(this.currentSong.songDuration)
           this.currentSong.challengeStartMs = Math.max(0, songDurationMs - 40000)
 
-          if (this.currentSong.musicProviders.spotify) {
+          if (this.currentSong.musicProviders?.spotify) {
             const spotifyTrackId = this.currentSong.musicProviders.spotify
             const spotifyDetails = await spotifyTrackInfo(spotifyTrackId)
             if (spotifyDetails) {
@@ -652,7 +683,7 @@ export class Bot {
           }
 
           try { saveCurrentState({ currentSong: this.currentSong, currentAlbum: this.currentAlbum }) }
-          catch (err) { console.error('Failed to save current state:', err) }
+          catch (err) { logger.error('Failed to save current state:', err) }
 
           const albumActive = await isAlbumThemeActive(this.roomUUID)
           const songIdForDedupe = this.currentSong.songId || this.currentSong.spotifyTrackId || this.currentSong.trackName
@@ -660,7 +691,7 @@ export class Bot {
           if (albumActive) {
             if (this._lastAlbumThemeSongId !== songIdForDedupe) {
               handleAlbumTheme({ roomUUID: this.roomUUID, rawPayload: payload })
-                .catch(err => console.error('[AlbumTheme] handleAlbumTheme error:', err))
+                .catch(err => logger.error('[AlbumTheme] handleAlbumTheme error:', err))
               this._lastAlbumThemeSongId = songIdForDedupe
             }
           } else {
@@ -670,7 +701,7 @@ export class Bot {
           }
 
           try { logCurrentSong(this.currentSong, 0, 0, 0) } catch (error) {
-            console.error('Error logging current song to roomStats DB:', error)
+            logger.error('Error logging current song to roomStats DB:', error)
           }
           updateLastPlayed(this.currentSong)
 
@@ -687,7 +718,7 @@ export class Bot {
               dj: djType
             })
           } catch (error) {
-            console.error('Error updating recent songs:', error)
+            logger.error('Error updating recent songs:', error)
           }
 
           const djList = getCurrentDJUUIDs(this.state)
@@ -730,7 +761,7 @@ export class Bot {
       const currentUsers = await fetchCurrentUsers()
       this.currentRoomUsers = currentUsers
     } catch (error) {
-      console.error('Error fetching and storing current room users:', error.message)
+      logger.error('Error fetching and storing current room users:', error?.message || error)
     }
   }
 
@@ -754,7 +785,7 @@ export class Bot {
   async addDJ(userUuid, tokenRole = 'DJ') {
     try {
       const currentDJs = getCurrentDJUUIDs(this.state)
-      if (currentDJs.includes(userUuid)) { return false }
+      if (currentDJs.includes(userUuid)) return false
 
       const spotifyTrackId = await getPopularSpotifyTrackID()
       if (!spotifyTrackId) throw new Error('No popular Spotify track ID found.')
@@ -792,9 +823,7 @@ export class Bot {
   async removeDJ(userUuid) {
     try {
       const djUuid = (userUuid === process.env.BOT_USER_UUID) ? null : userUuid
-      if (djUuid === null && !this.state?.djs?.some(dj => dj.uuid === process.env.BOT_USER_UUID)) {
-        return
-      }
+      if (djUuid === null && !this.state?.djs?.some(dj => dj.uuid === process.env.BOT_USER_UUID)) return
       if (!this.socket) throw new Error('SocketClient not initialized. Please call connect() first.')
       await this.socket.action('removeDj', {
         roomUuid: process.env.ROOM_UUID,

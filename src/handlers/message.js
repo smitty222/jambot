@@ -1,10 +1,11 @@
 import * as themeManager from '../utils/themeManager.js';
 // message.js
 import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
+import { bjCtxFromPayload } from '../games/blackjack/bjCtx.js'
 import { askQuestion, setCurrentSong } from '../libs/ai.js'
 import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, displayTriviaInfo } from '../handlers/triviaCommands.js'
 import { logger } from '../utils/logging.js'
-import { getAlbumsByArtist, getAlbumTracks, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSongData, updateRoomInfo, isUserOwner, searchSpotify, getSenderNickname, getMLBScores, getNHLScores, getNBAScores, getTopHomeRunLeaders, getSimilarTracks, getTopChartTracks, addSongsToCrate, getUserToken, clearUserQueueCrate, getUserQueueCrateId} from '../utils/API.js'
+import { getAlbumsByArtist, getAlbumTracks, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSongData, updateRoomInfo, isUserOwner, searchSpotify, getSenderNickname, getMLBScores, getNHLScores, getNBAScores, getSimilarTracks, getTopChartTracks, addSongsToCrate, getUserToken, clearUserQueueCrate, getUserQueueCrateId} from '../utils/API.js'
 import { handleLotteryCommand, handleLotteryNumber, handleTopLotteryStatsCommand, handleSingleNumberQuery, handleLotteryCheck, LotteryGameActive, getLotteryWinners } from '../database/dblotterymanager.js'
 import { enableSongStats, disableSongStats, isSongStatsEnabled, saveSongReview, getAverageRating} from '../utils/voteCounts.js'
 import {
@@ -27,8 +28,7 @@ import {
 } from './roulette.js'
 import { getBalanceByNickname, getNicknamesFromWallets, addDollarsByUUID, loadWallets, removeFromUserWallet, getUserWallet } from '../database/dbwalletmanager.js'
 import { getJackpotValue, handleSlotsCommand } from './slots.js'
-import { joinTable, handleBlackjackBet, handleHit, handleStand, gameState, canSplitHand } from '../handlers/blackJack.js'
-import { updateAfkStatus, isUserAfkAuthorized, userTokens } from './afk.js'
+import { joinTable, leaveTable, handleBlackjackBet, handleHit, handleStand, handleSurrender, handleDouble, handleSplit, getFullTableView, getPhase, getPlayerHand, isPlayersTurn, isSeated } from '../handlers/blackJack.js'
 import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand, handleRandomCyberCommand, handleVibesGuyCommand, handleFacesCommand, handleDoDoCommand, handleFlowerPowerCommand, handleDumDumCommand, handleRandomCosmicCommand, handleRandomLovableCommand, handleBot3Command } from './avatarCommands.js'
 import { markUser, getMarkedUser} from '../utils/removalQueue.js'
 import {extractUserFromText, isLotteryQuestion} from '../database/dblotteryquestionparser.js'
@@ -791,65 +791,6 @@ else if (payload.message.startsWith('/gifs')) {
         message: 'There was an error fetching MLB scores. Please try again later.'
       });
     }  
-  } else if (payload.message.startsWith('/homerun')) {
-    try {
-      const response = await getTopHomeRunLeaders();
-      await postMessage({
-        room,
-        message: response
-      });
-    } catch (err) {
-      console.error('Error fetching home run leaders:', err);
-      await postMessage({
-        room,
-        message: 'There was an error fetching home run leaders. Please try again later.'
-      });
-    }  
-  } else if (payload.message.startsWith('/derby-create')) {
-    try {
-      await generateDerbyTeamsJSON();
-      await postMessage({
-        room,
-        message: '🏟️ Home Run Derby teams have been created and saved!'
-      });
-    } catch (err) {
-      console.error('Error creating derby teams:', err);
-      await postMessage({
-        room,
-        message: '⚠️ Error creating derby teams. Please try again later.'
-      });
-    }
-  } else if (payload.message.startsWith('/derby-update')) {
-    try {
-      await updateDerbyTeamsFromJSON();
-      await postMessage({
-        room,
-        message: '📈 Derby teams updated with the latest home run totals!'
-      });
-    } catch (err) {
-      console.error('Error updating derby teams:', err);
-      await postMessage({
-        room,
-        message: '⚠️ Error updating derby teams. Make sure they are created first.'
-      });
-    }
-  } else if (payload.message.startsWith('/derby-standings')) {
-    try {
-      const standingsMessage = await getDerbyStandings();
-      await postMessage({
-        room,
-        message: standingsMessage
-      });
-    } catch (err) {
-      console.error('Error getting derby standings:', err);
-      await postMessage({
-        room,
-        message: '⚠️ Could not retrieve derby standings. Make sure teams are created first.'
-      });
-    }
-
-
-
   } else if (payload.message.startsWith('/NHL')) {
     const parts = payload.message.trim().split(' ');
     const requestedDate = parts[1]; // optional, format: YYYY-MM-DD
@@ -1908,298 +1849,145 @@ if (payload.message.startsWith('/roulette start')) {
 
   /// ////////////////// BLACKJACK /////////////////////////
 
+// ────────────────────────────────────────────────────────────────
+// Blackjack commands (multi-table, context-aware)
+// ────────────────────────────────────────────────────────────────
+
 if (payload.message.startsWith('/blackjack')) {
-  const userUUID = payload.sender
-  const nickname = await getSenderNickname(userUUID)
-  const room = process.env.ROOM_UUID
+  const userUUID = payload.sender;
+  const nickname = await getSenderNickname(userUUID);
+  const room = process.env.ROOM_UUID;
+  const ctx = bjCtxFromPayload(payload, room);
 
-  if (gameState.active) {
-    await postMessage({ room, message: 'A blackjack game is already in progress! Please wait for the next round.' })
-    return
+  if (getPhase(ctx) !== 'idle') {
+    await postMessage({ room: ctx.room, message: 'A blackjack game is already in progress for this table. Use --table=<id> to start another.' });
+    return;
   }
 
-  await postMessage({ room, message: '🃏 Blackjack game starting in 30 seconds! Type /join to sit at the table.' })
-
-  if (!gameState.tableUsers.includes(userUUID)) {
-    await joinTable(userUUID, nickname)
+  await postMessage({ room: ctx.room, message: '🃏 Blackjack lobby opened! Type /join to sit at the table. Betting closes in 30s.' });
+  if (!isSeated(userUUID, ctx)) {
+    await joinTable(userUUID, nickname, ctx);
   }
-
-  gameState.canJoinTable = true
-
-  setTimeout(async () => {
-    gameState.canJoinTable = false
-    await postMessage({ room, message: 'All players please place your bets using /bet [amount].' })
-  }, 30000)
-
-  return
+  return;
 }
 
-// Player joins
 if (payload.message.startsWith('/join')) {
-  const userUUID = payload.sender
-  const nickname = await getSenderNickname(userUUID)
-  const room = process.env.ROOM_UUID
+  const userUUID = payload.sender;
+  const nickname = await getSenderNickname(userUUID);
+  const room = process.env.ROOM_UUID;
+  const ctx = bjCtxFromPayload(payload, room);
 
-  if (!gameState.active && !gameState.canJoinTable) {
-    await postMessage({ room, message: 'No active blackjack lobby. Start one with /blackjack.' })
-    return
+  const phase = getPhase(ctx);
+  if (phase === 'playing' || phase === 'settling') {
+    await postMessage({ room: ctx.room, message: 'Round already started. Please wait for the next one.' });
+    return;
   }
-
-  await joinTable(userUUID, nickname)
-  return
+  await joinTable(userUUID, nickname, ctx);
+  return;
 }
 
-// Player leaves (optional command)
 if (payload.message.startsWith('/leave')) {
-  const userUUID = payload.sender
-  await leaveTable(userUUID)
-  return
+  const userUUID = payload.sender;
+  const room = process.env.ROOM_UUID;
+  const ctx = bjCtxFromPayload(payload, room);
+  await leaveTable(userUUID, ctx);
+  return;
 }
 
-// Place bet
 if (payload.message.startsWith('/bet')) {
-  const userUUID = payload.sender
-  const nickname = await getSenderNickname(userUUID)
-  const room = process.env.ROOM_UUID
-  const amountStr = payload.message.split(' ')[1]
-  const betAmount = parseInt(amountStr, 10)
+  const userUUID = payload.sender;
+  const nickname = await getSenderNickname(userUUID);
+  const room = process.env.ROOM_UUID;
+  const ctx = bjCtxFromPayload(payload, room);
+  const amountStr = (payload.message.split(' ')[1] || '').trim();
+  const betAmount = parseInt(amountStr, 10);
 
-  if (gameState.active) {
-    await postMessage({ room, message: 'Game already started. Please wait for the next round.' })
-    return
-  }
-
-  if (!gameState.tableUsers.includes(userUUID)) {
-    await postMessage({ room, message: 'You must join the blackjack table first using /join.' })
-    return
-  }
-
-  if (!betAmount || isNaN(betAmount) || betAmount <= 0) {
-    await postMessage({ room, message: 'Please enter a valid bet amount (e.g. /bet 50).' })
-    return
-  }
-
-  await handleBlackjackBet(userUUID, betAmount, nickname)
-  return
+  await handleBlackjackBet(userUUID, betAmount, nickname, ctx);
+  return;
 }
 
-// Player hits
 if (payload.message.startsWith('/hit')) {
-  const userUUID = payload.sender
-  const nickname = await getSenderNickname(userUUID)
+  const userUUID = payload.sender;
+  const nickname = await getSenderNickname(userUUID);
+  const room = process.env.ROOM_UUID;
+  const ctx = bjCtxFromPayload(payload, room);
 
-  if (!gameState.tableUsers.includes(userUUID)) {
-    await postMessage({ room: process.env.ROOM_UUID, message: 'You must join the blackjack table first using /join.' })
-    return
+  if (!isSeated(userUUID, ctx)) {
+    await postMessage({ room: ctx.room, message: 'You must join the blackjack table first using /join.' });
+    return;
   }
 
-  await handleHit(userUUID, nickname)
-  return
+  await handleHit(userUUID, nickname, ctx);
+  return;
 }
 
-// Player stands
 if (payload.message.startsWith('/stand')) {
-  const userUUID = payload.sender
-  const nickname = await getSenderNickname(userUUID)
+  const userUUID = payload.sender;
+  const nickname = await getSenderNickname(userUUID);
+  const room = process.env.ROOM_UUID;
+  const ctx = bjCtxFromPayload(payload, room);
 
-  if (!gameState.tableUsers.includes(userUUID)) {
-    await postMessage({ room: process.env.ROOM_UUID, message: 'You must join the blackjack table first using /join.' })
-    return
+  if (!isSeated(userUUID, ctx)) {
+    await postMessage({ room: ctx.room, message: 'You must join the blackjack table first using /join.' });
+    return;
   }
 
-  await handleStand(userUUID, nickname)
-  return
+  await handleStand(userUUID, nickname, ctx);
+  return;
+}
+
+if (payload.message.startsWith('/double')) {
+  const userUUID = payload.sender;
+  const nickname = await getSenderNickname(userUUID);
+  const room = process.env.ROOM_UUID;
+  const ctx = bjCtxFromPayload(payload, room);
+
+  if (!isSeated(userUUID, ctx)) {
+    await postMessage({ room: ctx.room, message: 'You must join the blackjack table first using /join.' });
+    return;
+  }
+
+  await handleDouble(userUUID, nickname, ctx);
+  return;
+}
+
+if (payload.message.startsWith('/surrender')) {
+  const userUUID = payload.sender;
+  const nickname = await getSenderNickname(userUUID);
+  const room = process.env.ROOM_UUID;
+  const ctx = bjCtxFromPayload(payload, room);
+
+  if (!isSeated(userUUID, ctx)) {
+    await postMessage({ room: ctx.room, message: 'You must join the blackjack table first using /join.' });
+    return;
+  }
+
+  await handleSurrender(userUUID, nickname, ctx);
+  return;
 }
 
 if (payload.message.startsWith('/split')) {
-  const userUUID = payload.sender
-  const nickname = await getSenderNickname(userUUID)
-  const room = process.env.ROOM_UUID
+  const userUUID = payload.sender;
+  const nickname = await getSenderNickname(userUUID);
+  const room = process.env.ROOM_UUID;
+  const ctx = bjCtxFromPayload(payload, room);
 
-  if (!gameState.tableUsers.includes(userUUID)) {
-    await postMessage({ room, message: 'You must join the blackjack table first using /join.' })
-    return
+  if (!isSeated(userUUID, ctx)) {
+    await postMessage({ room: ctx.room, message: 'You must join the blackjack table first using /join.' });
+    return;
   }
 
-  const hand = gameState.playerHands[userUUID]
-  if (!hand || !canSplitHand(hand)) {
-    await postMessage({ room, message: `${nickname}, you can only split if you have two cards of the same value.` })
-    return
-  }
-
-  const extraBet = gameState.playerBets[userUUID]
-  const balance = await getUserWallet(userUUID)
-  if (balance < extraBet) {
-    await postMessage({ room, message: `${nickname}, you don't have enough money to split (requires another $${extraBet}).` })
-    return
-  }
-
-  await removeFromUserWallet(userUUID, extraBet)
-  const card1 = hand[0]
-  const card2 = hand[1]
-
-  // Create two hands, each gets 1 extra card
-  const newHand1 = [card1, gameState.deck.pop()]
-  const newHand2 = [card2, gameState.deck.pop()]
-
-  gameState.splitHands[userUUID] = [newHand1, newHand2]
-  gameState.splitIndex[userUUID] = 0
-  gameState.playerBets[userUUID] = extraBet // each hand treated as full bet
-  gameState.playerHands[userUUID] = newHand1
-
-  await postMessage({ room, message: `${nickname} has split their hand! Playing first hand:` })
-  await postMessage({ room, message: formatHandWithValue(newHand1) })
-  return
+  await handleSplit(userUUID, nickname, ctx);
+  return;
 }
 
-
-// Player surrenders
-if (payload.message.startsWith('/surrender')) {
-  const userUUID = payload.sender
-  const nickname = await getSenderNickname(userUUID)
-
-  if (!gameState.tableUsers.includes(userUUID)) {
-    await postMessage({ room: process.env.ROOM_UUID, message: 'You must join the blackjack table first using /join.' })
-    return
-  }
-
-  await handleSurrender(userUUID, nickname)
-  return
-}
-
-// Player doubles down
-if (payload.message.startsWith('/double')) {
-  const userUUID = payload.sender
-  const nickname = await getSenderNickname(userUUID)
-
-  if (!gameState.tableUsers.includes(userUUID)) {
-    await postMessage({ room: process.env.ROOM_UUID, message: 'You must join the blackjack table first using /join.' })
-    return
-  }
-
-  await handleDouble(userUUID, nickname)
-  return
-}
-
-// Show table state
 if (payload.message.startsWith('/table')) {
-  const room = process.env.ROOM_UUID
-  const tableMessage = getFullTableView()
-  await postMessage({ room, message: tableMessage || '🪑 No one is at the table yet.' })
-  return
+  const room = process.env.ROOM_UUID;
+  const ctx = bjCtxFromPayload(payload, room);
+  const tableMessage = getFullTableView(ctx);
+  await postMessage({ room: ctx.room, message: tableMessage || '🪑 No one is at the table yet.' });
+  return;
 }
-
-  /// ////////////// MOD Commands ///////////////////////////
-   else if (payload.message.startsWith('/addmoney')) {
-  const senderUuid = payload.sender;
-  const userIsOwner = await isUserOwner(senderUuid, ttlUserToken);
-
-  if (!userIsOwner) {
-    await postMessage({
-      room,
-      message: 'Only Rsmitty can use this command...You greedy bastard!'
-    });
-    return;
-  }
-
-  const args = payload.message.split(' ').slice(1);
-  if (args.length !== 2) {
-    await postMessage({
-      room,
-      message: 'Usage: /addmoney <@User> <amount>'
-    });
-    return;
-  }
-
-  const mention = args[0];
-  const amount = parseFloat(args[1]);
-
-  if (isNaN(amount) || amount <= 0) {
-    await postMessage({
-      room,
-      message: 'Please provide a valid amount greater than zero.'
-    });
-    return;
-  }
-
-  // Extract the UID from the format <UID:uuid>
-  const uidMatch = mention.match(/<@uid:([\\w-]+)>/i);
-  if (!uidMatch) {
-    await postMessage({
-      room,
-      message: 'Please mention a user like this: @User'
-    });
-    return;
-  }
-
-  const userUuid = uidMatch[1];
-
-  // Call the addDollarsByUUID function
-  await addDollarsByUUID(userUuid, amount);
-
-  // Confirm to the room
-  await postMessage({
-    room,
-    message: `💸 Added $${amount} to user <@uid:${userUuid}>'s wallet.`
-  });
-
-  /// ///////////////// BOT PROFILE UPDATES //////////////////////
-} else if (payload.message.startsWith('/bot1')) {
-  await handleBot1Command(room, postMessage, isUserAuthorized, payload.sender, ttlUserToken)
-
-} else if (payload.message.startsWith('/bot2')) {
-  await handleBot2Command(room, postMessage, isUserAuthorized, payload.sender, ttlUserToken)
-
-  } else if (payload.message.startsWith('/bot3')) {
-  await handleBot3Command(room, postMessage, isUserAuthorized, payload.sender, ttlUserToken)
-
-  } else if (payload.message.startsWith('/botpenguin')) {
-    await handleBotPenguinCommand(room, postMessage, isUserAuthorized, payload.sender, ttlUserToken)
-
-  } else if (payload.message.startsWith('/botwalrus')) {
-    await handleBotWalrusCommand(room, postMessage, isUserAuthorized, payload.sender, ttlUserToken)
-
-  } else if (payload.message.startsWith('/botalien2')) {
-    await handleBotAlien2Command(room, postMessage, isUserAuthorized, payload.sender, ttlUserToken)
-
-  } else if (payload.message.startsWith('/botalien1')) {
-    await handleBotAlienCommand(room, postMessage, isUserAuthorized, payload.sender, ttlUserToken)
-
-  } else if (payload.message.startsWith('/botduck')) {
-    await handleBotDuckCommand(room, postMessage, isUserAuthorized, payload.sender, ttlUserToken)
-
-  } else if (payload.message.startsWith('/botdino')) {
-      await handleBotDinoCommand(room, postMessage, isUserAuthorized, payload.sender, ttlUserToken)
-    }
-////////////////////// USER AVATAR UPDATES /////////////////////////////////
-
-  else if (payload.message.startsWith('/dino')) {
-    await handleDinoCommand(payload.sender, room, postMessage)
-  }
-  else if (payload.message.startsWith('/walrus')) {
-    await handleWalrusCommand(payload.sender, room, postMessage)
-  }
-  else if (payload.message.startsWith('/vibeguy')) {
-    await handleVibesGuyCommand(payload.sender, room, postMessage)
-  }
-  else if (payload.message.startsWith('/vibesguy')) {
-    await handleVibesGuyCommand(payload.sender, room, postMessage)
-  }
-  else if (payload.message.startsWith('/faceguy')) {
-    await handleFacesCommand(payload.sender, room, postMessage)
-  }
-  else if (payload.message.startsWith('/duck')) {
-    await handleDuckCommand(payload.sender, room, postMessage)
-  }
-  else if (payload.message.startsWith('/dodo')) {
-    await handleDoDoCommand(payload.sender, room, postMessage)
-  }
-  else if (payload.message.startsWith('/flowerpower')) {
-    await handleFlowerPowerCommand(payload.sender, room, postMessage)
-  }
-  else if (payload.message.startsWith('/dumdum' || '/dumbdumb')) {
-    await handleDumDumCommand(payload.sender, room, postMessage)
-  }
 
   else if (payload.message.startsWith('/spacebear')) {
     await handleSpaceBearCommand(payload.sender, room, postMessage)
@@ -3663,4 +3451,3 @@ if (!song) {
 }
 
 export { usersToBeRemoved, userstagedive }
-
