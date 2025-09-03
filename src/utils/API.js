@@ -857,6 +857,34 @@ export async function getGeniusAbout({ title, artist }) {
 }
 
 /* ────────────────────────────────────────────────────────────────
+ * Dog API (dog.ceo)
+ * ──────────────────────────────────────────────────────────────── */
+export async function getRandomDogImage(breedPath /* e.g., "shiba" or "hound/afghan" */) {
+  const base = 'https://dog.ceo/api'
+  const url = breedPath
+    ? `${base}/breed/${encodeURIComponent(breedPath)}/images/random`
+    : `${base}/breeds/image/random`
+
+  try {
+    const { ok, data } = await makeRequest(url, {
+      headers: { accept: 'application/json' },
+      timeoutMs: 5000
+    })
+    if (!ok) return null
+
+    // dog.ceo returns { status: 'success', message: <url|string|array> }
+    const msg = data?.message
+    if (data?.status !== 'success' || !msg) return null
+
+    return typeof msg === 'string' ? msg : (Array.isArray(msg) ? (msg[0] || null) : null)
+  } catch {
+    // Keep quiet; caller handles user-facing errors
+    return null
+  }
+}
+
+
+/* ────────────────────────────────────────────────────────────────
  * Helpers & Exports kept for compatibility
  * ──────────────────────────────────────────────────────────────── */
 export async function extractTrackId(input) {

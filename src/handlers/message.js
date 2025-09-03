@@ -48,6 +48,7 @@ import { handleRemoveAvatarCommand } from './removeAvatar.js'
 import { enableNowPlayingInfoBlurb, disableNowPlayingInfoBlurb, isNowPlayingInfoBlurbEnabled, setNowPlayingInfoBlurbTone, getNowPlayingInfoBlurbTone } from '../utils/announceNowPlaying.js'
 import { routeCrapsMessage } from '../games/craps/craps.single.js'
 import '../games/craps/craps.single.js'
+import {getRandomDogImage} from '../utils/API.js'
 
 
 // --- DM helper: minimal auth wrapper ---
@@ -255,10 +256,7 @@ export async function handleDirectMessage(payload) {
 
 
 export default async (payload, room, state, roomBot) => {
-  console.log('[MessageHandler]', {
-    receiverType: payload?.receiverType ?? payload?.receiver_type,
-    sender: payload?.sender
-  });
+
 
   // 🚦 Route DMs straight to the DM handler and exit
   const rt = (payload?.receiverType ?? payload?.receiver_type ?? '')
@@ -1423,6 +1421,42 @@ else if (payload.message.startsWith('/gifs')) {
         message: 'An error occurred while processing the burp command. Please try again.'
       })
     }
+    } else if (payload.message.startsWith('/dog')) {
+  try {
+    // Optional breed args: "/dog", "/dog shiba", "/dog hound afghan"
+    const parts = payload.message.trim().split(/\s+/).slice(1)
+    const breed =
+      parts.length === 0
+        ? null
+        : parts.length === 1
+          ? parts[0].toLowerCase()
+          : `${parts[0].toLowerCase()}/${parts[1].toLowerCase()}`
+
+    // Fetch image URL from dog.ceo (your API helper)
+    const imgUrl = await getRandomDogImage(breed || undefined)
+
+    if (!imgUrl) {
+      await postMessage({
+        room,
+        message: '🐶 Could not fetch a pup right now — try again in a bit!'
+      })
+      return
+    }
+
+    // Send as an image (no text), matching your /burp style
+    await postMessage({
+      room,
+      message: '',
+      images: [imgUrl]
+    })
+  } catch (error) {
+    console.error('Error processing /dog command:', error.message)
+    await postMessage({
+      room,
+      message: 'An error occurred while fetching a dog. Please try again.'
+    })
+  }
+
   } else if (payload.message.startsWith('/dance')) {
     try {
       const danceImageOptions = [

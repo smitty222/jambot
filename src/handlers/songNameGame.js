@@ -48,8 +48,6 @@ function getLeaderboard() {
 export async function scoreLetterChallenge(bot) {
   const theme = getTheme(bot.roomUUID)?.toLowerCase()
   if (!theme || !theme.includes('name game')) {
-    console.log('[🎯 NameGame] Skipping score — current theme is not "name game".')
-    return
   }
 
   const songTitle = bot.currentSong?.trackName || ''
@@ -144,12 +142,10 @@ export function scheduleLetterChallenge(bot) {
 
   // ✅ ENFORCE NAME GAME ONLY
   if (!theme || !theme.includes('name game')) {
-    console.log(`[🎯 NameGame] Theme is not "name game" (found: "${theme}"). Skipping challenge.`)
     return
   }
 
   if (!challengeStartMs || typeof challengeStartMs !== 'number') {
-    console.log('[🎯 NameGame] Invalid challengeStartMs')
     return
   }
 
@@ -166,7 +162,6 @@ export function scheduleLetterChallenge(bot) {
     const nextDJ = djUUIDs[1]
 
     if (!nextDJ) {
-      console.log('[🎯 NameGame] Not enough DJs for next challenge')
       return
     }
 

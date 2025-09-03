@@ -452,10 +452,166 @@ bus.on('raceFinished', async ({ winnerIdx, raceState, payouts, ownerBonus, finis
 });
 
 
-// ── Extra commands (help / stats / top / myhorses) ────────────────────
-// (unchanged below here)
 
-export async function handleHorseHelpCommand(ctx) { /* …same as before… */ }
-export async function handleHorseStatsCommand(ctx) { /* …same as before… */ }
-export async function handleTopHorsesCommand(ctx) { /* …same as before… */ }
-export async function handleMyHorsesCommand(ctx) { /* …same as before… */ }
+// ── Extra commands (help / stats / top / myhorses) ────────────────────
+export async function handleHorseHelpCommand(ctx) {
+  const help = [
+    '🐎 **Horse Race Commands**',
+    '',
+    '• `/horserace` — open entries, run a race',
+    '• `/enter <horse name>` — enter one of your horses',
+    '• `/bet <#lane> <amount>` — place a bet on a lane (after entries close)',
+    '• `/myhorses` — list your stable with records and current odds',
+    '• `/horsestats [horse name]` — overall leaderboard or a specific horse’s stats',
+    '• `/tophorses` — top horses by total wins',
+    '',
+    'TIPS: Owner horses race more often; odds tighten for in-form horses.'
+  ].join('\n');
+  await postMessage({ room: ROOM, message: help });
+}
+
+function _fmtPct(w, r) {
+  const wins = Number(w||0), races = Number(r||0);
+  if (!races) return '0%';
+  return Math.round((wins / races) * 100) + '%';
+}
+function _fmtOdds(h) { return formatOdds(getCurrentOdds(h)); }
+function _fmtLine(h, idx=null) {
+  const tag = (idx!=null) ? `${String(idx+1).padStart(2,' ')}.` : '•';
+  const races = Number(h?.racesParticipated||0);
+  const wins  = Number(h?.wins||0);
+  const pct   = _fmtPct(wins, races);
+  const retired = h?.retired ? ' (retired)' : '';
+  const tier = h?.tier ? ` [${String(h.tier).toUpperCase()}]` : '';
+  return `${tag} ${h.name}${retired}${tier} — Odds ${_fmtOdds(h)} · Races ${races} · Wins ${wins} (${pct})`;
+}
+
+export async function handleMyHorsesCommand(ctx) {
+  const userId = ctx?.sender || ctx?.userId || ctx?.uid;
+  const nick = await getUserNickname(userId);
+  const mine = await getUserHorses(userId);
+  if (!mine || mine.length === 0) {
+    await postMessage({ room: ROOM, message: `${nick}, you don’t own any horses yet. Use **/buyhorse <tier>** to get started.` });
+    return;
+  }
+  // Sort by wins desc, then win% desc
+  const arranged = mine.slice().sort((a,b)=>{
+    const aw = Number(a?.wins||0), bw = Number(b?.wins||0);
+    if (bw !== aw) return bw - aw;
+    const ap = (Number(a?.wins||0)/Math.max(1,Number(a?.racesParticipated||0)));
+    const bp = (Number(b?.wins||0)/Math.max(1,Number(b?.racesParticipated||0)));
+    return bp - ap;
+  });
+  const lines = arranged.map((h,i)=>_fmtLine(h,i));
+  const header = `🐴 **${nick}’s Stable** (${arranged.length})`;
+  const body = ['```', header, ...lines, '```'].join('\n');
+  await postMessage({ room: ROOM, message: body });
+}
+
+export async function handleHorseStatsCommand(ctx) {
+  const room = ctx?.room || ROOM;
+  const text = String(ctx?.message || '').trim();
+  const nameArg = (text.match(/^\/horsestats\s+(.+)/i) || [])[1];
+
+  const all = await getAllHorses();
+  const horses = Array.isArray(all) ? all : [];
+
+  if (!nameArg) {
+    // Leaderboards
+    const topWins = horses.slice()
+      .sort((a, b) => Number(b?.wins || 0) - Number(a?.wins || 0))
+      .slice(0, 10);
+
+    const topPct = horses.slice()
+      .filter(h => Number(h?.racesParticipated || 0) >= 5)
+      .sort((a, b) => {
+        const ap = Number(a?.wins || 0) / Math.max(1, Number(a?.racesParticipated || 0));
+        const bp = Number(b?.wins || 0) / Math.max(1, Number(b?.racesParticipated || 0));
+        return bp - ap;
+      })
+      .slice(0, 10);
+
+    const linesWins = topWins.map((h, i) => _fmtLine(h, i));
+    const linesPct  = topPct.map((h, i)  => _fmtLine(h, i));
+
+    const msg = [
+      '📊 **Horse Stats**',
+      '',
+      '🏆 Top Wins',
+      ...linesWins,
+      '',
+      '📈 Best Win% (min 5 starts)',
+      ...linesPct
+    ].join('\n');
+
+    await postMessage({ room, message: '```\n' + msg + '\n```' });
+    return;
+  }
+
+  // Specific horse lookup (case-insensitive, supports partial)
+  const needle = nameArg.toLowerCase();
+  const match = horses.find(h => String(h?.name || '').toLowerCase() === needle)
+             || horses.find(h => String(h?.name || '').toLowerCase().includes(needle));
+
+  if (!match) {
+    await postMessage({ room, message: `❗ Couldn’t find a horse named **${nameArg}**.` });
+    return;
+  }
+
+  const races = Number(match?.racesParticipated || 0);
+  const wins  = Number(match?.wins || 0);
+  const pct   = _fmtPct(wins, races);
+  const owner = match?.ownerId ? `<uid:${match.ownerId}>` : 'House';
+
+  const details = [
+    `📄 **${match.name}**` + (match.retired ? ' (retired)' : ''),
+    `Owner: ${owner}`,
+    `Tier: ${String(match?.tier || '').toUpperCase() || '—'}`,
+    `Odds (current): ${_fmtOdds(match)}`,
+    `Record: ${wins} wins from ${races} starts (${pct})`,
+    `Career limit: ${match?.careerLimit ?? '—'}`, // safe fallback; remove or replace if you later add a real calculator
+    `Base odds: ${match?.baseOdds ?? '—'} · Volatility: ${match?.volatility ?? '—'}`
+  ].join('\n');
+
+  await postMessage({ room, message: '```\n' + details + '\n```' });
+}
+
+export async function handleTopHorsesCommand(ctx) {
+  const room = ctx?.room || ROOM;
+  const all = await getAllHorses();
+  const horses = Array.isArray(all) ? all : [];
+
+  // Allen / house filters
+  const allenIds = String(process.env.ALLEN_USER_IDS || process.env.CHAT_USER_ID || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  // Only user-owned horses (must have ownerId) and not owned by Allen/bot
+  const userHorses = horses.filter(h => {
+    const owner = h?.ownerId;
+    if (!owner) return false; // exclude house/no-owner
+    return !allenIds.includes(String(owner));
+  });
+
+  if (userHorses.length === 0) {
+    await postMessage({ room, message: '```\\nNo user-owned horses found yet.\\n```' });
+    return;
+  }
+
+  const top = userHorses.slice()
+    .sort((a, b) => {
+      const dw = Number(b?.wins || 0) - Number(a?.wins || 0);
+      if (dw) return dw;
+      const ap = Number(a?.wins || 0) / Math.max(1, Number(a?.racesParticipated || 0));
+      const bp = Number(b?.wins || 0) / Math.max(1, Number(b?.racesParticipated || 0));
+      return bp - ap;
+    })
+    .slice(0, 10);
+
+  const lines = top.map((h, i) => _fmtLine(h, i));
+  const msg = ['🏅 **Top Horses (user-owned only)**', ...lines].join('\n');
+  await postMessage({ room, message: '```\\n' + msg + '\\n```' });
+}
+
+

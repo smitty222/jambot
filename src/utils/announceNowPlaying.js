@@ -6,7 +6,16 @@ import { getTheme } from '../utils/themeManager.js'
 import db from '../database/db.js'
 import { roomBot } from '../index.js'
 import { askQuestion } from '../libs/ai.js'
-import { getGeniusAbout } from '../utils/API.js' // returns { songId, aboutPlain, aboutHtml, descAnno }
+import { getGeniusAbout } from '../utils/API.js' // { songId, aboutPlain, aboutHtml, descAnno }
+
+// ───────────────────────────────────────────────────────────
+// Logging (defaults to info; set LOG_LEVEL=debug for extra detail)
+// ───────────────────────────────────────────────────────────
+const LOG_LEVEL = (process.env.LOG_LEVEL || 'info').toLowerCase()
+const isInfo  = LOG_LEVEL === 'info' || LOG_LEVEL === 'debug'
+const isDebug = LOG_LEVEL === 'debug'
+const log   = (...a) => { if (isInfo)  console.log(...a) }
+const debug = (...a) => { if (isDebug) console.debug(...a) }
 
 // ───────────────────────────────────────────────────────────
 // Settings persistence (SQLite via db)
@@ -14,7 +23,7 @@ import { getGeniusAbout } from '../utils/API.js' // returns { songId, aboutPlain
 const KEY_INFOBLURB_ENABLED = 'nowplaying_infoblurb_enabled'
 const KEY_INFOBLURB_TONE    = 'nowplaying_infoblurb_tone'
 
-// Create settings table if missing
+// Ensure settings table
 try {
   db.prepare(`
     CREATE TABLE IF NOT EXISTS app_settings (
@@ -23,7 +32,7 @@ try {
     )
   `).run()
 } catch (e) {
-  console.error('[announceNowPlaying] Failed to ensure app_settings table:', e)
+  console.error('[NowPlaying] Failed to ensure app_settings table:', e)
 }
 
 // Helpers
@@ -32,7 +41,7 @@ function readSetting(key) {
     const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key)
     return row ? row.value : null
   } catch (e) {
-    console.error('[announceNowPlaying] readSetting error:', e)
+    console.error('[NowPlaying] readSetting error:', e)
     return null
   }
 }
@@ -42,7 +51,7 @@ function writeSetting(key, value) {
       'INSERT INTO app_settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value'
     ).run(key, String(value))
   } catch (e) {
-    console.error('[announceNowPlaying] writeSetting error:', e)
+    console.error('[NowPlaying] writeSetting error:', e)
   }
 }
 
@@ -65,9 +74,24 @@ function normalizeTone(raw) {
   const aliased = TONE_ALIASES[t] || t
   return TONES.includes(aliased) ? aliased : 'neutral'
 }
+function toneLineFor(tone) {
+  const t = normalizeTone(tone)
+  const map = {
+    neutral:     'Tone: neutral, informative.',
+    playful:     'Tone: playful—light slang ok; one tasteful emoji allowed.',
+    cratedigger: 'Tone: cratedigger—one micro fact (producer, sample, label, chart stat).',
+    hype:        'Tone: hype—energetic, crowd-facing; one short exclamation allowed; no caps-lock.',
+    classy:      'Tone: classy—no slang, no emojis; concise editorial style.',
+    chartbot:    'Tone: chartbot—prefer chart peaks (with country) or certifications.',
+    djtech:      'Tone: djtech—mention BPM/key if present; avoid heavy jargon.',
+    vibe:        'Tone: vibe—1–2 genre adjectives; avoid numbers unless iconic.'
+  }
+  return map[t] || map.neutral
+}
 
 // ───────────────────────────────────────────────────────────
-/** Toggle: AI info blurb on/off + tone (DB-backed with env defaults) */
+// Toggles (DB-backed; env defaults)
+// ───────────────────────────────────────────────────────────
 const envEnabledDefault = ['1','true','on','yes'].includes(String(process.env.NOWPLAYING_INFOBLURB ?? '').toLowerCase())
 const envToneDefaultRaw = (process.env.NOWPLAYING_INFOBLURB_TONE || 'neutral')
 const envToneDefault    = normalizeTone(envToneDefaultRaw)
@@ -90,7 +114,6 @@ let INFO_BLURB_TONE = (() => {
   return normalizeTone(v)
 })()
 
-// Public API for toggles
 export function enableNowPlayingInfoBlurb()  { INFO_BLURB_ENABLED = true;  writeSetting(KEY_INFOBLURB_ENABLED, '1') }
 export function disableNowPlayingInfoBlurb() { INFO_BLURB_ENABLED = false; writeSetting(KEY_INFOBLURB_ENABLED, '0') }
 export function setNowPlayingInfoBlurb(enabled) { INFO_BLURB_ENABLED = !!enabled; writeSetting(KEY_INFOBLURB_ENABLED, enabled ? '1' : '0') }
@@ -112,10 +135,10 @@ function blurbKey(song) {
 }
 
 // ───────────────────────────────────────────────────────────
-// Genius fetch cache + normalization
+// Genius fetch + normalization
 // ───────────────────────────────────────────────────────────
 const GENIUS_TTL_MS = 12 * 60 * 60 * 1000 // 12h
-const GENIUS_TIMEOUT_MS = 1500
+const GENIUS_TIMEOUT_MS = Number(process.env.NOWPLAYING_GENIUS_TIMEOUT_MS || 3000)
 const geniusCache = new Map() // key -> { about: string, ts: number }
 
 // Treat trivial/placeholder text as "no info"
@@ -129,18 +152,16 @@ function normalizeGeniusAbout(about) {
   return t
 }
 
+// Race getGeniusAbout against a timeout (cannot cancel underlying HTTP)
 async function fetchGeniusAboutWithTimeout(title, artist) {
   const k = `${title}::${artist}`
   const now = Date.now()
   const cached = geniusCache.get(k)
-
   if (cached && (now - cached.ts < GENIUS_TTL_MS)) {
-    const ageMs = now - cached.ts
-    console.log(`[NowPlaying][Genius] cache HIT for "${k}" (age=${ageMs}ms, len=${cached.about?.length || 0})`)
-    return normalizeGeniusAbout(cached.about) || null
+    const norm = normalizeGeniusAbout(cached.about) || null
+    log('[NowPlaying][Genius][CACHE]', JSON.stringify({ key: k, present: !!norm, len: norm?.length || 0 }))
+    return norm
   }
-
-  console.log(`[NowPlaying][Genius] fetching About for "${k}" (timeout ${GENIUS_TIMEOUT_MS}ms)…`)
 
   let timedOut = false
   const timeoutPromise = new Promise(res =>
@@ -153,126 +174,48 @@ async function fetchGeniusAboutWithTimeout(title, artist) {
       const raw = (res?.aboutPlain || '').trim()
       const normalized = normalizeGeniusAbout(raw)
       geniusCache.set(k, { about: normalized || '', ts: Date.now() })
-      console.log(
-        `[NowPlaying][Genius] fetch DONE for "${k}": ` +
-        (normalized ? `usable len=${normalized.length}` : `TRIVIAL ("${raw || '∅'}") — treating as NONE`)
-      )
+      log('[NowPlaying][Genius][FETCHED]', JSON.stringify({
+        key: k, usable: !!normalized, rawLen: raw.length, useLen: normalized?.length || 0
+      }))
       return normalized || null
     } catch (e) {
-      console.warn(`[NowPlaying][Genius] fetch ERROR for "${k}":`, e?.message || e)
+      console.error(`[NowPlaying][Genius] fetch ERROR for "${k}":`, e?.message || e)
       return null
     }
   })()
 
   const about = await Promise.race([task, timeoutPromise])
   if (timedOut) {
-    console.warn(`[NowPlaying][Genius] fetch TIMED OUT for "${k}" after ${GENIUS_TIMEOUT_MS}ms`)
+    console.error(`[NowPlaying][Genius] fetch TIMED OUT for "${k}" after ${GENIUS_TIMEOUT_MS}ms`)
   }
   return about
 }
 
 // ───────────────────────────────────────────────────────────
-// AI plumbing
+// AI summarization (Genius only)
 // ───────────────────────────────────────────────────────────
-const AI_HARD_TIMEOUT_MS = 15000 // total per attempt
-const LAT_WIN = 20
-let aiLatencies = [] // ms for successful attempts
-function recordAiLatency(ms) {
-  aiLatencies.push(ms)
-  if (aiLatencies.length > LAT_WIN) aiLatencies.shift()
-}
-function median(arr) {
-  if (!arr.length) return null
-  const a = [...arr].sort((x, y) => x - y)
-  const mid = Math.floor(a.length / 2)
-  return a.length % 2 ? a[mid] : (a[mid - 1] + a[mid]) / 2
-}
-function getSoftDeadlineMs() {
-  const m = median(aiLatencies) ?? 1200
-  const d = m + 250
-  return Math.max(900, Math.min(2200, d))
-}
+const AI_HARD_TIMEOUT_MS = 15000
 
-function toneLineFor(tone) {
-  const t = normalizeTone(tone)
-  const map = {
-    neutral:     'Tone: neutral, informative.',
-    playful:     'Tone: playful, 1 tasteful emoji allowed; light slang ok.',
-    cratedigger: 'Tone: cratedigger—include one micro fact (producer, sample lineage, label, or chart stat).',
-    hype:        'Tone: hype—energetic, crowd-facing; one short exclamation allowed; no caps-lock.',
-    classy:      'Tone: classy—no slang, no emojis; concise editorial style.',
-    chartbot:    'Tone: chartbot—prioritize chart peaks (with country) or certifications.',
-    djtech:      'Tone: djtech—mention BPM range or key if meaningful; avoid heavy jargon.',
-    vibe:        'Tone: vibe—1–2 genre adjectives; no numbers unless iconic.'
-  }
-  return map[t] || map.neutral
-}
-
-// GENIUS-summarizing prompt
-export function buildGeniusBlurbPrompt(song, aboutText, tone = 'neutral') {
+function buildGeniusBlurbPrompt(song, aboutText, tone = 'neutral') {
   const { trackName, artistName } = song || {}
   const safeAbout = String(aboutText || '').slice(0, 4000)
-  return `Summarize the following Genius "About" section for a song into ONE ultra-brief blurb (max 200 characters).
-Base the blurb ONLY on the provided text. If specific facts are not present, prefer a concise vibe/genre insight.
-Do NOT repeat the song title or artist name. No links, no hashtags, no quotes, no extra lines. Output ONLY the blurb text.
+  return `Summarize the following Genius "About" section for a song into ONE sharp blurb (max 160 characters).
+- Base ONLY on the provided text.
+- Include exactly ONE concrete detail (e.g., a year, chart peak + country, certification, notable collaborator, label).
+- DO NOT repeat the song title or artist name.
+- One sentence; no hashtags, no links, no quotes. Keep it specific; avoid generic filler.
+
 ${toneLineFor(tone)}
 
 Song: ${trackName || 'Unknown'} — ${artistName || 'Unknown'}
-About text:
+About (Genius):
 """${safeAbout}"""`}
-
-// OPEN fallback prompt: “tell me about this song”
-export function buildOpenBlurbPrompt(song, tone = 'neutral') {
-  const { trackName, artistName } = song || {}
-  return `Tell me about the song "${trackName || 'Unknown'}" by ${artistName || 'Unknown'} in ONE ultra-brief blurb (max 200 characters).
-Prefer widely known facts (release year, subgenre, notable collaborators, chart peaks, producer/label) or, if unsure, give a concise vibe/genre insight.
-Do NOT repeat the song title or artist name. No links, no hashtags, no quotes, no extra lines. Output ONLY the blurb text.
-${toneLineFor(tone)}`
-}
-
-// Extract text from askQuestion() responses
-function extractText(reply) {
-  if (!reply) return null
-  if (typeof reply === 'string') return reply
-  if (reply.text) return reply.text
-  if (reply.candidates?.[0]?.content?.parts?.[0]?.text) return reply.candidates[0].content.parts[0].text
-  return null
-}
-
-// attempt with hard timeout + latency logging
-async function attemptAI(prompt) {
-  const t0 = Date.now()
-  try {
-    const result = await Promise.race([
-      askQuestion(prompt),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('AI_TIMEOUT')), AI_HARD_TIMEOUT_MS))
-    ])
-    const txt = extractText(result)
-    if (!txt) throw new Error('AI_EMPTY_RESPONSE')
-    const dt = Date.now() - t0
-    recordAiLatency(dt)
-    console.log(`[NowPlaying][AI] attempt OK in ${dt}ms`)
-    return txt.trim()
-  } catch (e) {
-    console.warn('[NowPlaying][AI] attempt failed:', e?.message || e)
-    return null
-  }
-}
-
-// safeAskQuestion with one retry on a simplified prompt
-async function safeAskQuestion(prompt) {
-  let text = await attemptAI(prompt)
-  if (text) return text
-  const simple = prompt
-    .replace(/NEVER mention[\s\S]*?IDs\).*/i, '')
-    .replace(/Only include.*?\n/i, 'Only include one confident micro-fact or a concise vibe.\n')
-  return await attemptAI(simple)
-}
-
+ 
+// Sanitize output (remove IDs/names/etc.)
 const escapeRegExp = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 function sanitizeBlurb(text, song) {
   if (!text) return text
-  let t = text.replace(/^["'“”]+|["'“”]+$/g, '').trim()
+  let t = String(text).replace(/^["'“”]+|["'“”]+$/g, '').trim()
   t = t
     .replace(/\bISRC\b[:\s-]*[A-Z0-9-_.]+/gi, '')
     .replace(/\bUPC\b[:\s-]*\d{8,}/gi, '')
@@ -288,40 +231,35 @@ function sanitizeBlurb(text, song) {
   return t || null
 }
 
-// GENIUS path: soft-deadline builder
-async function getBlurbFromGenius(song, tone, aboutText) {
-  const softDeadline = getSoftDeadlineMs()
-  console.log(`[NowPlaying][AI] building blurb from GENIUS; soft deadline=${softDeadline}ms`)
-  let softTimedOut = false
-  const aiWork = (async () => {
-    let blurb = await safeAskQuestion(buildGeniusBlurbPrompt(song, aboutText, tone))
-    blurb = sanitizeBlurb(blurb, song)
-    if (blurb && blurb.length > 200) blurb = blurb.slice(0, 197) + '…'
-    console.log(`[NowPlaying][AI] blurb ${blurb ? `READY len=${blurb.length}` : 'EMPTY'} from GENIUS`)
-    return blurb || null
-  })()
-  const soft = await Promise.race([aiWork, new Promise(res => setTimeout(() => { softTimedOut = true; res(null) }, softDeadline))])
-  return { soft, final: aiWork, softTimedOut }
+function isBlandBlurb(t = '') {
+  const s = String(t).toLowerCase()
+  const generic = /(a song by|single by|track by|an? american (singer|dj)|popular song|club single)/i.test(s)
+  const hasConcrete = /(\b(19|20)\d{2}\b|billboard|hot\s*100|uk\s*singles|no\.\s*\d|platinum|gold|certified|produced by|label)/i.test(s)
+  return generic || !hasConcrete || s.length < 40
 }
 
-// OPEN fallback: “tell me about this song”
-async function getBlurbOpenFallback(song, tone) {
-  const softDeadline = getSoftDeadlineMs()
-  console.log(`[NowPlaying][AI] building blurb from OPEN fallback; soft deadline=${softDeadline}ms`)
-  let softTimedOut = false
-  const aiWork = (async () => {
-    let blurb = await safeAskQuestion(buildOpenBlurbPrompt(song, tone))
-    blurb = sanitizeBlurb(blurb, song)
+async function summarizeGeniusAbout(song, aboutText, tone = 'neutral') {
+  const prompt = buildGeniusBlurbPrompt(song, aboutText, tone)
+  debug('[NowPlaying][Blurb][AI][PROMPT]', prompt)
+  try {
+    const p = askQuestion(prompt, { returnApologyOnError: false, retries: 2, backoffMs: 600 })
+    const result = await Promise.race([
+      p,
+      new Promise((_, rej) => setTimeout(() => rej(new Error('AI_TIMEOUT')), AI_HARD_TIMEOUT_MS))
+    ])
+    const txt = (typeof result === 'string') ? result : result?.text
+    if (!txt) throw new Error('AI_EMPTY_RESPONSE')
+    let blurb = sanitizeBlurb(txt, song)
     if (blurb && blurb.length > 200) blurb = blurb.slice(0, 197) + '…'
-    console.log(`[NowPlaying][AI] blurb ${blurb ? `READY len=${blurb.length}` : 'EMPTY'} from OPEN fallback`)
     return blurb || null
-  })()
-  const soft = await Promise.race([aiWork, new Promise(res => setTimeout(() => { softTimedOut = true; res(null) }, softDeadline))])
-  return { soft, final: aiWork, softTimedOut }
+  } catch (e) {
+    console.error('[NowPlaying][Blurb][AI][ERROR]', e?.message || e)
+    return null
+  }
 }
 
 // ───────────────────────────────────────────────────────────
-// Main: announceNowPlaying with AI blurb (Genius → Open fallback)
+// Main
 // ───────────────────────────────────────────────────────────
 export async function announceNowPlaying(room) {
   try {
@@ -329,11 +267,10 @@ export async function announceNowPlaying(room) {
     if (!song || !song.trackName || !song.artistName || !song.songId) return
 
     // Album theme → skip; separate announcer handles album mode
-    const normalizedTheme = getTheme(room) // normalized
+    const normalizedTheme = getTheme(room)
     const isAlbumTheme = ['album monday', 'albums', 'album day'].includes(normalizedTheme)
-    console.log(`[AlbumTheme] active=${isAlbumTheme} | song="${song.trackName}" id="${song.songId}"`)
     if (isAlbumTheme) {
-      console.log(`🎧 Album theme detected (${normalizedTheme}) — skipping default now playing message.`)
+      log('[NowPlaying][Skip] Album theme active')
       return
     }
 
@@ -359,70 +296,53 @@ export async function announceNowPlaying(room) {
       message += `\n⭐ ${avgInfo.average}/5 (${avgInfo.count} rating${avgInfo.count === 1 ? '' : 's'})`
     }
 
-    // ——— AI Info Blurb: GENIUS first, else OPEN fallback ———
-    if (INFO_BLURB_ENABLED) {
-      const key = blurbKey(song)
-      const cached = blurbCache.get(key)
-      let blurb = null
+    // Always post the base message immediately
+    await postMessage({ room, message })
+    log('[NowPlaying][POST][BASE]', JSON.stringify({ track: song.trackName, artist: song.artistName }))
 
-      if (cached && (Date.now() - cached.ts < BLURB_TTL_MS)) {
-        const age = Date.now() - cached.ts
-        blurb = cached.text
-        console.log(`[NowPlaying][AI] blurb cache HIT for key=${key} (age=${age}ms, len=${blurb.length})`)
-      } else if (cached) {
-        console.log(`[NowPlaying][AI] blurb cache STALE for key=${key} — refreshing`)
-      } else {
-        console.log(`[NowPlaying][AI] blurb cache MISS for key=${key}`)
-      }
+    // If info blurbs are disabled, stop here
+    if (!INFO_BLURB_ENABLED) return
 
-      // Try to get usable Genius text first
-      console.log(`[NowPlaying] attempting Genius About lookup for "${song.trackName}" — ${song.artistName}`)
-      const geniusAbout = await fetchGeniusAboutWithTimeout(song.trackName, song.artistName)
-      console.log(`[NowPlaying] Genius About result: ${geniusAbout ? `len=${geniusAbout.length}` : 'NONE'}`)
+    // If we have a cached blurb, send it now
+    const key = blurbKey(song)
+    const cached = blurbCache.get(key)
+    if (cached && (Date.now() - cached.ts < BLURB_TTL_MS)) {
+      await postMessage({ room, message: `ℹ️ ${cached.text}` })
+      log('[NowPlaying][Blurb][POST][CACHE]', JSON.stringify({
+        track: song.trackName, artist: song.artistName, source: 'genius', length: cached.text.length
+      }))
+      return
+    }
 
-      if (!blurb) {
-        let builder
-        if (geniusAbout) {
-          builder = getBlurbFromGenius(song, INFO_BLURB_TONE, geniusAbout)
-        } else {
-          builder = getBlurbOpenFallback(song, INFO_BLURB_TONE) // ⬅️ OPEN “tell me about this song” fallback
+    // Fire-and-forget: fetch Genius → summarize → post if good
+    ;(async () => {
+      try {
+        log('[NowPlaying][Blurb][GENIUS][FETCH]', JSON.stringify({ title: song.trackName, artist: song.artistName }))
+        const about = await fetchGeniusAboutWithTimeout(song.trackName, song.artistName)
+        if (!about) {
+          log('[NowPlaying][Blurb][GENIUS][NONE]', JSON.stringify({ track: song.trackName, artist: song.artistName }))
+          return
         }
+        debug('[NowPlaying][Blurb][GENIUS][FOUND]', JSON.stringify({ len: about.length }))
 
-        const { soft, final, softTimedOut } = await builder
-
-        if (soft) {
-          blurb = soft
-          blurbCache.set(key, { text: blurb, ts: Date.now() })
-          console.log('[NowPlaying][AI] sending message WITH inline blurb')
-          message += `\nℹ️ ${blurb}`
-          await postMessage({ room, message })
+        const blurb = await summarizeGeniusAbout(song, about, INFO_BLURB_TONE)
+        if (!blurb || isBlandBlurb(blurb)) {
+          log('[NowPlaying][Blurb][SKIP]', JSON.stringify({
+            reason: 'ai-bland-or-failed', track: song.trackName, artist: song.artistName
+          }))
           return
         }
 
-        // AI was slow → post base message now; follow up if/when ready
-        console.log('[NowPlaying] posting base Now Playing without blurb (waiting for final)')
-        await postMessage({ room, message })
-
-        if (softTimedOut) {
-          const finalBlurb = await final.catch(() => null)
-          if (finalBlurb) {
-            blurbCache.set(key, { text: finalBlurb, ts: Date.now() })
-            console.log('[NowPlaying][AI] posting FOLLOW-UP blurb')
-            await postMessage({ room, message: `ℹ️ ${finalBlurb}` })
-          } else {
-            console.log('[NowPlaying][AI] no final blurb available after wait')
-          }
-        }
-        return
+        blurbCache.set(key, { text: blurb, ts: Date.now() })
+        await postMessage({ room, message: `ℹ️ ${blurb}` })
+        log('[NowPlaying][Blurb][POST]', JSON.stringify({
+          track: song.trackName, artist: song.artistName, source: 'genius', length: blurb.length
+        }))
+      } catch (e) {
+        console.error('[NowPlaying][Blurb][ASYNC][ERROR]', e?.message || e)
       }
+    })()
 
-      // had cached blurb
-      console.log('[NowPlaying][AI] using CACHED blurb inline')
-      message += `\nℹ️ ${blurb}`
-    }
-
-    // no (eligible) blurb added → post once
-    await postMessage({ room, message })
   } catch (err) {
     console.error('Error in announceNowPlaying:', err)
   }
