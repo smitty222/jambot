@@ -1,7 +1,5 @@
-import * as themeManager from '../utils/themeManager.js';
 // message.js
 import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
-import { bjCtxFromPayload } from '../games/blackjack/bjCtx.js'
 import { askQuestion, setCurrentSong } from '../libs/ai.js'
 import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, displayTriviaInfo } from '../handlers/triviaCommands.js'
 import { logger } from '../utils/logging.js'
@@ -28,7 +26,20 @@ import {
 } from './roulette.js'
 import { getBalanceByNickname, getNicknamesFromWallets, addDollarsByUUID, loadWallets, removeFromUserWallet, getUserWallet } from '../database/dbwalletmanager.js'
 import { getJackpotValue, handleSlotsCommand } from './slots.js'
-import { joinTable, leaveTable, handleBlackjackBet, handleHit, handleStand, handleSurrender, handleDouble, handleSplit, getFullTableView, getPhase, getPlayerHand, isPlayersTurn, isSeated } from '../handlers/blackJack.js'
+import {
+  openBetting,          // <-- add this
+  joinTable,
+  leaveTable,
+  handleBlackjackBet,
+  handleHit,
+  handleStand,
+  handleDouble,
+  handleSurrender,
+  handleSplit,
+  getFullTableView,
+  getPhase,
+  isSeated,
+} from '../games/blackjack/blackJack.js';
 import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand, handleRandomCyberCommand, handleVibesGuyCommand, handleFacesCommand, handleDoDoCommand, handleFlowerPowerCommand, handleDumDumCommand, handleRandomCosmicCommand, handleRandomLovableCommand, handleBot3Command } from './avatarCommands.js'
 import { markUser, getMarkedUser} from '../utils/removalQueue.js'
 import {extractUserFromText, isLotteryQuestion} from '../database/dblotteryquestionparser.js'
@@ -1887,144 +1898,169 @@ if (payload.message.startsWith('/roulette start')) {
 // Blackjack commands (multi-table, context-aware)
 // ────────────────────────────────────────────────────────────────
 
+const ctx = { room }; // consistent context for this room
+
+// /blackjack — opens the 30s lobby (via openBetting shim), then auto-seats opener
 if (payload.message.startsWith('/blackjack')) {
   const userUUID = payload.sender;
   const nickname = await getSenderNickname(userUUID);
-  const room = process.env.ROOM_UUID;
-  const ctx = bjCtxFromPayload(payload, room);
 
-  if (getPhase(ctx) !== 'idle') {
-    await postMessage({ room: ctx.room, message: 'A blackjack game is already in progress for this table. Use --table=<id> to start another.' });
-    return;
-  }
-
-  await postMessage({ room: ctx.room, message: '🃏 Blackjack lobby opened! Type /join to sit at the table. Betting closes in 30s.' });
-  if (!isSeated(userUUID, ctx)) {
-    await joinTable(userUUID, nickname, ctx);
-  }
+  await openBetting(ctx);                // starts Lobby -> Betting flow (module handles “already in progress”)
+  await joinTable(userUUID, nickname, ctx); // nice-to-have: auto-seat opener
   return;
 }
 
+// /join — only allowed during lobby
 if (payload.message.startsWith('/join')) {
   const userUUID = payload.sender;
   const nickname = await getSenderNickname(userUUID);
-  const room = process.env.ROOM_UUID;
-  const ctx = bjCtxFromPayload(payload, room);
-
-  const phase = getPhase(ctx);
-  if (phase === 'playing' || phase === 'settling') {
-    await postMessage({ room: ctx.room, message: 'Round already started. Please wait for the next one.' });
-    return;
-  }
   await joinTable(userUUID, nickname, ctx);
   return;
 }
 
+// /leave — remove player during lobby/betting
 if (payload.message.startsWith('/leave')) {
   const userUUID = payload.sender;
-  const room = process.env.ROOM_UUID;
-  const ctx = bjCtxFromPayload(payload, room);
-  await leaveTable(userUUID, ctx);
+  const phase = getPhase(ctx);
+
+  if (phase === 'idle') {
+    await postMessage({ room, message: `<@uid:${userUUID}> there isn’t an active table right now.` });
+    return;
+  }
+  if (phase === 'playing' || phase === 'settling') {
+    await postMessage({ room, message: `<@uid:${userUUID}> please wait until the round is over to leave.` });
+    return;
+  }
+  if (!isSeated(userUUID, ctx)) {
+    await postMessage({ room, message: `<@uid:${userUUID}> you’re not seated at the table.` });
+    return;
+  }
+  await leaveTable(userUUID, ctx); // module posts confirmation + handles early-start if applicable
   return;
 }
 
+// /bet <amount> — only during betting
 if (payload.message.startsWith('/bet')) {
   const userUUID = payload.sender;
   const nickname = await getSenderNickname(userUUID);
-  const room = process.env.ROOM_UUID;
-  const ctx = bjCtxFromPayload(payload, room);
-  const amountStr = (payload.message.split(' ')[1] || '').trim();
-  const betAmount = parseInt(amountStr, 10);
 
+  const amountStr = (payload.message.split(/\s+/)[1] || '').trim();
+  const betAmount = Number.parseInt(amountStr, 10);
+
+  // Signature in your updated file: (userUUID, betAmount, nickname, ctx)
   await handleBlackjackBet(userUUID, betAmount, nickname, ctx);
   return;
 }
 
+// /hit
 if (payload.message.startsWith('/hit')) {
   const userUUID = payload.sender;
   const nickname = await getSenderNickname(userUUID);
-  const room = process.env.ROOM_UUID;
-  const ctx = bjCtxFromPayload(payload, room);
-
-  if (!isSeated(userUUID, ctx)) {
-    await postMessage({ room: ctx.room, message: 'You must join the blackjack table first using /join.' });
-    return;
-  }
-
   await handleHit(userUUID, nickname, ctx);
   return;
 }
 
+// /stand
 if (payload.message.startsWith('/stand')) {
   const userUUID = payload.sender;
   const nickname = await getSenderNickname(userUUID);
-  const room = process.env.ROOM_UUID;
-  const ctx = bjCtxFromPayload(payload, room);
-
-  if (!isSeated(userUUID, ctx)) {
-    await postMessage({ room: ctx.room, message: 'You must join the blackjack table first using /join.' });
-    return;
-  }
-
   await handleStand(userUUID, nickname, ctx);
   return;
 }
 
+// /double
 if (payload.message.startsWith('/double')) {
   const userUUID = payload.sender;
   const nickname = await getSenderNickname(userUUID);
-  const room = process.env.ROOM_UUID;
-  const ctx = bjCtxFromPayload(payload, room);
-
-  if (!isSeated(userUUID, ctx)) {
-    await postMessage({ room: ctx.room, message: 'You must join the blackjack table first using /join.' });
-    return;
-  }
-
   await handleDouble(userUUID, nickname, ctx);
   return;
 }
 
+// /surrender
 if (payload.message.startsWith('/surrender')) {
   const userUUID = payload.sender;
   const nickname = await getSenderNickname(userUUID);
-  const room = process.env.ROOM_UUID;
-  const ctx = bjCtxFromPayload(payload, room);
-
-  if (!isSeated(userUUID, ctx)) {
-    await postMessage({ room: ctx.room, message: 'You must join the blackjack table first using /join.' });
-    return;
-  }
-
   await handleSurrender(userUUID, nickname, ctx);
   return;
 }
 
+// /split
 if (payload.message.startsWith('/split')) {
   const userUUID = payload.sender;
   const nickname = await getSenderNickname(userUUID);
-  const room = process.env.ROOM_UUID;
-  const ctx = bjCtxFromPayload(payload, room);
-
-  if (!isSeated(userUUID, ctx)) {
-    await postMessage({ room: ctx.room, message: 'You must join the blackjack table first using /join.' });
-    return;
-  }
-
   await handleSplit(userUUID, nickname, ctx);
   return;
 }
 
+// /table — show current seats/bets using module’s formatter
 if (payload.message.startsWith('/table')) {
-  const room = process.env.ROOM_UUID;
-  const ctx = bjCtxFromPayload(payload, room);
   const tableMessage = getFullTableView(ctx);
-  await postMessage({ room: ctx.room, message: tableMessage || '🪑 No one is at the table yet.' });
+  await postMessage({ room, message: tableMessage || '🪑 No one is at the table yet.' });
   return;
 }
 
+
+////////////////////////// BOT AVATAR UPDATES //////////////////////////
+else if (payload.message.startsWith('/botrandom')) {
+    await handleBotRandomAvatarCommand(payload.sender, room, postMessage)
+  }
+  else if (payload.message.startsWith('/botdino')) {
+    await handleBotDinoCommand(payload.sender, room, postMessage)
+  }
+  else if (payload.message.startsWith('/botduck')) {
+    await handleBotDuckCommand(payload.sender, room, postMessage)
+  }
+  else if (payload.message.startsWith('/botalien')) {
+    await handleBotAlienCommand(payload.sender, room, postMessage)
+  }
+  else if (payload.message.startsWith('/botalien2')) {
+    await handleBotAlien2Command(payload.sender, room, postMessage)
+  }
+  else if (payload.message.startsWith('/botwalrus')) {
+    await handleBotWalrusCommand(payload.sender, room, postMessage)
+  }
+  else if (payload.message.startsWith('/botpenguin')) {
+    await handleBotPenguinCommand(payload.sender, room, postMessage)
+  }
+  else if (payload.message.startsWith('/bot1')) {
+    await handleBot1Command(payload.sender, room, postMessage)
+  }
+  else if (payload.message.startsWith('/bot2')) {
+    await handleBot2Command(payload.sender, room, postMessage)
+  }
+  else if (payload.message.startsWith('/bot3')) {
+    await handleBot3Command(payload.sender, room, postMessage)
+  }
+
+////////////////////////// USER AVATAR UPDATES //////////////////////////
+
+
+  else if (payload.message.startsWith('/dino')) {
+    await handleDinoCommand(payload.sender, room, postMessage)
+  }
+  else if (payload.message.startsWith('/duck')) {
+    await handleDuckCommand(payload.sender, room, postMessage)
+  }
   else if (payload.message.startsWith('/spacebear')) {
     await handleSpaceBearCommand(payload.sender, room, postMessage)
+  }
+  else if (payload.message.startsWith('/walrus')) {
+    await handleWalrusCommand(payload.sender, room, postMessage)
+  }
+  else if (payload.message.startsWith('/vibesguy' || 'vibeguy')) {
+    await handleVibesGuyCommand(payload.sender, room, postMessage)
+  }
+  else if (payload.message.startsWith('/faces')) {
+    await handleFacesCommand(payload.sender, room, postMessage)
+  }
+  else if (payload.message.startsWith('/dodo')) {
+    await handleDoDoCommand(payload.sender, room, postMessage)
+  }
+  else if (payload.message.startsWith('/dumdum' || 'dumbdumb')) {
+    await handleDumDumCommand(payload.sender, room, postMessage)
+  }
+  else if (payload.message.startsWith('/flowerpower' || 'flower')) {
+    await handleDoDoCommand(payload.sender, room, postMessage)
   }
   else if (payload.message.startsWith('/cyber')) {
     await handleRandomCyberCommand(payload.sender, room, postMessage)
