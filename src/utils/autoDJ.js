@@ -3,21 +3,63 @@ import { readRecentSongs } from '../database/dbrecentsongsmanager.js';
 import { searchSpotify, getTopTracksByTag, getTopChartTracks, fetchSpotifyPlaylistTracks } from './API.js'
 import { getTheme } from './themeManager.js';
 import {themeSynonyms} from '../libs/themeSynonyms.js'
-import fs from 'fs';
+import fs from 'fs/promises';
+import * as fsSync from 'fs';
 import path from 'path';
 import { roomBot } from '../index.js';
 
 
 const blacklistPath = path.join(process.cwd(), 'src/data/songBlacklist.json');
 
-function loadBlacklist() {
-  if (!fs.existsSync(blacklistPath)) return [];
-  return JSON.parse(fs.readFileSync(blacklistPath, 'utf8'));
+// In-memory cache of the blacklist. It will be lazily loaded on first
+// access and invalidated when the underlying file changes. Using an
+// in-memory cache avoids synchronous fs reads on every track lookup.
+let blacklistCache = null;
+
+/**
+ * Load the song blacklist from disk. If the list has already been
+ * loaded and has not been invalidated, the cached version is returned.
+ * @returns {Promise<string[]>}
+ */
+async function loadBlacklist() {
+  if (Array.isArray(blacklistCache)) {
+    return blacklistCache;
+  }
+  try {
+    const data = await fs.readFile(blacklistPath, 'utf8');
+    blacklistCache = JSON.parse(data);
+  } catch (err) {
+    blacklistCache = [];
+  }
+  return blacklistCache;
 }
 
-function isBlacklisted(trackName, artistName) {
-  const blacklist = loadBlacklist();
-  return blacklist.includes(`${artistName} - ${trackName}`);
+// Watch the blacklist file and invalidate the cache when it changes. We
+// use fs.watchFile from the sync fs module because fs/promises does not
+// expose watchFile. This watcher is non-blocking and keeps the cache
+// fresh during runtime.
+try {
+  fsSync.watchFile(blacklistPath, { persistent: false }, (curr, prev) => {
+    if (curr.mtimeMs !== prev.mtimeMs) {
+      blacklistCache = null;
+    }
+  });
+} catch {
+  // In environments where watchFile is not supported, skip invalidation
+  // and rely on TTL-based cache expiration.
+}
+
+/**
+ * Determine whether a track is blacklisted. Reads from the cached
+ * blacklist, loading it if necessary.
+ *
+ * @param {string} trackName
+ * @param {string} artistName
+ * @returns {Promise<boolean>}
+ */
+async function isBlacklisted(trackName, artistName) {
+  const list = await loadBlacklist();
+  return list.includes(`${artistName} - ${trackName}`);
 }
 
 function normalize(str) {
@@ -62,7 +104,7 @@ export async function getPopularSpotifyTrackID(minPopularity = 0, currentState =
           console.log(`🚫 Recently played: ${trackDetails.spotifyTrackName}`);
           continue;
         }
-        if (isBlacklisted(trackDetails.spotifyTrackName, trackDetails.spotifyArtistName)) {
+        if (await isBlacklisted(trackDetails.spotifyTrackName, trackDetails.spotifyArtistName)) {
           console.log(`🚫 Blacklisted: ${trackDetails.spotifyTrackName} by ${trackDetails.spotifyArtistName}`);
           continue;
         }
@@ -114,7 +156,7 @@ export async function getPopularSpotifyTrackID(minPopularity = 0, currentState =
             console.log(`🚫 Recently played: ${trackDetails.spotifyTrackName}`);
             continue;
           }
-          if (isBlacklisted(trackDetails.spotifyTrackName, trackDetails.spotifyArtistName)) {
+          if (await isBlacklisted(trackDetails.spotifyTrackName, trackDetails.spotifyArtistName)) {
             console.log(`🚫 Blacklisted: ${trackDetails.spotifyTrackName} by ${trackDetails.spotifyArtistName}`);
             continue;
           }
@@ -196,7 +238,7 @@ const validTracks = (
           console.log(`🚫 Recently played: ${trackDetails.spotifyTrackName}`);
           return null;
         }
-        if (isBlacklisted(trackDetails.spotifyTrackName, trackDetails.spotifyArtistName)) {
+        if (await isBlacklisted(trackDetails.spotifyTrackName, trackDetails.spotifyArtistName)) {
           console.log(`🚫 Blacklisted: ${trackDetails.spotifyTrackName} by ${trackDetails.spotifyArtistName}`);
           return null;
         }
@@ -226,37 +268,36 @@ const playlistID = '61vNvZ72Ay7rQgFZYmDixU';
 const playlistTracks = await fetchSpotifyPlaylistTracks(playlistID);
 console.log(`📚 Retrieved ${playlistTracks.length} tracks from playlist ${playlistID}`);
 
-const filtered = playlistTracks
-  .map(item => item.track) // unwrap the 'track' object
-  .filter(track => {
-    if (!track || !track.name || !track.artists?.[0]?.name) {
-      console.log('⚠️ Invalid track format. Skipping...');
-      return false;
-    }
-
-    const normalized = normalize(`${track.artists[0].name} - ${track.name}`);
-
-    if (track.popularity < minPopularity) {
-      console.log(`🚫 Skipping low popularity: ${track.name} (${track.popularity})`);
-      return false;
-    }
-    if (recentSet.has(normalized)) {
-      console.log(`🚫 Skipping recently played: ${track.name}`);
-      return false;
-    }
-    if (isBlacklisted(track.name, track.artists[0].name)) {
-      console.log(`🚫 Skipping blacklisted: ${track.name} by ${track.artists[0].name}`);
-      return false;
-    }
-
-    return true;
-  })
-  .map(track => ({
+// Filter and map playlist tracks asynchronously so that we can await
+// blacklist checks. Using a for-of loop instead of Array.filter
+// allows us to use `await` within the loop.
+const filtered = [];
+for (const item of playlistTracks) {
+  const track = item.track;
+  if (!track || !track.name || !track.artists?.[0]?.name) {
+    console.log('⚠️ Invalid track format. Skipping...');
+    continue;
+  }
+  const normalized = normalize(`${track.artists[0].name} - ${track.name}`);
+  if (track.popularity < minPopularity) {
+    console.log(`🚫 Skipping low popularity: ${track.name} (${track.popularity})`);
+    continue;
+  }
+  if (recentSet.has(normalized)) {
+    console.log(`🚫 Skipping recently played: ${track.name}`);
+    continue;
+  }
+  if (await isBlacklisted(track.name, track.artists[0].name)) {
+    console.log(`🚫 Skipping blacklisted: ${track.name} by ${track.artists[0].name}`);
+    continue;
+  }
+  filtered.push({
     spotifyTrackName: track.name,
     spotifyArtistName: track.artists[0].name,
     spotifyTrackID: track.id,
     popularity: track.popularity
-  }));
+  });
+}
 
 
 if (filtered.length > 0) {

@@ -27,6 +27,14 @@ const baseHeaders = () => ({
   sdk: 'javascript@3.0.10'
 });
 
+// Pre-build the target URL for posting messages once.  Building a new URL
+// object on every call to postMessage incurs a small cost.  Since the
+// endpoint path is constant (v3.0/messages), we construct it up front.
+const MESSAGE_URL = buildUrl(`${process.env.CHAT_API_KEY}.apiclient-us.cometchat.io`, ['v3.0', 'messages']);
+
+// Reuse the default badge list across calls to avoid re-allocating arrays.
+const DEFAULT_BADGES = ['VERIFIED', 'STAFF'];
+
 // ────────────────────────────────────────────────────────────────
 /* Utils */
 // ────────────────────────────────────────────────────────────────
@@ -114,8 +122,8 @@ export function getChatIdentity() {
 /* Send message (group or user) */
 // ────────────────────────────────────────────────────────────────
 export const postMessage = async (options) => {
+  // Compute headers fresh for each call to ensure the latest token is used.
   const headers = baseHeaders();
-  const paths = ['v3.0', 'messages'];
 
   const override = options.identity || {};
   const ident = {
@@ -133,7 +141,8 @@ export const postMessage = async (options) => {
     color: ident.color,
     mentions: [],
     userUuid: ident.userUuid,
-    badges: ['VERIFIED', 'STAFF'],
+    // Use the shared DEFAULT_BADGES array to avoid reallocating on every call
+    badges: DEFAULT_BADGES,
     id: uuidv4()
   };
 
@@ -152,21 +161,26 @@ export const postMessage = async (options) => {
   }
 
   let type = 'text';
-  const data = {};
-  if (options.images?.length || options.gifs?.length) {
-    type = 'image';
-    const media = options.images || options.gifs;
-    data.attachments = media.map((url) => {
-      const filename = (url.split('/').pop() || 'image');
-      const ext = (filename.split('.').pop() || 'jpeg').toLowerCase();
-      const mimeType = ext === 'gif' ? 'image/gif' : `image/${ext}`;
-      return { url, name: filename, mimeType, extension: ext, size: 'unknown' };
-    });
-  } else {
-    // Normal chat text (shows in chat log; no avatar bubble without metadata.message)
-    data.text = options.message || '';
-  }
-  data.metadata = { chatMessage: chatMessageMetadata };
+const data = {};
+
+if (options.images?.length || options.gifs?.length) {
+  type = 'image';
+  const media = options.images || options.gifs;
+  data.attachments = media.map((url) => {
+    const filename = (url.split('/').pop() || 'image');
+    const ext = (filename.split('.').pop() || 'jpeg').toLowerCase();
+    const mimeType = ext === 'gif' ? 'image/gif' : `image/${ext}`;
+    return { url, name: filename, mimeType, extension: ext, size: 'unknown' };
+  });
+}
+
+// Always include chat text if provided, with or without attachments
+if (typeof options.message === 'string') {
+  data.text = options.message;
+}
+
+data.metadata = { chatMessage: chatMessageMetadata };
+
 
   const payload = {
     type,
@@ -176,8 +190,8 @@ export const postMessage = async (options) => {
     data
   };
 
-  const url = buildUrl(HOST, paths);
-  return makeRequest(url, { method: 'POST', body: JSON.stringify(payload) }, headers);
+  // Use the pre-built MESSAGE_URL to avoid reconstructing the URL each time.
+  return makeRequest(MESSAGE_URL, { method: 'POST', body: JSON.stringify(payload) }, headers);
 };
 
 export const sendDirectMessage = async (receiverUUID, message, options = {}) => {

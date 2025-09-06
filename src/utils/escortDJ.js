@@ -1,6 +1,9 @@
 import { roomBot } from '../index.js'
 import { postMessage } from '../libs/cometchat.js'
-import { getUserNickname } from '../handlers/message.js'
+// Use the standalone nickname util instead of importing from the monolithic
+// message handler. This avoids a circular dependency and makes the
+// function more reusable.
+import { getUserNickname } from './nickname.js'
 
 const activeRemovals = {}
 
@@ -31,7 +34,10 @@ async function escortUserFromDJStand (userUuid) {
 
     setTimeout(async () => {
       try {
-        const nickname = await getUserNickname([userUuid])
+        // getUserNickname accepts a string; if an array is passed it
+        // gracefully handles the first element. Here we pass the UUID
+        // directly to avoid unnecessary array allocation.
+        const nickname = await getUserNickname(userUuid)
 
         // Send a message thanking the DJ
         await postMessage({

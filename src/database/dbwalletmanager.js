@@ -1,66 +1,106 @@
 // src/libs/dbWalletManager.js
 import db from './db.js'
-import { getUserNickname } from '../handlers/message.js'
+// Import the standalone nickname util instead of importing from the
+// message handler. This avoids circular dependencies.
+import { getUserNickname } from '../utils/nickname.js'
 import { fetchRecentSongs } from '../utils/API.js'
+
+// ───────────────────────────────────────────────────────────
+// In-memory wallet cache. Reading balances from the DB on every
+// operation causes synchronous blocking (db.prepare().get()) and
+// repeated disk I/O. To minimise latency, we initialise a cache on
+// first use and update it for subsequent reads. Writes still persist
+// to the database, but are scheduled via setImmediate so they don’t
+// block the event loop on the hot path.
+//
+// The cache is a Map keyed by user UUID → balance (number). When
+// wallets are created or updated, the cache is updated immediately
+// and a synchronous DB write is deferred via setImmediate.
+const walletCache = new Map();
+
+// Lazy-load all wallets into the cache on first access. This avoids
+// scanning the DB multiple times and keeps the cache in sync until
+// process restart. If new users are added, they will be inserted into
+// the cache on demand.
+function ensureWalletCache() {
+  if (walletCache.size > 0) return;
+  const rows = db.prepare('SELECT uuid, balance FROM wallets').all();
+  for (const { uuid, balance } of rows) {
+    walletCache.set(uuid, roundToTenth(balance));
+  }
+}
+
+// Persist a single user balance to the DB. Called asynchronously via
+// setImmediate from getUserWallet/addToUserWallet/removeFromUserWallet.
+function persistWallet(uuid, balance) {
+  try {
+    db.prepare(
+      `INSERT INTO wallets (uuid, balance) VALUES (?, ?)
+       ON CONFLICT(uuid) DO UPDATE SET balance = excluded.balance`
+    ).run(uuid, balance);
+  } catch (err) {
+    console.error('[WalletCache] Failed to persist wallet:', err?.message || err);
+  }
+}
 
 function roundToTenth(amount) {
   return Math.round(amount * 10) / 10
 }
 
 export async function addOrUpdateUser(userUUID) {
-  const nickname = await getUserNickname(userUUID)
-  if (!nickname) return
-
-  db.prepare(`
-    INSERT INTO users (uuid, nickname)
-    VALUES (?, ?)
-    ON CONFLICT(uuid) DO UPDATE SET nickname = excluded.nickname
-  `).run(userUUID, nickname)
+  const nickname = await getUserNickname(userUUID);
+  if (!nickname) return;
+  db.prepare(
+    `INSERT INTO users (uuid, nickname)
+     VALUES (?, ?)
+     ON CONFLICT(uuid) DO UPDATE SET nickname = excluded.nickname`
+  ).run(userUUID, nickname);
 }
 
 export function loadWallets() {
-  const rows = db.prepare('SELECT uuid, balance FROM wallets').all()
-
-  return rows.reduce((wallets, { uuid, balance }) => {
-    wallets[uuid] = { balance: roundToTenth(balance) }
-    return wallets
-  }, {})
+  ensureWalletCache();
+  const out = {};
+  for (const [uuid, balance] of walletCache.entries()) {
+    out[uuid] = { balance };
+  }
+  return out;
 }
 
 
 export function getUserWallet(userUUID) {
-  const row = db.prepare('SELECT balance FROM wallets WHERE uuid = ?').get(userUUID)
-
-  if (!row) {
-    // Start wallet with initial $50
-    db.prepare('INSERT INTO wallets (uuid, balance) VALUES (?, 50)').run(userUUID)
-    return 50
+  ensureWalletCache();
+  if (walletCache.has(userUUID)) {
+    return walletCache.get(userUUID);
   }
-
-  return roundToTenth(row.balance)
+  // Initialise a new wallet with $50 if not present. We update the cache
+  // immediately and persist to DB asynchronously.
+  const initialBalance = 50;
+  walletCache.set(userUUID, initialBalance);
+  // Persist asynchronously to avoid blocking the event loop.
+  setImmediate(() => persistWallet(userUUID, initialBalance));
+  return initialBalance;
 }
 
 export function removeFromUserWallet(userUUID, amount) {
+  ensureWalletCache();
   const current = getUserWallet(userUUID);
   if (current < amount) return false;
-  const newBalance = Math.round((current - amount) * 10) / 10;
-  db.prepare(`UPDATE wallets SET balance = ? WHERE uuid = ?`).run(newBalance, userUUID);
+  const newBalance = roundToTenth(current - amount);
+  walletCache.set(userUUID, newBalance);
+  // Persist asynchronously
+  setImmediate(() => persistWallet(userUUID, newBalance));
   return true;
 }
 
 export async function addToUserWallet(userUUID, amount, nickname = null) {
-  await addOrUpdateUser(userUUID, nickname)
-
-  const current = getUserWallet(userUUID)
-  const newBalance = roundToTenth(current + amount)
-
-  db.prepare(`
-    INSERT INTO wallets (uuid, balance)
-    VALUES (?, ?)
-    ON CONFLICT(uuid) DO UPDATE SET balance = ?
-  `).run(userUUID, newBalance, newBalance)
-
-  return true
+  await addOrUpdateUser(userUUID, nickname);
+  ensureWalletCache();
+  const current = getUserWallet(userUUID);
+  const newBalance = roundToTenth(current + amount);
+  walletCache.set(userUUID, newBalance);
+  // Persist asynchronously
+  setImmediate(() => persistWallet(userUUID, newBalance));
+  return true;
 }
 
 export function loadUsers() {

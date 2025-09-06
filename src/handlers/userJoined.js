@@ -1,7 +1,10 @@
 // userJoined.js
 import { postMessage } from '../libs/cometchat.js';
 import { logger } from '../utils/logging.js';
-import { roomThemes } from './message.js'; // kept for compatibility
+// Use the shared roomThemes object from its dedicated util instead of
+// pulling it through the message handler. This avoids circular
+// dependencies and makes theme updates globally visible.
+import { roomThemes } from '../utils/roomThemes.js';
 import * as themeManager from '../utils/themeManager.js';
 import { askQuestion } from '../libs/ai.js';
 

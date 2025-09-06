@@ -1,5 +1,7 @@
 import { postMessage } from '../../libs/cometchat.js';
-import { getUserNickname } from '../../handlers/message.js';
+// Use the standalone nickname util instead of pulling in the entire
+// message handler. This avoids circular dependencies.
+import { getUserNickname } from '../../utils/nickname.js';
 import {
   getUserWallet,
   removeFromUserWallet,

@@ -1,7 +1,9 @@
 // src/database/dblotterymanager.js
 import db from './db.js'
 import { postMessage } from '../libs/cometchat.js'
-import { getUserNickname } from '../handlers/message.js'
+// Use the standalone nickname util instead of importing from the
+// message handler. Avoids circular dependencies and simplifies testing.
+import { getUserNickname } from '../utils/nickname.js'
 import { addToUserWallet, getUserWallet, removeFromUserWallet } from '../database/dbwalletmanager.js'
 import { findUserIdAndNickname } from '../database/dblotteryquestionparser.js'
 import { storeItems } from '../libs/jamflowStore.js'

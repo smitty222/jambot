@@ -7,7 +7,10 @@ import { Bot, getCurrentDJUUIDs } from './libs/bot.js';
 import { updateCurrentUsers } from './utils/currentUsers.js';
 import { fetchCurrentUsers } from './utils/API.js';
 import * as themeStorage from './utils/themeManager.js';
-import { roomThemes } from './handlers/message.js';
+// Import the shared roomThemes store from its own util. This avoids
+// dragging the entire message handler into the main application and
+// centralizes state management.
+import { roomThemes, setThemes } from './utils/roomThemes.js';
 import { addTrackedUser, getTrackedUsers } from './utils/trackedUsers.js';
 
 const app = express();
@@ -34,7 +37,10 @@ const startupTasks = async () => {
 startupTasks();
 
 const savedThemes = themeStorage.loadThemes();
-Object.assign(roomThemes, savedThemes);
+// Replace the current themes with those loaded from storage. Using
+// setThemes ensures that we maintain the same object identity while
+// updating its contents.
+setThemes(savedThemes);
 
 // --- Adaptive poll loop (replaces setInterval) ---
 const BASE_MS = 900;

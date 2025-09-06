@@ -36,7 +36,7 @@ export function formatOdds(price) {
   
 
   export async function placeSportsBet(senderUUID, index, team, betTypeInput, amount, sport) {
-    const games = getOddsForSport(sport);
+    const games = await getOddsForSport(sport);
     if (!games || index < 0 || index >= games.length) {
       return `Game ${index + 1} not found for ${sport}.`;
     }

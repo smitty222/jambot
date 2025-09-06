@@ -89,6 +89,32 @@ function withQuery(url, q) {
 }
 
 /* ────────────────────────────────────────────────────────────────
+ * Generic caches for non‑Spotify APIs
+ * ──────────────────────────────────────────────────────────────── */
+// The bot makes frequent requests to fetch user profiles, roles, sports scores
+// and other third‑party data. These calls can become latency bottlenecks if
+// executed on every message. To minimise network overhead and improve overall
+// responsiveness, we keep small in‑memory caches for various data.  The caches
+// use a time‑to‑live (TTL) and least‑recently‑used (LRU) eviction to avoid
+// unbounded growth.
+const userProfileCache = new SimpleLRU(500, 10 * 60 * 1000); // 10 minutes
+const userRoleCache = new SimpleLRU(500, 10 * 60 * 1000);
+const nicknameCache = new SimpleLRU(500, 10 * 60 * 1000);
+const scoreboardCache = new SimpleLRU(10, 60 * 1000); // 1 minute TTL
+const lastFmCache = new SimpleLRU(200, 30 * 60 * 1000); // 30 minutes
+
+// Helper for caching scoreboard results.  Accepts a sport key (e.g. "baseball/mlb")
+// and a function to compute the result.  Returns the cached value if present,
+// otherwise computes, stores and returns the value.
+async function getCachedScoreboard(sportPath, fn) {
+  const cached = scoreboardCache.get(sportPath);
+  if (cached) return cached;
+  const result = await fn();
+  if (result) scoreboardCache.set(sportPath, result);
+  return result;
+}
+
+/* ────────────────────────────────────────────────────────────────
  * Spotify token & request helpers
  * ──────────────────────────────────────────────────────────────── */
 let spotifyToken = { token: null, exp: 0 }; // exp = epoch ms
@@ -526,24 +552,52 @@ export async function fetchTrackDetails(trackUri) {
  * User/Profile APIs
  * ──────────────────────────────────────────────────────────────── */
 export async function fetchUserData(userUUIDs) {
-  const uuids = Array.isArray(userUUIDs) ? userUUIDs : [userUUIDs];
+  // Normalise to an array and filter falsy values.
+  const uuids = (Array.isArray(userUUIDs) ? userUUIDs : [userUUIDs]).filter(Boolean);
   if (!uuids.length) throw new Error('No user UUIDs provided');
 
-  const qs = uuids.map(u => `users=${encodeURIComponent(u)}`).join('&');
-  const endpoint = `${cfg.ttGateway}/api/user-service/users/profiles?${qs}`;
+  // Collect cached profiles and determine which UUIDs still need to be fetched.
+  const profiles = [];
+  const missing = [];
+  for (const uuid of uuids) {
+    const cached = userProfileCache.get(uuid);
+    if (cached) {
+      profiles.push(cached);
+    } else {
+      missing.push(uuid);
+    }
+  }
 
-  const { ok, data, error } = await makeRequest(endpoint, { headers: ttHeaders() });
-  if (!ok) throw new Error(`Failed to fetch user data: ${error || 'unknown'}`);
+  // If there are any uncached UUIDs, fetch them in a single request.
+  if (missing.length) {
+    const qs = missing.map(u => `users=${encodeURIComponent(u)}`).join('&');
+    const endpoint = `${cfg.ttGateway}/api/user-service/users/profiles?${qs}`;
+    const { ok, data, error } = await makeRequest(endpoint, { headers: ttHeaders() });
+    if (!ok) throw new Error(`Failed to fetch user data: ${error || 'unknown'}`);
 
-  return (Array.isArray(data) ? data : [])
-    .map(e => e.userProfile)
-    .filter(p => p && p.uuid);
+    const fetched = (Array.isArray(data) ? data : [])
+      .map(e => e.userProfile)
+      .filter(p => p && p.uuid);
+    // Populate the cache and the result list.
+    for (const profile of fetched) {
+      if (profile && profile.uuid) {
+        userProfileCache.set(profile.uuid, profile);
+        profiles.push(profile);
+      }
+    }
+  }
+  return profiles;
 }
 
 export async function getSenderNickname(senderUuid) {
+  // Use the nickname cache to avoid repeated network calls for the same user.
+  const cached = nicknameCache.get(senderUuid);
+  if (cached) return cached;
   try {
     const arr = await fetchUserData([senderUuid]);
-    return arr[0]?.nickname || 'Unknown User';
+    const name = arr[0]?.nickname || 'Unknown User';
+    nicknameCache.set(senderUuid, name);
+    return name;
   } catch {
     return 'Unknown User';
   }
@@ -552,10 +606,15 @@ export async function getSenderNickname(senderUuid) {
 const USER_ROLES_URL = `${cfg.ttGateway}/api/room-service/roomUserRoles/${cfg.roomSlug}`;
 
 export async function fetchUserRoles(userUuid, token = cfg.userToken) {
+  // Check cache first.
+  const cached = userRoleCache.get(userUuid);
+  if (cached) return cached;
   const { ok, data, error } = await makeRequest(`${USER_ROLES_URL}/${encodeURIComponent(userUuid)}`, {
     headers: { Authorization: `Bearer ${token}`, accept: 'application/json' }
   });
   if (!ok) throw new Error(`Failed to fetch user roles: ${error || 'unknown'}`);
+  // Cache the result to reduce subsequent fetches.
+  userRoleCache.set(userUuid, data);
   return data;
 }
 
@@ -583,38 +642,44 @@ export async function isUserOwner(userUuid, token = cfg.userToken) {
  * ESPN Scores (MLB / NHL / NBA)
  * ──────────────────────────────────────────────────────────────── */
 async function espnScoreboard(sportPath) {
-  const url = `https://site.api.espn.com/apis/site/v2/sports/${sportPath}/scoreboard`;
-  const { ok, data } = await makeRequest(url);
-  if (!ok) return 'No scores available.\n';
+  return getCachedScoreboard(sportPath, async () => {
+    const url = `https://site.api.espn.com/apis/site/v2/sports/${sportPath}/scoreboard`;
+    const { ok, data } = await makeRequest(url);
+    if (!ok) return 'No scores available.\n';
 
-  const games = data?.events || [];
-  games.sort((a, b) => {
-    const pa = a?.competitions?.[0]?.status?.period || 0;
-    const pb = b?.competitions?.[0]?.status?.period || 0;
-    return pb - pa;
+    const games = data?.events || [];
+    games.sort((a, b) => {
+      const pa = a?.competitions?.[0]?.status?.period || 0;
+      const pb = b?.competitions?.[0]?.status?.period || 0;
+      return pb - pa;
+    });
+
+    const lines = games.map(g => {
+      const comp = g?.competitions?.[0];
+      const home = comp?.competitors?.find(c => c.homeAway === 'home');
+      const away = comp?.competitors?.find(c => c.homeAway === 'away');
+      const status = g?.status?.type?.description;
+
+      const hName = (home?.team?.displayName || '').split(' ').slice(-1).join(' ');
+      const aName = (away?.team?.displayName || '').split(' ').slice(-1).join(' ');
+
+      let statusMsg = status || '';
+      if (status === 'In Progress') {
+        const period = comp?.status?.period;
+        statusMsg = `${sportPath.includes('baseball') ? 'Inning' : sportPath.includes('hockey') ? 'Period' : 'Quarter'} ${period}`;
+      } else if (status === 'Scheduled') {
+        const d = g?.status?.startDate ? new Date(g.status.startDate) : null;
+        statusMsg = d && !isNaN(d)
+          ? `Scheduled at ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+          : 'Scheduled';
+      }
+      return `${aName} ${away?.score ?? 0} @ ${hName} ${home?.score ?? 0} (${statusMsg})`;
+    });
+
+    return `${sportPath.toUpperCase().includes('MLB') ? 'MLB'
+      : sportPath.toUpperCase().includes('NHL') ? 'NHL'
+      : 'NBA'} Scores:\n${lines.join('\n')}\n`;
   });
-
-  const lines = games.map(g => {
-    const comp = g?.competitions?.[0];
-    const home = comp?.competitors?.find(c => c.homeAway === 'home');
-    const away = comp?.competitors?.find(c => c.homeAway === 'away');
-    const status = g?.status?.type?.description;
-
-    const hName = (home?.team?.displayName || '').split(' ').slice(-1).join(' ');
-    const aName = (away?.team?.displayName || '').split(' ').slice(-1).join(' ');
-
-    let statusMsg = status || '';
-    if (status === 'In Progress') {
-      const period = comp?.status?.period;
-      statusMsg = `${sportPath.includes('baseball') ? 'Inning' : sportPath.includes('hockey') ? 'Period' : 'Quarter'} ${period}`;
-    } else if (status === 'Scheduled') {
-      const d = g?.status?.startDate ? new Date(g.status.startDate) : null;
-      statusMsg = d && !isNaN(d) ? `Scheduled at ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Scheduled';
-    }
-    return `${aName} ${away?.score ?? 0} @ ${hName} ${home?.score ?? 0} (${statusMsg})`;
-  });
-
-  return `${sportPath.toUpperCase().includes('MLB') ? 'MLB' : sportPath.toUpperCase().includes('NHL') ? 'NHL' : 'NBA'} Scores:\n${lines.join('\n')}\n`;
 }
 
 export async function getMLBScores() { return espnScoreboard('baseball/mlb'); }
@@ -634,6 +699,10 @@ export function cleanTrackName(track) {
 export async function getSimilarTracks(artist, track) {
   const a = cleanArtistName(artist);
   const t = cleanTrackName(track);
+  // Use cache to avoid repeated external lookups.
+  const cacheKey = `similar:${a}|${t}`;
+  const cached = lastFmCache.get(cacheKey);
+  if (cached) return cached;
   const url = withQuery('https://ws.audioscrobbler.com/2.0/', {
     method: 'track.getsimilar',
     artist: a,
@@ -650,9 +719,11 @@ export async function getSimilarTracks(artist, track) {
     let raw = data?.similartracks?.track;
     if (!raw) return [];
     if (!Array.isArray(raw)) raw = [raw];
-    return raw
+    const result = raw
       .filter(x => x?.name && x?.artist?.name)
       .map(x => ({ trackName: x.name, artistName: x.artist.name }));
+    lastFmCache.set(cacheKey, result);
+    return result;
   } catch {
     return [];
   }
@@ -661,6 +732,10 @@ export async function getSimilarTracks(artist, track) {
 export async function getTrackTags(artist, track) {
   const a = cleanArtistName(artist);
   const t = cleanTrackName(track);
+  // Cache tags to reduce repeated lookups.
+  const cacheKey = `tracktags:${a}|${t}`;
+  const cached = lastFmCache.get(cacheKey);
+  if (cached) return cached;
   const url = withQuery('https://ws.audioscrobbler.com/2.0/', {
     method: 'track.gettoptags',
     artist: a,
@@ -670,11 +745,17 @@ export async function getTrackTags(artist, track) {
   });
   const { ok, data } = await makeRequest(url);
   if (!ok) return [];
-  return data?.toptags?.tag?.map(z => String(z.name || '').toLowerCase()) || [];
+  const result = data?.toptags?.tag?.map(z => String(z.name || '').toLowerCase()) || [];
+  lastFmCache.set(cacheKey, result);
+  return result;
 }
 
 export async function getArtistTags(artistName) {
   const a = cleanArtistName(artistName);
+  // Cache artist tags.
+  const cacheKey = `artisttags:${a}`;
+  const cached = lastFmCache.get(cacheKey);
+  if (cached) return cached;
   const url = withQuery('https://ws.audioscrobbler.com/2.0/', {
     method: 'artist.gettoptags',
     artist: a,
@@ -685,16 +766,22 @@ export async function getArtistTags(artistName) {
     const { ok, data } = await makeRequest(url);
     if (!ok) return [];
     const tags = data?.toptags?.tag || [];
-    return tags
+    const result = tags
       .filter(t => t.name && !isNaN(parseInt(t.count)))
       .sort((x, y) => parseInt(y.count) - parseInt(x.count))
       .map(t => String(t.name).toLowerCase());
+    lastFmCache.set(cacheKey, result);
+    return result;
   } catch {
     return [];
   }
 }
 
 export async function getTopChartTracks(limit = 50) {
+  // Cache chart tracks.
+  const cacheKey = `charttracks:${limit}`;
+  const cached = lastFmCache.get(cacheKey);
+  if (cached) return cached;
   const url = withQuery('https://ws.audioscrobbler.com/2.0/', {
     method: 'chart.gettoptracks',
     api_key: cfg.lastfmKey,
@@ -705,12 +792,14 @@ export async function getTopChartTracks(limit = 50) {
     const { ok, data } = await makeRequest(url);
     if (!ok) return [];
     const items = data?.tracks?.track || [];
-    return items.map(tr => ({
+    const result = items.map(tr => ({
       trackName: tr.name,
       artistName: tr.artist?.name,
       playcount: parseInt(tr.playcount || '0', 10),
       listeners: parseInt(tr.listeners || '0', 10)
     }));
+    lastFmCache.set(cacheKey, result);
+    return result;
   } catch {
     return [];
   }
@@ -718,6 +807,10 @@ export async function getTopChartTracks(limit = 50) {
 
 export async function getTopArtistTracks(artist) {
   const a = cleanArtistName(artist);
+  // Cache top artist tracks.
+  const cacheKey = `artisttop:${a}`;
+  const cached = lastFmCache.get(cacheKey);
+  if (cached) return cached;
   const url = withQuery('https://ws.audioscrobbler.com/2.0/', {
     method: 'artist.gettoptracks',
     artist: a,
@@ -729,16 +822,22 @@ export async function getTopArtistTracks(artist) {
     const { ok, data } = await makeRequest(url);
     if (!ok) return [];
     const list = data?.toptracks?.track || [];
-    return list.map(t => ({
+    const result = list.map(t => ({
       trackName: t.name,
       playcount: t.playcount ? parseInt(t.playcount, 10) : 0
     }));
+    lastFmCache.set(cacheKey, result);
+    return result;
   } catch {
     return [];
   }
 }
 
 export async function getTopTracksByTag(tag, limit = 10) {
+  // Cache top tracks by tag.
+  const cacheKey = `tagtop:${tag}|${limit}`;
+  const cached = lastFmCache.get(cacheKey);
+  if (cached) return cached;
   const url = withQuery('https://ws.audioscrobbler.com/2.0/', {
     method: 'tag.gettoptracks',
     tag,
@@ -750,7 +849,9 @@ export async function getTopTracksByTag(tag, limit = 10) {
     const { ok, data } = await makeRequest(url);
     if (!ok) return [];
     const items = data?.tracks?.track || [];
-    return items.map(tr => ({ trackName: tr.name, artistName: tr.artist?.name }));
+    const result = items.map(tr => ({ trackName: tr.name, artistName: tr.artist?.name }));
+    lastFmCache.set(cacheKey, result);
+    return result;
   } catch {
     return [];
   }
@@ -760,6 +861,10 @@ export async function getTopTracksByTag(tag, limit = 10) {
  * Trivia
  * ──────────────────────────────────────────────────────────────── */
 export async function getTriviaQuestions(categoryId, amount = 5) {
+  // Cache trivia questions by category and amount to avoid repeated network calls.
+  const cacheKey = `trivia:${categoryId || 'any'}|${amount}`;
+  const cached = lastFmCache.get(cacheKey);
+  if (cached) return cached;
   const url = withQuery('https://opentdb.com/api.php', {
     amount,
     type: 'multiple',
@@ -769,7 +874,7 @@ export async function getTriviaQuestions(categoryId, amount = 5) {
   const { ok, data } = await makeRequest(url);
   if (!ok || !Array.isArray(data?.results) || !data.results.length) return [];
 
-  return data.results.map(q => {
+  const result = data.results.map(q => {
     const questionText = q.question || '';
     const correctAnswerText = q.correct_answer || '';
     const incorrectAnswers = q.incorrect_answers || [];
@@ -780,6 +885,8 @@ export async function getTriviaQuestions(categoryId, amount = 5) {
       answers: answers.map((a, i) => `${'ABCD'[i]}. ${decodeHtml(a || '')}`)
     };
   });
+  lastFmCache.set(cacheKey, result);
+  return result;
 }
 
 export function decodeHtml(html) {

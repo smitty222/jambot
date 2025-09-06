@@ -19,7 +19,8 @@ import {
   fetchSongData
 } from '../utils/API.js'
 import { postVoteCountsForLastSong } from '../utils/voteCounts.js'
-import { usersToBeRemoved, roomThemes } from '../handlers/message.js'
+// Import shared state from dedicated utilities instead of the message handler
+import { roomThemes } from '../utils/roomThemes.js'
 import { escortUserFromDJStand } from '../utils/escortDJ.js'
 import handleUserJoinedWithStatePatch from '../handlers/userJoined.js'
 import { handleAlbumTheme } from '../handlers/playedSong.js'
@@ -27,6 +28,14 @@ import { songPayment } from '../database/dbwalletmanager.js'
 import { updateRecentSongs } from '../database/dbrecentsongsmanager.js'
 import { getPopularSpotifyTrackID } from '../utils/autoDJ.js'
 import { getMarkedUser, unmarkUser } from '../utils/removalQueue.js'
+// Keep a handle on the usersToBeRemoved map from the message handler.
+// This state indicates DJs that should be removed after their song finishes.
+// TODO: extract this into a dedicated module to fully eliminate
+// dependencies on the message handler.
+// Import the DJ removal map from the dedicated module.  This avoids
+// importing the entire message handler and eliminates a circular
+// dependency.  See src/utils/usersToBeRemoved.js for details.
+import { usersToBeRemoved } from '../utils/usersToBeRemoved.js'
 import { logCurrentSong, updateLastPlayed } from '../database/dbroomstatsmanager.js'
 import * as themeManager from '../utils/themeManager.js'
 import { announceNowPlaying } from '../utils/announceNowPlaying.js'

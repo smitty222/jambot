@@ -26,6 +26,12 @@ import {
 } from './roulette.js'
 import { getBalanceByNickname, getNicknamesFromWallets, addDollarsByUUID, loadWallets, removeFromUserWallet, getUserWallet } from '../database/dbwalletmanager.js'
 import { getJackpotValue, handleSlotsCommand } from './slots.js'
+
+// Import our rate limiter utility. This simple per-command, per-user
+// limiter prevents spamming of expensive commands. See
+// `src/utils/rateLimiter.js` for details.
+// RateLimiter import removed. Rate limiting is now centralized in
+// `commandRegistry.js` and should not be imported here.
 import {
   openBetting,          // <-- add this
   joinTable,
@@ -61,12 +67,40 @@ import { routeCrapsMessage } from '../games/craps/craps.single.js'
 import '../games/craps/craps.single.js'
 import {getRandomDogImage} from '../utils/API.js'
 
+// Bring in the modular dispatch and DM handlers from their respective modules.
+import { dispatchCommand } from './commandRegistry.js';
+import { handleDirectMessage } from './dmHandler.js';
+
+// ---------------------------------------------------------------------------
+// Legacy command registry removed
+//
+// The original command registry and associated handlers for slots, roulette,
+// blackjack and balance commands have been migrated to `commandRegistry.js`.
+// This improves modularity and simplifies the message handler. New commands
+// should be registered via the central dispatcher.
+
+// ---------------------------------------------------------------------------
+// Legacy rate limiting removed
+//
+// The per-command rate limiter previously defined here has been superseded by
+// a central implementation in `commandRegistry.js`. Removing this block
+// eliminates unused code and reduces overhead in the message handler.
+
+// Legacy dispatch function removed
+//
+// The old `dispatchCommand_old` function has been removed. All command
+// dispatching is now handled via the imported `dispatchCommand` from
+// `commandRegistry.js`.
+
 
 // --- DM helper: minimal auth wrapper ---
+/*
 async function sendAuthenticatedDM(userUuid, text) {
-  // If you later want to restrict who can DM, hook auth here.
+  // This helper has been superseded by the implementation in dmHandler.js.
+  // It remains here commented out for reference.
   return sendDirectMessage(userUuid, text);
 }
+*/
 
 
 // ✅ Added: import getCurrentState for DB fallbacks used in review/rating flows
@@ -75,7 +109,10 @@ import { getCurrentState } from '../database/dbcurrent.js'
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
 export const /*deprecated_roomThemes*/roomThemes = {}
-const usersToBeRemoved = {}
+// Import the shared users-to-be-removed map from a dedicated module
+// rather than defining it locally. This avoids creating a circular
+// dependency when other modules need to inspect or modify this state.
+import { usersToBeRemoved } from '../utils/usersToBeRemoved.js'
 const userstagedive = {}
 
 const queueManager = new QueueManager(
@@ -139,136 +176,17 @@ function buildModSheet() {
   ].join('\n')
 }
 
-// --- DM admin allow list & helpers -----------------------------------------
-const DM_ALLOW_LIST = new Set(
-  (process.env.DM_ALLOW_LIST || '')
-    .split(',')
-    .map(s => s.trim())
-    .filter(Boolean)
-);
-
-function parseUidFromMention(s) {
-  if (!s) return '';
-  const m = /<@uid:([\w-]+)>/i.exec(s);
-  return m?.[1] || s.trim();
-}
-
-async function isDmAdmin(uuid) {
-  if (!uuid) return false;
-  // 1) Explicit allow list
-  if (DM_ALLOW_LIST.has(uuid)) return true;
-  // 2) Room moderators (your existing auth)
-  try {
-    if (await isUserAuthorized(uuid, ttlUserToken)) return true;
-  } catch { /* noop */ }
-  // 3) Owner / test accounts
-  if (uuid === process.env.CHAT_OWNER_ID) return true;
-  if (uuid === process.env.CHAT_TEST_USER_ID) return true;
-  return false;
-}
-
-
-export async function handleDirectMessage(payload) {
-  try {
-    // Normalize sender
-    const senderRaw =
-      payload?.sender ?? payload?.senderId ?? payload?.from ?? payload?.data?.sender;
-    const sender =
-      typeof senderRaw === 'string'
-        ? senderRaw
-        : senderRaw?.uid || senderRaw?.id || senderRaw?.userUuid || senderRaw?.userId || '';
-
-    // Normalize text
-    const rawText = (payload?.message ?? payload?.data?.text ?? payload?.text ?? '').toString();
-    const text = rawText.trim();
-    if (!sender || !text) return;
-
-    console.log(`[DM] from ${sender}: ${text}`);
-
-    // Ignore our own messages
-    const botUid = process.env.BOT_USER_UUID || process.env.CHAT_USER_ID;
-    if (botUid && sender === botUid) return;
-
-    // Parse "/command args"
-    const m = text.match(/^\/(\S+)(?:\s+([\s\S]*))?$/);
-    if (!m) {
-      await sendAuthenticatedDM(sender, `🤖 Unknown DM input. Try \`/help\`.`);
-      return;
-    }
-    const cmd = m[1].toLowerCase();
-    const args = (m[2] || '').trim();
-
-    // Public DM commands (anyone)
-    if (cmd === 'help') {
-      await sendAuthenticatedDM(sender,
-        [
-          'DM Commands:',
-          '• /help — show this',
-          '• /whoami — show your UUID',
-          '• /balance — show your wallet',
-          '',
-          'Admin-only:',
-          '• /say <message> — post in the room',
-          '• /addmoney <@User|uuid> <amount> — credit wallet'
-        ].join('\n')
-      );
-      return;
-    }
-
-    // Admin-only DM commands
-    const admin = await isDmAdmin(sender);
-
-    if (cmd === 'say') {
-      if (!admin) {
-        await sendAuthenticatedDM(sender, `⛔ You’re not allowed to use /say.`);
-        return;
-      }
-      if (!args) {
-        await sendAuthenticatedDM(sender, `Usage: /say <message>`);
-        return;
-      }
-      await postMessage({ room: process.env.ROOM_UUID, message: args });
-      await sendAuthenticatedDM(sender, `✅ Posted to room.`);
-      return;
-    }
-
-    if (cmd === 'addmoney') {
-      if (!admin) {
-        await sendAuthenticatedDM(sender, `⛔ You’re not allowed to use /addmoney.`);
-        return;
-      }
-      const [whoRaw, amountRaw] = args.split(/\s+/, 2);
-      const userUuid = parseUidFromMention(whoRaw);
-      const amount = Number(amountRaw);
-      if (!userUuid || !Number.isFinite(amount) || amount <= 0) {
-        await sendAuthenticatedDM(sender, `Usage: /addmoney <@User|uuid> <amount>`);
-        return;
-      }
-      try {
-        await addDollarsByUUID(userUuid, amount);
-        await sendAuthenticatedDM(sender, `✅ Added $${amount} to <@uid:${userUuid}>.`);
-        await postMessage({
-          room: process.env.ROOM_UUID,
-          message: `💸 Admin credited $${amount} to <@uid:${userUuid}>`
-        });
-      } catch (e) {
-        await sendAuthenticatedDM(sender, `❌ Failed to add money: ${e?.message || e}`);
-      }
-      return;
-    }
-
-    // Unknown DM command
-    await sendAuthenticatedDM(sender, `🤖 Unknown DM command: \`${cmd}\`. Try \`/help\`.`);
-  } catch (err) {
-    console.error('DM handler error:', err);
-  }
-}
+/*
+ * The DM admin allow list, helper functions and the DM command handler have
+ * been moved to src/handlers/dmHandler.js. Keeping them here would bloat
+ * message.js and make maintenance more difficult. See dmHandler.js for the
+ * implementation of handleDirectMessage, parseUidFromMention, isDmAdmin and
+ * related helpers.
+ */
 
 
 
 export default async (payload, room, state, roomBot) => {
-
-
   // 🚦 Route DMs straight to the DM handler and exit
   const rt = (payload?.receiverType ?? payload?.receiver_type ?? '')
     .toString()
@@ -296,39 +214,38 @@ export default async (payload, room, state, roomBot) => {
   // ─── HORSE‐RACE ENTRY & COMMANDS ────────────────────────────────────────
 
   // A) If we're in the 30s entry window, ANY non‐slash chat is an entry
-  if (isWaitingForEntries() && !payload.message.startsWith('/')) {
+  if (isWaitingForEntries() && typeof payload.message === 'string' && !payload.message.startsWith('/')) {
     console.log('▶ dispatch → entryAttempt');
     await handleHorseEntryAttempt(payload);
     return; // no other logic should run
   }
 
   // B) Start a new race
-  if (payload.message.startsWith('/horserace')) {
+  if (typeof payload.message === 'string' && payload.message.startsWith('/horserace')) {
     console.log('▶ dispatch → startHorseRace');
     startHorseRace().catch(console.error);
     return;
   }
 
   // C) Place a bet
-  if (/^\/horse\d+\s+\d+/.test(payload.message)) {
+  if (typeof payload.message === 'string' && /^\/horse\d+\s+\d+/.test(payload.message)) {
     console.log('▶ dispatch → handleHorseBet');
     await handleHorseBet(payload);
     return;
   }
 
   // D) Other horse commands
-  if (payload.message.startsWith('/buyhorse'))    return handleBuyHorse(payload);
-  if (payload.message.startsWith('/myhorses'))    return handleMyHorsesCommand(payload);
-  if (payload.message.startsWith('/horsehelp'))   { await handleHorseHelpCommand(payload); return; }
-  if (payload.message.startsWith('/horserules'))  { await handleHorseHelpCommand(payload); return; }
-  if (payload.message.startsWith('/horseinfo'))   { await handleHorseHelpCommand(payload); return; }
-  if (payload.message.startsWith('/horsestats'))  { await handleHorseStatsCommand(payload); return; }
-  if (payload.message.startsWith('/tophorses'))   return handleTopHorsesCommand(payload);
+  if (typeof payload.message === 'string' && payload.message.startsWith('/buyhorse'))   return handleBuyHorse(payload);
+  if (typeof payload.message === 'string' && payload.message.startsWith('/myhorses'))   return handleMyHorsesCommand(payload);
+  if (typeof payload.message === 'string' && payload.message.startsWith('/horsehelp'))  { await handleHorseHelpCommand(payload); return; }
+  if (typeof payload.message === 'string' && payload.message.startsWith('/horserules')) { await handleHorseHelpCommand(payload); return; }
+  if (typeof payload.message === 'string' && payload.message.startsWith('/horseinfo'))  { await handleHorseHelpCommand(payload); return; }
+  if (typeof payload.message === 'string' && payload.message.startsWith('/horsestats')) { await handleHorseStatsCommand(payload); return; }
+  if (typeof payload.message === 'string' && payload.message.startsWith('/tophorses'))  return handleTopHorsesCommand(payload);
 
   // ─── END HORSE‐RACE BLOCK ────────────────────────────────────────────────
 
   // Send ALL craps-related commands straight to the router.
-  // The router/service will validate timing, funds, shooter-only roll, etc.
   if (/^\/(craps|join|roll|pass|dontpass|come|place|removeplace)\b/i.test(txt)) {
     console.log('▶ dispatch → routeCrapsMessage');
     return routeCrapsMessage(payload);
@@ -337,9 +254,27 @@ export default async (payload, room, state, roomBot) => {
   // ─── END CRAPS BLOCK ──────────────────────────
 
   // Handle Gifs Sent in Chat
-  if (payload.message.type === 'ChatGif') {
+  if (payload?.message?.type === 'ChatGif') {
     logger.info('Received a GIF message:', payload.message);
     return;
+  }
+
+  // 🎯 Fast path: handle numeric lottery picks immediately
+  try {
+    if (LotteryGameActive && /^\d{1,3}$/.test(txt.trim())) {
+      await handleLotteryNumber(payload);
+      return;
+    }
+  } catch (err) {
+    logger.error('Error in lottery fast path:', err?.message || err);
+  }
+
+  // 🗺️ Central command dispatcher
+  try {
+    const dispatched = await dispatchCommand(txt, payload, room);
+    if (dispatched) return;
+  } catch (e) {
+    logger.error('[Dispatcher] Error dispatching command:', e?.message || e);
   }
 
   // --- AI helpers -----------------------------------------------------------
@@ -507,11 +442,47 @@ export default async (payload, room, state, roomBot) => {
         return;
       }
 
-      // default: ask AI with timeout
-      const responseText = await safeAskQuestion(question, askQuestion, logger);
-      console.log('AI Reply:', responseText);
-      logger.info(`AI Reply: ${responseText}`);
-      await postMessage({ room, message: responseText });
+      // default: ask AI with timeout.  Use the full askQuestion response so
+      // we can handle images as well as text.  If a response with images
+      // arrives, send it via postMessage with the images array.  Otherwise
+      // extract the text and send normally.
+      try {
+  const result = await Promise.race([
+  askQuestion(question, {
+    onStartImage: async () => {
+      await postMessage({ room, message: "🎨 Generating image..." });
+    }
+  }),
+  new Promise((_, rej) => setTimeout(() => rej(new Error('AI_TIMEOUT')), 15000))
+]);
+
+  // Normalize and validate image URLs
+  const images = Array.isArray(result?.images)
+    ? result.images.filter(u => typeof u === 'string' && u.trim().length > 0)
+    : [];
+  const hasImage = images.length > 0;
+
+  if (hasImage) {
+    // Success: send image(s) + text (fallback to a simple line if AI provided none)
+    const msg = (typeof result?.text === 'string' && result.text.trim().length > 0)
+      ? result.text.trim()
+      : "Here’s your image!";
+    console.log('AI Image Reply:', msg);
+    logger.info(`AI Image Reply: ${msg}`, { hasImage: true, count: images.length });
+    await postMessage({ room, message: msg, images });
+  } else {
+    // Override any AI text when no image was generated
+    const overrideMsg = "Sorry, I wasn’t able to generate that image. Try a simpler or different prompt.";
+    console.log('AI Image Reply (override):', overrideMsg);
+    logger.info('AI Image Reply (override no-image)', { hasImage: false });
+    await postMessage({ room, message: overrideMsg });
+  }
+} catch (err) {
+  console.error('[AI][default] Error:', err?.message || err);
+  logger.error(`[AI][default] Error: ${err?.message || err}`);
+  await postMessage({ room, message: 'My AI brain buffered too long. Try again in a sec. 😅' });
+}
+
 
     } catch (err) {
       console.error('AI mention handler failed:', err);
@@ -519,7 +490,9 @@ export default async (payload, room, state, roomBot) => {
       await postMessage({ room, message: 'My AI hiccuped. Try again.' });
     }
 
-  } else if (payload.message.startsWith('/searchalbum')) {
+  // ─── NON-MENTION COMMANDS (top-level else-if chain) ──────────────────────
+
+  } if (payload.message.startsWith('/searchalbum')) {
     const args = payload.message.split(' ').slice(1);
     const artistName = args.join(' ');
 
@@ -553,7 +526,6 @@ export default async (payload, room, state, roomBot) => {
 
   } else if (payload.message.startsWith('/qalbum')) {
     const albumId = payload.message.split(' ')[1]?.trim();
-    const room = process.env.ROOM_UUID;
 
     if (!albumId) {
       await postMessage({
@@ -632,7 +604,7 @@ Please contact an admin to link your account to use this command.`
 `✅ *Album Queued!*
 
 🎵 Added *${formattedTracks.length} track(s)* from album \`${albumId}\` to your queue.  
-Please refresh your page for tha queue to update`
+Please refresh your page for the queue to update`
       });
 
     } catch (error) {
@@ -647,7 +619,7 @@ Please refresh your page for tha queue to update`
     /// //////////// LOTTERY GAME ////////////////////////////////////////////
   } else if (payload.message.startsWith('/lottery')) {
     try {
-      const GifUrl = 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExMm11bGZ0M3RraXg5Z3Z4ZzZpNjU4ZDR4Y2QwMzc0NWwyaWFlNWU4byZlcD12MV9naWZzX3NlYXJjaCZjdD1n/Ps8XflhsT5EVa/giphy.gif';
+      const GifUrl = 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExMm11bGZ0M3RraXg5Z3Z4ZzZpNjU4ZDR4Y2QwMzc0NWwyaWFlNWU4byZlcD12MV9naWZzX3NlYXJjaCZjdT1n/Ps8XflhsT5EVa/giphy.gif';
       await postMessage({
         room,
         message: '',
@@ -672,12 +644,12 @@ Please refresh your page for tha queue to update`
     console.log('Routing to handleSingleNumberQuery with message:', payload.message);
     await handleSingleNumberQuery(room, payload.message);
 
-    // ===== /commands (readable overview with hyphens) =====
+      // ===== /commands (readable overview with hyphens) =====
   } else if (/^\/commands\b/i.test(payload.message)) {
     try {
       const isMod = await isUserAuthorized(payload.sender, ttlUserToken);
       const arg = payload.message.trim().split(/\s+/)[1]?.toLowerCase();
-      const wantModInline = /^(mod|mods|moderator|admin)$/.test(arg || '');
+      const wantModInline = /^(mod|mods|moderator|admin|sheet)$/.test(arg || '');
       const showAll = /^(all|everything)$/.test(arg || '');
 
       const sections = [];
@@ -716,7 +688,7 @@ Please refresh your page for tha queue to update`
         '- `/djbeer` — Beer again (because, priorities) 🍺',
       ].join('\n'));
 
-      // Mod teaser (only show if mod or explicitly requested)
+      // Moderator section: show inline only if mod or explicitly asked
       if (isMod || wantModInline || showAll) {
         sections.push([
           '— Moderator Quick Toggles —',
@@ -734,18 +706,19 @@ Please refresh your page for tha queue to update`
         sections.push('— Moderator Commands —\n- Mods can DM `/mod` to receive the full list.');
       }
 
+      // Post the assembled commands list
       const message = ['📖 Commands', ...sections].join('\n\n');
       await postMessage({ room, message });
 
       // If a mod asked `/commands mod`, also DM them the full sheet
       if (wantModInline && isMod) {
-        const modSheet = buildModSheet();
+        const modSheet = buildModSheet(); // assumes you have this helper
         await sendDirectMessage(payload.sender, modSheet);
         await postMessage({ room, message: 'Mod Commands sent via DM' });
       }
     } catch (err) {
-      console.error('Error in /commands:', err);
-      await postMessage({ room, message: 'Error showing commands.' });
+      console.error('/commands error:', err);
+      await postMessage({ room, message: 'Could not build the commands list.' });
     }
 
   // ===== /mod (DM full moderator sheet, grouped & de-duped) =====
@@ -899,7 +872,7 @@ else if (payload.message.startsWith('/gifs')) {
       return;
     }
 
-    const oddsData = getOddsForSport(sport);
+    const oddsData = await getOddsForSport(sport);
     if (!oddsData || index < 0 || index >= oddsData.length) {
       await postMessage({
         room,
@@ -3413,9 +3386,13 @@ if (!song) {
       const fullName = `${currentSong.artistName} - ${currentSong.trackName}`
 
       let blacklist = []
-      if (fs.existsSync(blacklistPath)) {
-        const raw = fs.readFileSync(blacklistPath, 'utf8')
+      try {
+        // Use the promises API to read the blacklist asynchronously. If the
+        // file does not exist, this will throw and fall through to the catch.
+        const raw = await fs.promises.readFile(blacklistPath, 'utf8')
         blacklist = JSON.parse(raw)
+      } catch {
+        blacklist = []
       }
 
       if (blacklist.includes(fullName)) {
@@ -3425,7 +3402,11 @@ if (!song) {
         })
       } else {
         blacklist.push(fullName)
-        fs.writeFileSync(blacklistPath, JSON.stringify(blacklist, null, 2))
+        try {
+          await fs.promises.writeFile(blacklistPath, JSON.stringify(blacklist, null, 2))
+        } catch (err) {
+          console.error('Error writing to blacklist file:', err)
+        }
         await postMessage({
           room,
           message: `✅ Added "${fullName}" to the blacklist.`

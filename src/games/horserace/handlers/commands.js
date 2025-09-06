@@ -3,7 +3,10 @@
 
 import { postMessage } from '../../../libs/cometchat.js';
 import { getUserWallet, removeFromUserWallet } from '../../../database/dbwalletmanager.js';
-import { getUserNickname } from '../../../handlers/message.js';
+// Use the standalone nickname util instead of importing from the
+// monolithic message handler. This avoids pulling in unnecessary code
+// and prevents circular dependencies.
+import { getUserNickname } from '../../../utils/nickname.js';
 import { getAllHorses, getUserHorses } from '../../../database/dbhorses.js';
 import { fetchCurrentUsers } from '../../../utils/API.js';
 

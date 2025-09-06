@@ -1,10 +1,10 @@
 import { postMessage } from '../libs/cometchat.js'
 import { roomBot } from '../index.js'
 import { fetchSongData, getAlbumTracks, spotifyTrackInfo } from '../utils/API.js'
-import { roomThemes } from './message.js'
+import { roomThemes } from '../utils/roomThemes.js'
 import { getCurrentDJUUIDs } from '../libs/bot.js'
 import { askQuestion } from '../libs/ai.js'
-import { getUserNickname } from './message.js'
+import { getUserNickname } from '../utils/nickname.js'
 import { QueueManager } from '../utils/queueManager.js'
 
 // DB handles

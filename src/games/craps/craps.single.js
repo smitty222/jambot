@@ -5,7 +5,10 @@
 import { EventEmitter } from 'events';
 import { postMessage } from '../../libs/cometchat.js';
 import { addToUserWallet, removeFromUserWallet } from '../../database/dbwalletmanager.js';
-import { getUserNickname } from '../../handlers/message.js';
+// Use the standalone nickname util instead of importing from the monolithic
+// message handler. Avoids circular dependencies and simplifies future
+// refactors.
+import { getUserNickname } from '../../utils/nickname.js';
 import db from '../../database/db.js';
 
 const ROOM = process.env.ROOM_UUID;

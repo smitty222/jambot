@@ -1,7 +1,10 @@
 import { promises as fs } from 'fs'
 import path from 'path'
 import { fetchRecentSongs } from '../utils/API.js'
-import { getUserNickname } from '../handlers/message.js'
+// Import nickname helper from the standalone util instead of pulling in
+// the heavy message handler. This avoids circular dependencies and
+// simplifies future changes to nickname resolution.
+import { getUserNickname } from '../utils/nickname.js'
 
 const walletsFilePath = path.join(process.cwd(), 'src/data/wallets.json')
 const usersFilePath = path.join(process.cwd(), 'src/data/users.json')
