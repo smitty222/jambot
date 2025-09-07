@@ -1,4 +1,4 @@
-import db from './db.js';
+import db from './db.js'
 
 const UPSERT_SQL = `
   INSERT INTO current_state (
@@ -41,42 +41,42 @@ const UPSERT_SQL = `
     albumArtField   = excluded.albumArtField,
     albumTypeField  = excluded.albumTypeField,
     albumIsrc       = excluded.albumIsrc
-`;
+`
 
-export function saveCurrentState({ currentSong, currentAlbum }) {
-  const stmt = db.prepare(UPSERT_SQL);
+export function saveCurrentState ({ currentSong, currentAlbum }) {
+  const stmt = db.prepare(UPSERT_SQL)
   stmt.run({
-    songId:          currentSong.songId,
-    trackName:       currentSong.trackName,
-    spotifyTrackId:  currentSong.spotifyTrackId,
-    spotifyUrl:      currentSong.spotifyUrl,
-    artistName:      currentSong.artistName,
-    albumName:       currentSong.albumName,
-    releaseDate:     currentSong.releaseDate,
-    albumType:       currentSong.albumType,
-    trackNumber:     currentSong.trackNumber,
-    totalTracks:     currentSong.totalTracks,
-    songDuration:    currentSong.songDuration,
-    albumArt:        currentSong.albumArt,
-    popularity:      currentSong.popularity,
-    previewUrl:      currentSong.previewUrl,
-    isrc:            currentSong.isrc,
-    albumID:         currentSong.albumID,
+    songId: currentSong.songId,
+    trackName: currentSong.trackName,
+    spotifyTrackId: currentSong.spotifyTrackId,
+    spotifyUrl: currentSong.spotifyUrl,
+    artistName: currentSong.artistName,
+    albumName: currentSong.albumName,
+    releaseDate: currentSong.releaseDate,
+    albumType: currentSong.albumType,
+    trackNumber: currentSong.trackNumber,
+    totalTracks: currentSong.totalTracks,
+    songDuration: currentSong.songDuration,
+    albumArt: currentSong.albumArt,
+    popularity: currentSong.popularity,
+    previewUrl: currentSong.previewUrl,
+    isrc: currentSong.isrc,
+    albumID: currentSong.albumID,
 
     // album fields (rename to avoid collision)
-    albumAlbumID:     currentAlbum.albumID,
-    albumNameField:   currentAlbum.albumName,
-    albumArtistName:  currentAlbum.artistName,
+    albumAlbumID: currentAlbum.albumID,
+    albumNameField: currentAlbum.albumName,
+    albumArtistName: currentAlbum.artistName,
     albumReleaseDate: currentAlbum.releaseDate,
-    albumArtField:    currentAlbum.albumArt,
-    albumTypeField:   currentAlbum.albumType,
-    albumIsrc:        currentAlbum.isrc
-  });
+    albumArtField: currentAlbum.albumArt,
+    albumTypeField: currentAlbum.albumType,
+    albumIsrc: currentAlbum.isrc
+  })
 }
 
 // src/database/dbcurrent.js
-export function getCurrentState() {
+export function getCurrentState () {
   return db
-    .prepare(`SELECT * FROM current_state WHERE id = 1`)
-    .get();
+    .prepare('SELECT * FROM current_state WHERE id = 1')
+    .get()
 }

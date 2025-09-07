@@ -65,9 +65,9 @@ const botUUID = process.env.BOT_USER_UUID
 // ───────────────────────────────────────────────────────────
 const ALBUM_THEMES = new Set(['album monday', 'albums', 'album day', 'album'])
 
-function getThemeFromDB(roomUUID) {
+function getThemeFromDB (roomUUID) {
   try {
-    const row = db.prepare(`SELECT theme FROM themes WHERE roomId = ?`).get(roomUUID)
+    const row = db.prepare('SELECT theme FROM themes WHERE roomId = ?').get(roomUUID)
     if (row?.theme) return String(row.theme)
   } catch (e) {
     logger.error('[Theme][DB] lookup error:', e?.message || e)
@@ -75,7 +75,7 @@ function getThemeFromDB(roomUUID) {
   return null
 }
 
-function resolveRoomTheme(roomUUID) {
+function resolveRoomTheme (roomUUID) {
   const dbTheme = getThemeFromDB(roomUUID)
   if (dbTheme) return dbTheme
 
@@ -88,8 +88,8 @@ function resolveRoomTheme(roomUUID) {
   return ''
 }
 
-export function isAlbumThemeActive(roomUUID) {
-  if (['1','true','yes','on'].includes(String(process.env.FORCE_ALBUM_THEME || '').toLowerCase())) {
+export function isAlbumThemeActive (roomUUID) {
+  if (['1', 'true', 'yes', 'on'].includes(String(process.env.FORCE_ALBUM_THEME || '').toLowerCase())) {
     return true
   }
   const raw = resolveRoomTheme(roomUUID)
@@ -101,7 +101,7 @@ export function isAlbumThemeActive(roomUUID) {
 // ───────────────────────────────────────────────────────────
 // AI blurb helpers
 // ───────────────────────────────────────────────────────────
-export function buildSongBlurbPrompt(song, tone = 'neutral') {
+export function buildSongBlurbPrompt (song, tone = 'neutral') {
   const {
     trackName, artistName, albumName, releaseDate, isrc, popularity,
     bpm, key, genres, notes
@@ -127,7 +127,7 @@ Spotify popularity: ${popularity ?? 'Unknown'}
 Optional: BPM ${bpm ?? 'Unknown'}, Key ${key ?? 'Unknown'}, Genres ${genres ?? 'Unknown'}, Notes ${notes ?? ''}`
 }
 
-function extractText(reply) {
+function extractText (reply) {
   if (!reply) return null
   if (typeof reply === 'string') return reply
   if (reply.text) return reply.text
@@ -135,7 +135,7 @@ function extractText(reply) {
   return null
 }
 
-async function safeAskQuestion(prompt) {
+async function safeAskQuestion (prompt) {
   try {
     const result = await Promise.race([
       askQuestion(prompt),
@@ -153,13 +153,13 @@ async function safeAskQuestion(prompt) {
 // ───────────────────────────────────────────────────────────
 // Polling helpers
 // ───────────────────────────────────────────────────────────
-function toSec(ts) {
+function toSec (ts) {
   const n = Number(ts)
   if (!Number.isFinite(n)) return 0
   return n > 2e10 ? Math.floor(n / 1000) : Math.floor(n) // ms → sec
 }
 
-function normalizeMessages(raw) {
+function normalizeMessages (raw) {
   if (!raw) return []
   const body = (raw && typeof raw === 'object' && 'data' in raw && !Array.isArray(raw.data)) ? raw.data : raw
   if (Array.isArray(body)) return body
@@ -168,7 +168,7 @@ function normalizeMessages(raw) {
   if (Array.isArray(body.items)) return body.items
   if (Array.isArray(body.results)) return body.results
   if (Array.isArray(body?.data?.messages)) return body.data.messages
-  if (Array.isArray(body?.data?.items))    return body.data.items
+  if (Array.isArray(body?.data?.items)) return body.data.items
   if (Array.isArray(body?.result?.messages)) return body.result.messages
   if (Array.isArray(body?.data?.data)) return body.data.data
   if (typeof body === 'object' && (body.id || body.message || body.text)) return [body]
@@ -179,15 +179,16 @@ function normalizeMessages(raw) {
 // In-memory TTL de-dupe (prevents unbounded Set growth)
 // ───────────────────────────────────────────────────────────
 class TTLSeenSet {
-  constructor(ttlMs = SEEN_TTL_MS, max = SEEN_MAX) {
+  constructor (ttlMs = SEEN_TTL_MS, max = SEEN_MAX) {
     this.ttl = ttlMs
     this.max = max
     this.map = new Map()
     this._pruneTimer = setInterval(() => this.prune(), Math.min(60_000, ttlMs))
     this._pruneTimer.unref?.()
   }
-  has(id) { const v = id && this.map.get(id); return !!v && v > Date.now() }
-  add(id) {
+
+  has (id) { const v = id && this.map.get(id); return !!v && v > Date.now() }
+  add (id) {
     if (!id) return
     if (this.map.size >= this.max) {
       const drop = Math.ceil(this.max * 0.1)
@@ -195,8 +196,9 @@ class TTLSeenSet {
     }
     this.map.set(id, Date.now() + this.ttl)
   }
-  prune() { const now = Date.now(); for (const [k, exp] of this.map.entries()) if (exp <= now) this.map.delete(k) }
-  clear() { clearInterval(this._pruneTimer); this.map.clear() }
+
+  prune () { const now = Date.now(); for (const [k, exp] of this.map.entries()) if (exp <= now) this.map.delete(k) }
+  clear () { clearInterval(this._pruneTimer); this.map.clear() }
 }
 
 // ───────────────────────────────────────────────────────────
@@ -258,7 +260,7 @@ const deriveDmPeer = (m, hintedPeer) => {
 // Bot
 // ───────────────────────────────────────────────────────────
 export class Bot {
-  constructor(clientId, clientSecret, redirectUri) {
+  constructor (clientId, clientSecret, redirectUri) {
     this.clientId = clientId
     this.clientSecret = clientSecret
     this.redirectUri = redirectUri
@@ -272,7 +274,7 @@ export class Bot {
     // Ephemeral cursors: start "now" for both group & DM streams
     this.lastMessageIDs = {
       room: startTimeStamp,
-      dm:   startTimeStamp
+      dm: startTimeStamp
     }
 
     this.currentTheme = themeManager.getTheme(this.roomUUID) || ''
@@ -288,17 +290,35 @@ export class Bot {
     this.audioStatsEnabled = true
 
     this.currentSong = {
-      trackName: 'Unknown', spotifyTrackId: '', songId: '', spotifyUrl: '',
-      artistName: 'Unknown', albumName: 'Unknown', releaseDate: 'Unknown',
-      albumType: 'Unknown', trackNumber: 'Unknown', totalTracks: 'Unknown',
-      songDuration: 'Unknown', albumArt: '', popularity: 0, previewUrl: '',
-      isrc: 'Unknown', albumID: 'Unknown'
+      trackName: 'Unknown',
+      spotifyTrackId: '',
+      songId: '',
+      spotifyUrl: '',
+      artistName: 'Unknown',
+      albumName: 'Unknown',
+      releaseDate: 'Unknown',
+      albumType: 'Unknown',
+      trackNumber: 'Unknown',
+      totalTracks: 'Unknown',
+      songDuration: 'Unknown',
+      albumArt: '',
+      popularity: 0,
+      previewUrl: '',
+      isrc: 'Unknown',
+      albumID: 'Unknown'
     }
 
     this.currentAlbum = {
-      albumID: 'Unknown', albumName: null, artistName: 'Unknown',
-      releaseDate: 'Unknown', albumType: 'Unknown', trackNumber: 'Unknown',
-      totalTracks: 'Unknown', albumArt: '', previewUrl: '', isrc: 'Unknown'
+      albumID: 'Unknown',
+      albumName: null,
+      artistName: 'Unknown',
+      releaseDate: 'Unknown',
+      albumType: 'Unknown',
+      trackNumber: 'Unknown',
+      totalTracks: 'Unknown',
+      albumArt: '',
+      previewUrl: '',
+      isrc: 'Unknown'
     }
 
     this.lastPlayedSong = { songId: null, timestamp: 0 }
@@ -315,7 +335,7 @@ export class Bot {
     // DM infra
     this._processingMessages = false
     this._dmCandidates = new Set()
-    this._dmPeers = new Set(getConfiguredDMPeers())   // from CHAT_DM_PEERS or fallbacks
+    this._dmPeers = new Set(getConfiguredDMPeers()) // from CHAT_DM_PEERS or fallbacks
     this._dmSinceByPeer = {}
     for (const p of this._dmPeers) this._dmSinceByPeer[p] = startTimeStamp
 
@@ -323,7 +343,7 @@ export class Bot {
   }
 
   // Allow external code to register a DM peer (auto-discovery)
-  addDMPeer(uid) {
+  addDMPeer (uid) {
     if (!uid || uid === COMETCHAT_BOT_UID) return
     this._dmPeers.add(uid)
     this._dmCandidates.add(uid)
@@ -331,10 +351,10 @@ export class Bot {
   }
 
   // Readiness bits for /ready
-  isConnected() { return !!this.socket }
-  canSend() { return !!this.socket }
+  isConnected () { return !!this.socket }
+  canSend () { return !!this.socket }
 
-  async connect() {
+  async connect () {
     try {
       await joinChat(this.roomUUID)
 
@@ -356,7 +376,7 @@ export class Bot {
     }
   }
 
-  _scheduleReconnect() {
+  _scheduleReconnect () {
     const jitter = (ms) => Math.floor(ms * (0.75 + Math.random() * 0.5))
     const wait = jitter(this._reconnectBackoffMs)
     setTimeout(() => {
@@ -368,9 +388,9 @@ export class Bot {
     }, wait)
   }
 
-  getCurrentSpotifyUrl() { return this.currentSong?.spotifyUrl || null }
+  getCurrentSpotifyUrl () { return this.currentSong?.spotifyUrl || null }
 
-  updateRecentSpotifyTrackIds(trackId) {
+  updateRecentSpotifyTrackIds (trackId) {
     const currentDJ = getCurrentDJ(this.state)
     if (currentDJ === this.userUUID) return
     if (!trackId) return
@@ -378,7 +398,7 @@ export class Bot {
     this.recentSpotifyTrackIds.unshift(trackId)
   }
 
-  async getRandomSong() {
+  async getRandomSong () {
     try {
       const playlistId = process.env.DEFAULT_PLAYLIST_ID
       const tracks = await fetchSpotifyPlaylistTracks(playlistId)
@@ -393,7 +413,7 @@ export class Bot {
   }
 
   // NOTE: unified generateSongPayload (removed duplicate definition)
-  async generateSongPayload() {
+  async generateSongPayload () {
     const spotifyTrackId = await getPopularSpotifyTrackID()
     if (!spotifyTrackId) throw new Error('No popular Spotify track ID found.')
     const songData = await fetchSongData(spotifyTrackId)
@@ -417,12 +437,12 @@ export class Bot {
     }
   }
 
-  _isStale(sentAtSec, baselineSec) {
+  _isStale (sentAtSec, baselineSec) {
     const grace = STARTUP_BACKLOG_GRACE_S
     return sentAtSec < Math.floor(this._startupTimeMs / 1000) - grace || sentAtSec < baselineSec
   }
 
-  async _cooperativeYieldIfNeeded(count) {
+  async _cooperativeYieldIfNeeded (count) {
     if (count % POLL_YIELD_EVERY === 0) {
       await new Promise((r) => setImmediate(r))
     }
@@ -432,7 +452,7 @@ export class Bot {
    * Poller: group + DM inbox (bot) — robust DM handling via conversationId & candidates.
    * Includes cooperative yielding & batch caps to avoid event-loop starvation.
    */
-  async processNewMessages() {
+  async processNewMessages () {
     if (this._processingMessages) return
     this._processingMessages = true
 
@@ -562,8 +582,7 @@ export class Bot {
             if (text.length <= 5) {
               const lc = text.toLowerCase()
               if (lc === '/ping' || lc === 'ping') {
-                try { await sendDirectMessage(peerUid, 'pong 🏓') }
-                catch (e) { logger.error('Failed to send pong DM:', e) }
+                try { await sendDirectMessage(peerUid, 'pong 🏓') } catch (e) { logger.error('Failed to send pong DM:', e) }
                 processed++
                 await this._cooperativeYieldIfNeeded(processed)
                 continue
@@ -598,7 +617,7 @@ export class Bot {
   }
 
   // Socket listeners
-  configureListeners() {
+  configureListeners () {
     if (this._listenersConfigured || !this.socket) return
     this._listenersConfigured = true
 
@@ -638,27 +657,27 @@ export class Bot {
           const currentlyPlaying = await fetchCurrentlyPlayingSong()
 
           this.currentSong = {
-            trackName:      currentlyPlaying.trackName || payload.data?.song?.trackName || 'Unknown',
-            artistName:     currentlyPlaying.artistName || payload.data?.song?.artistName || 'Unknown',
-            songId:         currentlyPlaying.songId || payload.data?.song?.songId || '',
-            songDuration:   currentlyPlaying.duration || payload.data?.song?.duration || 'Unknown',
-            isrc:           currentlyPlaying.isrc || 'Unknown',
-            explicit:       currentlyPlaying.explicit || false,
-            albumName:      currentlyPlaying.albumName || 'Unknown',
-            releaseDate:    currentlyPlaying.releaseDate || 'Unknown',
-            thumbnails:     currentlyPlaying.thumbnails || {},
-            links:          currentlyPlaying.links || {},
+            trackName: currentlyPlaying.trackName || payload.data?.song?.trackName || 'Unknown',
+            artistName: currentlyPlaying.artistName || payload.data?.song?.artistName || 'Unknown',
+            songId: currentlyPlaying.songId || payload.data?.song?.songId || '',
+            songDuration: currentlyPlaying.duration || payload.data?.song?.duration || 'Unknown',
+            isrc: currentlyPlaying.isrc || 'Unknown',
+            explicit: currentlyPlaying.explicit || false,
+            albumName: currentlyPlaying.albumName || 'Unknown',
+            releaseDate: currentlyPlaying.releaseDate || 'Unknown',
+            thumbnails: currentlyPlaying.thumbnails || {},
+            links: currentlyPlaying.links || {},
             musicProviders: currentlyPlaying.musicProviders || {},
-            playbackToken:  currentlyPlaying.playbackToken || null,
-            status:         currentlyPlaying.status || null,
+            playbackToken: currentlyPlaying.playbackToken || null,
+            status: currentlyPlaying.status || null,
             spotifyTrackId: '',
-            albumType:      'Unknown',
-            trackNumber:    'Unknown',
-            totalTracks:    'Unknown',
-            popularity:     0,
-            previewUrl:     '',
-            albumID:        'Unknown',
-            albumArt:       ''
+            albumType: 'Unknown',
+            trackNumber: 'Unknown',
+            totalTracks: 'Unknown',
+            popularity: 0,
+            previewUrl: '',
+            albumID: 'Unknown',
+            albumArt: ''
           }
 
           const songDurationMs = parseDurationToMs(this.currentSong.songDuration)
@@ -671,28 +690,27 @@ export class Bot {
               this.currentSong = {
                 ...this.currentSong,
                 spotifyTrackId,
-                albumType:   spotifyDetails.spotifyAlbumType   || 'Unknown',
+                albumType: spotifyDetails.spotifyAlbumType || 'Unknown',
                 trackNumber: spotifyDetails.spotifyTrackNumber || 'Unknown',
                 totalTracks: spotifyDetails.spotifyTotalTracks || 'Unknown',
-                popularity:  spotifyDetails.spotifyPopularity  || 0,
-                previewUrl:  spotifyDetails.spotifyPreviewUrl  || '',
-                isrc:        spotifyDetails.spotifyIsrc        || this.currentSong.isrc,
-                albumID:     spotifyDetails.spotifyAlbumID     || 'Unknown',
-                albumArt:    spotifyDetails.spotifyAlbumArt    || ''
+                popularity: spotifyDetails.spotifyPopularity || 0,
+                previewUrl: spotifyDetails.spotifyPreviewUrl || '',
+                isrc: spotifyDetails.spotifyIsrc || this.currentSong.isrc,
+                albumID: spotifyDetails.spotifyAlbumID || 'Unknown',
+                albumArt: spotifyDetails.spotifyAlbumArt || ''
               }
               this.currentAlbum = {
-                albumID:     spotifyDetails.spotifyAlbumID,
-                albumName:   spotifyDetails.spotifyAlbumName,
-                artistName:  spotifyDetails.spotifyArtistName,
+                albumID: spotifyDetails.spotifyAlbumID,
+                albumName: spotifyDetails.spotifyAlbumName,
+                artistName: spotifyDetails.spotifyArtistName,
                 releaseDate: spotifyDetails.spotifyReleaseDate,
-                albumArt:    spotifyDetails.spotifyAlbumArt,
-                trackCount:  spotifyDetails.spotifyTotalTracks
+                albumArt: spotifyDetails.spotifyAlbumArt,
+                trackCount: spotifyDetails.spotifyTotalTracks
               }
             }
           }
 
-          try { saveCurrentState({ currentSong: this.currentSong, currentAlbum: this.currentAlbum }) }
-          catch (err) { logger.error('Failed to save current state:', err) }
+          try { saveCurrentState({ currentSong: this.currentSong, currentAlbum: this.currentAlbum }) } catch (err) { logger.error('Failed to save current state:', err) }
 
           const albumActive = await isAlbumThemeActive(this.roomUUID)
           const songIdForDedupe = this.currentSong.songId || this.currentSong.spotifyTrackId || this.currentSong.trackName
@@ -765,7 +783,7 @@ export class Bot {
     })
   }
 
-  async storeCurrentRoomUsers() {
+  async storeCurrentRoomUsers () {
     try {
       const currentUsers = await fetchCurrentUsers()
       this.currentRoomUsers = currentUsers
@@ -774,7 +792,7 @@ export class Bot {
     }
   }
 
-  async updateNextSong(userUuid) {
+  async updateNextSong (userUuid) {
     try {
       const songPayload = await this.generateSongPayload()
       if (!this.socket) throw new Error('SocketClient not initialized. Please call connect() first.')
@@ -791,7 +809,7 @@ export class Bot {
     }
   }
 
-  async addDJ(userUuid, tokenRole = 'DJ') {
+  async addDJ (userUuid, tokenRole = 'DJ') {
     try {
       const currentDJs = getCurrentDJUUIDs(this.state)
       if (currentDJs.includes(userUuid)) return false
@@ -829,7 +847,7 @@ export class Bot {
     }
   }
 
-  async removeDJ(userUuid) {
+  async removeDJ (userUuid) {
     try {
       const djUuid = (userUuid === process.env.BOT_USER_UUID) ? null : userUuid
       if (djUuid === null && !this.state?.djs?.some(dj => dj.uuid === process.env.BOT_USER_UUID)) return
@@ -844,7 +862,7 @@ export class Bot {
     }
   }
 
-  async voteOnSong(roomUuid, songVotes, userUuid) {
+  async voteOnSong (roomUuid, songVotes, userUuid) {
     try {
       if (!this.socket) throw new Error('SocketClient not initialized. Please call connect() first.')
       await this.socket.action('voteOnSong', { roomUuid, songVotes, userUuid })
@@ -853,7 +871,7 @@ export class Bot {
     }
   }
 
-  async playOneTimeAnimation(animation, roomUuid, userUuid, emoji = null) {
+  async playOneTimeAnimation (animation, roomUuid, userUuid, emoji = null) {
     try {
       if (!this.socket) throw new Error('SocketClient not initialized. Please call connect() first.')
       const payload = { animation, roomUuid, userUuid }
@@ -864,13 +882,12 @@ export class Bot {
     }
   }
 
-  async scheduleLikeSong(roomUuid, userUuid) {
+  async scheduleLikeSong (roomUuid, userUuid) {
     try {
       if (!this.socket) throw new Error('SocketClient not initialized. Please call connect() first.')
       if (!this.autobop) return
       setTimeout(async () => {
-        try { await this.voteOnSong(process.env.ROOM_UUID, { like: true }, process.env.BOT_USER_UUID) }
-        catch (error) { logger.error('Error voting on song', error) }
+        try { await this.voteOnSong(process.env.ROOM_UUID, { like: true }, process.env.BOT_USER_UUID) } catch (error) { logger.error('Error voting on song', error) }
       }, 5000)
     } catch (error) {
       logger.error('Error scheduling song vote', error)
@@ -879,7 +896,7 @@ export class Bot {
 }
 
 // helpers
-export function getCurrentDJUUIDs(state) {
+export function getCurrentDJUUIDs (state) {
   if (!state) return []
   const visible = Array.isArray(state.visibleDjs) ? state.visibleDjs : []
   const fallback = Array.isArray(state.djs) ? state.djs : []
@@ -887,16 +904,16 @@ export function getCurrentDJUUIDs(state) {
   return djsToUse.map(dj => dj.uuid)
 }
 
-export function getCurrentDJ(state) {
+export function getCurrentDJ (state) {
   const currentDJs = getCurrentDJUUIDs(state)
   return currentDJs.length > 0 ? currentDJs[0] : null
 }
 
-export function isUserDJ(senderUuid, state) {
+export function isUserDJ (senderUuid, state) {
   return getCurrentDJUUIDs(state).includes(senderUuid)
 }
 
-export function whoIsCurrentDJ(state) {
+export function whoIsCurrentDJ (state) {
   const currentDJUuid = getCurrentDJ(state)
   return currentDJUuid === process.env.BOT_USER_UUID ? 'bot' : 'user'
 }

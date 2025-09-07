@@ -58,7 +58,6 @@ async function addOrUpdateUser (userUUID) {
   }
 }
 
-
 // Load users from the JSON file
 export async function loadUsers () {
   try {
@@ -107,8 +106,6 @@ async function addToUserWallet (userUUID, amount, nickname) {
 
     // Step 3: Add the amount and round the result
     wallets[userUUID].balance = roundToTenth(wallets[userUUID].balance + amount)
-
-
   } catch (error) {
     console.error('Error adding to wallet:', error)
     return false // Return false to indicate an error
@@ -127,7 +124,6 @@ async function removeFromUserWallet (userUUID, amount) {
     // Check if the new balance would be negative
     const newBalance = roundToTenth(wallets[userUUID].balance - amount)
     wallets[userUUID].balance = newBalance < 0 ? 0 : newBalance // Set to zero if negative
-
   } catch (error) {
     console.error('Error removing from wallet:', error)
     return false // Return false to indicate an error

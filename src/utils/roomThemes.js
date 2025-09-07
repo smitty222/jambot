@@ -21,7 +21,7 @@ export const roomThemes = {}
  *
  * @param {Record<string,string>} themes
  */
-export function setThemes(themes) {
+export function setThemes (themes) {
   // Clear existing keys without losing identity
   Object.keys(roomThemes).forEach(k => delete roomThemes[k])
   Object.assign(roomThemes, themes)

@@ -14,10 +14,10 @@ export default class RateLimiter {
    *   `max` (maximum allowed executions within the window). Commands not
    *   specified here fall back to a default of 1 execution per 10s.
    */
-  constructor(defaults = {}) {
-    this.defaults = defaults;
+  constructor (defaults = {}) {
+    this.defaults = defaults
     // Buckets keyed by `${cmd}:${user}` → { start: number, count: number }
-    this.buckets = {};
+    this.buckets = {}
   }
 
   /**
@@ -28,21 +28,21 @@ export default class RateLimiter {
    * @param {string} userId The user’s unique identifier.
    * @returns {boolean} Whether the command is allowed to execute.
    */
-  take(cmd, userId) {
-    const cfg = this.defaults[cmd] || {};
-    const windowMs = cfg.windowMs ?? 10_000;
-    const max = cfg.max ?? 1;
-    const key = `${cmd}:${userId}`;
-    const now = Date.now();
-    let bucket = this.buckets[key];
+  take (cmd, userId) {
+    const cfg = this.defaults[cmd] || {}
+    const windowMs = cfg.windowMs ?? 10_000
+    const max = cfg.max ?? 1
+    const key = `${cmd}:${userId}`
+    const now = Date.now()
+    let bucket = this.buckets[key]
     if (!bucket || now - bucket.start > windowMs) {
-      bucket = { start: now, count: 0 };
-      this.buckets[key] = bucket;
+      bucket = { start: now, count: 0 }
+      this.buckets[key] = bucket
     }
     if (bucket.count >= max) {
-      return false;
+      return false
     }
-    bucket.count++;
-    return true;
+    bucket.count++
+    return true
   }
 }

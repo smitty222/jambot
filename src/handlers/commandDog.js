@@ -7,7 +7,7 @@ const LOG_LEVEL = (process.env.LOG_LEVEL || 'error').toLowerCase()
 const isDebug = LOG_LEVEL === 'debug'
 const d = (...a) => { if (isDebug) console.debug('[DOG]', ...a) }
 
-function parseBreed(args = []) {
+function parseBreed (args = []) {
   // Supports: "/dog", "/dog shiba", "/dog hound afghan"
   if (!Array.isArray(args) || args.length === 0) return null
   const safe = args
@@ -19,7 +19,7 @@ function parseBreed(args = []) {
   return safe.length === 1 ? safe[0] : `${safe[0]}/${safe[1]}`
 }
 
-function prettyBreed(breedPath) {
+function prettyBreed (breedPath) {
   if (!breedPath) return ''
   return breedPath
     .split('/')
@@ -33,7 +33,7 @@ function prettyBreed(breedPath) {
  * @param {string} opts.room - Room UUID
  * @param {string[]} [opts.args] - Command args after /dog
  */
-export async function handleDogCommand({ room, args = [] }) {
+export async function handleDogCommand ({ room, args = [] }) {
   const breedPath = parseBreed(args)
   d('args:', args, 'breedPath:', breedPath)
 

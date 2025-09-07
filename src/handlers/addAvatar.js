@@ -5,10 +5,10 @@ const authorizedAdmins = new Set([
   '072b0bb3-518e-4422-97fd-13dc53e8ae7e', // Ian
   '210141ad-6b01-4665-84dc-e47ea7c27dcb', // Smitty
   '92302b7d-ae5e-466f-975b-d3fee461f13f', // Cam
-  'fd2f1b47-b1d4-4100-8f88-6e56aa82e13f'  // Gab
+  'fd2f1b47-b1d4-4100-8f88-6e56aa82e13f' // Gab
 ])
 
-export async function handleAddAvatarCommand(payload, postMessage) {
+export async function handleAddAvatarCommand (payload, postMessage) {
   const { sender, message, room } = payload
 
   if (!authorizedAdmins.has(sender)) {
@@ -23,7 +23,7 @@ export async function handleAddAvatarCommand(payload, postMessage) {
   if (!match) {
     await postMessage({
       room,
-      message: `Usage: /addavatar <slug>\nExample: /addavatar stadiumseason-02`
+      message: 'Usage: /addavatar <slug>\nExample: /addavatar stadiumseason-02'
     })
     return
   }
@@ -40,7 +40,7 @@ export async function handleAddAvatarCommand(payload, postMessage) {
     console.error('Failed to insert avatar slug:', error)
     await postMessage({
       room,
-      message: `❌ Failed to add avatar.`
+      message: '❌ Failed to add avatar.'
     })
   }
 }

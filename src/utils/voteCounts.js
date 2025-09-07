@@ -11,7 +11,7 @@ let songStatsEnabled = false
 let __reviewsSchemaReady = false
 let __roomStatsSchemaReady = false
 
-function ensureReviewsSchema() {
+function ensureReviewsSchema () {
   if (__reviewsSchemaReady) return
   db.exec(`
     CREATE TABLE IF NOT EXISTS song_reviews (
@@ -27,7 +27,7 @@ function ensureReviewsSchema() {
   __reviewsSchemaReady = true
 }
 
-function ensureRoomStatsSchema() {
+function ensureRoomStatsSchema () {
   if (__roomStatsSchemaReady) return
   // add averageReview if missing (initDb should have done this already)
   const cols = db.prepare('PRAGMA table_info(room_stats)').all()
@@ -41,7 +41,7 @@ function ensureRoomStatsSchema() {
 // ───────────────────────────────────────────────────────────────
 // Stats poster
 // ───────────────────────────────────────────────────────────────
-export async function postVoteCountsForLastSong(room) {
+export async function postVoteCountsForLastSong (room) {
   try {
     ensureRoomStatsSchema()
 
@@ -114,7 +114,7 @@ export async function postVoteCountsForLastSong(room) {
 // ───────────────────────────────────────────────────────────────
 // Reviews (one per user per song; overrides using UPSERT)
 // ───────────────────────────────────────────────────────────────
-export async function saveSongReview({ currentSong, rating, userId }) {
+export async function saveSongReview ({ currentSong, rating, userId }) {
   try {
     ensureReviewsSchema()
     ensureRoomStatsSchema()
@@ -156,7 +156,7 @@ export async function saveSongReview({ currentSong, rating, userId }) {
   }
 }
 
-export async function getAverageRating(currentSong) {
+export async function getAverageRating (currentSong) {
   try {
     const result = db.prepare(`
       SELECT AVG(rating) as average, COUNT(*) as count
@@ -178,6 +178,6 @@ export async function getAverageRating(currentSong) {
 }
 
 // Flags
-export function isSongStatsEnabled() { return songStatsEnabled }
-export function enableSongStats()   { songStatsEnabled = true }
-export function disableSongStats()  { songStatsEnabled = false }
+export function isSongStatsEnabled () { return songStatsEnabled }
+export function enableSongStats () { songStatsEnabled = true }
+export function disableSongStats () { songStatsEnabled = false }

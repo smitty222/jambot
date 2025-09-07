@@ -1,18 +1,18 @@
 import db from './db.js'
 
-export function getAllHorses() {
-  return db.prepare(`SELECT * FROM horses`).all()
+export function getAllHorses () {
+  return db.prepare('SELECT * FROM horses').all()
 }
 
-export function getUserHorses(ownerId) {
-  return db.prepare(`SELECT * FROM horses WHERE ownerId = ?`).all(ownerId)
+export function getUserHorses (ownerId) {
+  return db.prepare('SELECT * FROM horses WHERE ownerId = ?').all(ownerId)
 }
 
-export function getHorseByName(name) {
-  return db.prepare(`SELECT * FROM horses WHERE LOWER(name) = ?`).get(name.toLowerCase())
+export function getHorseByName (name) {
+  return db.prepare('SELECT * FROM horses WHERE LOWER(name) = ?').get(name.toLowerCase())
 }
 
-export function insertHorse(horse) {
+export function insertHorse (horse) {
   const stmt = db.prepare(`
     INSERT INTO horses (
       name, baseOdds, volatility, owner, ownerId, tier,
@@ -38,7 +38,7 @@ export function insertHorse(horse) {
   )
 }
 
-export function updateHorseStats(horse) {
+export function updateHorseStats (horse) {
   const stmt = db.prepare(`
     UPDATE horses
     SET wins = ?, racesParticipated = ?, retired = ?
@@ -48,6 +48,6 @@ export function updateHorseStats(horse) {
   stmt.run(horse.wins, horse.racesParticipated, horse.retired ? 1 : 0, horse.name)
 }
 
-export function updateHorseOdds(name, odds) {
-  db.prepare(`UPDATE horses SET odds = ? WHERE name = ?`).run(odds, name)
+export function updateHorseOdds (name, odds) {
+  db.prepare('UPDATE horses SET odds = ? WHERE name = ?').run(odds, name)
 }

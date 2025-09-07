@@ -17,65 +17,65 @@ import db from './db.js'
 
 // In‑memory cache of all avatar slugs loaded from the database.  This is
 // populated once at startup and kept in sync with insert/remove operations.
-let allAvatarSlugs = [];
+let allAvatarSlugs = []
 
-function loadAllAvatarSlugs() {
+function loadAllAvatarSlugs () {
   try {
-    allAvatarSlugs = db.prepare('SELECT slug FROM avatars').all().map(row => row.slug) || [];
+    allAvatarSlugs = db.prepare('SELECT slug FROM avatars').all().map(row => row.slug) || []
   } catch (err) {
     // If the DB read fails (e.g. missing table), default to an empty list.
-    allAvatarSlugs = [];
+    allAvatarSlugs = []
   }
 }
 
 // Immediately load slugs on module import.
-loadAllAvatarSlugs();
+loadAllAvatarSlugs()
 
-export function getAllAvatarSlugs() {
+export function getAllAvatarSlugs () {
   // Return a shallow copy to avoid accidental mutation by callers.
-  return [...allAvatarSlugs];
+  return [...allAvatarSlugs]
 }
 
-export function getAvatarsBySlugs(slugs) {
+export function getAvatarsBySlugs (slugs) {
   // Filter allowed slugs from the cached list and return objects mimicking
   // database row shape.  Using the cache avoids a synchronous DB query per call.
-  const results = [];
+  const results = []
   for (const slug of slugs) {
     if (allAvatarSlugs.includes(slug)) {
-      results.push({ slug });
+      results.push({ slug })
     }
   }
-  return results;
+  return results
 }
 
-export function getRandomAvatarSlug() {
-  if (!allAvatarSlugs || allAvatarSlugs.length === 0) return null;
-  const idx = Math.floor(Math.random() * allAvatarSlugs.length);
-  return allAvatarSlugs[idx] || null;
+export function getRandomAvatarSlug () {
+  if (!allAvatarSlugs || allAvatarSlugs.length === 0) return null
+  const idx = Math.floor(Math.random() * allAvatarSlugs.length)
+  return allAvatarSlugs[idx] || null
 }
 
-export function insertAvatarSlug(slug) {
+export function insertAvatarSlug (slug) {
   const stmt = db.prepare(`
     INSERT OR IGNORE INTO avatars (slug)
     VALUES (?)
-  `);
-  const info = stmt.run(slug);
+  `)
+  const info = stmt.run(slug)
   // If a new row was inserted, update the in-memory cache as well.  Without
   // this, newly added avatars would be invisible to getRandomAvatarSlug and
   // getAvatarsBySlugs until the process restarts.
   if (info.changes > 0 && slug && !allAvatarSlugs.includes(slug)) {
-    allAvatarSlugs.push(slug);
+    allAvatarSlugs.push(slug)
   }
 }
 
-export function removeAvatarSlug(slug) {
-  const stmt = db.prepare('DELETE FROM avatars WHERE slug = ?');
-  const info = stmt.run(slug);
+export function removeAvatarSlug (slug) {
+  const stmt = db.prepare('DELETE FROM avatars WHERE slug = ?')
+  const info = stmt.run(slug)
   // Synchronise the in-memory cache on delete.  Remove all occurrences of
   // the slug from the cached list.  This keeps the cache consistent with
   // the underlying database state.
   if (info.changes > 0) {
-    allAvatarSlugs = allAvatarSlugs.filter(s => s !== slug);
+    allAvatarSlugs = allAvatarSlugs.filter(s => s !== slug)
   }
-  return info.changes; // 0 if not found, >0 if deleted
+  return info.changes // 0 if not found, >0 if deleted
 }

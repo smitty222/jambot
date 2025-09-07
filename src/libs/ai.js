@@ -9,16 +9,16 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY
 // Logging controls
 // ───────────────────────────────────────────────────────────
 const LOG_LEVEL = (process.env.LOG_LEVEL || 'error').toLowerCase()
-const isInfo  = LOG_LEVEL === 'info' || LOG_LEVEL === 'debug'
+const isInfo = LOG_LEVEL === 'info' || LOG_LEVEL === 'debug'
 const isDebug = LOG_LEVEL === 'debug'
-const LOG_PROMPT = ['1','true','on','yes'].includes(String(process.env.AI_LOG_PROMPT || '').toLowerCase())
+const LOG_PROMPT = ['1', 'true', 'on', 'yes'].includes(String(process.env.AI_LOG_PROMPT || '').toLowerCase())
 const PROMPT_MAX = Math.max(80, parseInt(process.env.AI_PROMPT_MAX_CHARS || '600', 10) || 600)
 
-const info  = (...a) => { if (isInfo)  console.log('[AI]', ...a) }
+const info = (...a) => { if (isInfo) console.log('[AI]', ...a) }
 const debug = (...a) => { if (isDebug) console.debug('[AI]', ...a) }
 
 // Safe truncation for logs
-function preview(str, max = PROMPT_MAX) {
+function preview (str, max = PROMPT_MAX) {
   const s = String(str ?? '')
     .replace(/\r/g, '')
     .replace(/\t/g, ' ')
@@ -39,56 +39,54 @@ let currentSong = null
 // configured limit, the oldest entry is evicted.  The TTL and maximum
 // number of cached entries can be configured via environment variables.
 
-const AI_CACHE_TTL_MS   = Number(process.env.AI_CACHE_TTL_MS ?? 300_000); // default 5 minutes
-const AI_CACHE_MAX_SIZE = Number(process.env.AI_CACHE_MAX_SIZE ?? 50);
+const AI_CACHE_TTL_MS = Number(process.env.AI_CACHE_TTL_MS ?? 300_000) // default 5 minutes
+const AI_CACHE_MAX_SIZE = Number(process.env.AI_CACHE_MAX_SIZE ?? 50)
 
-const aiCache = new Map();
+const aiCache = new Map()
 
-function getCachedResponse(prompt) {
-  const rec = aiCache.get(prompt);
-  if (!rec) return null;
+function getCachedResponse (prompt) {
+  const rec = aiCache.get(prompt)
+  if (!rec) return null
   if (rec.exp <= Date.now()) {
-    aiCache.delete(prompt);
-    return null;
+    aiCache.delete(prompt)
+    return null
   }
-  return rec.value;
+  return rec.value
 }
 
-function isImageIntent(raw) {
-  if (!raw || typeof raw !== 'string') return false;
-  let q = raw.toLowerCase().trim();
-  if (/\b(how to|how do i|explain|what is|tell me about|define|history of|lyrics|instructions)\b/.test(q)) return false;
+function isImageIntent (raw) {
+  if (!raw || typeof raw !== 'string') return false
+  let q = raw.toLowerCase().trim()
+  if (/\b(how to|how do i|explain|what is|tell me about|define|history of|lyrics|instructions)\b/.test(q)) return false
 
   // Remove polite fillers so patterns match
   q = q.replace(/\b(can you|could you|would you|please|plz|kindly)\b/g, '')
-       .replace(/\b(for (me|us)|me|us)\b/g, ' ')
-       .replace(/\s+/g, ' ')
-       .trim();
+    .replace(/\b(for (me|us)|me|us)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 
   // “make me an image of …”, etc.
-  if (/(make|create|generate|draw|paint|illustrate|render|sketch)\s+(an?|the)?\s*(image|picture|pic|photo|poster|logo|graphic)?\s*(of|about)\s+\S/.test(q)) return true;
+  if (/(make|create|generate|draw|paint|illustrate|render|sketch)\s+(an?|the)?\s*(image|picture|pic|photo|poster|logo|graphic)?\s*(of|about)\s+\S/.test(q)) return true
 
   // direct verb+noun “create an image/poster…”
-  if (/(make|create|generate|draw|paint|illustrate|render|sketch)\s+(an?|the)?\s*(image|picture|pic|photo|poster|logo|graphic)\b/.test(q)) return true;
+  if (/(make|create|generate|draw|paint|illustrate|render|sketch)\s+(an?|the)?\s*(image|picture|pic|photo|poster|logo|graphic)\b/.test(q)) return true
 
   // noun-led “image/poster of …”
-  if (/^(image|picture|pic|photo|poster|logo|graphic)\b.*\b(of|that says)\b/.test(q)) return true;
+  if (/^(image|picture|pic|photo|poster|logo|graphic)\b.*\b(of|that says)\b/.test(q)) return true
 
   // file / output hints
-  if (/\b(png|jpg|jpeg|svg|transparent|square|wallpaper|banner|thumbnail|avatar|icon|sticker|dpi|aspect ratio|pixels?)\b/.test(q)) return true;
+  if (/\b(png|jpg|jpeg|svg|transparent|square|wallpaper|banner|thumbnail|avatar|icon|sticker|dpi|aspect ratio|pixels?)\b/.test(q)) return true
 
-  return false;
+  return false
 }
 
-
-
-function setCachedResponse(prompt, value) {
+function setCachedResponse (prompt, value) {
   // Enforce max size; remove oldest entry if necessary
   if (aiCache.size >= AI_CACHE_MAX_SIZE) {
-    const firstKey = aiCache.keys().next().value;
-    if (firstKey) aiCache.delete(firstKey);
+    const firstKey = aiCache.keys().next().value
+    if (firstKey) aiCache.delete(firstKey)
   }
-  aiCache.set(prompt, { value, exp: Date.now() + AI_CACHE_TTL_MS });
+  aiCache.set(prompt, { value, exp: Date.now() + AI_CACHE_TTL_MS })
 }
 
 // ───────────────────────────────────────────────────────────
@@ -111,7 +109,7 @@ function setCachedResponse(prompt, value) {
  * @param {number} [options.maxTokens] - Maximum tokens to generate.
  * @returns {Promise<string>} The generated text.
  */
-async function generateTextWithRetries(prompt, {
+async function generateTextWithRetries (prompt, {
   // Prefer the Gemini 2.5 Pro model for text tasks.  Fallback to the 2.5 Flash
   // variant and the older 1.5 Flash in case the Pro model is unavailable or
   // returns an error.  See docs for model capabilities【824137802243041†L177-L187】.
@@ -144,7 +142,7 @@ async function generateTextWithRetries(prompt, {
         if (temperature !== undefined || topP !== undefined || maxTokens !== undefined) {
           try {
             const req = {
-              contents: [ { role: 'user', parts: [ { text: String(prompt) } ] } ],
+              contents: [{ role: 'user', parts: [{ text: String(prompt) }] }],
               generationConfig: {}
             }
             if (temperature !== undefined) req.generationConfig.temperature = temperature
@@ -192,7 +190,7 @@ async function generateTextWithRetries(prompt, {
 // ───────────────────────────────────────────────────────────
 // Public: askQuestion
 // ───────────────────────────────────────────────────────────
-export async function askQuestion(question, opts = {}) {
+export async function askQuestion (question, opts = {}) {
   const {
     // If true, return a user-friendly apology on failure; else throw.
     returnApologyOnError = true,
@@ -204,7 +202,7 @@ export async function askQuestion(question, opts = {}) {
     temperature,
     topP,
     maxTokens,
-    onStartImage,
+    onStartImage
   } = opts
 
   // Replace "this song" with actual details if available
@@ -215,15 +213,15 @@ export async function askQuestion(question, opts = {}) {
   }
 
   // Detect image-style prompts
-  const isImagePrompt = isImageIntent(question);
+  const isImagePrompt = isImageIntent(question)
   if (isImagePrompt) {
     info('[image request] detected')
     // Check if the user is asking for a personal or self portrait; if so, ask for
     // a reference image instead of generating from description.  This prevents
     // accidental depiction of real individuals without consent.
-    const lowered = String(question).toLowerCase();
+    const lowered = String(question).toLowerCase()
     if (/\b(me|myself|my face|my portrait)\b/.test(lowered)) {
-      return { text: 'If you want an image that includes you, please upload a photo of yourself first so I can use it as a reference.' };
+      return { text: 'If you want an image that includes you, please upload a photo of yourself first so I can use it as a reference.' }
     }
     // Normalize the key for caching: trim whitespace and collapse multiple spaces
     const key = String(question).replace(/\s+/g, ' ').trim().toLowerCase()
@@ -234,7 +232,7 @@ export async function askQuestion(question, opts = {}) {
     }
 
     // 👇 Fire the hook right before network work
-    try { await onStartImage?.(); } catch {}
+    try { await onStartImage?.() } catch {}
 
     const result = await generateImage(String(question))
     // If the model returned an image, convert it to a data URI and cache it
@@ -273,10 +271,10 @@ export async function askQuestion(question, opts = {}) {
 // ───────────────────────────────────────────────────────────
 // Image generation (Gemini REST)
 // ───────────────────────────────────────────────────────────
-async function generateImage(prompt) {
+async function generateImage (prompt) {
   // Use the Gemini 2.5 Flash Image Preview model for image generation.  This
   // model supports text-to-image and image editing.  See docs for details
-  //【824137802243041†L170-L198】.
+  // 【824137802243041†L170-L198】.
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${GEMINI_API_KEY}`
   const body = {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -304,7 +302,7 @@ async function generateImage(prompt) {
     }
     info('[image response]', { hasImage: !!base64Image, textChars: outputText.length })
     // When a base64 image is returned, convert it to a data URI.  Otherwise return null.
-    const dataUri = base64Image ? `data:image/png;base64,${base64Image}` : null;
+    const dataUri = base64Image ? `data:image/png;base64,${base64Image}` : null
     return { text: outputText || 'Here’s your image!', imageBase64: base64Image, dataUri }
   } catch (error) {
     console.error('Image generation error:', error)
@@ -354,7 +352,7 @@ export const chatWithBot = async (userMessage) => {
  * @param {number} [options.maxTokens] - Optional maximum tokens.
  * @returns {Promise<{text: string}>} The summary result.
  */
-export async function summarizeText(text, {
+export async function summarizeText (text, {
   maxWords = 100,
   returnApologyOnError = true,
   retries = 2,
@@ -385,7 +383,7 @@ export async function summarizeText(text, {
  * @param {number} [options.maxTokens] - Optional maximum tokens.
  * @returns {Promise<{text: string}>} The translation result.
  */
-export async function translateText(text, language, {
+export async function translateText (text, language, {
   returnApologyOnError = true,
   retries = 2,
   backoffMs = 600,
@@ -416,7 +414,7 @@ export async function translateText(text, language, {
  * @param {number} [options.maxTokens] - Optional maximum tokens.
  * @returns {Promise<{text: string}>} The categorization result.
  */
-export async function categorizeText(text, {
+export async function categorizeText (text, {
   categories,
   returnApologyOnError = true,
   retries = 2,
@@ -432,7 +430,7 @@ export async function categorizeText(text, {
     const categoryList = categories.join(', ')
     prompt = `Classify the following text into one of the predefined categories: ${categoryList}. If none match, suggest a suitable category.\n\n` + text
   } else {
-    prompt = `Identify appropriate categories or topics for the following text.\n\n` + text
+    prompt = 'Identify appropriate categories or topics for the following text.\n\n' + text
   }
   return askQuestion(prompt, { returnApologyOnError, retries, backoffMs, models, temperature, topP, maxTokens })
 }

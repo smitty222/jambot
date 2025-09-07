@@ -3,12 +3,12 @@ import db from '../database/db.js'
 
 // No imports from message.js — avoids circular deps
 export class QueueManager {
-  constructor(getUsernameFn = null) {
+  constructor (getUsernameFn = null) {
     this.getUserNickname =
       typeof getUsernameFn === 'function' ? getUsernameFn : null
   }
 
-  async resolveUsername(userId) {
+  async resolveUsername (userId) {
     // Try injected resolver
     if (this.getUserNickname) {
       try {
@@ -25,7 +25,7 @@ export class QueueManager {
     return userId
   }
 
-  async loadQueue() {
+  async loadQueue () {
     const queue = db.prepare(`
       SELECT userId, username, joinedAt
       FROM dj_queue
@@ -34,14 +34,14 @@ export class QueueManager {
     return { queue, currentIndex: 0 }
   }
 
-  async saveQueue() {
+  async saveQueue () {
     // Not needed with DB-backed queue
   }
 
-  async joinQueue(userId) {
-    const exists = db.prepare(`SELECT 1 FROM dj_queue WHERE userId = ?`).get(userId)
+  async joinQueue (userId) {
+    const exists = db.prepare('SELECT 1 FROM dj_queue WHERE userId = ?').get(userId)
     if (exists) {
-      const user = db.prepare(`SELECT username FROM dj_queue WHERE userId = ?`).get(userId)
+      const user = db.prepare('SELECT username FROM dj_queue WHERE userId = ?').get(userId)
       return { success: false, username: user?.username || 'Unknown' }
     }
 
@@ -55,12 +55,12 @@ export class QueueManager {
     return { success: true, username }
   }
 
-  async leaveQueue(userId) {
-    const info = db.prepare(`DELETE FROM dj_queue WHERE userId = ?`).run(userId)
+  async leaveQueue (userId) {
+    const info = db.prepare('DELETE FROM dj_queue WHERE userId = ?').run(userId)
     return info.changes > 0
   }
 
-  async getQueue() {
+  async getQueue () {
     const queue = db.prepare(`
       SELECT userId, username, joinedAt
       FROM dj_queue
@@ -69,7 +69,7 @@ export class QueueManager {
     return queue
   }
 
-  async getCurrentUser() {
+  async getCurrentUser () {
     const user = db.prepare(`
       SELECT userId, username, joinedAt
       FROM dj_queue
@@ -79,23 +79,23 @@ export class QueueManager {
     return user || null
   }
 
-  async advanceQueue() {
+  async advanceQueue () {
     const current = await this.getCurrentUser()
     if (!current) return null
     await this.leaveQueue(current.userId)
     return await this.getCurrentUser()
   }
 
-  async clearQueue() {
-    db.prepare(`DELETE FROM dj_queue`).run()
+  async clearQueue () {
+    db.prepare('DELETE FROM dj_queue').run()
   }
 
-  async isUserNext(userId) {
+  async isUserNext (userId) {
     const current = await this.getCurrentUser()
     return current?.userId === userId
   }
 
-  async removeIfNotNext(userId) {
+  async removeIfNotNext (userId) {
     const isNext = await this.isUserNext(userId)
     if (!isNext) {
       await this.leaveQueue(userId)

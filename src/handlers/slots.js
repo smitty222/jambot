@@ -34,12 +34,12 @@ function spinSlots () {
 }
 
 function getJackpotValue () {
-  const row = db.prepare(`SELECT progressiveJackpot FROM jackpot WHERE id = 1`).get()
+  const row = db.prepare('SELECT progressiveJackpot FROM jackpot WHERE id = 1').get()
   return row?.progressiveJackpot || 100
 }
 
 function updateJackpotValue (newValue) {
-  db.prepare(`UPDATE jackpot SET progressiveJackpot = ? WHERE id = 1`).run(newValue)
+  db.prepare('UPDATE jackpot SET progressiveJackpot = ? WHERE id = 1').run(newValue)
   console.log(`✅ Jackpot updated in DB: $${newValue}`)
 }
 
@@ -80,7 +80,7 @@ function calculateRTP (winMultiplier, betAmount, rtp = 0.96) {
   return expectedPayout
 }
 
-function formatBalance(balance) {
+function formatBalance (balance) {
   const rounded = Math.round(balance)
   return rounded > 999 ? rounded.toLocaleString() : rounded.toString()
 }
@@ -142,7 +142,6 @@ async function playSlots (userUUID, betSize = 1, paylines = 1) {
     return 'An error occurred while playing the slots. Please try again later.'
   }
 }
-
 
 // Simulate progressive jackpot hit with low probability
 function isJackpotHit () {

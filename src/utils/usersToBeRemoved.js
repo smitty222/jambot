@@ -10,4 +10,4 @@
 // UUID→true entries; consumers should treat it as read/write state.
 
 // eslint-disable-next-line import/prefer-default-export
-export const usersToBeRemoved = {};
+export const usersToBeRemoved = {}

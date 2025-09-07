@@ -1,30 +1,30 @@
 // src/utils/logging.js
-import winston from 'winston';
+import winston from 'winston'
 
 const level =
   process.env.LOG_LEVEL ||
-  (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
+  (process.env.NODE_ENV === 'production' ? 'info' : 'debug')
 
 // Safely stringify meta, including nested Error objects
-function jsonReplacer(_key, value) {
+function jsonReplacer (_key, value) {
   if (value instanceof Error) {
     return {
       name: value.name,
       message: value.message,
-      stack: value.stack,
-    };
+      stack: value.stack
+    }
   }
-  return value;
+  return value
 }
 
 const devFmt = winston.format.printf((info) => {
-  const { level, message, timestamp, stack, ...meta } = info;
+  const { level, message, timestamp, stack, ...meta } = info
   const metaStr = Object.keys(meta).length
     ? ' ' + JSON.stringify(meta, jsonReplacer)
-    : '';
-  const stackStr = stack ? `\n${stack}` : '';
-  return `${timestamp} ${level}: ${message}${metaStr}${stackStr}`;
-});
+    : ''
+  const stackStr = stack ? `\n${stack}` : ''
+  return `${timestamp} ${level}: ${message}${metaStr}${stackStr}`
+})
 
 export const logger = winston.createLogger({
   level,
@@ -37,12 +37,12 @@ export const logger = winston.createLogger({
       : devFmt
   ),
   defaultMeta: { service: 'jamflow-bot' },
-  transports: [new winston.transports.Console()],
-});
+  transports: [new winston.transports.Console()]
+})
 
 // Optional file logging
 if (process.env.LOG_TO_FILE) {
   logger.add(new winston.transports.File({
-    filename: process.env.LOG_FILE || 'app.log',
-  }));
+    filename: process.env.LOG_FILE || 'app.log'
+  }))
 }

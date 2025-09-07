@@ -1,5 +1,3 @@
-
-
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { loadUsersFromDb } from '../database/dbUserManager.js'
@@ -39,13 +37,13 @@ const lotteryQuestionPatterns = [
   /has\s+(.+?)\s+won(\s+before)?\??/i
 ]
 
-export function normalizeUserMention(text) {
+export function normalizeUserMention (text) {
   return text.replace(/<@uid:([a-f0-9\-]+)>/gi, (match, userId) => {
     return users[userId]?.nickname || match
   })
 }
 
-export function findUserInText(text) {
+export function findUserInText (text) {
   for (const [userId, user] of Object.entries(users)) {
     if (text.toLowerCase().includes(user.nickname.toLowerCase())) {
       return { userId, nickname: user.nickname }
@@ -54,12 +52,12 @@ export function findUserInText(text) {
   return null
 }
 
-export function isLotteryQuestion(text) {
+export function isLotteryQuestion (text) {
   const normalized = text.replace(/@/g, '')
   return lotteryQuestionPatterns.some(pattern => pattern.test(normalized))
 }
 
-export function extractUserFromText(text) {
+export function extractUserFromText (text) {
   for (const pattern of lotteryQuestionPatterns) {
     const match = text.match(pattern)
     if (match && match[1]) {
@@ -90,7 +88,7 @@ export function extractUserFromText(text) {
   return null
 }
 
-export function findUserIdAndNickname(candidate) {
+export function findUserIdAndNickname (candidate) {
   const cleanCandidate = candidate.trim().toLowerCase()
   for (const [userId, user] of Object.entries(users)) {
     if (user.nickname.toLowerCase() === cleanCandidate) {

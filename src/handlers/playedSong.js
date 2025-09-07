@@ -10,13 +10,12 @@ import { QueueManager } from '../utils/queueManager.js'
 // DB handles
 import db from '../database/db.js'
 
-
 const queueManager = new QueueManager(getUserNickname)
 
 const stageLock = { locked: false, userUuid: null, timeout: null }
 
 const formatDate = (dateString) => {
-  const [y,m,d] = (dateString || '').split('-')
+  const [y, m, d] = (dateString || '').split('-')
   if (!y || !m || !d) return 'N/A'
   return `${m}-${d}-${y}`
 }
@@ -27,7 +26,7 @@ const parseDuration = (durationStr) => {
 
 // ---- DB-first theme lookups (mirror bot.js) ----
 let sqliteThemeDbPromise = null
-async function getSqliteThemeDb() {
+async function getSqliteThemeDb () {
   if (!sqliteThemeDbPromise) {
     sqliteThemeDbPromise = sqliteOpen({
       filename: process.env.DB_FILE || './mydb.sqlite',
@@ -36,26 +35,26 @@ async function getSqliteThemeDb() {
   }
   return sqliteThemeDbPromise
 }
-function getThemeViaBetterSqlite(room) {
+function getThemeViaBetterSqlite (room) {
   try {
-    const row = db.prepare(`SELECT theme FROM themes WHERE roomId = ?`).get(room)
+    const row = db.prepare('SELECT theme FROM themes WHERE roomId = ?').get(room)
     if (row?.theme) return { theme: String(row.theme), source: 'better-sqlite3' }
   } catch (e) {
     console.warn('[AlbumTheme] better-sqlite3 lookup error:', e?.message || e)
   }
   return null
 }
-async function getThemeViaSqlite(room) {
+async function getThemeViaSqlite (room) {
   try {
     const sdb = await getSqliteThemeDb()
-    const row = await sdb.get(`SELECT theme FROM themes WHERE roomId = ?`, room)
+    const row = await sdb.get('SELECT theme FROM themes WHERE roomId = ?', room)
     if (row?.theme) return { theme: String(row.theme), source: 'sqlite3' }
   } catch (e) {
     console.warn('[AlbumTheme] sqlite3 lookup error:', e?.message || e)
   }
   return null
 }
-async function getRoomTheme(room) {
+async function getRoomTheme (room) {
   const b = getThemeViaBetterSqlite(room)
   if (b) { console.log(`[AlbumTheme] theme from ${b.source}: "${b.theme}"`); return b.theme }
   const s = await getThemeViaSqlite(room)
@@ -64,7 +63,7 @@ async function getRoomTheme(room) {
   console.log(`[AlbumTheme] theme fallback: "${t}"`)
   return t
 }
-function isAlbumWord(t) {
+function isAlbumWord (t) {
   return /\balbums?\b|^album day$|^album monday$/i.test(t || '')
 }
 
@@ -73,7 +72,7 @@ const handleAlbumTheme = async (_payload) => {
 
   const rawTheme = await getRoomTheme(room)
   const albumActive = isAlbumWord(rawTheme)
-  console.log(`[AlbumTheme] resolved="${(rawTheme||'').toLowerCase()}" active=${albumActive}`)
+  console.log(`[AlbumTheme] resolved="${(rawTheme || '').toLowerCase()}" active=${albumActive}`)
   if (!albumActive) return
 
   const currentSong = roomBot.currentSong
@@ -125,7 +124,7 @@ const handleAlbumTheme = async (_payload) => {
       roomBot.currentAlbum = { albumId: albumID, albumName, artistName, trackCount, albumArt }
       roomBot.currentAlbumTrackNumber = reliableTrackNumber
 
-      await postMessage({ room, message: ``, images: [albumArt] })
+      await postMessage({ room, message: '', images: [albumArt] })
       await postMessage({
         room,
         message:
@@ -156,7 +155,7 @@ const handleAlbumTheme = async (_payload) => {
 
     // 🎉 Final Track
     if (isLast) {
-      await postMessage({ room, message: ``, images: [albumArt] })
+      await postMessage({ room, message: '', images: [albumArt] })
       await postMessage({
         room,
         message:
@@ -168,7 +167,7 @@ const handleAlbumTheme = async (_payload) => {
 💬 Time to leave your review: \`/albumreview\`  
 📊 Progress: ${progressBar}`
       })
-      await postMessage({ room, message: `✨ Use \`/reviewhelp\` to learn how to rate the album!` })
+      await postMessage({ room, message: '✨ Use `/reviewhelp` to learn how to rate the album!' })
 
       const adjustedDuration = Math.max(0, songDuration - 5000)
       const reminderTime = Math.max(0, adjustedDuration - 60000)
@@ -233,7 +232,7 @@ Want to go next? Type \`q+\` to claim your spot and play an album!`
                   stageLock.userUuid = nextNextUser.userId
                   stageLock.timeout = null
                 } else {
-                  await postMessage({ room, message: `🎵 No more DJs in queue. The stage is open for the next album!` })
+                  await postMessage({ room, message: '🎵 No more DJs in queue. The stage is open for the next album!' })
                   stageLock.locked = false
                   stageLock.userUuid = null
                   stageLock.timeout = null
@@ -252,7 +251,7 @@ Want to go next? Type \`q+\` to claim your spot and play an album!`
             }, 1000)
             setTimeout(() => clearInterval(monitor), 30000)
           } else {
-            await postMessage({ room, message: `🎵 No one is in the queue. The stage is open to play the next album!` })
+            await postMessage({ room, message: '🎵 No one is in the queue. The stage is open to play the next album!' })
           }
         } catch (error) {
           console.error('[AlbumTheme] Error during DJ transition:', error)
@@ -274,10 +273,10 @@ Want to go next? Type \`q+\` to claim your spot and play an album!`
   }
 }
 
-function isStageLockedFor(userUuid) {
+function isStageLockedFor (userUuid) {
   return stageLock.locked && userUuid !== stageLock.userUuid
 }
-function cancelStageLock() {
+function cancelStageLock () {
   if (stageLock.timeout) clearTimeout(stageLock.timeout)
   stageLock.locked = false
   stageLock.userUuid = null

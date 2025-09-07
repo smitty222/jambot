@@ -13,15 +13,15 @@ import { postMessage } from '../../libs/cometchat.js'
 
 const LOBBY_TIMEOUT_DURATION = 30000
 const BETTING_TIMEOUT_DURATION = 30000
-const NUDGE_SECONDS_LEFT = 10            // nudge when ~10s remain
+const NUDGE_SECONDS_LEFT = 10 // nudge when ~10s remain
 const PLAYER_DECISION_TIMEOUT = 30000
 const NUM_DECKS = Number(process.env.BJ_NUM_DECKS || 6) // 6-deck shoe by default
 
 // ────────────────────────────────────────────────────────────────
 // Multi-table state & locking
 // ────────────────────────────────────────────────────────────────
-const tables = new Map()       // tableId -> state
-const locks = new Map()        // tableId -> Promise chain
+const tables = new Map() // tableId -> state
+const locks = new Map() // tableId -> Promise chain
 
 function createState () {
   return {
@@ -34,7 +34,7 @@ function createState () {
     deck: [],
     currentPlayerIndex: 0,
     canJoinTable: true,
-    userNicknames: {},       // now stores <@uid:UUID>
+    userNicknames: {}, // now stores <@uid:UUID>
     // timers
     lobbyTimeout: null,
     bettingTimeout: null,
@@ -116,8 +116,7 @@ function calculateHandValue (hand) {
   let aceCount = 0
   for (const card of hand) {
     if (['J', 'Q', 'K'].includes(card.value)) value += 10
-    else if (card.value === 'A') { value += 11; aceCount++ }
-    else value += parseInt(card.value)
+    else if (card.value === 'A') { value += 11; aceCount++ } else value += parseInt(card.value)
   }
   while (value > 21 && aceCount > 0) {
     value -= 10
@@ -136,7 +135,7 @@ function formatHandWithValue (hand) { return `${formatHand(hand)} (Total: ${calc
 
 function getPlayerListMessage (state) {
   if (state.tableUsers.length === 0) return '🪑 No one at the table yet.'
-  return `🃏 Blackjack Table:\n` +
+  return '🃏 Blackjack Table:\n' +
     state.tableUsers.map((uuid, i) => `${i + 1}. ${state.userNicknames[uuid] || mention(uuid)}`).join('\n')
 }
 
@@ -590,7 +589,7 @@ async function playDealerTurn (ctx) {
       const bet = state.playerBets[user]
 
       if (state.naturalBlackjackPaid.has(user)) continue // already settled
-      if (state.surrendered.has(user)) continue          // refunded half
+      if (state.surrendered.has(user)) continue // refunded half
 
       const hands = state.splitHands[user] || [state.playerHands[user]]
 
@@ -644,21 +643,21 @@ function getFullTableView (ctx) {
 }
 
 // --- helpers to READ/QUERY state without exposing internals ---
-export function getPhase(ctx) {
-  return getState(ctx).phase;
+export function getPhase (ctx) {
+  return getState(ctx).phase
 }
-export function getPlayerHand(userUUID, ctx) {
-  return getState(ctx).playerHands[userUUID] || null;
+export function getPlayerHand (userUUID, ctx) {
+  return getState(ctx).playerHands[userUUID] || null
 }
-export function hasOpenBetting(ctx) {
-  return getState(ctx).phase === 'betting';
+export function hasOpenBetting (ctx) {
+  return getState(ctx).phase === 'betting'
 }
-export function isPlayersTurn(userUUID, ctx) {
-  const st = getState(ctx);
-  return st.phase === 'playing' && st.tableUsers[st.currentPlayerIndex] === userUUID;
+export function isPlayersTurn (userUUID, ctx) {
+  const st = getState(ctx)
+  return st.phase === 'playing' && st.tableUsers[st.currentPlayerIndex] === userUUID
 }
-export function isSeated(userUUID, ctx) {
-  return getState(ctx).tableUsers.includes(userUUID);
+export function isSeated (userUUID, ctx) {
+  return getState(ctx).tableUsers.includes(userUUID)
 }
 
 export async function handleSplit (userUUID, _nickname, ctx) {
@@ -717,7 +716,7 @@ export async function handleSplit (userUUID, _nickname, ctx) {
 
 export {
   // flows
-  openBetting,      // back-compat: triggers lobby
+  openBetting, // back-compat: triggers lobby
   // core actions/queries
   joinTable,
   leaveTable,
@@ -726,5 +725,5 @@ export {
   handleStand,
   handleSurrender,
   handleDouble,
-  getFullTableView,
+  getFullTableView
 }

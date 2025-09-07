@@ -7,27 +7,27 @@
  * @param {number} [denominatorLimit=20]  Max denominator to try.
  * @returns {string}  Fraction as "numerator/denominator".
  */
-export function decimalToFraction(decimal, denominatorLimit = 20) {
+export function decimalToFraction (decimal, denominatorLimit = 20) {
   if (Number.isInteger(decimal)) {
-    return `${decimal}/1`;
+    return `${decimal}/1`
   }
 
   // Round input to 2dp to avoid floating-point craziness
-  decimal = Math.round(decimal * 100) / 100;
+  decimal = Math.round(decimal * 100) / 100
 
-  let bestNum = 1;
-  let bestDen = 1;
-  let smallestDiff = Infinity;
+  let bestNum = 1
+  let bestDen = 1
+  let smallestDiff = Infinity
 
   for (let d = 1; d <= denominatorLimit; d++) {
-    const n = Math.round(decimal * d);
-    const diff = Math.abs(decimal - (n / d));
+    const n = Math.round(decimal * d)
+    const diff = Math.abs(decimal - (n / d))
     if (diff < smallestDiff) {
-      bestNum = n;
-      bestDen = d;
-      smallestDiff = diff;
+      bestNum = n
+      bestDen = d
+      smallestDiff = diff
     }
   }
 
-  return `${bestNum}/${bestDen}`;
+  return `${bestNum}/${bestDen}`
 }

@@ -1,4 +1,3 @@
-
 // src/utils/wiki.js
 import { makeRequest } from './networking.js'
 
@@ -8,20 +7,20 @@ const LOG_LEVEL = (process.env.LOG_LEVEL || 'error').toLowerCase()
 const isDebug = LOG_LEVEL === 'debug'
 const d = (...a) => { if (isDebug) console.debug('[WIKI]', ...a) }
 
-function host(lang) {
+function host (lang) {
   return `${lang || WIKI_LANG}.wikipedia.org`
 }
 
-async function wikiGet(url, { timeoutMs = WIKI_TIMEOUT_MS, signal } = {}) {
+async function wikiGet (url, { timeoutMs = WIKI_TIMEOUT_MS, signal } = {}) {
   const res = await makeRequest(url, {
     headers: { accept: 'application/json' },
     timeoutMs,
-    signal,
+    signal
   })
   return res
 }
 
-function pickSongResult(results = [], title, artist) {
+function pickSongResult (results = [], title, artist) {
   if (!results.length) return null
   const tLow = String(title || '').toLowerCase()
   const aLow = String(artist || '').toLowerCase()
@@ -38,7 +37,7 @@ function pickSongResult(results = [], title, artist) {
   return sorted[0]
 }
 
-export async function getSongSummaryFromWikipedia({ title, artist, lang = WIKI_LANG, signal } = {}) {
+export async function getSongSummaryFromWikipedia ({ title, artist, lang = WIKI_LANG, signal } = {}) {
   if (!title) return null
   // Search for the page
   const q = `${title} ${artist || ''} song`.trim()

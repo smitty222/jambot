@@ -212,7 +212,7 @@ db.exec(`
 // ───────────────────────────────────────────────────────────────
 // Lightweight migrations for existing DBs (idempotent)
 // ───────────────────────────────────────────────────────────────
-function hasColumn(table, name) {
+function hasColumn (table, name) {
   const cols = db.prepare('PRAGMA table_info(' + table + ')').all()
   return cols.some(c => c.name === name)
 }

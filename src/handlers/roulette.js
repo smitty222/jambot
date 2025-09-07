@@ -9,7 +9,7 @@ const defaultWalletSize = 50
 const room = process.env.ROOM_UUID
 
 // Winning number color logic
-function getRouletteColor(number) {
+function getRouletteColor (number) {
   if (number === 0 || number === '00') return 'green'
   const red = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]
   const black = [2, 4, 6, 8, 10, 11, 13, 15, 17, 20, 22, 24, 26, 28, 29, 31, 33, 35]
@@ -18,7 +18,7 @@ function getRouletteColor(number) {
   return 'unknown'
 }
 
-function getDozenRange(dozen) {
+function getDozenRange (dozen) {
   switch (dozen) {
     case 1: return Array.from({ length: 12 }, (_, i) => i + 1)
     case 2: return Array.from({ length: 12 }, (_, i) => i + 13)
@@ -27,14 +27,13 @@ function getDozenRange(dozen) {
   }
 }
 
-
-function isDirectNumberBet(message) {
+function isDirectNumberBet (message) {
   const cmd = message.split(' ')[0].substring(1)
   const number = parseInt(cmd, 10)
   return !isNaN(number) && number >= 0 && number <= 36
 }
 
-async function initializeWallet(user) {
+async function initializeWallet (user) {
   try {
     const wallets = await loadWallets()
     if (!wallets[user]) {
@@ -48,9 +47,9 @@ async function initializeWallet(user) {
   }
 }
 
-export async function startRouletteGame(payload) {
+export async function startRouletteGame (payload) {
   rouletteGameActive = true
-  
+
   await postMessage({ room, message: '', images: ['https://i.giphy.com/media/qH1jQOvi4WVEvCRvOg/giphy.gif'] })
   await postMessage({ room, message: '🎉 Welcome to the Roulette Table! 🎉' })
   await postMessage({ room, message: '', images: ['https://imgur.com/IyFZlzj.jpg'] })
@@ -64,7 +63,7 @@ export async function startRouletteGame(payload) {
   await closeBets()
 }
 
-async function closeBets() {
+async function closeBets () {
   if (!rouletteGameActive) return
   await postMessage({ room, message: '🛑 Betting is now closed!' })
 
@@ -86,7 +85,7 @@ async function closeBets() {
   await drawWinningNumber()
 }
 
-async function drawWinningNumber() {
+async function drawWinningNumber () {
   const numbers = [...Array(37).keys(), 37]
   const index = Math.floor(Math.random() * numbers.length)
   const number = numbers[index]
@@ -143,7 +142,7 @@ async function drawWinningNumber() {
   rouletteGameActive = false
 }
 
-export async function handleRouletteBet(payload) {
+export async function handleRouletteBet (payload) {
   const user = payload.sender
   const nickname = await getUserNickname(user)
   const parts = payload.message.trim().split(' ')
@@ -181,14 +180,14 @@ export async function handleRouletteBet(payload) {
   })
 }
 
-export async function handleBalanceCommand(payload) {
+export async function handleBalanceCommand (payload) {
   const user = payload.sender
   const nickname = await getUserNickname(user)
   const balance = await initializeWallet(user)
   await postMessage({ room, message: `${nickname}, your balance is $${balance.toLocaleString()}.` })
 }
 
-export async function showAllBets() {
+export async function showAllBets () {
   const summary = await Promise.all(Object.entries(bets).map(async ([user, userBets]) => {
     const name = await getUserNickname(user)
     const betList = userBets.map(b => {
@@ -199,7 +198,7 @@ export async function showAllBets() {
     return `${name}: ${betList}`
   }))
 
-  await postMessage({ room, message: `🎰 Current Bets:\n` + summary.join('\n') })
+  await postMessage({ room, message: '🎰 Current Bets:\n' + summary.join('\n') })
 }
 
 export {

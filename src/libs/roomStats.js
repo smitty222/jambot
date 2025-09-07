@@ -3,7 +3,7 @@ import path from 'path'
 
 const statsFilePath = path.join(process.cwd(), 'src/data/roomStats.json')
 
-export async function logCurrentSong(song, likes = 0, dislikes = 0, stars = 0) {
+export async function logCurrentSong (song, likes = 0, dislikes = 0, stars = 0) {
   if (!song || !song.trackName || !song.artistName) return
 
   let history = []
@@ -33,18 +33,17 @@ export async function logCurrentSong(song, likes = 0, dislikes = 0, stars = 0) {
     const existing = history[existingIndex]
     existing.playCount += 1
     existing.songId = existing.songId || song.songId || null
-    existing.spotifyTrackId = existing.spotifyTrackId || song.spotifyTrackId || null  
+    existing.spotifyTrackId = existing.spotifyTrackId || song.spotifyTrackId || null
     existing.songDuration = existing.songDuration || song.songDuration || null
     existing.likes += likes
     existing.dislikes += dislikes
     existing.stars += stars
-
   } else {
     history.push({
       trackName: song.trackName,
       artistName: song.artistName,
       songId: song.songId || null,
-      spotifyTrackId: song.spotifyTrackId || null,   
+      spotifyTrackId: song.spotifyTrackId || null,
       songDuration: song.songDuration || null,
       playCount: 1,
       likes,
@@ -55,17 +54,17 @@ export async function logCurrentSong(song, likes = 0, dislikes = 0, stars = 0) {
 
   try {
     history.sort((a, b) => {
-      if (!a.artistName) return 1;
-      if (!b.artistName) return -1;
-      return a.artistName.localeCompare(b.artistName);
-    });
+      if (!a.artistName) return 1
+      if (!b.artistName) return -1
+      return a.artistName.localeCompare(b.artistName)
+    })
     await fs.writeFile(statsFilePath, JSON.stringify(history, null, 2))
   } catch (e) {
     console.error('Error writing to roomStats.json:', e)
   }
 }
 
-export async function updateLastPlayed(song) {
+export async function updateLastPlayed (song) {
   if (!song || !song.trackName || !song.artistName) return
 
   try {
@@ -89,7 +88,7 @@ export async function updateLastPlayed(song) {
   }
 }
 
-export async function getUserSongReviews(userId, limit = 5) {
+export async function getUserSongReviews (userId, limit = 5) {
   try {
     const file = await fs.readFile(statsFilePath, 'utf-8')
     const songs = JSON.parse(file)
@@ -118,4 +117,3 @@ export async function getUserSongReviews(userId, limit = 5) {
     return []
   }
 }
-

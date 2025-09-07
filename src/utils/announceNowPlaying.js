@@ -12,16 +12,16 @@ import { getGeniusAbout } from '../utils/API.js' // { songId, aboutPlain, aboutH
 // Logging (defaults to info; set LOG_LEVEL=debug for extra detail)
 // ───────────────────────────────────────────────────────────
 const LOG_LEVEL = (process.env.LOG_LEVEL || 'info').toLowerCase()
-const isInfo  = LOG_LEVEL === 'info' || LOG_LEVEL === 'debug'
+const isInfo = LOG_LEVEL === 'info' || LOG_LEVEL === 'debug'
 const isDebug = LOG_LEVEL === 'debug'
-const log   = (...a) => { if (isInfo)  console.log(...a) }
+const log = (...a) => { if (isInfo) console.log(...a) }
 const debug = (...a) => { if (isDebug) console.debug(...a) }
 
 // ───────────────────────────────────────────────────────────
 // Settings persistence (SQLite via db)
 // ───────────────────────────────────────────────────────────
 const KEY_INFOBLURB_ENABLED = 'nowplaying_infoblurb_enabled'
-const KEY_INFOBLURB_TONE    = 'nowplaying_infoblurb_tone'
+const KEY_INFOBLURB_TONE = 'nowplaying_infoblurb_tone'
 
 // Ensure settings table
 try {
@@ -36,7 +36,7 @@ try {
 }
 
 // Helpers
-function readSetting(key) {
+function readSetting (key) {
   try {
     const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key)
     return row ? row.value : null
@@ -45,7 +45,7 @@ function readSetting(key) {
     return null
   }
 }
-function writeSetting(key, value) {
+function writeSetting (key, value) {
   try {
     db.prepare(
       'INSERT INTO app_settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value'
@@ -58,33 +58,44 @@ function writeSetting(key, value) {
 // ───────────────────────────────────────────────────────────
 // Tones
 // ───────────────────────────────────────────────────────────
-const TONES = ['neutral','playful','cratedigger','hype','classy','chartbot','djtech','vibe']
+const TONES = ['neutral', 'playful', 'cratedigger', 'hype', 'classy', 'chartbot', 'djtech', 'vibe']
 const TONE_ALIASES = {
-  nerd: 'cratedigger', crate: 'cratedigger', digger: 'cratedigger',
-  n: 'neutral', neutral: 'neutral',
-  p: 'playful', fun: 'playful', playful: 'playful',
-  hype: 'hype', amp: 'hype',
-  classy: 'classy', formal: 'classy',
-  chart: 'chartbot', charts: 'chartbot', chartbot: 'chartbot',
-  tech: 'djtech', djtech: 'djtech',
-  vibe: 'vibe', chill: 'vibe'
+  nerd: 'cratedigger',
+  crate: 'cratedigger',
+  digger: 'cratedigger',
+  n: 'neutral',
+  neutral: 'neutral',
+  p: 'playful',
+  fun: 'playful',
+  playful: 'playful',
+  hype: 'hype',
+  amp: 'hype',
+  classy: 'classy',
+  formal: 'classy',
+  chart: 'chartbot',
+  charts: 'chartbot',
+  chartbot: 'chartbot',
+  tech: 'djtech',
+  djtech: 'djtech',
+  vibe: 'vibe',
+  chill: 'vibe'
 }
-function normalizeTone(raw) {
+function normalizeTone (raw) {
   const t = String(raw || '').toLowerCase()
   const aliased = TONE_ALIASES[t] || t
   return TONES.includes(aliased) ? aliased : 'neutral'
 }
-function toneLineFor(tone) {
+function toneLineFor (tone) {
   const t = normalizeTone(tone)
   const map = {
-    neutral:     'Tone: neutral, informative.',
-    playful:     'Tone: playful—light slang ok; one tasteful emoji allowed.',
+    neutral: 'Tone: neutral, informative.',
+    playful: 'Tone: playful—light slang ok; one tasteful emoji allowed.',
     cratedigger: 'Tone: cratedigger—one micro fact (producer, sample, label, chart stat).',
-    hype:        'Tone: hype—energetic, crowd-facing; one short exclamation allowed; no caps-lock.',
-    classy:      'Tone: classy—no slang, no emojis; concise editorial style.',
-    chartbot:    'Tone: chartbot—prefer chart peaks (with country) or certifications.',
-    djtech:      'Tone: djtech—mention BPM/key if present; avoid heavy jargon.',
-    vibe:        'Tone: vibe—1–2 genre adjectives; avoid numbers unless iconic.'
+    hype: 'Tone: hype—energetic, crowd-facing; one short exclamation allowed; no caps-lock.',
+    classy: 'Tone: classy—no slang, no emojis; concise editorial style.',
+    chartbot: 'Tone: chartbot—prefer chart peaks (with country) or certifications.',
+    djtech: 'Tone: djtech—mention BPM/key if present; avoid heavy jargon.',
+    vibe: 'Tone: vibe—1–2 genre adjectives; avoid numbers unless iconic.'
   }
   return map[t] || map.neutral
 }
@@ -92,9 +103,9 @@ function toneLineFor(tone) {
 // ───────────────────────────────────────────────────────────
 // Toggles (DB-backed; env defaults)
 // ───────────────────────────────────────────────────────────
-const envEnabledDefault = ['1','true','on','yes'].includes(String(process.env.NOWPLAYING_INFOBLURB ?? '').toLowerCase())
+const envEnabledDefault = ['1', 'true', 'on', 'yes'].includes(String(process.env.NOWPLAYING_INFOBLURB ?? '').toLowerCase())
 const envToneDefaultRaw = (process.env.NOWPLAYING_INFOBLURB_TONE || 'neutral')
-const envToneDefault    = normalizeTone(envToneDefaultRaw)
+const envToneDefault = normalizeTone(envToneDefaultRaw)
 
 let INFO_BLURB_ENABLED = (() => {
   const v = readSetting(KEY_INFOBLURB_ENABLED)
@@ -114,23 +125,23 @@ let INFO_BLURB_TONE = (() => {
   return normalizeTone(v)
 })()
 
-export function enableNowPlayingInfoBlurb()  { INFO_BLURB_ENABLED = true;  writeSetting(KEY_INFOBLURB_ENABLED, '1') }
-export function disableNowPlayingInfoBlurb() { INFO_BLURB_ENABLED = false; writeSetting(KEY_INFOBLURB_ENABLED, '0') }
-export function setNowPlayingInfoBlurb(enabled) { INFO_BLURB_ENABLED = !!enabled; writeSetting(KEY_INFOBLURB_ENABLED, enabled ? '1' : '0') }
-export function isNowPlayingInfoBlurbEnabled() { return INFO_BLURB_ENABLED }
-export function setNowPlayingInfoBlurbTone(tone) {
+export function enableNowPlayingInfoBlurb () { INFO_BLURB_ENABLED = true; writeSetting(KEY_INFOBLURB_ENABLED, '1') }
+export function disableNowPlayingInfoBlurb () { INFO_BLURB_ENABLED = false; writeSetting(KEY_INFOBLURB_ENABLED, '0') }
+export function setNowPlayingInfoBlurb (enabled) { INFO_BLURB_ENABLED = !!enabled; writeSetting(KEY_INFOBLURB_ENABLED, enabled ? '1' : '0') }
+export function isNowPlayingInfoBlurbEnabled () { return INFO_BLURB_ENABLED }
+export function setNowPlayingInfoBlurbTone (tone) {
   const norm = normalizeTone(tone)
   INFO_BLURB_TONE = norm
   writeSetting(KEY_INFOBLURB_TONE, norm)
 }
-export function getNowPlayingInfoBlurbTone() { return INFO_BLURB_TONE }
+export function getNowPlayingInfoBlurbTone () { return INFO_BLURB_TONE }
 
 // ───────────────────────────────────────────────────────────
 // Blurb cache
 // ───────────────────────────────────────────────────────────
 const BLURB_TTL_MS = 15 * 60 * 1000
 const blurbCache = new Map() // key -> { text, ts }
-function blurbKey(song) {
+function blurbKey (song) {
   return song.songId || song.spotifyTrackId || `${song.trackName}|${song.artistName}`
 }
 
@@ -142,7 +153,7 @@ const GENIUS_TIMEOUT_MS = Number(process.env.NOWPLAYING_GENIUS_TIMEOUT_MS || 300
 const geniusCache = new Map() // key -> { about: string, ts: number }
 
 // Treat trivial/placeholder text as "no info"
-function normalizeGeniusAbout(about) {
+function normalizeGeniusAbout (about) {
   const t = String(about || '').trim()
   if (!t) return null
   const placeholders = new Set(['?', '-', '—', 'n/a', 'na', 'none', 'unknown', 'tbd'])
@@ -153,7 +164,7 @@ function normalizeGeniusAbout(about) {
 }
 
 // Race getGeniusAbout against a timeout (cannot cancel underlying HTTP)
-async function fetchGeniusAboutWithTimeout(title, artist) {
+async function fetchGeniusAboutWithTimeout (title, artist) {
   const k = `${title}::${artist}`
   const now = Date.now()
   const cached = geniusCache.get(k)
@@ -196,7 +207,7 @@ async function fetchGeniusAboutWithTimeout(title, artist) {
 // ───────────────────────────────────────────────────────────
 const AI_HARD_TIMEOUT_MS = 15000
 
-function buildGeniusBlurbPrompt(song, aboutText, tone = 'neutral') {
+function buildGeniusBlurbPrompt (song, aboutText, tone = 'neutral') {
   const { trackName, artistName } = song || {}
   const safeAbout = String(aboutText || '').slice(0, 4000)
   return `Summarize the following Genius "About" section for a song into ONE sharp blurb (max 160 characters).
@@ -209,11 +220,12 @@ ${toneLineFor(tone)}
 
 Song: ${trackName || 'Unknown'} — ${artistName || 'Unknown'}
 About (Genius):
-"""${safeAbout}"""`}
- 
+"""${safeAbout}"""`
+}
+
 // Sanitize output (remove IDs/names/etc.)
 const escapeRegExp = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-function sanitizeBlurb(text, song) {
+function sanitizeBlurb (text, song) {
   if (!text) return text
   let t = String(text).replace(/^["'“”]+|["'“”]+$/g, '').trim()
   t = t
@@ -231,14 +243,14 @@ function sanitizeBlurb(text, song) {
   return t || null
 }
 
-function isBlandBlurb(t = '') {
+function isBlandBlurb (t = '') {
   const s = String(t).toLowerCase()
   const generic = /(a song by|single by|track by|an? american (singer|dj)|popular song|club single)/i.test(s)
   const hasConcrete = /(\b(19|20)\d{2}\b|billboard|hot\s*100|uk\s*singles|no\.\s*\d|platinum|gold|certified|produced by|label)/i.test(s)
   return generic || !hasConcrete || s.length < 40
 }
 
-async function summarizeGeniusAbout(song, aboutText, tone = 'neutral') {
+async function summarizeGeniusAbout (song, aboutText, tone = 'neutral') {
   const prompt = buildGeniusBlurbPrompt(song, aboutText, tone)
   debug('[NowPlaying][Blurb][AI][PROMPT]', prompt)
   try {
@@ -261,7 +273,7 @@ async function summarizeGeniusAbout(song, aboutText, tone = 'neutral') {
 // ───────────────────────────────────────────────────────────
 // Main
 // ───────────────────────────────────────────────────────────
-export async function announceNowPlaying(room) {
+export async function announceNowPlaying (room) {
   try {
     const song = roomBot.currentSong
     if (!song || !song.trackName || !song.artistName || !song.songId) return
@@ -285,7 +297,7 @@ export async function announceNowPlaying(room) {
     let message = `🎵 Now playing: “${song.trackName}” by ${song.artistName}`
 
     if (!stats?.lastPlayed || stats.playCount === 1) {
-      message += `\n🆕 First time playing in this room!`
+      message += '\n🆕 First time playing in this room!'
     } else {
       message += `\n🔁 Played ${stats.playCount} time${stats.playCount !== 1 ? 's' : ''}`
       const lastPlayedTime = formatDistanceToNow(new Date(stats.lastPlayed), { addSuffix: true })
@@ -342,7 +354,6 @@ export async function announceNowPlaying(room) {
         console.error('[NowPlaying][Blurb][ASYNC][ERROR]', e?.message || e)
       }
     })()
-
   } catch (err) {
     console.error('Error in announceNowPlaying:', err)
   }

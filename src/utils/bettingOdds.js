@@ -7,14 +7,14 @@
 // watch is registered to invalidate the cache when the underlying file
 // changes on disk.
 
-import fs from 'fs/promises';
-import * as fsSync from 'fs';
+import fs from 'fs/promises'
+import * as fsSync from 'fs'
 
-const FILE_PATH = 'src/data/bettingOdds.json';
+const FILE_PATH = 'src/data/bettingOdds.json'
 
 // In-memory cache of all odds keyed by sport. Null indicates the
 // cache has not been loaded yet or has been invalidated.
-let oddsCache = null;
+let oddsCache = null
 
 /**
  * Load and parse the entire odds file into memory. If the cache has
@@ -22,24 +22,24 @@ let oddsCache = null;
  * returned.
  * @returns {Promise<Record<string, any>>}
  */
-async function loadAllOdds() {
-  if (oddsCache && typeof oddsCache === 'object') return oddsCache;
+async function loadAllOdds () {
+  if (oddsCache && typeof oddsCache === 'object') return oddsCache
   try {
-    const data = await fs.readFile(FILE_PATH, 'utf8');
-    oddsCache = JSON.parse(data);
+    const data = await fs.readFile(FILE_PATH, 'utf8')
+    oddsCache = JSON.parse(data)
   } catch {
-    oddsCache = {};
+    oddsCache = {}
   }
-  return oddsCache;
+  return oddsCache
 }
 
 // Watch the odds file for changes and clear the cache when it changes.
 try {
   fsSync.watchFile(FILE_PATH, { persistent: false }, (curr, prev) => {
     if (curr.mtimeMs !== prev.mtimeMs) {
-      oddsCache = null;
+      oddsCache = null
     }
-  });
+  })
 } catch {
   // If watchFile is unsupported, we fall back to lazy loading without
   // invalidation. This may result in stale reads until process restart.
@@ -50,12 +50,12 @@ try {
  * after modifying the cache. It writes the file asynchronously.
  * @param {Record<string, any>} allOdds
  */
-async function persistOdds(allOdds) {
-  oddsCache = allOdds;
+async function persistOdds (allOdds) {
+  oddsCache = allOdds
   try {
-    await fs.writeFile(FILE_PATH, JSON.stringify(allOdds, null, 2));
+    await fs.writeFile(FILE_PATH, JSON.stringify(allOdds, null, 2))
   } catch (err) {
-    console.error('[bettingOdds] Failed to persist odds:', err);
+    console.error('[bettingOdds] Failed to persist odds:', err)
   }
 }
 
@@ -67,10 +67,10 @@ async function persistOdds(allOdds) {
  * @param {any} odds
  * @returns {Promise<void>}
  */
-export async function saveOddsForSport(sport, odds) {
-  const allOdds = await loadAllOdds();
-  allOdds[sport] = odds;
-  await persistOdds(allOdds);
+export async function saveOddsForSport (sport, odds) {
+  const allOdds = await loadAllOdds()
+  allOdds[sport] = odds
+  await persistOdds(allOdds)
 }
 
 /**
@@ -79,7 +79,7 @@ export async function saveOddsForSport(sport, odds) {
  * @param {string} sport
  * @returns {Promise<any[]>}
  */
-export async function getOddsForSport(sport) {
-  const allOdds = await loadAllOdds();
-  return allOdds[sport] || [];
+export async function getOddsForSport (sport) {
+  const allOdds = await loadAllOdds()
+  return allOdds[sport] || []
 }

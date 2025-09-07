@@ -6,4 +6,4 @@ export const storeItems = {
   // 🐎 Horses Section (entry point)
   '---Horses---': '/horseinfo for race details',
   '/buyhorse': { cost: '$2k - $15k', desc: 'Buy a racehorse (basic, elite, or champion)' }
-};
+}

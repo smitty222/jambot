@@ -1,7 +1,7 @@
 import db from './db.js'
 
 // 🔁 Add or update current song stats
-export function logCurrentSong(song, likes = 0, dislikes = 0, stars = 0) {
+export function logCurrentSong (song, likes = 0, dislikes = 0, stars = 0) {
   if (!song || !song.trackName || !song.artistName) return
 
   const existing = db.prepare(`
@@ -48,7 +48,7 @@ export function logCurrentSong(song, likes = 0, dislikes = 0, stars = 0) {
 }
 
 // ⏱️ Update lastPlayed timestamp
-export function updateLastPlayed(song) {
+export function updateLastPlayed (song) {
   if (!song || !song.trackName || !song.artistName) return
 
   const now = new Date().toISOString()
@@ -67,7 +67,7 @@ export function updateLastPlayed(song) {
 }
 
 // 🔍 Get user song reviews
-export function getUserSongReviews(userId, limit = 5) {
+export function getUserSongReviews (userId, limit = 5) {
   const rows = db.prepare(`
     SELECT rs.trackName, rs.artistName, rs.songDuration, rs.spotifyTrackId,
            sr.rating

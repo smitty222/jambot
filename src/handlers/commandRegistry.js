@@ -5,18 +5,18 @@
 // Moving this logic out of message.js improves readability and makes it
 // easier to add or remove commands without touching the monolithic file.
 
-import { postMessage } from '../libs/cometchat.js';
-import { logger } from '../utils/logging.js';
+import { postMessage } from '../libs/cometchat.js'
+import { logger } from '../utils/logging.js'
 
 // Game and feature handlers
-import { handleSlotsCommand } from './slots.js';
+import { handleSlotsCommand } from './slots.js'
 import {
   startRouletteGame,
   handleRouletteBet,
   handleBalanceCommand,
   showAllBets,
   rouletteGameActive
-} from './roulette.js';
+} from './roulette.js'
 import {
   openBetting,
   joinTable,
@@ -27,15 +27,15 @@ import {
   handleDouble,
   handleSurrender,
   handleSplit
-} from '../games/blackjack/blackJack.js';
+} from '../games/blackjack/blackJack.js'
 
 // Lottery and GIF/Dog handlers
 import {
   handleLotteryCommand,
   handleTopLotteryStatsCommand,
   handleSingleNumberQuery
-} from '../database/dblotterymanager.js';
-import handleDogCommand from './commandDog.js';
+} from '../database/dblotterymanager.js'
+import handleDogCommand from './commandDog.js'
 
 // Avatar command handlers
 import {
@@ -62,10 +62,10 @@ import {
   handleRandomCyberCommand,
   handleRandomCosmicCommand,
   handleRandomLovableCommand
-} from './avatarCommands.js';
+} from './avatarCommands.js'
 
 // User authorization helper to restrict bot avatar changes
-import { isUserAuthorized } from '../utils/API.js';
+import { isUserAuthorized } from '../utils/API.js'
 
 // ---------------------------------------------------------------------------
 // Command registry
@@ -76,71 +76,71 @@ import { isUserAuthorized } from '../utils/API.js';
 const commandRegistry = {
   // 🎰 Slots: `/slots [betAmount]`
   slots: async ({ payload, room }) => {
-    const parts = (payload?.message || '').trim().split(/\s+/);
-    let betAmount = 1;
+    const parts = (payload?.message || '').trim().split(/\s+/)
+    let betAmount = 1
     if (parts.length > 1) {
-      const amt = parseFloat(parts[1]);
+      const amt = parseFloat(parts[1])
       if (!Number.isFinite(amt) || amt <= 0) {
-        await postMessage({ room, message: 'Please provide a valid bet amount.' });
-        return;
+        await postMessage({ room, message: 'Please provide a valid bet amount.' })
+        return
       }
-      betAmount = amt;
+      betAmount = amt
     }
-    const userUUID = payload?.sender;
-    const response = await handleSlotsCommand(userUUID, betAmount);
-    await postMessage({ room, message: response });
+    const userUUID = payload?.sender
+    const response = await handleSlotsCommand(userUUID, betAmount)
+    await postMessage({ room, message: response })
   },
   // 🕹️ Roulette: `/roulette`
   roulette: async ({ payload }) => {
     if (rouletteGameActive) {
-      await postMessage({ room: payload.room ?? process.env.ROOM_UUID, message: 'Roulette game already in progress!' });
-      return;
+      await postMessage({ room: payload.room ?? process.env.ROOM_UUID, message: 'Roulette game already in progress!' })
+      return
     }
-    await startRouletteGame(payload);
+    await startRouletteGame(payload)
   },
   // 💰 Roulette bet: `/bet <type|number> <amount>`
   bet: async ({ payload }) => {
-    await handleRouletteBet(payload);
+    await handleRouletteBet(payload)
   },
   // 🧮 Balance: `/balance`
   balance: async ({ payload }) => {
-    await handleBalanceCommand(payload);
+    await handleBalanceCommand(payload)
   },
   // ♠ Blackjack lobby: `/blackjack`
   blackjack: async ({ room }) => {
-    await openBetting({ room });
+    await openBetting({ room })
   },
   // ♣ Join blackjack table: `/join`
   join: async ({ payload }) => {
-    await joinTable(payload);
+    await joinTable(payload)
   },
   // ♦ Leave blackjack table: `/leave`
   leave: async ({ payload }) => {
-    await leaveTable(payload);
+    await leaveTable(payload)
   },
   // 🂱 Blackjack bet: `/betbj`
   betbj: async ({ payload }) => {
-    await handleBlackjackBet(payload);
+    await handleBlackjackBet(payload)
   },
   // Blackjack actions: `/hit`, `/stand`, `/double`, `/surrender`, `/split`
   hit: async ({ payload }) => {
-    await handleHit(payload);
+    await handleHit(payload)
   },
   stand: async ({ payload }) => {
-    await handleStand(payload);
+    await handleStand(payload)
   },
   double: async ({ payload }) => {
-    await handleDouble(payload);
+    await handleDouble(payload)
   },
   surrender: async ({ payload }) => {
-    await handleSurrender(payload);
+    await handleSurrender(payload)
   },
   split: async ({ payload }) => {
-    await handleSplit(payload);
+    await handleSplit(payload)
   },
   // 🎮 Show all roulette bets: `/bets`
   bets: async () => {
-    await showAllBets();
+    await showAllBets()
   },
 
   // 🎱 Lottery: `/lottery`
@@ -151,24 +151,24 @@ const commandRegistry = {
     try {
       // Pre-game GIF (pumped up for lotto!)
       const gifUrl =
-        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExMm11bGZ0M3RraXg5Z3Z4ZzZpNjU4ZDR4Y2QwMzc0NWwyaWFlNWU4byZlcD12MV9naWZzX3NlYXJjaCZjdD1n/Ps8XflhsT5EVa/giphy.gif';
-      await postMessage({ room, message: '', images: [gifUrl] });
+        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExMm11bGZ0M3RraXg5Z3Z4ZzZpNjU4ZDR4Y2QwMzc0NWwyaWFlNWU4byZlcD12MV9naWZzX3NlYXJjaCZjdD1n/Ps8XflhsT5EVa/giphy.gif'
+      await postMessage({ room, message: '', images: [gifUrl] })
     } catch (err) {
-      logger.error('Error sending lottery GIF:', err?.message || err);
+      logger.error('Error sending lottery GIF:', err?.message || err)
     }
     // Start the game; handleLotteryCommand will DM users about picks
-    await handleLotteryCommand(payload);
+    await handleLotteryCommand(payload)
   },
 
   // 📊 Lotto stats: `/lottostats`
   lottostats: async ({ room }) => {
-    await handleTopLotteryStatsCommand(room);
+    await handleTopLotteryStatsCommand(room)
   },
 
   // 🔢 Lotto single number query: `/lotto #<number>`
   lotto: async ({ payload, room }) => {
     // Pass the entire message to the helper which extracts and validates the number
-    await handleSingleNumberQuery(room, payload.message);
+    await handleSingleNumberQuery(room, payload.message)
   },
 
   // 🎞 Show GIF list: `/gifs`
@@ -177,17 +177,17 @@ const commandRegistry = {
       room,
       message:
         'Randomly selected GIFs:\n- /burp\n- /dance\n- /party\n- /beer\n- /fart\n- /tomatoes\n- /cheers'
-    });
+    })
   },
 
   // 🤮 Burp: `/burp`
   burp: async ({ room }) => {
     try {
       const gifUrl =
-        'https://media.giphy.com/media/3orieOieQrTkLXl2SY/giphy.gif?cid=790b7611gofgmq0d396jww26sbt1bhc9ljg9am4nb8m6f6lo&ep=v1_gifs_search&rid=giphy.gif&ct=g';
-      await postMessage({ room, message: '', images: [gifUrl] });
+        'https://media.giphy.com/media/3orieOieQrTkLXl2SY/giphy.gif?cid=790b7611gofgmq0d396jww26sbt1bhc9ljg9am4nb8m6f6lo&ep=v1_gifs_search&rid=giphy.gif&ct=g'
+      await postMessage({ room, message: '', images: [gifUrl] })
     } catch (err) {
-      logger.error('Error sending burp GIF:', err?.message || err);
+      logger.error('Error sending burp GIF:', err?.message || err)
     }
   },
 
@@ -199,12 +199,12 @@ const commandRegistry = {
         'https://media.giphy.com/media/3o7qDQ4kcSD1PLM3BK/giphy.gif',
         'https://media.giphy.com/media/oP997KOtJd5ja/giphy.gif',
         'https://media.giphy.com/media/wAxlCmeX1ri1y/giphy.gif'
-      ];
-      const choice = options[Math.floor(Math.random() * options.length)];
-      await postMessage({ room, message: '', images: [choice] });
+      ]
+      const choice = options[Math.floor(Math.random() * options.length)]
+      await postMessage({ room, message: '', images: [choice] })
     } catch (err) {
-      logger.error('Error sending dance GIF:', err?.message || err);
-      await postMessage({ room, message: 'An error occurred while processing the dance command. Please try again.' });
+      logger.error('Error sending dance GIF:', err?.message || err)
+      await postMessage({ room, message: 'An error occurred while processing the dance command. Please try again.' })
     }
   },
 
@@ -215,11 +215,11 @@ const commandRegistry = {
         'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExZHF6aTAzeXNubW84aHJrZzd1OGM1ZjM0MGp5aTZrYTRrZmdscnYwbyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/IwAZ6dvvvaTtdI8SD5/giphy.gif',
         'https://media.giphy.com/media/xUA7aT1vNqVWHPY1cA/giphy.gif?cid=790b7611ov12e8uoq7xedaifcwz9gj28xb43wtxtnuj0rnod&ep=v1_gifs_search&rid=giphy.gif&ct=g',
         'https://media.giphy.com/media/iJ2cZjydqg9wFkzbGD/giphy.gif?cid=790b7611ov12e8uoq7xedaifcwz9gj28xb43wtxtnuj0rnod&ep=v1_gifs_search&rid=giphy.gif&ct=g'
-      ];
-      const choice = options[Math.floor(Math.random() * options.length)];
-      await postMessage({ room, message: '', images: [choice] });
+      ]
+      const choice = options[Math.floor(Math.random() * options.length)]
+      await postMessage({ room, message: '', images: [choice] })
     } catch (err) {
-      logger.error('Error sending party GIF:', err?.message || err);
+      logger.error('Error sending party GIF:', err?.message || err)
     }
   },
 
@@ -231,11 +231,11 @@ const commandRegistry = {
         'https://media.giphy.com/media/9GJ2w4GMngHCh2W4uk/giphy.gif?cid=ecf05e47vxjww4oli5eck8v6nd6jcmfl9e6awd3a9ok2wa7w&ep=v1_gifs_search&rid=giphy.gif&ct=g',
         'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExaG5yc2UzZXh5dDdzbTh4YnE4dzc5MjMweGc5YXowZjViYWthYXczZiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/DmzUp9lX7lHlm/giphy.gif',
         'https://media.giphy.com/media/70lIzbasCI6vOuE2zG/giphy.gif?cid=ecf05e4758ayajrk9c6dnrcblptih04zceztlwndn0vwxmgd&ep=v1_gifs_search&rid=giphy.gif&ct=g'
-      ];
-      const choice = options[Math.floor(Math.random() * options.length)];
-      await postMessage({ room, message: '', images: [choice] });
+      ]
+      const choice = options[Math.floor(Math.random() * options.length)]
+      await postMessage({ room, message: '', images: [choice] })
     } catch (err) {
-      logger.error('Error sending beer GIF:', err?.message || err);
+      logger.error('Error sending beer GIF:', err?.message || err)
     }
   },
 
@@ -245,12 +245,12 @@ const commandRegistry = {
       const options = [
         'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ21qYmtndjNqYWRqaTFrd2NqaDNkejRqY3RrMTV5Mzlvb3gydDk0ZyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/dWxYMTXIJtT9wGLkOw/giphy.gif',
         'https://media.giphy.com/media/LFvQBWwKk7Qc0/giphy.gif?cid=790b7611gmjbkgv3jadji1kwcjh3dz4jctk15y39oox2t94g&ep=v1_gifs_search&rid=giphy.gif&ct=g'
-      ];
-      const choice = options[Math.floor(Math.random() * options.length)];
-      await postMessage({ room, message: '', images: [choice] });
+      ]
+      const choice = options[Math.floor(Math.random() * options.length)]
+      await postMessage({ room, message: '', images: [choice] })
     } catch (err) {
-      logger.error('Error sending fart GIF:', err?.message || err);
-      await postMessage({ room, message: 'An error occurred while processing the fart command. Please try again.' });
+      logger.error('Error sending fart GIF:', err?.message || err)
+      await postMessage({ room, message: 'An error occurred while processing the fart command. Please try again.' })
     }
   },
 
@@ -262,15 +262,15 @@ const commandRegistry = {
         { type: 'gif', value: 'https://media.giphy.com/media/3oeSB36G9Au4V0xUhG/giphy.gif?cid=790b7611swizn7usn6y3op76f4f0qu6qk4yixut9u7ty8tri&ep=v1_gifs_search&rid=giphy.gif&ct=g' },
         { type: 'gif', value: 'https://media.giphy.com/media/l7jc8M23lg9e3l9SDn/giphy.gif?cid=790b7611swizn7usn6y3op76f4f0qu6qk4yixut9u7ty8tri&ep=v1_gifs_search&rid=giphy.gif&ct=g' },
         { type: 'emoji', value: '🍻🍻🍻🍻' }
-      ];
-      const selection = options[Math.floor(Math.random() * options.length)];
+      ]
+      const selection = options[Math.floor(Math.random() * options.length)]
       if (selection.type === 'gif') {
-        await postMessage({ room, message: '', images: [selection.value] });
+        await postMessage({ room, message: '', images: [selection.value] })
       } else {
-        await postMessage({ room, message: selection.value });
+        await postMessage({ room, message: selection.value })
       }
     } catch (err) {
-      logger.error('Error sending cheers:', err?.message || err);
+      logger.error('Error sending cheers:', err?.message || err)
     }
   },
 
@@ -281,15 +281,15 @@ const commandRegistry = {
         { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExb296MmJyeHBpYm9yMGQwbG81cnhlcGd4MWF4N3A1dWhhN3FxNmJvdCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/Her9TInMPQYrS/giphy.gif' },
         { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExbGY4YmQwZTA5aHk3ejhrbTI1Mmk1NDl6ZTkzM2h6cm53djZsYnB5diZlcD12MV9naWZzX3NlYXJjaCZjdD1n/26nfoIrm8lHXqmm7C/giphy.gif' },
         { type: 'emoji', value: '🍅🍅🍅🍅' }
-      ];
-      const selection = options[Math.floor(Math.random() * options.length)];
+      ]
+      const selection = options[Math.floor(Math.random() * options.length)]
       if (selection.type === 'gif') {
-        await postMessage({ room, message: '', images: [selection.value] });
+        await postMessage({ room, message: '', images: [selection.value] })
       } else {
-        await postMessage({ room, message: selection.value });
+        await postMessage({ room, message: selection.value })
       }
     } catch (err) {
-      logger.error('Error sending tomatoes:', err?.message || err);
+      logger.error('Error sending tomatoes:', err?.message || err)
     }
   },
 
@@ -297,17 +297,17 @@ const commandRegistry = {
   dog: async ({ room, args }) => {
     try {
       // Parse arguments into an array for breed and sub-breed
-      const breedArgs = args ? args.trim().split(/\s+/).filter(Boolean) : [];
-      await handleDogCommand({ room, args: breedArgs });
+      const breedArgs = args ? args.trim().split(/\s+/).filter(Boolean) : []
+      await handleDogCommand({ room, args: breedArgs })
     } catch (err) {
-      logger.error('Error processing dog command:', err?.message || err);
+      logger.error('Error processing dog command:', err?.message || err)
       try {
-        await postMessage({ room, message: '🐶 Something went wrong fetching a pup.' });
+        await postMessage({ room, message: '🐶 Something went wrong fetching a pup.' })
       } catch {
         /* ignore */
       }
     }
-  }
+  },
 
   // -----------------------------------------------------------------------
   // Avatar commands
@@ -316,88 +316,88 @@ const commandRegistry = {
   // in message.js and provides faster routing for commonly used avatar
   // commands.  Moderator checks are enforced for bot commands via
   // isUserAuthorized.
-  ,botrandom: async ({ payload, room }) => {
-    const ttlToken = process.env.TTL_USER_TOKEN;
-    await handleBotRandomAvatarCommand(room, postMessage, ttlToken);
+  botrandom: async ({ payload, room }) => {
+    const ttlToken = process.env.TTL_USER_TOKEN
+    await handleBotRandomAvatarCommand(room, postMessage, ttlToken)
   },
   botdino: async ({ payload, room }) => {
-    const ttlToken = process.env.TTL_USER_TOKEN;
-    await handleBotDinoCommand(room, postMessage, isUserAuthorized, payload?.sender, ttlToken);
+    const ttlToken = process.env.TTL_USER_TOKEN
+    await handleBotDinoCommand(room, postMessage, isUserAuthorized, payload?.sender, ttlToken)
   },
   botduck: async ({ payload, room }) => {
-    const ttlToken = process.env.TTL_USER_TOKEN;
-    await handleBotDuckCommand(room, postMessage, isUserAuthorized, payload?.sender, ttlToken);
+    const ttlToken = process.env.TTL_USER_TOKEN
+    await handleBotDuckCommand(room, postMessage, isUserAuthorized, payload?.sender, ttlToken)
   },
   botalien: async ({ payload, room }) => {
-    const ttlToken = process.env.TTL_USER_TOKEN;
-    await handleBotAlienCommand(room, postMessage, isUserAuthorized, payload?.sender, ttlToken);
+    const ttlToken = process.env.TTL_USER_TOKEN
+    await handleBotAlienCommand(room, postMessage, isUserAuthorized, payload?.sender, ttlToken)
   },
   botalien2: async ({ payload, room }) => {
-    const ttlToken = process.env.TTL_USER_TOKEN;
-    await handleBotAlien2Command(room, postMessage, isUserAuthorized, payload?.sender, ttlToken);
+    const ttlToken = process.env.TTL_USER_TOKEN
+    await handleBotAlien2Command(room, postMessage, isUserAuthorized, payload?.sender, ttlToken)
   },
   botwalrus: async ({ payload, room }) => {
-    const ttlToken = process.env.TTL_USER_TOKEN;
-    await handleBotWalrusCommand(room, postMessage, isUserAuthorized, payload?.sender, ttlToken);
+    const ttlToken = process.env.TTL_USER_TOKEN
+    await handleBotWalrusCommand(room, postMessage, isUserAuthorized, payload?.sender, ttlToken)
   },
   botpenguin: async ({ payload, room }) => {
-    const ttlToken = process.env.TTL_USER_TOKEN;
-    await handleBotPenguinCommand(room, postMessage, isUserAuthorized, payload?.sender, ttlToken);
+    const ttlToken = process.env.TTL_USER_TOKEN
+    await handleBotPenguinCommand(room, postMessage, isUserAuthorized, payload?.sender, ttlToken)
   },
   bot1: async ({ payload, room }) => {
-    const ttlToken = process.env.TTL_USER_TOKEN;
-    await handleBot1Command(room, postMessage, isUserAuthorized, payload?.sender, ttlToken);
+    const ttlToken = process.env.TTL_USER_TOKEN
+    await handleBot1Command(room, postMessage, isUserAuthorized, payload?.sender, ttlToken)
   },
   bot2: async ({ payload, room }) => {
-    const ttlToken = process.env.TTL_USER_TOKEN;
-    await handleBot2Command(room, postMessage, isUserAuthorized, payload?.sender, ttlToken);
+    const ttlToken = process.env.TTL_USER_TOKEN
+    await handleBot2Command(room, postMessage, isUserAuthorized, payload?.sender, ttlToken)
   },
   bot3: async ({ payload, room }) => {
-    const ttlToken = process.env.TTL_USER_TOKEN;
-    await handleBot3Command(room, postMessage, isUserAuthorized, payload?.sender, ttlToken);
+    const ttlToken = process.env.TTL_USER_TOKEN
+    await handleBot3Command(room, postMessage, isUserAuthorized, payload?.sender, ttlToken)
   },
 
   // User avatar commands
   dino: async ({ payload, room }) => {
-    await handleDinoCommand(payload?.sender, room, postMessage);
+    await handleDinoCommand(payload?.sender, room, postMessage)
   },
   duck: async ({ payload, room }) => {
-    await handleDuckCommand(payload?.sender, room, postMessage);
+    await handleDuckCommand(payload?.sender, room, postMessage)
   },
   spacebear: async ({ payload, room }) => {
-    await handleSpaceBearCommand(payload?.sender, room, postMessage);
+    await handleSpaceBearCommand(payload?.sender, room, postMessage)
   },
   walrus: async ({ payload, room }) => {
-    await handleWalrusCommand(payload?.sender, room, postMessage);
+    await handleWalrusCommand(payload?.sender, room, postMessage)
   },
   vibesguy: async ({ payload, room }) => {
-    await handleVibesGuyCommand(payload?.sender, room, postMessage);
+    await handleVibesGuyCommand(payload?.sender, room, postMessage)
   },
   faces: async ({ payload, room }) => {
-    await handleFacesCommand(payload?.sender, room, postMessage);
+    await handleFacesCommand(payload?.sender, room, postMessage)
   },
   dodo: async ({ payload, room }) => {
-    await handleDoDoCommand(payload?.sender, room, postMessage);
+    await handleDoDoCommand(payload?.sender, room, postMessage)
   },
   dumdum: async ({ payload, room }) => {
-    await handleDumDumCommand(payload?.sender, room, postMessage);
+    await handleDumDumCommand(payload?.sender, room, postMessage)
   },
   flowerpower: async ({ payload, room }) => {
-    await handleFlowerPowerCommand(payload?.sender, room, postMessage);
+    await handleFlowerPowerCommand(payload?.sender, room, postMessage)
   },
   randomavatar: async ({ payload, room }) => {
-    await handleRandomAvatarCommand(payload?.sender, room, postMessage);
+    await handleRandomAvatarCommand(payload?.sender, room, postMessage)
   },
   randomcyber: async ({ payload, room }) => {
-    await handleRandomCyberCommand(payload?.sender, room, postMessage);
+    await handleRandomCyberCommand(payload?.sender, room, postMessage)
   },
   randomcosmic: async ({ payload, room }) => {
-    await handleRandomCosmicCommand(payload?.sender, room, postMessage);
+    await handleRandomCosmicCommand(payload?.sender, room, postMessage)
   },
   randomlovable: async ({ payload, room }) => {
-    await handleRandomLovableCommand(payload?.sender, room, postMessage);
-  },
-};
+    await handleRandomLovableCommand(payload?.sender, room, postMessage)
+  }
+}
 
 /**
  * Attempt to dispatch the provided message to a command handler. Returns
@@ -409,19 +409,19 @@ const commandRegistry = {
  * @param {string} room The UUID of the current room.
  * @returns {Promise<boolean>}
  */
-export async function dispatchCommand(txt, payload, room) {
-  if (!txt || txt[0] !== '/') return false;
-  const parts = txt.trim().substring(1).split(/\s+/);
-  const cmd = (parts[0] || '').toLowerCase();
-  const handler = commandRegistry[cmd];
-  if (!handler) return false;
+export async function dispatchCommand (txt, payload, room) {
+  if (!txt || txt[0] !== '/') return false
+  const parts = txt.trim().substring(1).split(/\s+/)
+  const cmd = (parts[0] || '').toLowerCase()
+  const handler = commandRegistry[cmd]
+  if (!handler) return false
   try {
-    await handler({ payload, room, args: parts.slice(1).join(' ') });
+    await handler({ payload, room, args: parts.slice(1).join(' ') })
   } catch (err) {
-    logger.error(`[Dispatcher] Error executing /${cmd}:`, err?.message || err);
+    logger.error(`[Dispatcher] Error executing /${cmd}:`, err?.message || err)
     try {
-      await postMessage({ room, message: `⚠️ Error processing /${cmd}.` });
+      await postMessage({ room, message: `⚠️ Error processing /${cmd}.` })
     } catch { /* swallow */ }
   }
-  return true;
+  return true
 }

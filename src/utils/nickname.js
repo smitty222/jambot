@@ -15,7 +15,7 @@
  * @param {string} userId
  * @returns {Promise<string>} a formatted mention
  */
-export async function getUserNickname(userId) {
+export async function getUserNickname (userId) {
   // If a UUID array is passed inadvertently (legacy callers), handle it
   // gracefully by taking the first element.
   const id = Array.isArray(userId) ? userId[0] : userId

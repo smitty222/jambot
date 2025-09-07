@@ -8,10 +8,10 @@ let letterChallengeTimer = null
 let currentChallengeLetter = null
 let currentDJ = null
 let totalRounds = 0
-let currentRoundPlays = new Set()
+const currentRoundPlays = new Set()
 
 // Convert duration formats to milliseconds
-export function parseDurationToMs(duration) {
+export function parseDurationToMs (duration) {
   if (typeof duration === 'number') return duration * 1000
 
   const parts = duration.split(':').map(Number)
@@ -27,13 +27,13 @@ export function parseDurationToMs(duration) {
 }
 
 // Pick a random letter A–Z
-function getRandomLetter() {
+function getRandomLetter () {
   const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
   return letters[Math.floor(Math.random() * letters.length)]
 }
 
 // Generate a formatted leaderboard
-function getLeaderboard() {
+function getLeaderboard () {
   const sorted = Object.entries(userPoints)
     .sort((a, b) => b[1] - a[1])
     .map(([uid, points], idx) => {
@@ -45,7 +45,7 @@ function getLeaderboard() {
 }
 
 // Score a DJ’s track
-export async function scoreLetterChallenge(bot) {
+export async function scoreLetterChallenge (bot) {
   const theme = getTheme(bot.roomUUID)?.toLowerCase()
   if (!theme || !theme.includes('name game')) {
   }
@@ -83,7 +83,7 @@ export async function scoreLetterChallenge(bot) {
   }
 
   let score = 1
-  let breakdown = ['+1 for track title starting with the correct letter']
+  const breakdown = ['+1 for track title starting with the correct letter']
 
   const words = songTitle.trim().split(/\s+/)
   for (let i = 1; i < words.length; i++) {
@@ -134,7 +134,7 @@ export async function scoreLetterChallenge(bot) {
 }
 
 // Schedule the challenge near end of song
-export function scheduleLetterChallenge(bot) {
+export function scheduleLetterChallenge (bot) {
   if (!bot || !bot.currentSong) return
 
   const challengeStartMs = bot.currentSong.challengeStartMs

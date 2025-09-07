@@ -5,11 +5,11 @@ import {
   getTopArtistTracks
 } from '../utils/API.js'
 
-function serializeSimilarTracks(tracks) {
+function serializeSimilarTracks (tracks) {
   return JSON.stringify(tracks || [])
 }
 
-function deserializeSimilarTracks(jsonStr) {
+function deserializeSimilarTracks (jsonStr) {
   try {
     return JSON.parse(jsonStr || '[]')
   } catch {
@@ -18,7 +18,7 @@ function deserializeSimilarTracks(jsonStr) {
 }
 
 // ✅ Read N most recent songs from DB
-export function readRecentSongs(limit = 30) {
+export function readRecentSongs (limit = 30) {
   const rows = db.prepare(`
     SELECT *
     FROM recent_songs
@@ -33,7 +33,7 @@ export function readRecentSongs(limit = 30) {
 }
 
 // ✅ Insert a new song into recent_songs
-export async function updateRecentSongs(newSong) {
+export async function updateRecentSongs (newSong) {
   try {
     let similarTracks = await getSimilarTracks(newSong.artistName, newSong.trackName)
 
@@ -78,7 +78,7 @@ export async function updateRecentSongs(newSong) {
     )
 
     // Keep recent_songs trimmed to last 30 entries
-    const { total } = db.prepare(`SELECT COUNT(*) as total FROM recent_songs`).get()
+    const { total } = db.prepare('SELECT COUNT(*) as total FROM recent_songs').get()
     if (total > 30) {
       const toDelete = total - 30
       db.prepare(`

@@ -1,7 +1,7 @@
 import db from './db.js'
 
 // Save or update a user's review for an album
-export function saveAlbumReview({ albumName, albumArt, artistName, trackCount, userId, rating }) {
+export function saveAlbumReview ({ albumName, albumArt, artistName, trackCount, userId, rating }) {
   if (typeof rating !== 'number' || rating < 1 || rating > 6) {
     return { success: false, message: 'Rating must be between 1 and 6' }
   }
@@ -21,7 +21,7 @@ export function saveAlbumReview({ albumName, albumArt, artistName, trackCount, u
     album = {
       id: result.lastInsertRowid,
       albumName,
-      artistName,
+      artistName
     }
   }
 
@@ -61,7 +61,7 @@ export function saveAlbumReview({ albumName, albumArt, artistName, trackCount, u
 }
 
 // 🥇 Top-rated albums
-export function getTopAlbumReviews(limit = 5) {
+export function getTopAlbumReviews (limit = 5) {
   return db.prepare(`
     SELECT * FROM album_stats
     WHERE averageReview IS NOT NULL
@@ -71,7 +71,7 @@ export function getTopAlbumReviews(limit = 5) {
 }
 
 // 👤 Albums reviewed by a specific user
-export function getUserAlbumReviews(userId, limit = 5) {
+export function getUserAlbumReviews (userId, limit = 5) {
   const rows = db.prepare(`
     SELECT
       s.albumName,

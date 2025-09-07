@@ -1,22 +1,22 @@
-import { postMessage } from "../libs/cometchat.js"
+import { postMessage } from '../libs/cometchat.js'
 import { getTriviaQuestions, decodeHtml } from '../utils/API.js'
 
 let currentQuestion = null
 let userScores = {}
 let totalRounds = 0
 let currentRound = 0
-let questionsPerRound = 5
+const questionsPerRound = 5
 let currentCategory = null
 let currentQuestions = []
 let currentQuestionIndex = 0
 let isGameActive = false
-let usedCategories = new Set()
+const usedCategories = new Set()
 let pendingAnswers = {}
 let answerTimer = null
 
 const categoryPool = [9, 11, 12, 15, 17, 18, 21, 22, 23, 27]
 
-function resetGameState() {
+function resetGameState () {
   console.log('🧹 Resetting game state...')
   currentQuestion = null
   userScores = {}
@@ -34,7 +34,7 @@ function resetGameState() {
   }
 }
 
-function getRandomCategory(exclude = []) {
+function getRandomCategory (exclude = []) {
   const available = categoryPool.filter(id => !exclude.includes(id))
   if (available.length === 0) return null
   const chosen = available[Math.floor(Math.random() * available.length)]
@@ -42,21 +42,28 @@ function getRandomCategory(exclude = []) {
   return chosen
 }
 
-function formatQuestionMessage(question) {
+function formatQuestionMessage (question) {
   const emojiChoices = ['🇦', '🇧', '🇨', '🇩']
   return `🧠 Trivia Round ${currentRound}/${totalRounds}\nCategory: ${getCategoryName(currentCategory)}\n\n${question.question}\n${question.answers.map((a, i) => `${emojiChoices[i]} ${a.slice(3)}`).join('\n')}\n\n⏳ You have 20 seconds to answer! Use /a /b /c or /d`
 }
 
-function getCategoryName(id) {
+function getCategoryName (id) {
   const mapping = {
-    9: 'General Knowledge', 11: 'Film', 12: 'Music', 15: 'Video Games',
-    17: 'Science & Nature', 18: 'Science: Computers', 21: 'Sports',
-    22: 'Geography', 23: 'History', 27: 'Animals',
+    9: 'General Knowledge',
+    11: 'Film',
+    12: 'Music',
+    15: 'Video Games',
+    17: 'Science & Nature',
+    18: 'Science: Computers',
+    21: 'Sports',
+    22: 'Geography',
+    23: 'History',
+    27: 'Animals'
   }
   return mapping[id] || `Category ${id}`
 }
 
-async function askNextQuestion(room) {
+async function askNextQuestion (room) {
   if (currentQuestionIndex >= currentQuestions.length) {
     console.log(`🏁 Round ${currentRound} complete.`)
     await postMessage({ room, message: `🏁 End of Round ${currentRound}!` })
@@ -67,11 +74,11 @@ async function askNextQuestion(room) {
 
       if (currentRound >= totalRounds) {
         console.log('🎉 Game complete!')
-        await postMessage({ room, message: `🎉 Game Over!` })
+        await postMessage({ room, message: '🎉 Game Over!' })
         await postMessage({ room, message: `🏆 Final Leaderboard:\n🏆 **Leaderboard:**\n\n${leaderboard}` })
 
         const stats = [
-          `🎯 Game Summary:`,
+          '🎯 Game Summary:',
           `Players: ${Object.keys(userScores).length}`,
           `Max Score: ${Math.max(...Object.values(userScores), 0)}`,
           `Questions: ${totalRounds * questionsPerRound}`
@@ -97,13 +104,13 @@ async function askNextQuestion(room) {
   answerTimer = setTimeout(() => resolveAnswers(room), 20000)
 }
 
-async function resolveAnswers(room) {
+async function resolveAnswers (room) {
   answerTimer = null
   const correctLetter = currentQuestion.correctAnswer.toUpperCase()
   console.log(`✅ Resolving answers — correct: ${correctLetter}`)
 
-  let correctUsers = []
-  let incorrectUsers = []
+  const correctUsers = []
+  const incorrectUsers = []
 
   for (const [userUUID, answer] of Object.entries(pendingAnswers)) {
     if (answer === correctLetter) {
@@ -121,7 +128,7 @@ async function resolveAnswers(room) {
     resultMessage += 'No one answered correctly.\n'
   }
   if (incorrectUsers.length) {
-    resultMessage += `❌ Incorrect answers:\n`
+    resultMessage += '❌ Incorrect answers:\n'
     incorrectUsers.forEach(({ userUUID, answer }) => {
       resultMessage += ` - <@uid:${userUUID}> answered ${answer}\n`
     })
@@ -137,7 +144,7 @@ async function resolveAnswers(room) {
   }, 1000)
 }
 
-async function startNewRound(room) {
+async function startNewRound (room) {
   currentRound++
   currentQuestionIndex = 0
   currentCategory = getRandomCategory([...usedCategories])
@@ -190,7 +197,7 @@ async function startNewRound(room) {
   await askNextQuestion(room)
 }
 
-async function handleTriviaStart(room, rounds = 1) {
+async function handleTriviaStart (room, rounds = 1) {
   if (isGameActive) {
     await postMessage({ room, message: 'A trivia game is already active.' })
     return
@@ -205,7 +212,7 @@ async function handleTriviaStart(room, rounds = 1) {
   await startNewRound(room)
 }
 
-async function handleTriviaSubmit(payload, room, userUUID) {
+async function handleTriviaSubmit (payload, room, userUUID) {
   if (!currentQuestion || !isGameActive || !answerTimer) {
     await postMessage({ room, message: 'No active trivia question to answer right now.' })
     return
@@ -227,7 +234,7 @@ async function handleTriviaSubmit(payload, room, userUUID) {
   await postMessage({ room, message: `<@uid:${userUUID}> answered.` })
 }
 
-async function handleTriviaEnd(room) {
+async function handleTriviaEnd (room) {
   if (!isGameActive) {
     await postMessage({ room, message: 'There is no active trivia game.' })
     return
@@ -243,7 +250,7 @@ async function handleTriviaEnd(room) {
   resetGameState()
 }
 
-function formatLeaderboard() {
+function formatLeaderboard () {
   const sorted = Object.entries(userScores).sort((a, b) => b[1] - a[1])
   if (sorted.length === 0) return 'No scores yet.'
 
@@ -254,7 +261,7 @@ function formatLeaderboard() {
   }).join('\n')
 }
 
-async function displayTriviaInfo(room) {
+async function displayTriviaInfo (room) {
   await postMessage({
     room,
     message: '🎮 Trivia Game Help:\n- Start a game: /triviastart [rounds]\n- Submit answers: /a /b /c /d\n- End game: /triviaend'
