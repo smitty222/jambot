@@ -171,6 +171,171 @@ function buildModSheet () {
   ].join('\n')
 }
 
+/**
+ * Build a comprehensive and categorized commands list.
+ * Each section groups related commands together to improve discoverability.
+ * Set `isMod` to true to include moderator-only toggles inline.
+ *
+ * Returns an array of multi‑line strings; join with blank lines when sending.
+ */
+function buildCommandsList (isMod = false) {
+  const sections = []
+  // Essentials & DJ
+  sections.push([
+    '— Essentials & DJ —',
+    '- `/theme` — Show the current room theme',
+    '- `/settheme <name>` — Set the room theme (mods)',
+    '- `/removetheme` — Clear the room theme (mods)',
+    '- `/room <style>` — Change the room look (classic, ferry, barn, yacht, festival, stadium, theater)',
+    '- `/games` — List available games',
+    '- `/q` — Show the DJ queue',
+    '- `/q+` / `/q-` — Join/Leave the queue',
+    '- `/escortme` — Stagedive after your next song',
+    '- `/dive` — Stagedive immediately',
+    '- `/djbeer` / `/djbeers` / `/getdjdrunk` — Give the DJ a beer (or many!)',
+    '- `/like` / `/dislike` — Like/Dislike the current song',
+    '- `/star` / `/unstar` — Star/Unstar the current song',
+    '- `/addDJ` / `/removeDJ` — Add or remove the bot as DJ (mods)',
+    '- `/jump` — Make the bot jump'
+  ].join('\n'))
+
+  // Music & Stats
+  sections.push([
+    '— Music & Stats —',
+    '- `/song` — Details on the current song',
+    '- `/stats` — Stats for the current song',
+    '- `/score` — Spotify popularity score',
+    '- `/album` — Info on the current album',
+    '- `/art` — View current album art',
+    '- `/mostplayed` / `/topliked` — Room music charts',
+    '- `/topsongs` / `/mytopsongs` — Global and personal top songs',
+    '- `/topalbums` / `/mytopalbums` — Global and personal top albums',
+    '- `/review <1-6>` — Rate the current song',
+    '- `/rating` — See the average rating for the current song',
+    '- `/reviewhelp` — How to rate songs',
+    '- `/albumreview <1-6>` — Rate the current album',
+    '- `/searchalbum <artist>` — DM a list of albums by artist',
+    '- `/qalbum <id>` — Queue a Spotify album',
+    '- `/suggestsongs` — Suggest songs based on recent plays',
+    '- `/blacklist+ <artist|title>` — Add a song or artist to the blacklist (mods)',
+    '- `/addsong [beach]` — Add the current song to the default or beach playlist',
+    '- `/removesong [beach]` — Remove the current song from the default or beach playlist (mods)'
+  ].join('\n'))
+
+  // Games & Gambling
+  sections.push([
+    '— Games & Gambling —',
+    '- `/trivia` — Show trivia info (answer with `/a`, `/b`, `/c`, `/d`)',
+    '- `/triviastart [rounds]` / `/triviaend` — Start/End a trivia game',
+    '- `/lottery` — Play the lottery game',
+    '- `/lotto <#>` — Check how often a number has won',
+    '- `/lottostats` / `/lottowinners` — Lotto statistics and winners',
+    '',
+    '**Roulette & Slots**',
+    '- `/roulette` — Start a roulette game',
+    '- `/bet <type> <amount>` — Place a roulette bet (red, black, green, odd, even, high, low, number, dozen)',
+    '- `/bets` — Show all roulette bets',
+    '- `/slots [amount]` — Play the slot machine',
+    '- `/slotinfo` / `/jackpot` — View slots payout info and progressive jackpot',
+    '',
+    '**Blackjack**',
+    '- `/blackjack` — Join a blackjack lobby',
+    '- `/join` / `/leave` — Sit at or leave the blackjack or craps table',
+    '- `/betbj <amount>` — Place a blackjack bet',
+    '- `/hit` / `/stand` / `/double` / `/surrender` / `/split` — Blackjack actions',
+    '- `/table` — View the current blackjack table',
+    '',
+    '**Horse Racing**',
+    '- `/horserace` — Start a horse race',
+    '- `/buyhorse <name>` / `/myhorses` — Enter or view your horses',
+    '- `/horsehelp` / `/horserules` / `/horseinfo` — Horse race help',
+    '- `/horsestats` / `/tophorses` — Horse leaderboards',
+    '',
+    '**Craps**',
+    '- `/craps` — Start or join a craps game (use `/craps help` for rules)',
+    '- `/craps status` — Show current shooter, point, and bet status',
+    '- `/craps start` — Begin a new round (if idle)',
+    '- `/roll` — Shooter rolls the dice',
+    '- `/pass <amt>` / `/dontpass <amt>` — Place Pass/Don’t Pass bets (come‑out)',
+    '- `/place <4|5|6|8|9|10> <amt>` / `/removeplace <num>` — Place or remove Place bets (point)',
+    '- `/field <amt>` — Single‑roll field bet',
+    '- `/double <1-6> <amt>` — Double (exact pair) bet',
+    '- `/crapsrecord` — View the current craps roll record',
+    '',
+    '**Magic 8‑Ball**',
+    '- `/8ball <question>` — Ask the Magic 8 Ball (costs a small fee)'
+  ].join('\n'))
+
+  // Wallet & Betting
+  sections.push([
+    '— Wallet & Betting —',
+    '- `/balance` / `/bankroll` — Check your balance or see the top leaders',
+    '- `/getwallet` / `/checkbalance` — Query your wallet balance',
+    '- `/sportsbet <sport> <team> <amount>` — Place a sports bet',
+    '- `/resolvebets` — Resolve open sports bets (mods)',
+    '- `/mlbodds` — View MLB betting odds (if available)'
+  ].join('\n'))
+
+  // Avatars
+  sections.push([
+    '— Avatars —',
+    '- `/randomavatar` / `/randomcyber` / `/randomcosmic` / `/randomlovable` — Random avatars',
+    '- `/cyber` / `/cosmic` / `/lovable` — Themed random avatars',
+    '- `/dino` / `/duck` / `/spacebear` / `/walrus` / `/vibesguy` / `/faces` — Set your avatar',
+    '- `/dodo` / `/dumdum` / `/flowerpower` — More fun avatars',
+    '- `/botrandom` / `/botdino` / `/botduck` / `/botalien` / `/botalien2` / `/botwalrus` / `/botpenguin` / `/bot1` / `/bot2` / `/bot3` — Change the bot avatar (mods)'
+  ].join('\n'))
+
+  // GIFs & Fun
+  sections.push([
+    '— GIFs & Fun —',
+    '- `/gifs` — Show GIF commands',
+    '- `/burp`, `/dance`, `/party`, `/beer`, `/cheers`, `/fart`, `/tomatoes` — Random GIFs',
+    '- `/bark`, `/barkbark` — Bark at the room',
+    '- `/jam` — Jam with the bot',
+    '- `/berad`, `/cam`, `/drink`, `/shirley`, `/ello`, `/allen`, `/props`, `/ass`, `/titties`, `/azz`, `/shred` — Easter egg GIFs',
+    '- `/dog [breed] [sub-breed]` — Send a dog picture'
+  ].join('\n'))
+
+  // Sports
+  sections.push([
+    '— Sports —',
+    '- `/MLB [YYYY-MM-DD]` — MLB scores for today or a given date',
+    '- `/NHL [YYYY-MM-DD]` — NHL scores',
+    '- `/NBA [YYYY-MM-DD]` — NBA scores'
+  ].join('\n'))
+
+  // Store & Misc
+  sections.push([
+    '— Store & Misc —',
+    '- `/store` — Browse items in the JamFlow store',
+    '- `/secret` — Reveal hidden easter eggs (mods only)',
+    '- `/test` — Developer test command (may vary)'
+  ].join('\n'))
+
+  // Moderator section: show inline if the caller is a mod
+  if (isMod) {
+    sections.push([
+      '— Moderator Toggles —',
+      '- `/status` — Show bot toggles status',
+      '- `/bopon` / `/bopoff` — Auto-like on/off',
+      '- `/autodjon` / `/autodjoff` — Bot DJ auto-queue on/off',
+      '- `/songstatson` / `/songstatsoff` — Toggle song stats',
+      '- `/greeton` / `/greetoff` — Greeting messages on/off',
+      '- `/infoon` / `/infooff` / `/infotoggle` — Now playing blurb on/off',
+      '- `/infotone <tone>` — Set info blurb tone (neutral, playful, cratedigger, hype, classy, chartbot, djtech, vibe)',
+      '- `/settheme <name>` / `/removetheme` — Manage room theme',
+      '- `/room <style>` — Change room look (classic, ferry, barn, yacht, festival, stadium, theater)',
+      '- `/addDJ` / `/removeDJ` — Manage bot DJ lineup',
+      '- `/blacklist+ <artist|title>` — Add a song/artist to the blacklist',
+      '- `/resolvebets` — Resolve open sports bets'
+    ].join('\n'))
+  } else {
+    sections.push('— Moderator Commands —\n- Mods can DM `/mod` to receive the full list.')
+  }
+
+  return sections
+}
 /*
  * The DM admin allow list, helper functions and the DM command handler have
  * been moved to src/handlers/dmHandler.js. Keeping them here would bloat
@@ -631,73 +796,37 @@ Please refresh your page for the queue to update`
 
     // ===== /commands (readable overview with hyphens) =====
   } else if (/^\/commands\b/i.test(payload.message)) {
+    // Consolidated command overview handler. This uses the buildCommandsList helper
+    // defined above to create a complete, categorized command list. The list
+    // groups related commands into logical sections and optionally includes
+    // moderator-only toggles inline when requested or when the user is a mod.
     try {
+      // Determine caller privileges and parse arguments. If the user requests
+      // "mod", "mods", "moderator", "admin" or "sheet" after /commands, we
+      // treat it as a request to display moderator commands inline. Checking
+      // mod status is an asynchronous call to the authorization helper.
       const isMod = await isUserAuthorized(payload.sender, ttlUserToken)
       const arg = payload.message.trim().split(/\s+/)[1]?.toLowerCase()
-      const wantModInline = /^(mod|mods|moderator|admin|sheet)$/.test(arg || '')
-      const showAll = /^(all|everything)$/.test(arg || '')
+      const wantModInline = /^(mod|mods|moderator|admin|sheet|all|everything)$/i.test(arg || '')
 
-      const sections = []
+      // Build the full list of command sections. When `true` is passed to
+      // buildCommandsList the returned array will include the moderator
+      // toggles. Otherwise a note will be shown directing mods to DM /mod.
+      const sections = buildCommandsList(isMod || wantModInline)
 
-      // Essentials
-      sections.push([
-        '— Essentials —',
-        '- `/theme` — Show current room theme',
-        '- `/games` — List available games',
-        '- `/escortme` — Stagedive after your next song',
-        '- `/dive` — Stagedive now',
-        '- `/djbeer` — Give the DJ a beer 🍺'
-      ].join('\n'))
-
-      // Music & Stats
-      sections.push([
-        '— Music & Stats —',
-        '- `/album` — Album info for the current song',
-        '- `/score` — Spotify popularity score',
-        '- `/reviewhelp` — How to review songs ⭐',
-        '- `/suggestsongs` — Songs suggested by Allen'
-      ].join('\n'))
-
-      // Wallet / Lotteries
-      sections.push([
-        '— Wallet & Lotto —',
-        '- `/bankroll` — Top wallet leaders 💰',
-        '- `/lottowinners` — Lottery ball winners 🎱',
-        '- `/lottostats` - Most Drawn Lotto Numbers'
-      ].join('\n'))
-
-      // Fun / GIFs
-      sections.push([
-        '— Fun —',
-        '- `/gifs` — Show GIF commands',
-        '- `/djbeer` — Beer again (because, priorities) 🍺'
-      ].join('\n'))
-
-      // Moderator section: show inline only if mod or explicitly asked
-      if (isMod || wantModInline || showAll) {
-        sections.push([
-          '— Moderator Quick Toggles —',
-          '- `/status` — Show bot toggles status',
-          '- `/bopon` | `/bopoff` — Auto-like on/off',
-          '- `/songstatson` | `/songstatsoff`',
-          '- `/greeton` | `/greetoff` — Greeting on/off',
-          '- `/infoon` | `/infooff` | `/infotoggle` — Info blurb on/off',
-          '- `/infotone <tone>` — Set info blurb tone (neutral, playful, cratedigger, hype, classy, chartbot, djtech, vibe)',
-          '- `/settheme <name>` | `/removetheme`',
-          '- `/room <style>` — Change room look (classic, ferry, barn, yacht, festival, stadium, theater)',
-          '- `/addDJ` | `/removeDJ`'
-        ].join('\n'))
-      } else {
-        sections.push('— Moderator Commands —\n- Mods can DM `/mod` to receive the full list.')
+      // Prepend a title and join the sections with blank lines to improve
+      // readability in chat. Each section is a single multi-line string.
+      const messageLines = ['📖 Commands']
+      for (const section of sections) {
+        messageLines.push(section)
       }
-
-      // Post the assembled commands list
-      const message = ['📖 Commands', ...sections].join('\n\n')
+      const message = messageLines.join('\n\n')
       await postMessage({ room, message })
 
-      // If a mod asked `/commands mod`, also DM them the full sheet
+      // If a moderator explicitly requested inline mod commands, also send
+      // them the traditional mod sheet via DM for convenience.
       if (wantModInline && isMod) {
-        const modSheet = buildModSheet() // assumes you have this helper
+        const modSheet = buildModSheet()
         await sendDirectMessage(payload.sender, modSheet)
         await postMessage({ room, message: 'Mod Commands sent via DM' })
       }

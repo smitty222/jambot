@@ -342,6 +342,10 @@ let _lastLine = ''
 bus.on('turn', async ({ turnIndex, raceState, finishDistance }) => {
   const label = `🏁 Leg ${turnIndex + 1} of ${LEGS}`
 
+  const MIN_CELL_CHANGE = 1 / (finishDistance * BAR_CELLS) // about 1 cell
+  const changed = displayState.some((h, i) => Math.abs(h.progress - (_lastFrame?.[i]?.progress ?? 0)) >= MIN_CELL_CHANGE)
+  if (!changed && turnIndex % 2 !== 0) return // skip noisy frames
+
   // Inject silks into displayed names
   const displayState = raceState.map((h, i) => ({ ...h, name: `${silk(i)} ${h.name}` }))
 

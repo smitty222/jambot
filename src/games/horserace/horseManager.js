@@ -21,8 +21,8 @@ const HORSE_TIERS = {
   champion: { price: 15000, oddsRange: [2.5, 5.0], volatilityRange: [0.5, 1.5], careerLength: [18, 24], emoji: '🐉' }
 }
 
-const NAME_PREFIXES = []
-const NAME_SUFFIXES = []
+const NAME_PREFIXES = ['Star', 'Night', 'Silver', 'Thunder', 'Lucky', 'Crimson', 'Rocket', 'River', 'Ghost', 'Blue']
+const NAME_SUFFIXES = [' Dancer', ' Arrow', ' Spirit', ' Runner', ' Blaze', ' Mirage', ' Glory', ' Wind', ' Monarch', ' Clover']
 
 function randomInRange (min, max, decimals = 1) {
   return parseFloat((Math.random() * (max - min) + min).toFixed(decimals))
@@ -32,13 +32,17 @@ function randomInt (min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min
 }
 
-function generateHorseName (existingNames) {
+function generateHorseName (existing) {
+  const syll = ['ra', 'in', 'do', 'ver', 'la', 'mi', 'ko', 'zi', 'ta', 'shi', 'na', 'qu', 'fo', 'rum', 'lux', 'tor', 'vin', 'sol', 'mer', 'kai']
   for (let i = 0; i < 1000; i++) {
-    const prefix = NAME_PREFIXES[Math.floor(Math.random() * NAME_PREFIXES.length)]
-    const suffix = NAME_SUFFIXES[Math.floor(Math.random() * NAME_SUFFIXES.length)]
-    if (prefix.toLowerCase() === suffix.toLowerCase()) continue
-    const name = prefix + suffix
-    if (!existingNames.includes(name)) return name
+    const useTable = Math.random() < 0.8 && NAME_PREFIXES.length && NAME_SUFFIXES.length
+    const name = useTable
+      ? NAME_PREFIXES[Math.floor(Math.random() * NAME_PREFIXES.length)] +
+        NAME_SUFFIXES[Math.floor(Math.random() * NAME_SUFFIXES.length)]
+      : Array.from({ length: 2 + Math.floor(Math.random() * 2) }, () => syll[Math.floor(Math.random() * syll.length)])
+        .join('')
+        .replace(/^./, c => c.toUpperCase())
+    if (!existing.includes(name)) return name
   }
   throw new Error('Unable to generate unique horse name.')
 }
