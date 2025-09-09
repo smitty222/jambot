@@ -1,4 +1,4 @@
-// src/database/dbUserManager.js
+// src/database/dbusermanager.js
 import db from './db.js'
 
 export function loadUsersFromDb () {
