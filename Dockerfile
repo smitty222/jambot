@@ -16,4 +16,4 @@ ENV PORT=8080
 EXPOSE 8080
 
 # Run the bot + health server
-CMD ["node", "bin/start.js"]
+CMD ["node", "start"]

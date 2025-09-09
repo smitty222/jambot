@@ -1,23 +1,13 @@
-app = "jamflowbot-allen-v4"
-primary_region = "iad"
-
-[env]
-  NODE_ENV = "production"
-
 [http_service]
   internal_port = 8080
-  processes = ["app"]
   force_https = true
   auto_start_machines = true
-  auto_stop_machines = false
+  auto_stop_machines = "off"
   min_machines_running = 1
 
-[checks]
-  [checks.http]
-    type = "http"
-    port = 8080
-    method = "GET"
-    path = "/healthz"
-    interval = "15s"
+  [[http_service.checks]]
+    interval = "10s"
     timeout = "2s"
-    grace_period = "20s"
+    method = "GET"
+    path = "/health"
+    grace_period = "10s"
