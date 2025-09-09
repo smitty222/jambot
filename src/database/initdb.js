@@ -71,7 +71,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     songId TEXT NOT NULL,
     userId TEXT NOT NULL,
-    rating INTEGER,
+    rating REAL,
     createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(songId, userId)
   )
@@ -95,7 +95,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     albumId INTEGER NOT NULL,
     userId TEXT NOT NULL,
-    rating INTEGER NOT NULL,
+    rating REAL NOT NULL,
     FOREIGN KEY (albumId) REFERENCES album_stats(id)
   )
 `)
@@ -197,6 +197,8 @@ db.exec(`
     albumIsrc       TEXT
   )
 `)
+// Ensure singleton row exists
+db.exec(`INSERT OR IGNORE INTO current_state (id) VALUES (1)`)
 
 // Craps records (per room)
 db.exec(`
@@ -246,3 +248,51 @@ try {
 }
 
 console.log('✅ Database initialized')
+
+
+// --- Ratings migration: ensure rating columns are REAL and scale is 1–10 ---
+try {
+  const srCols = db.prepare("PRAGMA table_info(song_reviews)").all();
+  const srRating = srCols.find(c => c.name === 'rating');
+  if (srRating && srRating.type && srRating.type.toUpperCase() !== 'REAL') {
+    db.exec(`
+      BEGIN TRANSACTION;
+      CREATE TABLE IF NOT EXISTS song_reviews_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        songId TEXT NOT NULL,
+        userId TEXT NOT NULL,
+        rating REAL,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(songId, userId)
+      );
+      INSERT INTO song_reviews_new (id, songId, userId, rating, createdAt)
+      SELECT id, songId, userId, CAST(rating AS REAL), createdAt FROM song_reviews;
+      DROP TABLE song_reviews;
+      ALTER TABLE song_reviews_new RENAME TO song_reviews;
+      COMMIT;
+    `);
+  }
+
+  const arCols = db.prepare("PRAGMA table_info(album_reviews)").all();
+  const arRating = arCols.find(c => c.name === 'rating');
+  if (arRating && arRating.type && arRating.type.toUpperCase() !== 'REAL') {
+    db.exec(`
+      BEGIN TRANSACTION;
+      CREATE TABLE IF NOT EXISTS album_reviews_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        albumId INTEGER NOT NULL,
+        userId TEXT NOT NULL,
+        rating REAL NOT NULL,
+        FOREIGN KEY (albumId) REFERENCES album_stats(id)
+      );
+      INSERT INTO album_reviews_new (id, albumId, userId, rating)
+      SELECT id, albumId, userId, CAST(rating AS REAL) FROM album_reviews;
+      DROP TABLE album_reviews;
+      ALTER TABLE album_reviews_new RENAME TO album_reviews;
+      COMMIT;
+    `);
+  }
+} catch (e) {
+  // Non-fatal: log and continue
+  console.error('[initdb] ratings migration check failed:', e?.message || e);
+}

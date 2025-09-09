@@ -1,0 +1,8 @@
+name = "jamflow-site-api"
+main = "worker.js"
+compatibility_date = "2025-09-01"
+
+kv_namespaces = [
+  { binding = "SITEDATA", id = "16bbdd5af7a4490883296e840943352c", preview_id = "ce75ac7de9464941b44a827cf7c92be6" }
+]
+

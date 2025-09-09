@@ -1,0 +1,86 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Jamflow Hub</title>
+  <style>
+    body { font: 15px system-ui, -apple-system, Segoe UI, Roboto; margin: 24px; }
+    .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+    .card { border: 1px solid #eee; border-radius: 12px; padding: 16px; }
+    h2 { margin: 0 0 8px; font-size: 18px; }
+    ul { margin: 8px 0; padding-left: 18px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { padding: 6px 8px; border-bottom: 1px solid #eee; text-align: left; }
+  </style>
+</head>
+<body>
+  <h1>Jamflow Hub</h1>
+
+  <div class="grid">
+    <div class="card" id="now"></div>
+    <div class="card" id="commands"></div>
+  </div>
+
+  <div class="grid">
+    <div class="card" id="topSongs"></div>
+    <div class="card" id="topAlbums"></div>
+    <div class="card" id="records"></div>
+  </div>
+
+<script>
+const API = 'https://YOUR-WORKER-SUBDOMAIN.workers.dev/api';
+
+async function load() {
+  const [now, cmds, songs, albums, records] = await Promise.all([
+    fetch(`${API}/now`).then(r=>r.json()),
+    fetch(`${API}/commands`).then(r=>r.json()),
+    fetch(`${API}/top-songs`).then(r=>r.json()),
+    fetch(`${API}/top-albums`).then(r=>r.json()),
+    fetch(`${API}/records`).then(r=>r.json())
+  ]);
+
+  document.getElementById('now').innerHTML = `
+    <h2>Now Playing</h2>
+    ${now.trackName ? `<div><b>${now.trackName}</b> — ${now.artistName}</div>` : 'No song'}
+    ${now.albumName ? `<div>Album: ${now.albumName}</div>` : ''}
+    ${now.popularity != null ? `<div>Popularity: ${now.popularity}</div>` : ''}
+    ${now.spotifyUrl ? `<div><a href="${now.spotifyUrl}" target="_blank">Open in Spotify</a></div>` : ''}
+    ${now.albumArt ? `<div><img src="${now.albumArt}" style="max-height:140px;margin-top:8px;border-radius:8px"></div>` : ''}
+  `;
+
+  document.getElementById('commands').innerHTML = `
+    <h2>Commands</h2>
+    ${Array.isArray(cmds) ? cmds.map(g => `
+      <div style="margin-bottom:10px">
+        <div style="font-weight:600">${g.group}</div>
+        <ul>${g.items.map(c => `<li><code>${c}</code></li>`).join('')}</ul>
+      </div>
+    `).join('') : '—'}
+  `;
+
+  document.getElementById('topSongs').innerHTML = `
+    <h2>Top Songs</h2>
+    <table><thead><tr><th>Track</th><th>Artist</th><th>Avg</th><th>Plays</th></tr></thead>
+    <tbody>${songs.map(r=>`
+      <tr><td>${r.trackName||''}</td><td>${r.artistName||''}</td><td>${r.avg?.toFixed ? r.avg.toFixed(1) : r.avg ?? '-'}</td><td>${r.playCount ?? 0}</td></tr>
+    `).join('')}</tbody></table>
+  `;
+
+  document.getElementById('topAlbums').innerHTML = `
+    <h2>Top Albums</h2>
+    <table><thead><tr><th>Album</th><th>Artist</th><th>Avg</th><th>Tracks</th></tr></thead>
+    <tbody>${albums.map(r=>`
+      <tr><td>${r.albumName||''}</td><td>${r.artistName||''}</td><td>${r.avg?.toFixed ? r.avg.toFixed(1) : r.avg ?? '-'}</td><td>${r.trackCount ?? ''}</td></tr>
+    `).join('')}</tbody></table>
+  `;
+
+  document.getElementById('records').innerHTML = `
+    <h2>Records</h2>
+    <div>${records?.highestRatedSong ? `Highest Rated Song: <b>${records.highestRatedSong.trackName}</b> — ${records.highestRatedSong.artistName} (${records.highestRatedSong.avg}/10)` : '—'}</div>
+  `;
+}
+load();
+</script>
+</body>
+</html>

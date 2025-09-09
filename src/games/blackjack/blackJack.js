@@ -51,9 +51,10 @@ function createState () {
 }
 
 function getCtx (ctx) {
-  const tableId = (ctx && ctx.tableId) || 'default'
   const room = (ctx && ctx.room) || process.env.ROOM_UUID
-  // Clean prefix: no numeric table tag in chat
+  // Default table = this room (matches bjCtxFromPayload)
+  const tableId = (ctx && ctx.tableId) || room
+  // Keep the clean tag; optionally include short table for debugging by toggling next line
   const tag = '🃏 Blackjack'
   return { tableId, room, tag }
 }

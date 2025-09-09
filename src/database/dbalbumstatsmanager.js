@@ -2,8 +2,8 @@ import db from './db.js'
 
 // Save or update a user's review for an album
 export function saveAlbumReview ({ albumName, albumArt, artistName, trackCount, userId, rating }) {
-  if (typeof rating !== 'number' || rating < 1 || rating > 6) {
-    return { success: false, message: 'Rating must be between 1 and 6' }
+  if (typeof rating !== 'number' || !Number.isFinite(rating) || rating < 1 || rating > 10) {
+    return { success: false, message: 'Rating must be between 1 and 10 (one decimal allowed)' }
   }
 
   // Check if album exists, insert if not
@@ -55,9 +55,9 @@ export function saveAlbumReview ({ albumName, albumArt, artistName, trackCount, 
   db.prepare(`
     UPDATE album_stats SET averageReview = ?
     WHERE id = ?
-  `).run(result.average.toFixed(2), albumId)
+  `).run(result.average.toFixed(1), albumId)
 
-  return { success: true, average: parseFloat(result.average.toFixed(2)) }
+  return { success: true, average: parseFloat(result.average.toFixed(1)) }
 }
 
 // 🥇 Top-rated albums

@@ -18,7 +18,7 @@ function ensureReviewsSchema () {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       songId TEXT NOT NULL,
       userId TEXT NOT NULL,
-      rating INTEGER,
+      rating REAL,
       createdAt TEXT,
       UNIQUE(songId, userId)
     );
@@ -26,6 +26,7 @@ function ensureReviewsSchema () {
   `)
   __reviewsSchemaReady = true
 }
+
 
 function ensureRoomStatsSchema () {
   if (__roomStatsSchemaReady) return
@@ -94,11 +95,11 @@ export async function postVoteCountsForLastSong (room) {
 
     message += `\n🎧 Played by: **${djNickname}**\n👍 ${likes}   👎 ${dislikes}   ❤️ ${stars}`
 
-    // Append play count and avg review (/6 scale)
+    // Append play count and avg review (/10 scale)
     const updated = db.prepare('SELECT playCount, averageReview FROM room_stats WHERE songId = ?').get(songId)
     if (updated) {
       if (updated.averageReview != null) {
-        message += `   ⭐ ${updated.averageReview}/6`
+        message += `   ⭐ ${updated.averageReview}/10`
       }
       if (updated.playCount) {
         message += `\n🔁 Played ${updated.playCount} time${updated.playCount !== 1 ? 's' : ''}`
@@ -120,41 +121,44 @@ export async function saveSongReview ({ currentSong, rating, userId }) {
     ensureRoomStatsSchema()
 
     const { songId } = currentSong || {}
-    if (!songId || !userId || !Number.isInteger(rating) || rating < 1 || rating > 6) {
-      return { success: false, reason: 'bad_input' }
-    }
 
-    // Atomic upsert: keeps one review per (songId, userId); overrides rating & timestamp
+    // normalize rating to 1–10, one decimal
+    let r = Number.isFinite(rating) ? Math.round(rating * 10) / 10 : NaN
+    if (!Number.isFinite(r) || r < 1 || r > 10) return { success: false, reason: 'bad_input' }
+    if (!songId || !userId) return { success: false, reason: 'bad_input' }
+
+    // Upsert review
     db.prepare(`
       INSERT INTO song_reviews (songId, userId, rating, createdAt)
       VALUES (?, ?, ?, datetime('now'))
       ON CONFLICT(songId, userId) DO UPDATE SET
         rating    = excluded.rating,
         createdAt = datetime('now')
-    `).run(songId, userId, rating)
+    `).run(songId, userId, r)
 
-    // Recompute average rating for room_stats
+    // Recompute average to one decimal for room_stats
     const avgRow = db.prepare(`
-      SELECT ROUND(AVG(rating), 2) AS average
+      SELECT ROUND(AVG(rating), 1) AS average
       FROM song_reviews
       WHERE songId = ?
     `).get(songId)
 
     if (avgRow && avgRow.average != null) {
-      db.prepare('UPDATE room_stats SET averageReview = ? WHERE songId = ?').run(avgRow.average, songId)
+      db.prepare('UPDATE room_stats SET averageReview = ? WHERE songId = ?')
+        .run(avgRow.average, songId)
     }
 
     return { success: true }
   } catch (err) {
     const msg = String(err?.message || '')
     if (err?.code === 'SQLITE_CONSTRAINT' || /UNIQUE/i.test(msg)) {
-      // With UPSERT this shouldn’t happen, but keep for safety
       return { success: false, reason: 'duplicate' }
     }
     console.error('Error in saveSongReview:', err)
     return { success: false, reason: 'db_error' }
   }
 }
+
 
 export async function getAverageRating (currentSong) {
   try {

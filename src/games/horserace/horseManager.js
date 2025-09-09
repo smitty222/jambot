@@ -32,16 +32,16 @@ function randomInt (min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min
 }
 
-function generateHorseName (existing) {
-  const syll = ['ra', 'in', 'do', 'ver', 'la', 'mi', 'ko', 'zi', 'ta', 'shi', 'na', 'qu', 'fo', 'rum', 'lux', 'tor', 'vin', 'sol', 'mer', 'kai']
+function generateHorseName(existing) {
+  const syll = ['ra','in','do','ver','la','mi','ko','zi','ta','shi','na','qu','fo','rum','lux','tor','vin','sol','mer','kai']
   for (let i = 0; i < 1000; i++) {
     const useTable = Math.random() < 0.8 && NAME_PREFIXES.length && NAME_SUFFIXES.length
     const name = useTable
-      ? NAME_PREFIXES[Math.floor(Math.random() * NAME_PREFIXES.length)] +
-        NAME_SUFFIXES[Math.floor(Math.random() * NAME_SUFFIXES.length)]
-      : Array.from({ length: 2 + Math.floor(Math.random() * 2) }, () => syll[Math.floor(Math.random() * syll.length)])
-        .join('')
-        .replace(/^./, c => c.toUpperCase())
+      ? NAME_PREFIXES[Math.floor(Math.random()*NAME_PREFIXES.length)]
+        + NAME_SUFFIXES[Math.floor(Math.random()*NAME_SUFFIXES.length)]
+      : Array.from({length: 2 + Math.floor(Math.random()*2)}, () => syll[Math.floor(Math.random()*syll.length)])
+          .join('')
+          .replace(/^./, c => c.toUpperCase())
     if (!existing.includes(name)) return name
   }
   throw new Error('Unable to generate unique horse name.')

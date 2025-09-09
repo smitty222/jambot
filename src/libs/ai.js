@@ -4,6 +4,9 @@ import fetch from 'node-fetch'
 import fs from 'fs'
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY
+// Image model (Free tier-friendly)
+const IMAGE_MODEL_ID = process.env.IMAGE_MODEL_ID || 'gemini-2.0-flash-preview-image-generation'
+
 
 // ───────────────────────────────────────────────────────────
 // Logging controls
@@ -267,15 +270,13 @@ export async function askQuestion (question, opts = {}) {
     throw error // let the caller decide to skip posting
   }
 }
-
 // ───────────────────────────────────────────────────────────
 // Image generation (Gemini REST)
 // ───────────────────────────────────────────────────────────
 async function generateImage (prompt) {
-  // Use the Gemini 2.5 Flash Image Preview model for image generation.  This
-  // model supports text-to-image and image editing.  See docs for details
-  // 【824137802243041†L170-L198】.
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${GEMINI_API_KEY}`
+  // Use the Free-tier friendly image model
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL_ID}:generateContent?key=${GEMINI_API_KEY}`
+
   const body = {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
@@ -290,8 +291,18 @@ async function generateImage (prompt) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     })
-    const data = await res.json()
-    const parts = data.candidates?.[0]?.content?.parts || []
+
+    const data = await res.json().catch(() => ({}))
+
+    // Surface HTTP errors (e.g., 429 quota exceeded)
+    if (!res.ok) {
+      const apiMsg = data?.error?.message || res.statusText || ''
+      throw new Error(`Gemini image API error ${res.status}: ${apiMsg}`)
+    }
+
+    const cand = data.candidates?.[0]
+    const parts = cand?.content?.parts || []
+
     let outputText = ''
     let base64Image = null
     for (const part of parts) {
@@ -300,15 +311,27 @@ async function generateImage (prompt) {
         base64Image = part.inlineData.data
       }
     }
-    info('[image response]', { hasImage: !!base64Image, textChars: outputText.length })
-    // When a base64 image is returned, convert it to a data URI.  Otherwise return null.
-    const dataUri = base64Image ? `data:image/png;base64,${base64Image}` : null
-    return { text: outputText || 'Here’s your image!', imageBase64: base64Image, dataUri }
+
+    const hasImage = !!base64Image
+    info('[image response]', { hasImage, textChars: (outputText || '').length })
+
+    // Success
+    if (hasImage) {
+      const dataUri = `data:image/png;base64,${base64Image}`
+      const safeText = (outputText && outputText.trim()) || 'Here’s your image!'
+      return { text: safeText, imageBase64: base64Image, dataUri }
+    }
+
+    // No image returned (safety block, quota oddities, etc.)
+    const explain = (outputText || '').trim() || 'No image was produced for this prompt.'
+    return { text: explain, imageBase64: null, dataUri: null }
   } catch (error) {
     console.error('Image generation error:', error)
-    return { text: 'Sorry, I couldn’t create an image this time.', imageBase64: null }
+    return { text: 'Sorry, I couldn’t create an image this time.', imageBase64: null, dataUri: null }
   }
 }
+
+
 
 // ───────────────────────────────────────────────────────────
 // Song-aware phrase replacement

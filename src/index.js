@@ -3,20 +3,88 @@ import 'dotenv/config'
 import './database/initdb.js'
 import './database/seedavatars.js'
 import express from 'express'
+import fetch from 'node-fetch'
+import db from './database/db.js' // ⬅️ for building snapshots
 import { Bot, getCurrentDJUUIDs } from './libs/bot.js'
 import { updateCurrentUsers } from './utils/currentUsers.js'
 import { fetchCurrentUsers } from './utils/API.js'
 import * as themeStorage from './utils/themeManager.js'
-// Import the shared roomThemes store from its own util. This avoids
-// dragging the entire message handler into the main application and
-// centralizes state management.
-import { roomThemes, setThemes } from './utils/roomThemes.js'
-import { addTrackedUser, getTrackedUsers } from './utils/trackedUsers.js'
+import { setThemes } from './utils/roomThemes.js'
 
 const app = express()
-
 const roomBot = new Bot(process.env.JOIN_ROOM)
 
+// ───────────────────────────────────────────────────────────
+// Site snapshot publisher (Commands + Stats → Cloudflare KV)
+// ───────────────────────────────────────────────────────────
+function buildSnapshot () {
+  // Show only MAIN entry-point commands (branches live under those)
+  const commands = [
+    { group: 'Core',  items: ['/commands','/songreview <1-10>','/albumreview <1-10>','/rating','/topsongs','/topalbums'] },
+    { group: 'Games', items: ['/games','/blackjack','/craps','/roulette'] },
+    { group: 'DJ',    items: ['/tip <amount>','/djbeers','/queue','/autodj on|off'] },
+    { group: 'Fun',   items: ['/gifs','/props','/allen'] },
+    { group: 'Mods',  items: ['/mod','/theme <name>'] }
+  ]
+
+  // Lightweight, read-only stats
+  const topSongs = db.prepare(`
+    SELECT trackName, artistName, averageReview AS avg, playCount
+    FROM room_stats
+    WHERE averageReview IS NOT NULL
+    ORDER BY averageReview DESC, playCount DESC
+    LIMIT 20
+  `).all()
+
+  const topAlbums = db.prepare(`
+    SELECT albumName, artistName, averageReview AS avg, trackCount
+    FROM album_stats
+    WHERE averageReview IS NOT NULL
+    ORDER BY averageReview DESC, trackCount DESC
+    LIMIT 20
+  `).all()
+
+  const totals = {
+    songsTracked:  db.prepare('SELECT COUNT(*) AS c FROM room_stats').get().c,
+    albumsTracked: db.prepare('SELECT COUNT(*) AS c FROM album_stats').get().c,
+    songReviews:   db.prepare('SELECT COUNT(*) AS c FROM song_reviews').get().c,
+    albumReviews:  db.prepare('SELECT COUNT(*) AS c FROM album_reviews').get().c,
+    updatedAt:     new Date().toISOString()
+  }
+
+  return { commands, stats: { totals, topSongs, topAlbums } }
+}
+
+async function publishSiteSnapshot () {
+  const url = process.env.SITE_PUBLISH_URL
+  const token = process.env.SITE_PUBLISH_TOKEN
+  if (!url || !token) {
+    console.warn('[site publish] skipped (SITE_PUBLISH_URL or SITE_PUBLISH_TOKEN missing)')
+    return
+  }
+  const payload = buildSnapshot()
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(payload)
+    })
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '')
+      throw new Error(`HTTP ${res.status} ${res.statusText} – ${txt}`)
+    }
+    console.log('[site publish] ok')
+  } catch (err) {
+    console.warn('[site publish] failed:', err?.message || err)
+  }
+}
+
+// ───────────────────────────────────────────────────────────
+// Bot startup
+// ───────────────────────────────────────────────────────────
 const startupTasks = async () => {
   try {
     await roomBot.connect()
@@ -29,6 +97,9 @@ const startupTasks = async () => {
     console.log('Current DJs', currentDJs)
 
     updateCurrentUsers(currentUsers)
+
+    // Publish a snapshot on boot
+    await publishSiteSnapshot()
   } catch (error) {
     console.error('Error during bot startup:', error.message)
   }
@@ -36,16 +107,16 @@ const startupTasks = async () => {
 
 startupTasks()
 
+// Load & apply saved themes
 const savedThemes = themeStorage.loadThemes()
-// Replace the current themes with those loaded from storage. Using
-// setThemes ensures that we maintain the same object identity while
-// updating its contents.
 setThemes(savedThemes)
 
-// --- Adaptive poll loop (replaces setInterval) ---
+// ───────────────────────────────────────────────────────────
+// Adaptive poll loop (unchanged)
+// ───────────────────────────────────────────────────────────
 const BASE_MS = 900
 const STEP_MS = 300
-const MAX_BACKOFF_STEPS = 4 // up to ~ +1200ms
+const MAX_BACKOFF_STEPS = 4
 
 function jitter (ms) {
   const delta = Math.floor(ms * 0.15) // ±15%
@@ -67,11 +138,25 @@ async function pollLoop () {
 
 pollLoop() // start
 
-app.get('/', (req, res) => {
+// ───────────────────────────────────────────────────────────
+// Site publish timer (keeps KV fresh even without events)
+// ───────────────────────────────────────────────────────────
+const PUBLISH_INTERVAL_MS = Number(process.env.SITE_PUBLISH_INTERVAL_MS || 90_000)
+setInterval(() => {
+  publishSiteSnapshot()
+}, PUBLISH_INTERVAL_MS)
+
+// If you want to publish right after specific actions (e.g., a review saved),
+// call `publishSiteSnapshot()` in those code paths too.
+
+// ───────────────────────────────────────────────────────────
+// Minimal HTTP
+// ───────────────────────────────────────────────────────────
+app.get('/', (_req, res) => {
   res.send('Jamflow bot is alive and running!')
 })
 
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
   res.status(200).send('OK')
 })
 

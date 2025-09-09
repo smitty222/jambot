@@ -590,19 +590,8 @@ export async function fetchUserData (userUUIDs) {
   return profiles
 }
 
-export async function getSenderNickname (senderUuid) {
-  // Use the nickname cache to avoid repeated network calls for the same user.
-  const cached = nicknameCache.get(senderUuid)
-  if (cached) return cached
-  try {
-    const arr = await fetchUserData([senderUuid])
-    const name = arr[0]?.nickname || 'Unknown User'
-    nicknameCache.set(senderUuid, name)
-    return name
-  } catch {
-    return 'Unknown User'
-  }
-}
+
+
 
 const USER_ROLES_URL = `${cfg.ttGateway}/api/room-service/roomUserRoles/${cfg.roomSlug}`
 
