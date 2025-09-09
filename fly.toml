@@ -1,32 +1,23 @@
-# fly.toml app configuration file generated for jamflowbot-allen-v4 on 2025-08-19T08:33:54-04:00
-#
-# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
-#
+app = "jamflowbot-allen-v4"
+primary_region = "iad"
 
-app = 'jamflowbot-allen-v4'
-primary_region = 'atl'
-
-[build]
-
-[processes]
-  app = 'npm start'
+[env]
+  NODE_ENV = "production"
 
 [http_service]
-  internal_port = 3000
+  internal_port = 8080
+  processes = ["app"]
   force_https = true
-  auto_stop_machines = 'off'
   auto_start_machines = true
+  auto_stop_machines = false
   min_machines_running = 1
-  processes = ['app']
 
-  [[http_service.checks]]
-    interval = '30s'
-    timeout = '5s'
-    method = 'get'
-    path = '/health'
-    protocol = 'http'
-
-[[vm]]
-  memory = '1gb'
-  cpu_kind = 'shared'
-  cpus = 1
+[checks]
+  [checks.http]
+    type = "http"
+    port = 8080
+    method = "GET"
+    path = "/healthz"
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "20s"

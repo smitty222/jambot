@@ -1,19 +1,19 @@
 # Use Node.js 20 base image
 FROM node:20
-ENV NODE_ENV=production
 
-# Set working directory
+ENV NODE_ENV=production
 WORKDIR /app
 
-# Install only production dependencies
-COPY ["package.json", "package-lock.json*", "./"]
-RUN npm install --production
+# Install production deps reproducibly
+COPY package*.json ./
+RUN npm ci --omit=dev
 
-# Copy all project files
+# Copy app code
 COPY . .
 
-# Expose the port
-EXPOSE 3000
+# Fly will route to whatever PORT we listen on; expose 8080 for clarity
+ENV PORT=8080
+EXPOSE 8080
 
-# Start the bot
-CMD ["npm", "start"]
+# Run the bot + health server
+CMD ["node", "bin/start.js"]
