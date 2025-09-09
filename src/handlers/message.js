@@ -874,6 +874,10 @@ Please refresh your page for the queue to update`
     })
 
     /// /////////////// General Commands ////////////////
+
+    } else if (payload.message === '/site') {
+  await postMessage({ room, message: 'Jamflow Bot Hub → https://jambot-e72.pages.dev/' })
+
     } else if (payload.message.startsWith('/tip')) {
   try {
     const senderUUID = payload.sender

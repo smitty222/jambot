@@ -1,86 +1,180 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Jamflow Hub</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font: 15px system-ui, -apple-system, Segoe UI, Roboto; margin: 24px; }
-    .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
-    .card { border: 1px solid #eee; border-radius: 12px; padding: 16px; }
-    h2 { margin: 0 0 8px; font-size: 18px; }
-    ul { margin: 8px 0; padding-left: 18px; }
-    table { border-collapse: collapse; width: 100%; }
-    th, td { padding: 6px 8px; border-bottom: 1px solid #eee; text-align: left; }
+    :root{--bg:#0b0f14;--card:#121823;--muted:#96a0b5;--fg:#e8eefc;--accent:#6ea8fe;--chip:#1a2433;--danger:#ff9f43}
+    *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#0b0f14 0%,#0a0c12 100%);color:var(--fg);font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Inter,sans-serif}
+    header{position:sticky;top:0;z-index:5;background:rgba(11,15,20,.8);backdrop-filter:saturate(120%) blur(8px);border-bottom:1px solid #1f2a3a}
+    .wrap{max-width:980px;margin:0 auto;padding:18px}
+    h1{margin:0 0 6px;font-size:22px;letter-spacing:.3px}
+    .sub{color:var(--muted);font-size:13px}
+    .row{display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap}
+    input[type="search"],input[type="password"],input[type="text"]{background:#0e1520;border:1px solid #1f2a3a;color:var(--fg);padding:10px 12px;border-radius:10px;outline:none}
+    input[type="search"]{flex:1;min-width:240px}
+    button{background:var(--accent);border:none;color:#08111f;padding:10px 14px;border-radius:10px;font-weight:700;cursor:pointer}
+    button.secondary{background:#1f2a3a;color:var(--fg)}
+    .pill{display:inline-block;margin-left:8px;background:#10273a;color:#9fd1ff;border:1px solid #244a72;border-radius:999px;padding:3px 8px;font-size:12px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;margin:18px 0 36px}
+    .card{background:var(--card);border:1px solid #1f2a3a;border-radius:16px;padding:14px 14px 10px;box-shadow:0 6px 30px rgba(0,0,0,.25)}
+    .card h3{margin:2px 0 10px;font-size:16px}
+    .chips{display:flex;flex-wrap:wrap;gap:8px}
+    .chip{background:var(--chip);border:1px solid #223046;color:#cfe1ff;border-radius:999px;padding:8px 10px;font-size:13px}
+    .muted{color:var(--muted)}
+    .err{color:#ffc4c4}
+    .section-title{display:flex;align-items:center;gap:10px;margin-top:18px}
+    .lock{display:inline-flex;align-items:center;gap:6px}
+    .sep{height:1px;background:#1f2a3a;margin:18px 0}
+    .footer{color:#7f8aa3;font-size:12px;text-align:center;margin:36px 0}
   </style>
 </head>
 <body>
-  <h1>Jamflow Hub</h1>
-
-  <div class="grid">
-    <div class="card" id="now"></div>
-    <div class="card" id="commands"></div>
-  </div>
-
-  <div class="grid">
-    <div class="card" id="topSongs"></div>
-    <div class="card" id="topAlbums"></div>
-    <div class="card" id="records"></div>
-  </div>
-
-<script>
-const API = 'https://YOUR-WORKER-SUBDOMAIN.workers.dev/api';
-
-async function load() {
-  const [now, cmds, songs, albums, records] = await Promise.all([
-    fetch(`${API}/now`).then(r=>r.json()),
-    fetch(`${API}/commands`).then(r=>r.json()),
-    fetch(`${API}/top-songs`).then(r=>r.json()),
-    fetch(`${API}/top-albums`).then(r=>r.json()),
-    fetch(`${API}/records`).then(r=>r.json())
-  ]);
-
-  document.getElementById('now').innerHTML = `
-    <h2>Now Playing</h2>
-    ${now.trackName ? `<div><b>${now.trackName}</b> — ${now.artistName}</div>` : 'No song'}
-    ${now.albumName ? `<div>Album: ${now.albumName}</div>` : ''}
-    ${now.popularity != null ? `<div>Popularity: ${now.popularity}</div>` : ''}
-    ${now.spotifyUrl ? `<div><a href="${now.spotifyUrl}" target="_blank">Open in Spotify</a></div>` : ''}
-    ${now.albumArt ? `<div><img src="${now.albumArt}" style="max-height:140px;margin-top:8px;border-radius:8px"></div>` : ''}
-  `;
-
-  document.getElementById('commands').innerHTML = `
-    <h2>Commands</h2>
-    ${Array.isArray(cmds) ? cmds.map(g => `
-      <div style="margin-bottom:10px">
-        <div style="font-weight:600">${g.group}</div>
-        <ul>${g.items.map(c => `<li><code>${c}</code></li>`).join('')}</ul>
+  <header>
+    <div class="wrap">
+      <h1>Jamflow Hub</h1>
+      <div class="sub">Public commands below. Mods can unlock private commands with a token.</div>
+      <div class="row">
+        <input id="search" type="search" placeholder="Search commands…" />
+        <span class="muted" id="status">Loading…</span>
+        <span style="flex:1"></span>
+        <span class="lock muted" id="lockStatus">🔒 Private: locked</span>
+        <button id="unlock" class="secondary">Unlock</button>
+        <button id="signout" class="secondary" style="display:none">Sign out</button>
+        <button id="refresh" class="secondary">Refresh</button>
       </div>
-    `).join('') : '—'}
-  `;
+      <div class="row" id="tokenRow" style="display:none">
+        <input id="token" type="password" placeholder="Paste MOD_READ_TOKEN…" />
+        <button id="save">Save token</button>
+        <span id="tokErr" class="err"></span>
+      </div>
+    </div>
+  </header>
 
-  document.getElementById('topSongs').innerHTML = `
-    <h2>Top Songs</h2>
-    <table><thead><tr><th>Track</th><th>Artist</th><th>Avg</th><th>Plays</th></tr></thead>
-    <tbody>${songs.map(r=>`
-      <tr><td>${r.trackName||''}</td><td>${r.artistName||''}</td><td>${r.avg?.toFixed ? r.avg.toFixed(1) : r.avg ?? '-'}</td><td>${r.playCount ?? 0}</td></tr>
-    `).join('')}</tbody></table>
-  `;
+  <main class="wrap">
+    <div class="section-title">
+      <h2 style="margin:0;font-size:18px">Public Commands</h2>
+      <span class="muted" id="pubCount"></span>
+    </div>
+    <div class="grid" id="pubGrid"></div>
 
-  document.getElementById('topAlbums').innerHTML = `
-    <h2>Top Albums</h2>
-    <table><thead><tr><th>Album</th><th>Artist</th><th>Avg</th><th>Tracks</th></tr></thead>
-    <tbody>${albums.map(r=>`
-      <tr><td>${r.albumName||''}</td><td>${r.artistName||''}</td><td>${r.avg?.toFixed ? r.avg.toFixed(1) : r.avg ?? '-'}</td><td>${r.trackCount ?? ''}</td></tr>
-    `).join('')}</tbody></table>
-  `;
+    <div class="sep"></div>
 
-  document.getElementById('records').innerHTML = `
-    <h2>Records</h2>
-    <div>${records?.highestRatedSong ? `Highest Rated Song: <b>${records.highestRatedSong.trackName}</b> — ${records.highestRatedSong.artistName} (${records.highestRatedSong.avg}/10)` : '—'}</div>
-  `;
-}
-load();
-</script>
+    <div class="section-title">
+      <h2 style="margin:0;font-size:18px">Moderator Commands</h2>
+      <span class="muted" id="modCount"></span>
+    </div>
+    <div class="grid" id="modGrid"></div>
+
+    <div class="footer">Auto-refresh every 60s. Tokens are stored locally in your browser only.</div>
+  </main>
+
+  <script>
+    // Change if your Worker URL differs:
+    const API_BASE = 'https://jamflow-site-api.jamflowbot.workers.dev/api'
+
+    const LS_TOKEN = 'jamflow.mod.token'
+    const $ = sel => document.querySelector(sel)
+
+    const state = {
+      token: localStorage.getItem(LS_TOKEN) || '',
+      publicGroups: [],
+      modGroups: [],
+      filter: ''
+    }
+
+    function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])) }
+
+    function renderGroups(groups, el, countEl){
+      const q = state.filter.trim().toLowerCase()
+      el.innerHTML = ''
+      let shown = 0
+      for (const g of groups){
+        const items = (g.items || []).filter(x => !q || x.toLowerCase().includes(q))
+        if (!items.length) continue
+        shown += items.length
+        const card = document.createElement('div')
+        card.className = 'card'
+        card.innerHTML = `<h3>${escapeHtml(g.group)}</h3><div class="chips">${
+          items.map(it => `<span class="chip">${escapeHtml(it)}</span>`).join('')
+        }</div>`
+        el.appendChild(card)
+      }
+      countEl.textContent = shown ? `(${shown})` : '(0)'
+    }
+
+    function renderAll(){
+      renderGroups(state.publicGroups, $('#pubGrid'), $('#pubCount'))
+      renderGroups(state.modGroups, $('#modGrid'), $('#modCount'))
+      $('#lockStatus').textContent = state.token ? '🔓 Private: unlocked' : '🔒 Private: locked'
+      $('#signout').style.display = state.token ? '' : 'none'
+    }
+
+    async function fetchPublic(){
+      try{
+        const res = await fetch(`${API_BASE}/commands`)
+        state.publicGroups = res.ok ? await res.json() : []
+      }catch{ state.publicGroups = [] }
+    }
+
+    async function fetchMods(){
+      if (!state.token) { state.modGroups = []; return }
+      try{
+        const res = await fetch(`${API_BASE}/commands_mod`, {
+          headers: { authorization: `Bearer ${state.token}` }
+        })
+        if (res.status === 401){
+          $('#tokErr').textContent = 'Unauthorized token.'
+          state.modGroups = []
+          return
+        }
+        state.modGroups = res.ok ? await res.json() : []
+      }catch{
+        state.modGroups = []
+      }
+    }
+
+    async function refreshAll(){
+      $('#status').textContent = 'Refreshing…'
+      await Promise.all([fetchPublic(), fetchMods()])
+      $('#status').textContent = 'Ready'
+      renderAll()
+    }
+
+    // Events
+    $('#search').oninput = (e) => { state.filter = e.target.value; renderAll() }
+    $('#refresh').onclick = refreshAll
+    $('#unlock').onclick = () => {
+      $('#tokErr').textContent = ''
+      $('#tokenRow').style.display = $('#tokenRow').style.display ? '' : ''
+      // toggle to visible
+      $('#tokenRow').style.display = ''
+      $('#token').focus()
+    }
+    $('#save').onclick = async () => {
+      const t = $('#token').value.trim()
+      $('#tokErr').textContent = ''
+      if (!t){ $('#tokErr').textContent = 'Token required'; return }
+      state.token = t
+      localStorage.setItem(LS_TOKEN, t)
+      $('#token').value = ''
+      $('#tokenRow').style.display = 'none'
+      await fetchMods()
+      renderAll()
+    }
+    $('#signout').onclick = () => {
+      localStorage.removeItem(LS_TOKEN)
+      state.token = ''
+      state.modGroups = []
+      renderAll()
+    }
+
+    // Auto refresh
+    setInterval(refreshAll, 60000)
+
+    // Boot
+    refreshAll()
+  </script>
 </body>
 </html>
