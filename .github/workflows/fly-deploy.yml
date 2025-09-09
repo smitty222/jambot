@@ -1,18 +1,33 @@
-# See https://fly.io/docs/app-guides/continuous-deployment-with-github-actions/
-
 name: Fly Deploy
+
 on:
   push:
-    branches:
-      - main
+    branches: [ "main" ]   # only deploy prod from main; change as you like
+
 jobs:
   deploy:
     name: Deploy app
     runs-on: ubuntu-latest
-    concurrency: deploy-group    # optional: ensure only one action runs at a time
+    needs: [ ]
     steps:
       - uses: actions/checkout@v4
-      - uses: superfly/flyctl-actions/setup-flyctl@master
-      - run: flyctl deploy --remote-only
+
+      - name: Use Node 20 (if your build step needs node)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install deps (if you build before deploy)
+        run: npm ci
+        continue-on-error: true
+
+      - name: Setup Flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy to Fly
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          # If fly.toml is not at repo root, point to it with --config path/to/fly.toml
+          flyctl deploy --remote-only

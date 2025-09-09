@@ -2,179 +2,179 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Jamflow Hub</title>
+  <title>Just Jams — Commands & Stats</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root{--bg:#0b0f14;--card:#121823;--muted:#96a0b5;--fg:#e8eefc;--accent:#6ea8fe;--chip:#1a2433;--danger:#ff9f43}
-    *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#0b0f14 0%,#0a0c12 100%);color:var(--fg);font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Inter,sans-serif}
-    header{position:sticky;top:0;z-index:5;background:rgba(11,15,20,.8);backdrop-filter:saturate(120%) blur(8px);border-bottom:1px solid #1f2a3a}
-    .wrap{max-width:980px;margin:0 auto;padding:18px}
-    h1{margin:0 0 6px;font-size:22px;letter-spacing:.3px}
-    .sub{color:var(--muted);font-size:13px}
-    .row{display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap}
-    input[type="search"],input[type="password"],input[type="text"]{background:#0e1520;border:1px solid #1f2a3a;color:var(--fg);padding:10px 12px;border-radius:10px;outline:none}
-    input[type="search"]{flex:1;min-width:240px}
-    button{background:var(--accent);border:none;color:#08111f;padding:10px 14px;border-radius:10px;font-weight:700;cursor:pointer}
-    button.secondary{background:#1f2a3a;color:var(--fg)}
-    .pill{display:inline-block;margin-left:8px;background:#10273a;color:#9fd1ff;border:1px solid #244a72;border-radius:999px;padding:3px 8px;font-size:12px}
-    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;margin:18px 0 36px}
-    .card{background:var(--card);border:1px solid #1f2a3a;border-radius:16px;padding:14px 14px 10px;box-shadow:0 6px 30px rgba(0,0,0,.25)}
-    .card h3{margin:2px 0 10px;font-size:16px}
-    .chips{display:flex;flex-wrap:wrap;gap:8px}
-    .chip{background:var(--chip);border:1px solid #223046;color:#cfe1ff;border-radius:999px;padding:8px 10px;font-size:13px}
-    .muted{color:var(--muted)}
-    .err{color:#ffc4c4}
-    .section-title{display:flex;align-items:center;gap:10px;margin-top:18px}
-    .lock{display:inline-flex;align-items:center;gap:6px}
-    .sep{height:1px;background:#1f2a3a;margin:18px 0}
-    .footer{color:#7f8aa3;font-size:12px;text-align:center;margin:36px 0}
+    :root { color-scheme: dark; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; }
+    h1 { font-size: 20px; margin: 0 0 12px; }
+    .muted { color: #a0a0a0; font-size: 12px; }
+    .row { display: flex; gap: 20px; flex-wrap: wrap; }
+    .col { flex: 1 1 360px; min-width: 300px; }
+    .section-title { display:flex; align-items:baseline; gap: 8px; margin: 18px 0 8px; }
+    .sep { height:1px; background:#303030; margin:16px 0; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fill,minmax(240px,1fr)); gap:10px; }
+    .card { border:1px solid #2f2f2f; border-radius:10px; padding:10px; background:#171717; }
+    .cmd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    input[type="password"], input[type="text"] { width: 100%; padding:8px; background:#111; border:1px solid #333; color:#fff; border-radius:8px; }
+    button { padding:8px 10px; border-radius:8px; background:#2a62ff; border:0; color:#fff; cursor:pointer; }
+    button.secondary { background:#333; }
+    .tiny { font-size:11px; }
   </style>
 </head>
 <body>
-  <header>
-    <div class="wrap">
-      <h1>Jamflow Hub</h1>
-      <div class="sub">Public commands below. Mods can unlock private commands with a token.</div>
-      <div class="row">
-        <input id="search" type="search" placeholder="Search commands…" />
-        <span class="muted" id="status">Loading…</span>
-        <span style="flex:1"></span>
-        <span class="lock muted" id="lockStatus">🔒 Private: locked</span>
-        <button id="unlock" class="secondary">Unlock</button>
-        <button id="signout" class="secondary" style="display:none">Sign out</button>
-        <button id="refresh" class="secondary">Refresh</button>
+  <h1>Just Jams — Commands & Stats</h1>
+  <div class="muted tiny">Dev build. Switch API below to point this page at your dev Worker.</div>
+
+  <div class="row">
+    <div class="col">
+      <div class="section-title">
+        <h2 style="margin:0;font-size:18px">API</h2>
+        <span class="muted" id="apiInfo"></span>
       </div>
-      <div class="row" id="tokenRow" style="display:none">
-        <input id="token" type="password" placeholder="Paste MOD_READ_TOKEN…" />
-        <button id="save">Save token</button>
-        <span id="tokErr" class="err"></span>
+      <div class="card">
+        <label class="tiny muted">API Base URL</label>
+        <input id="apiBaseInput" type="text" placeholder="https://jamflow-site-api-dev.*****.workers.dev" />
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button id="saveApiBase">Save</button>
+          <button class="secondary" id="resetApiBase">Reset</button>
+        </div>
+      </div>
+
+      <div class="section-title">
+        <h2 style="margin:0;font-size:18px">Moderator Access</h2>
+        <span class="muted" id="modInfo"></span>
+      </div>
+      <div class="card">
+        <label class="tiny muted">Paste MOD_READ_TOKEN (not stored on server; saved to your browser only)</label>
+        <input id="modTokenInput" type="password" placeholder="••••••" />
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button id="saveToken">Unlock</button>
+          <button class="secondary" id="clearToken">Clear</button>
+        </div>
       </div>
     </div>
-  </header>
 
-  <main class="wrap">
-    <div class="section-title">
-      <h2 style="margin:0;font-size:18px">Public Commands</h2>
-      <span class="muted" id="pubCount"></span>
+    <div class="col">
+      <div class="section-title">
+        <h2 style="margin:0;font-size:18px">Stats</h2>
+        <span class="muted" id="statsUpdated"></span>
+      </div>
+      <div class="grid" id="topSongs"></div>
+      <div class="grid" id="topAlbums"></div>
     </div>
-    <div class="grid" id="pubGrid"></div>
+  </div>
 
-    <div class="sep"></div>
+  <div class="sep"></div>
 
-    <div class="section-title">
-      <h2 style="margin:0;font-size:18px">Moderator Commands</h2>
-      <span class="muted" id="modCount"></span>
-    </div>
-    <div class="grid" id="modGrid"></div>
+  <div class="section-title"><h2 style="margin:0;font-size:18px">Public Commands</h2></div>
+  <div class="grid" id="publicCommands"></div>
 
-    <div class="footer">Auto-refresh every 60s. Tokens are stored locally in your browser only.</div>
-  </main>
+  <div class="section-title">
+    <h2 style="margin:0;font-size:18px">Mod-only Commands</h2>
+    <span class="muted" id="modStatus"></span>
+  </div>
+  <div class="grid" id="modCommands"></div>
 
-  <script>
-    // Change if your Worker URL differs:
-    const API_BASE = 'https://jamflow-site-api.jamflowbot.workers.dev/api'
+<script>
+  // 👉 Set this to your DEV Worker base (use the input UI to save it in localStorage).
+  const DEFAULT_API_BASE = 'https://jamflow-site-api-dev.YOUR_SUBDOMAIN.workers.dev'
+  const $ = sel => document.querySelector(sel)
+  const apiBase = () => localStorage.getItem('apiBase') || DEFAULT_API_BASE
+  const modToken = () => localStorage.getItem('modReadToken') || ''
 
-    const LS_TOKEN = 'jamflow.mod.token'
-    const $ = sel => document.querySelector(sel)
+  // UI wiring
+  function renderMeta() {
+    $('#apiInfo').textContent = apiBase()
+    $('#modInfo').textContent = modToken() ? 'Token saved in this browser' : 'No token'
+    $('#modStatus').textContent = modToken() ? '' : '(paste token above to reveal)'
+    $('#apiBaseInput').value = apiBase()
+  }
+  $('#saveApiBase').onclick = () => { localStorage.setItem('apiBase', $('#apiBaseInput').value.trim()); renderMeta(); refreshAll() }
+  $('#resetApiBase').onclick = () => { localStorage.removeItem('apiBase'); renderMeta(); refreshAll() }
+  $('#saveToken').onclick = () => { localStorage.setItem('modReadToken', $('#modTokenInput').value.trim()); renderMeta(); refreshMod() }
+  $('#clearToken').onclick = () => { localStorage.removeItem('modReadToken'); renderMeta(); $('#modCommands').innerHTML=''; }
 
-    const state = {
-      token: localStorage.getItem(LS_TOKEN) || '',
-      publicGroups: [],
-      modGroups: [],
-      filter: ''
+  function renderGroups(el, groups) {
+    el.innerHTML = (groups || []).map(g => `
+      <div class="card">
+        <div class="cmd"><strong>${g.group || 'Commands'}</strong></div>
+        <ul class="tiny" style="margin:6px 0 0 16px">
+          ${(g.items || []).map(item =>
+            `<li>${typeof item === 'string' ? item : (item.text || '')}</li>`
+          ).join('')}
+        </ul>
+      </div>
+    `).join('')
+  }
+
+  async function refreshPublic() {
+    try {
+      const r = await fetch(`${apiBase()}/api/commands`, { cache: 'no-store' })
+      if (!r.ok) throw new Error('commands fetch failed')
+      const data = await r.json()
+      renderGroups($('#publicCommands'), data)
+    } catch (e) {
+      $('#publicCommands').innerHTML = `<div class="muted tiny">Failed to load public commands</div>`
     }
+  }
 
-    function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])) }
-
-    function renderGroups(groups, el, countEl){
-      const q = state.filter.trim().toLowerCase()
-      el.innerHTML = ''
-      let shown = 0
-      for (const g of groups){
-        const items = (g.items || []).filter(x => !q || x.toLowerCase().includes(q))
-        if (!items.length) continue
-        shown += items.length
-        const card = document.createElement('div')
-        card.className = 'card'
-        card.innerHTML = `<h3>${escapeHtml(g.group)}</h3><div class="chips">${
-          items.map(it => `<span class="chip">${escapeHtml(it)}</span>`).join('')
-        }</div>`
-        el.appendChild(card)
-      }
-      countEl.textContent = shown ? `(${shown})` : '(0)'
+  async function refreshMod() {
+    const token = modToken()
+    if (!token) return
+    try {
+      const r = await fetch(`${apiBase()}/api/commands_mod`, {
+        headers: { authorization: `Bearer ${token}` },
+        cache: 'no-store'
+      })
+      if (!r.ok) throw new Error('mod commands unauthorized or not found')
+      const data = await r.json()
+      renderGroups($('#modCommands'), data)
+    } catch (e) {
+      $('#modCommands').innerHTML = `<div class="muted tiny">Invalid token or failed to load mod commands</div>`
     }
+  }
 
-    function renderAll(){
-      renderGroups(state.publicGroups, $('#pubGrid'), $('#pubCount'))
-      renderGroups(state.modGroups, $('#modGrid'), $('#modCount'))
-      $('#lockStatus').textContent = state.token ? '🔓 Private: unlocked' : '🔒 Private: locked'
-      $('#signout').style.display = state.token ? '' : 'none'
-    }
+  async function refreshStats() {
+    try {
+      const r = await fetch(`${apiBase()}/api/stats`, { cache: 'no-store' })
+      if (!r.ok) throw new Error('stats fetch failed')
+      const s = await r.json()
+      const t = s.totals || {}
+      $('#statsUpdated').textContent = t.updatedAt
+        ? `Updated ${new Date(t.updatedAt).toLocaleString()} • ${t.songsTracked||0} songs • ${t.albumsTracked||0} albums • ${t.songReviews||0} song reviews • ${t.albumReviews||0} album reviews`
+        : 'No data yet'
 
-    async function fetchPublic(){
-      try{
-        const res = await fetch(`${API_BASE}/commands`)
-        state.publicGroups = res.ok ? await res.json() : []
-      }catch{ state.publicGroups = [] }
-    }
+      $('#topSongs').innerHTML = (s.topSongs || []).map(x => `
+        <div class="card">
+          <div class="cmd"><strong>${x.trackName || 'Unknown'}</strong></div>
+          <div class="muted">${x.artistName || ''}</div>
+          <div class="muted tiny">Avg ★ ${(Number(x.avg)||0).toFixed(1)} • Plays ${x.playCount || 0}</div>
+        </div>
+      `).join('')
 
-    async function fetchMods(){
-      if (!state.token) { state.modGroups = []; return }
-      try{
-        const res = await fetch(`${API_BASE}/commands_mod`, {
-          headers: { authorization: `Bearer ${state.token}` }
-        })
-        if (res.status === 401){
-          $('#tokErr').textContent = 'Unauthorized token.'
-          state.modGroups = []
-          return
-        }
-        state.modGroups = res.ok ? await res.json() : []
-      }catch{
-        state.modGroups = []
-      }
+      $('#topAlbums').innerHTML = (s.topAlbums || []).map(x => `
+        <div class="card">
+          <div class="cmd"><strong>${x.albumName || 'Unknown'}</strong></div>
+          <div class="muted">${x.artistName || ''}</div>
+          <div class="muted tiny">Avg ★ ${(Number(x.avg)||0).toFixed(1)} • Tracks ${x.trackCount || 0}</div>
+        </div>
+      `).join('')
+    } catch (e) {
+      $('#topSongs').innerHTML = `<div class="muted tiny">Failed to load stats</div>`
+      $('#topAlbums').innerHTML = ``
+      $('#statsUpdated').textContent = ''
     }
+  }
 
-    async function refreshAll(){
-      $('#status').textContent = 'Refreshing…'
-      await Promise.all([fetchPublic(), fetchMods()])
-      $('#status').textContent = 'Ready'
-      renderAll()
-    }
+  async function refreshAll() {
+    await Promise.all([refreshPublic(), refreshMod(), refreshStats()])
+  }
 
-    // Events
-    $('#search').oninput = (e) => { state.filter = e.target.value; renderAll() }
-    $('#refresh').onclick = refreshAll
-    $('#unlock').onclick = () => {
-      $('#tokErr').textContent = ''
-      $('#tokenRow').style.display = $('#tokenRow').style.display ? '' : ''
-      // toggle to visible
-      $('#tokenRow').style.display = ''
-      $('#token').focus()
-    }
-    $('#save').onclick = async () => {
-      const t = $('#token').value.trim()
-      $('#tokErr').textContent = ''
-      if (!t){ $('#tokErr').textContent = 'Token required'; return }
-      state.token = t
-      localStorage.setItem(LS_TOKEN, t)
-      $('#token').value = ''
-      $('#tokenRow').style.display = 'none'
-      await fetchMods()
-      renderAll()
-    }
-    $('#signout').onclick = () => {
-      localStorage.removeItem(LS_TOKEN)
-      state.token = ''
-      state.modGroups = []
-      renderAll()
-    }
-
-    // Auto refresh
-    setInterval(refreshAll, 60000)
-
-    // Boot
-    refreshAll()
-  </script>
+  renderMeta()
+  refreshAll()
+  // optional polling for "real-time" feel
+  setInterval(refreshStats, 15000)
+</script>
 </body>
 </html>

@@ -1,9 +1,9 @@
-# fly.toml app configuration file generated for jamflowbot-allen-v2 on 2025-08-19T08:33:54-04:00
+# fly.toml app configuration file generated for jamflowbot-allen-v4 on 2025-08-19T08:33:54-04:00
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'jamflowbot-allen-v3-5'
+app = 'jamflowbot-allen-v4'
 primary_region = 'atl'
 
 [build]
