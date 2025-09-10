@@ -38,7 +38,8 @@
     "mocha": "^10.0.0",
     "nodemon": "^3.1.9",
     "nyc": "^15.1.0",
-    "standard": "^17.0.0"
+    "standard": "^17.0.0",
+    "wrangler": "^4.35.0"
   },
   "dependencies": {
     "@cometchat-pro/chat": "^3.0.13",

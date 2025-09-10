@@ -342,11 +342,15 @@ let _lastLine = ''
 bus.on('turn', async ({ turnIndex, raceState, finishDistance }) => {
   const label = `🏁 Leg ${turnIndex + 1} of ${LEGS}`
 
+  // Compute whether the frame changed enough to warrant a redraw.
   const MIN_CELL_CHANGE = 1 / (finishDistance * BAR_CELLS) // about 1 cell
-  const changed = displayState.some((h, i) => Math.abs(h.progress - (_lastFrame?.[i]?.progress ?? 0)) >= MIN_CELL_CHANGE)
-  if (!changed && turnIndex % 2 !== 0) return // skip noisy frames
+  const prev = _lastFrame?.raceState
+  const changed = raceState.some(
+    (h, i) => Math.abs((h.progress ?? 0) - (prev?.[i]?.progress ?? 0)) >= MIN_CELL_CHANGE
+  )
+  if (!changed && (turnIndex % 2 !== 0)) return // skip every other low-change frame
 
-  // Inject silks into displayed names
+  // Inject silks into displayed names (names only; progress is the same).
   const displayState = raceState.map((h, i) => ({ ...h, name: `${silk(i)} ${h.name}` }))
 
   const track = renderProgress(displayState, {
@@ -383,6 +387,7 @@ bus.on('turn', async ({ turnIndex, raceState, finishDistance }) => {
     message: ['```', label, track, '```', line ? `\n${line}` : ''].join('\n')
   })
 })
+
 
 bus.on('raceFinished', async ({ winnerIdx, raceState, payouts, ownerBonus, finishDistance }) => {
   const header = '🏆 Final Results'
@@ -440,11 +445,11 @@ bus.on('raceFinished', async ({ winnerIdx, raceState, payouts, ownerBonus, finis
 
   // 3) Payouts (unchanged)
   const payoutsLines = Object.keys(payouts || {}).length
-    ? Object.entries(payouts).map(([uid, amt]) => `• <uid:${uid}> +$${amt}`).join('\n')
+    ? Object.entries(payouts).map(([uid, amt]) => `• <@uid:${uid}> +$${amt}`).join('\n')
     : '• No winning tickets. The house thanks you.'
 
   const ownerLine = ownerBonus
-    ? `\n🏇 Owner bonus: <uid:${ownerBonus.ownerId}> +$${ownerBonus.amount}`
+    ? `\n🏇 Owner bonus: <@uid:${ownerBonus.ownerId}> +$${ownerBonus.amount}`
     : ''
 
   await postMessage({
@@ -564,7 +569,7 @@ export async function handleHorseStatsCommand (ctx) {
   const races = Number(match?.racesParticipated || 0)
   const wins = Number(match?.wins || 0)
   const pct = _fmtPct(wins, races)
-  const owner = match?.ownerId ? `<uid:${match.ownerId}>` : 'House'
+  const owner = match?.ownerId ? `<@uid:${match.ownerId}>` : 'House'
 
   const details = [
     `📄 **${match.name}**` + (match.retired ? ' (retired)' : ''),

@@ -135,21 +135,6 @@ function extractText (reply) {
   return null
 }
 
-async function safeAskQuestion (prompt) {
-  try {
-    const result = await Promise.race([
-      askQuestion(prompt),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('AI_TIMEOUT')), 15000))
-    ])
-    const txt = extractText(result)
-    if (!txt) throw new Error('AI_EMPTY_RESPONSE')
-    return txt.trim()
-  } catch (err) {
-    logger.error(`[AI] ${err.message || err}`)
-    return null
-  }
-}
-
 // ───────────────────────────────────────────────────────────
 // Polling helpers
 // ───────────────────────────────────────────────────────────

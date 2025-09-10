@@ -17,17 +17,6 @@ import {
   showAllBets,
   rouletteGameActive
 } from './roulette.js'
-import {
-  openBetting,
-  joinTable,
-  leaveTable,
-  handleBlackjackBet,
-  handleHit,
-  handleStand,
-  handleDouble,
-  handleSurrender,
-  handleSplit
-} from '../games/blackjack/blackJack.js'
 
 // Lottery and GIF/Dog handlers
 import {
@@ -67,6 +56,7 @@ import {
 // User authorization helper to restrict bot avatar changes
 import { isUserAuthorized } from '../utils/API.js'
 
+
 // ---------------------------------------------------------------------------
 // Command registry
 // ---------------------------------------------------------------------------
@@ -105,42 +95,6 @@ const commandRegistry = {
   // 🧮 Balance: `/balance`
   balance: async ({ payload }) => {
     await handleBalanceCommand(payload)
-  },
-  // ♠ Blackjack lobby: `/blackjack`
-  blackjack: async ({ room }) => {
-    await openBetting({ room })
-  },
-  // ♣ Join blackjack table: `/join`
-  join: async ({ payload }) => {
-    await joinTable(payload)
-  },
-  // ♦ Leave blackjack table: `/leave`
-  leave: async ({ payload }) => {
-    await leaveTable(payload)
-  },
-  // 🂱 Blackjack bet: `/betbj`
-  betbj: async ({ payload }) => {
-    await handleBlackjackBet(payload)
-  },
-  // Blackjack actions: `/hit`, `/stand`, `/double`, `/surrender`, `/split`
-  hit: async ({ payload }) => {
-    await handleHit(payload)
-  },
-  stand: async ({ payload }) => {
-    await handleStand(payload)
-  },
-  double: async ({ payload }) => {
-    await handleDouble(payload)
-  },
-  surrender: async ({ payload }) => {
-    await handleSurrender(payload)
-  },
-  split: async ({ payload }) => {
-    await handleSplit(payload)
-  },
-  // 🎮 Show all roulette bets: `/bets`
-  bets: async () => {
-    await showAllBets()
   },
 
   // 🎱 Lottery: `/lottery`

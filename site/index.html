@@ -2,179 +2,106 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Just Jams — Commands & Stats</title>
+  <title>Just Jams — Commands & Data Explorer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    :root { color-scheme: dark; }
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; }
-    h1 { font-size: 20px; margin: 0 0 12px; }
-    .muted { color: #a0a0a0; font-size: 12px; }
-    .row { display: flex; gap: 20px; flex-wrap: wrap; }
-    .col { flex: 1 1 360px; min-width: 300px; }
-    .section-title { display:flex; align-items:baseline; gap: 8px; margin: 18px 0 8px; }
-    .sep { height:1px; background:#303030; margin:16px 0; }
-    .grid { display:grid; grid-template-columns: repeat(auto-fill,minmax(240px,1fr)); gap:10px; }
-    .card { border:1px solid #2f2f2f; border-radius:10px; padding:10px; background:#171717; }
-    .cmd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    input[type="password"], input[type="text"] { width: 100%; padding:8px; background:#111; border:1px solid #333; color:#fff; border-radius:8px; }
-    button { padding:8px 10px; border-radius:8px; background:#2a62ff; border:0; color:#fff; cursor:pointer; }
-    button.secondary { background:#333; }
-    .tiny { font-size:11px; }
-  </style>
+  <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <h1>Just Jams — Commands & Stats</h1>
-  <div class="muted tiny">Dev build. Switch API below to point this page at your dev Worker.</div>
+  <div id="toastHost"></div>
+  <div class="container">
+    <header class="header">
+      <div class="brand">Just Jams <span class="pill small">Admin</span></div>
+      <div class="row gap-sm">
+        <button id="tabCommands" class="button ghost">Commands</button>
+        <button id="tabData" class="button ghost">Data</button>
+        <button id="tabStats" class="button ghost">Stats</button>
+        <button id="tabSettings" class="button ghost">Settings</button>
+      </div>
+    </header>
 
-  <div class="row">
-    <div class="col">
-      <div class="section-title">
-        <h2 style="margin:0;font-size:18px">API</h2>
-        <span class="muted" id="apiInfo"></span>
+    <!-- COMMANDS -->
+    <section id="viewCommands" class="view" style="display:block;">
+      <div class="card">
+        <div class="section-title">
+          <div><strong>Public Commands</strong> <span class="muted small">/room-facing</span></div>
+          <div class="row">
+            <input id="cmdSearch" class="input" placeholder="Filter commands…" style="width:240px" />
+          </div>
+        </div>
+        <div id="publicCmds"></div>
       </div>
       <div class="card">
-        <label class="tiny muted">API Base URL</label>
-        <input id="apiBaseInput" type="text" placeholder="https://jamflow-site-api-dev.*****.workers.dev" />
-        <div style="display:flex;gap:8px;margin-top:8px">
-          <button id="saveApiBase">Save</button>
-          <button class="secondary" id="resetApiBase">Reset</button>
+        <div class="section-title">
+          <div><strong>Moderator Commands</strong> <span class="muted small">requires token</span></div>
         </div>
+        <div id="modCmds" class="muted small">Load your token in Settings to view.</div>
+      </div>
+    </section>
+
+    <!-- DATA -->
+    <section id="viewData" class="view">
+      <div class="card">
+        <div class="section-title">
+          <div class="row">
+            <strong>Tables</strong>
+            <span class="badge"><span>Public</span></span>
+          </div>
+          <div class="row">
+            <input id="tableSearch" class="input" placeholder="Search tables…" style="width:240px" />
+          </div>
+        </div>
+        <div id="publicTables"></div>
       </div>
 
-      <div class="section-title">
-        <h2 style="margin:0;font-size:18px">Moderator Access</h2>
-        <span class="muted" id="modInfo"></span>
+      <div class="card">
+        <div class="section-title">
+          <div class="row">
+            <strong>Tables</strong>
+            <span class="badge"><span>Mod-only</span></span>
+          </div>
+        </div>
+        <div id="modTables" class="muted small">Load your token in Settings to view.</div>
+      </div>
+
+      <div class="card">
+        <div id="tableDetail"></div>
+      </div>
+    </section>
+
+    <!-- STATS -->
+    <section id="viewStats" class="view">
+      <div class="card">
+        <div class="section-title"><strong>Totals</strong></div>
+        <div id="totals"></div>
       </div>
       <div class="card">
-        <label class="tiny muted">Paste MOD_READ_TOKEN (not stored on server; saved to your browser only)</label>
-        <input id="modTokenInput" type="password" placeholder="••••••" />
-        <div style="display:flex;gap:8px;margin-top:8px">
-          <button id="saveToken">Unlock</button>
-          <button class="secondary" id="clearToken">Clear</button>
-        </div>
+        <div class="section-title"><strong>Top Songs</strong></div>
+        <div id="topSongs"></div>
       </div>
-    </div>
+      <div class="card">
+        <div class="section-title"><strong>Top Albums</strong></div>
+        <div id="topAlbums"></div>
+      </div>
+    </section>
 
-    <div class="col">
-      <div class="section-title">
-        <h2 style="margin:0;font-size:18px">Stats</h2>
-        <span class="muted" id="statsUpdated"></span>
+    <!-- SETTINGS -->
+    <section id="viewSettings" class="view">
+      <div class="card">
+        <div class="section-title">
+          <strong>Moderator Access</strong>
+          <button id="toggleTokenVis" class="button secondary small">Show</button>
+        </div>
+        <label class="small muted" for="tokenInput">Mod read token</label>
+        <input id="tokenInput" class="input" type="password" placeholder="Paste your MOD_READ_TOKEN…" />
+        <div style="margin-top:10px" class="row">
+          <button class="button" id="saveToken" type="button">Save</button>
+          <button class="button secondary" id="clearToken" type="button">Clear</button>
+        </div>
+        <div id="tokenStatus" class="small muted" style="margin-top:8px;"></div>
       </div>
-      <div class="grid" id="topSongs"></div>
-      <div class="grid" id="topAlbums"></div>
-    </div>
+    </section>
   </div>
 
-  <div class="sep"></div>
-
-  <div class="section-title"><h2 style="margin:0;font-size:18px">Public Commands</h2></div>
-  <div class="grid" id="publicCommands"></div>
-
-  <div class="section-title">
-    <h2 style="margin:0;font-size:18px">Mod-only Commands</h2>
-    <span class="muted" id="modStatus"></span>
-  </div>
-  <div class="grid" id="modCommands"></div>
-
-<script>
-  // 👉 Set this to your DEV Worker base (use the input UI to save it in localStorage).
-  const DEFAULT_API_BASE = 'https://jamflow-site-api-dev.YOUR_SUBDOMAIN.workers.dev'
-  const $ = sel => document.querySelector(sel)
-  const apiBase = () => localStorage.getItem('apiBase') || DEFAULT_API_BASE
-  const modToken = () => localStorage.getItem('modReadToken') || ''
-
-  // UI wiring
-  function renderMeta() {
-    $('#apiInfo').textContent = apiBase()
-    $('#modInfo').textContent = modToken() ? 'Token saved in this browser' : 'No token'
-    $('#modStatus').textContent = modToken() ? '' : '(paste token above to reveal)'
-    $('#apiBaseInput').value = apiBase()
-  }
-  $('#saveApiBase').onclick = () => { localStorage.setItem('apiBase', $('#apiBaseInput').value.trim()); renderMeta(); refreshAll() }
-  $('#resetApiBase').onclick = () => { localStorage.removeItem('apiBase'); renderMeta(); refreshAll() }
-  $('#saveToken').onclick = () => { localStorage.setItem('modReadToken', $('#modTokenInput').value.trim()); renderMeta(); refreshMod() }
-  $('#clearToken').onclick = () => { localStorage.removeItem('modReadToken'); renderMeta(); $('#modCommands').innerHTML=''; }
-
-  function renderGroups(el, groups) {
-    el.innerHTML = (groups || []).map(g => `
-      <div class="card">
-        <div class="cmd"><strong>${g.group || 'Commands'}</strong></div>
-        <ul class="tiny" style="margin:6px 0 0 16px">
-          ${(g.items || []).map(item =>
-            `<li>${typeof item === 'string' ? item : (item.text || '')}</li>`
-          ).join('')}
-        </ul>
-      </div>
-    `).join('')
-  }
-
-  async function refreshPublic() {
-    try {
-      const r = await fetch(`${apiBase()}/api/commands`, { cache: 'no-store' })
-      if (!r.ok) throw new Error('commands fetch failed')
-      const data = await r.json()
-      renderGroups($('#publicCommands'), data)
-    } catch (e) {
-      $('#publicCommands').innerHTML = `<div class="muted tiny">Failed to load public commands</div>`
-    }
-  }
-
-  async function refreshMod() {
-    const token = modToken()
-    if (!token) return
-    try {
-      const r = await fetch(`${apiBase()}/api/commands_mod`, {
-        headers: { authorization: `Bearer ${token}` },
-        cache: 'no-store'
-      })
-      if (!r.ok) throw new Error('mod commands unauthorized or not found')
-      const data = await r.json()
-      renderGroups($('#modCommands'), data)
-    } catch (e) {
-      $('#modCommands').innerHTML = `<div class="muted tiny">Invalid token or failed to load mod commands</div>`
-    }
-  }
-
-  async function refreshStats() {
-    try {
-      const r = await fetch(`${apiBase()}/api/stats`, { cache: 'no-store' })
-      if (!r.ok) throw new Error('stats fetch failed')
-      const s = await r.json()
-      const t = s.totals || {}
-      $('#statsUpdated').textContent = t.updatedAt
-        ? `Updated ${new Date(t.updatedAt).toLocaleString()} • ${t.songsTracked||0} songs • ${t.albumsTracked||0} albums • ${t.songReviews||0} song reviews • ${t.albumReviews||0} album reviews`
-        : 'No data yet'
-
-      $('#topSongs').innerHTML = (s.topSongs || []).map(x => `
-        <div class="card">
-          <div class="cmd"><strong>${x.trackName || 'Unknown'}</strong></div>
-          <div class="muted">${x.artistName || ''}</div>
-          <div class="muted tiny">Avg ★ ${(Number(x.avg)||0).toFixed(1)} • Plays ${x.playCount || 0}</div>
-        </div>
-      `).join('')
-
-      $('#topAlbums').innerHTML = (s.topAlbums || []).map(x => `
-        <div class="card">
-          <div class="cmd"><strong>${x.albumName || 'Unknown'}</strong></div>
-          <div class="muted">${x.artistName || ''}</div>
-          <div class="muted tiny">Avg ★ ${(Number(x.avg)||0).toFixed(1)} • Tracks ${x.trackCount || 0}</div>
-        </div>
-      `).join('')
-    } catch (e) {
-      $('#topSongs').innerHTML = `<div class="muted tiny">Failed to load stats</div>`
-      $('#topAlbums').innerHTML = ``
-      $('#statsUpdated').textContent = ''
-    }
-  }
-
-  async function refreshAll() {
-    await Promise.all([refreshPublic(), refreshMod(), refreshStats()])
-  }
-
-  renderMeta()
-  refreshAll()
-  // optional polling for "real-time" feel
-  setInterval(refreshStats, 15000)
-</script>
+  <script src="./app.js?v=modern1"></script>
 </body>
 </html>

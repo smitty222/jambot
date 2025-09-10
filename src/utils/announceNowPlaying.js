@@ -205,7 +205,7 @@ async function fetchGeniusAboutWithTimeout (title, artist) {
 // ───────────────────────────────────────────────────────────
 // AI summarization (Genius only)
 // ───────────────────────────────────────────────────────────
-const AI_HARD_TIMEOUT_MS = 15000
+const AI_HARD_TIMEOUT_MS = 45000
 
 function buildGeniusBlurbPrompt (song, aboutText, tone = 'neutral') {
   const { trackName, artistName } = song || {}

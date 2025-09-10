@@ -1,4 +1,21 @@
 [
-  { "group": "Essentials", "items": ["/addDJ"] },
-  { "group": "Fun", "items": ["/cyber"] }
+  {
+    "group": "Room Design",
+    "items": [
+      "/room classic",
+      "/room ferry",
+      "/room barn",
+      "/room theater",
+      "/room festival",
+      "/room stadium",
+      "/room yacht"
+    ]
+  },
+  {
+    "group": "Fun",
+    "items": [
+      "/cyber",
+      "/avatar random"
+    ]
+  }
 ]

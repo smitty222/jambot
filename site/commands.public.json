@@ -1,4 +1,17 @@
 [
-  { "group": "Essentials", "items": ["/lottery", "/queue", "/like"] },
-  { "group": "Fun", "items": ["/slots", "/dive"] }
+  {
+    "group": "Essentials",
+    "items": [
+      "/lottery",
+      "/queue",
+      "/like"
+    ]
+  },
+  {
+    "group": "Fun",
+    "items": [
+      "/slots",
+      "/dive"
+    ]
+  }
 ]

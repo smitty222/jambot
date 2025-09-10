@@ -1,12 +1,37 @@
-// src/libs/ai.js
-import { GoogleGenerativeAI } from '@google/generative-ai'
+// src/libs/ai.js — updated with request timeouts, aborts, and cleaner retries
+// ESM module
+
 import fetch from 'node-fetch'
-import fs from 'fs'
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY
-// Image model (Free tier-friendly)
-const IMAGE_MODEL_ID = process.env.IMAGE_MODEL_ID || 'gemini-2.0-flash-preview-image-generation'
 
+// ───────────────────────────────────────────────────────────
+// Models
+// ───────────────────────────────────────────────────────────
+// Text-capable models (newest/fastest first)
+const TEXT_MODELS_DEFAULT = (
+  process.env.AI_TEXT_MODELS ||
+  'gemini-2.5-pro,gemini-2.5-flash,gemini-1.5-flash'
+)
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean)
+
+// Image-capable models (newest first)
+// Primary = 2.5 Flash Image Preview (returns TEXT+IMAGE)
+// Fallback = 2.0 Flash Preview Image Generation (legacy)
+const IMAGE_MODEL_PRIMARY =
+  process.env.IMAGE_MODEL_PRIMARY || 'gemini-2.5-flash-image-preview'
+
+const IMAGE_MODEL_FALLBACKS = (
+  process.env.IMAGE_MODEL_FALLBACKS ||
+  'gemini-2.0-flash-preview-image-generation'
+)
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean)
+
+const IMAGE_MODELS = [IMAGE_MODEL_PRIMARY, ...IMAGE_MODEL_FALLBACKS]
 
 // ───────────────────────────────────────────────────────────
 // Logging controls
@@ -30,33 +55,62 @@ function preview (str, max = PROMPT_MAX) {
   return s.slice(0, max - 1) + '…'
 }
 
-let currentSong = null
+const isTransientAiError = (err) => {
+  const code = err?.status || err?.code
+  const msg = String(err?.message || '').toLowerCase()
+  // Treat rate limit + common 5xx + timeout-ish as transient
+  return [429, 500, 502, 503, 504].includes(code) ||
+         /quota|rate|limit|temporar|overload|unavail|timeout|timed out|aborted/.test(msg)
+}
 
 // ───────────────────────────────────────────────────────────
-// Response caching
+// Tunables (env-overridable)
 // ───────────────────────────────────────────────────────────
-// To reduce latency for repeated or similar queries, we cache recent AI
-// responses in memory.  A simple Map is used where the key is the
-// normalized prompt string and the value is an object containing the
-// response and an expiry timestamp.  When the cache size exceeds the
-// configured limit, the oldest entry is evicted.  The TTL and maximum
-// number of cached entries can be configured via environment variables.
+const AI_REQUEST_TIMEOUT_MS = Number(process.env.AI_REQUEST_TIMEOUT_MS ?? 30_000) // text
+const AI_IMAGE_TIMEOUT_MS   = Number(process.env.AI_IMAGE_TIMEOUT_MS   ?? 45_000) // image
+const AI_RETRIES            = Number(process.env.AI_RETRIES            ?? 3)
+const AI_BACKOFF_MS         = Number(process.env.AI_BACKOFF_MS         ?? 800)
 
-const AI_CACHE_TTL_MS = Number(process.env.AI_CACHE_TTL_MS ?? 300_000) // default 5 minutes
+// Response caching (in-memory)
+const AI_CACHE_TTL_MS  = Number(process.env.AI_CACHE_TTL_MS  ?? 300_000) // 5 min
 const AI_CACHE_MAX_SIZE = Number(process.env.AI_CACHE_MAX_SIZE ?? 50)
 
 const aiCache = new Map()
 
-function getCachedResponse (prompt) {
-  const rec = aiCache.get(prompt)
+function getCachedResponse (key) {
+  const rec = aiCache.get(key)
   if (!rec) return null
   if (rec.exp <= Date.now()) {
-    aiCache.delete(prompt)
+    aiCache.delete(key)
     return null
   }
   return rec.value
 }
 
+function setCachedResponse (key, value) {
+  if (aiCache.size >= AI_CACHE_MAX_SIZE) {
+    const firstKey = aiCache.keys().next().value
+    if (firstKey) aiCache.delete(firstKey)
+  }
+  aiCache.set(key, { value, exp: Date.now() + AI_CACHE_TTL_MS })
+}
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms))
+
+// Abortable fetch helper
+async function fetchWithTimeout (url, opts = {}, ms = 30_000) {
+  const controller = new AbortController()
+  const t = setTimeout(() => controller.abort(), ms)
+  try {
+    return await fetch(url, { ...opts, signal: controller.signal })
+  } finally {
+    clearTimeout(t)
+  }
+}
+
+// ───────────────────────────────────────────────────────────
+// Intent detection
+// ───────────────────────────────────────────────────────────
 function isImageIntent (raw) {
   if (!raw || typeof raw !== 'string') return false
   let q = raw.toLowerCase().trim()
@@ -83,90 +137,57 @@ function isImageIntent (raw) {
   return false
 }
 
-function setCachedResponse (prompt, value) {
-  // Enforce max size; remove oldest entry if necessary
-  if (aiCache.size >= AI_CACHE_MAX_SIZE) {
-    const firstKey = aiCache.keys().next().value
-    if (firstKey) aiCache.delete(firstKey)
+// ───────────────────────────────────────────────────────────
+// Text generation via REST (AbortController-aware) with retries
+// ───────────────────────────────────────────────────────────
+async function generateTextREST (modelName, prompt, genCfg = {}, timeoutMs = AI_REQUEST_TIMEOUT_MS) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`
+  const body = {
+    contents: [{ role: 'user', parts: [{ text: String(prompt) }] }],
+    generationConfig: genCfg
   }
-  aiCache.set(prompt, { value, exp: Date.now() + AI_CACHE_TTL_MS })
+  const res = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  }, timeoutMs)
+
+  const data = await res.json().catch(() => ({}))
+
+  if (!res.ok) {
+    const message = data?.error?.message || res.statusText || ''
+    const e = new Error(`Gemini text API error ${res.status}: ${message}`)
+    e.status = res.status
+    throw e
+  }
+
+  const parts = data?.candidates?.[0]?.content?.parts || []
+  const out = parts.map(p => p?.text || '').join('').trim()
+  return out
 }
 
-// ───────────────────────────────────────────────────────────
-// Text generation with retries and tuning parameters
-// ───────────────────────────────────────────────────────────
-/**
- * Generate text using the Gemini API with support for multiple models, retries
- * and optional sampling parameters.  If one model fails, the next model will
- * be tried.  Between attempts the function backs off exponentially.
- *
- * @param {string} prompt - The full prompt to send to the model.
- * @param {Object} [options] - Optional parameters to control generation.
- * @param {Array<string>} [options.models] - List of model names to try.
- * @param {number} [options.retries] - Number of retry rounds.
- * @param {number} [options.backoffMs] - Base backoff in milliseconds.
- * @param {number} [options.temperature] - Sampling temperature (0–2); lower
- *   values make output more deterministic, higher values increase variety.
- * @param {number} [options.topP] - Nucleus sampling probability (0–1); lower
- *   values limit tokens to the highest probability mass.
- * @param {number} [options.maxTokens] - Maximum tokens to generate.
- * @returns {Promise<string>} The generated text.
- */
 async function generateTextWithRetries (prompt, {
-  // Prefer the Gemini 2.5 Pro model for text tasks.  Fallback to the 2.5 Flash
-  // variant and the older 1.5 Flash in case the Pro model is unavailable or
-  // returns an error.  See docs for model capabilities【824137802243041†L177-L187】.
-  models = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-flash'],
-  retries = 2,
-  backoffMs = 600,
+  models = TEXT_MODELS_DEFAULT,
+  retries = AI_RETRIES,
+  backoffMs = AI_BACKOFF_MS,
   temperature = undefined,
   topP = undefined,
   maxTokens = undefined
 } = {}) {
   let lastErr
   for (let attempt = 0; attempt <= retries; attempt++) {
-    // Try each model in order.  If one fails, continue to next.
     for (const modelName of models) {
       try {
-        // Log the prompt once per (model, attempt)
         info('[text request]', { model: modelName, attempt })
         debug('[prompt]', { length: String(prompt || '').length })
         console.log('[AI][PROMPT]', preview(prompt))
 
-        // Create the model instance per request.  This ensures token refreshes
-        // and avoids stale connections.
-        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY)
-        const model = genAI.getGenerativeModel({ model: modelName })
+        const genCfg = {}
+        if (temperature !== undefined) genCfg.temperature = temperature
+        if (topP !== undefined) genCfg.topP = topP
+        if (maxTokens !== undefined) genCfg.maxOutputTokens = maxTokens
 
-        let out = ''
-        // Primary attempt: use structured request with generationConfig if
-        // sampling parameters are provided.  Not all SDK versions support
-        // generationConfig, so we catch errors and fall back.
-        if (temperature !== undefined || topP !== undefined || maxTokens !== undefined) {
-          try {
-            const req = {
-              contents: [{ role: 'user', parts: [{ text: String(prompt) }] }],
-              generationConfig: {}
-            }
-            if (temperature !== undefined) req.generationConfig.temperature = temperature
-            if (topP !== undefined) req.generationConfig.topP = topP
-            if (maxTokens !== undefined) req.generationConfig.maxOutputTokens = maxTokens
-            const res = await model.generateContent(req)
-            const text = res?.response?.text?.() || ''
-            out = (text || '').trim()
-          } catch (innerErr) {
-            // fallback to simple string request if structured call fails
-            const res = await model.generateContent(String(prompt))
-            const text = res?.response?.text?.() || ''
-            out = (text || '').trim()
-          }
-        } else {
-          // If no tuning params provided, use simple string call
-          const res = await model.generateContent(String(prompt))
-          const text = res?.response?.text?.() || ''
-          out = (text || '').trim()
-        }
-
+        const out = await generateTextREST(modelName, prompt, genCfg, AI_REQUEST_TIMEOUT_MS)
         info('[text response]', { model: modelName, chars: out.length })
         if (isDebug) console.debug('[response preview]', preview(out, 240))
 
@@ -176,32 +197,132 @@ async function generateTextWithRetries (prompt, {
         lastErr = e
         const code = e?.status || e?.code
         const msg = (e?.message || '').toLowerCase()
-        const transient = [429, 500, 502, 503, 504].includes(code) || /temporar|overload|unavail|timeout/.test(msg)
+        const transient = isTransientAiError(e)
         console.warn('[AI][error]', { model: modelName, attempt, code, msg, transient })
-        // continue to next model; if all models fail, retry after backoff
       }
     }
-    // Only back off if we will retry again
     if (attempt < retries) {
-      await new Promise(r => setTimeout(r, backoffMs * (attempt + 1)))
+      await sleep(backoffMs * (attempt + 1))
     }
   }
-  // If nothing succeeded, throw last error or a generic error
   throw lastErr || new Error('AI_FAILED')
 }
 
 // ───────────────────────────────────────────────────────────
-// Public: askQuestion
+// Image generation (Gemini REST: generateContent)
+// ───────────────────────────────────────────────────────────
+async function generateImageWithFallback (prompt) {
+  let lastErr
+  for (const modelId of IMAGE_MODELS) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${GEMINI_API_KEY}`
+
+    // Must request both TEXT and IMAGE per Google docs (image-only output not supported)
+    const body = {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
+    }
+
+    try {
+      info('[image request]', { modelId, promptLen: String(prompt || '').length })
+      if (isDebug) console.debug('[image prompt preview]', preview(prompt, 280))
+
+      const res = await fetchWithTimeout(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      }, AI_IMAGE_TIMEOUT_MS)
+
+      const data = await res.json().catch(() => ({}))
+
+      if (!res.ok) {
+        const message = data?.error?.message || res.statusText || ''
+        const e = new Error(`Gemini image API error ${res.status}: ${message}`)
+        e.status = res.status
+
+        // If the model is text-only, continue to next model
+        if (res.status === 400 && /only supports text output/i.test(message)) {
+          console.warn('[image model-mismatch]', { modelId, status: res.status })
+          lastErr = e
+          continue
+        }
+
+        if (isTransientAiError(e)) {
+          console.warn('[image transient error]', { modelId, status: res.status })
+          lastErr = e
+          continue
+        }
+
+        // Non-transient hard error
+        console.error('[image fatal http]', { modelId, status: res.status, message })
+        throw e
+      }
+
+      const cand = data.candidates?.[0]
+      const parts = cand?.content?.parts || []
+
+      let outputText = ''
+      let base64Image = null
+      for (const part of parts) {
+        if (part.text) outputText += part.text
+        if (part.inlineData?.mimeType?.startsWith('image/')) {
+          base64Image = part.inlineData.data
+        }
+      }
+
+      const hasImage = !!base64Image
+      info('[image response]', { modelId, hasImage, textChars: (outputText || '').length })
+
+      if (hasImage) {
+        const dataUri = `data:image/png;base64,${base64Image}`
+        const safeText = (outputText && outputText.trim()) || 'Here’s your image!'
+        return { text: safeText, imageBase64: base64Image, dataUri, modelId }
+      }
+
+      // No image produced (safety block or model didn’t return one). Try next model.
+      console.warn('[image no-image-returned]', { modelId })
+      lastErr = new Error('NO_IMAGE_RETURNED')
+      continue
+    } catch (err) {
+      if (isTransientAiError(err)) {
+        console.warn('[image transient catch]', { modelId, msg: err.message })
+        lastErr = err
+        continue
+      } else {
+        console.error('[image fatal]', { modelId, msg: err.message })
+        throw err
+      }
+    }
+  }
+
+  console.error('[image failed all models]', { tried: IMAGE_MODELS, last: lastErr?.message })
+  return { text: 'Sorry, I couldn’t create an image this time.', imageBase64: null, dataUri: null, modelId: null }
+}
+
+// ───────────────────────────────────────────────────────────
+// Song-aware phrase replacement
+// ───────────────────────────────────────────────────────────
+let currentSong = null
+
+const replaceThisSong = (question) => {
+  if (currentSong?.artistName && currentSong?.trackName) {
+    const songDetails = `Artist: ${currentSong.artistName}, Track: ${currentSong.trackName}`
+    return String(question).replace(/this song/gi, songDetails)
+  }
+  return question
+}
+
+// Public helpers
+export const setCurrentSong = (song) => { currentSong = song }
+
+// ───────────────────────────────────────────────────────────
+// Public: askQuestion (image detection + caching + retries)
 // ───────────────────────────────────────────────────────────
 export async function askQuestion (question, opts = {}) {
   const {
-    // If true, return a user-friendly apology on failure; else throw.
     returnApologyOnError = true,
-    retries = 2,
-    backoffMs = 600,
-    // Prefer Gemini 2.5 Pro for text responses; fallback to 2.5 Flash then 1.5 Flash
-    models = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-flash'],
-    // Optional tuning parameters; if undefined, defaults will be used
+    retries = AI_RETRIES,
+    backoffMs = AI_BACKOFF_MS,
+    models = TEXT_MODELS_DEFAULT,
     temperature,
     topP,
     maxTokens,
@@ -219,14 +340,12 @@ export async function askQuestion (question, opts = {}) {
   const isImagePrompt = isImageIntent(question)
   if (isImagePrompt) {
     info('[image request] detected')
-    // Check if the user is asking for a personal or self portrait; if so, ask for
-    // a reference image instead of generating from description.  This prevents
-    // accidental depiction of real individuals without consent.
+
     const lowered = String(question).toLowerCase()
     if (/\b(me|myself|my face|my portrait)\b/.test(lowered)) {
       return { text: 'If you want an image that includes you, please upload a photo of yourself first so I can use it as a reference.' }
     }
-    // Normalize the key for caching: trim whitespace and collapse multiple spaces
+
     const key = String(question).replace(/\s+/g, ' ').trim().toLowerCase()
     const cached = getCachedResponse(key)
     if (cached) {
@@ -234,17 +353,14 @@ export async function askQuestion (question, opts = {}) {
       return cached
     }
 
-    // 👇 Fire the hook right before network work
     try { await onStartImage?.() } catch {}
 
-    const result = await generateImage(String(question))
-    // If the model returned an image, convert it to a data URI and cache it
+    const result = await generateImageWithFallback(String(question))
     if (result.dataUri) {
       const value = { text: result.text, images: [result.dataUri] }
       setCachedResponse(key, value)
       return value
     }
-    // Fallback: return only text and cache
     const value = { text: result.text }
     setCachedResponse(key, value)
     return value
@@ -252,13 +368,13 @@ export async function askQuestion (question, opts = {}) {
 
   // Text requests
   try {
-    // Normalize the key for caching: trim whitespace and collapse multiple spaces
     const key = String(question).replace(/\s+/g, ' ').trim().toLowerCase()
     const cached = getCachedResponse(key)
     if (cached) {
       info('[cache hit]', { key })
       return { text: cached }
     }
+
     const text = await generateTextWithRetries(String(question), { models, retries, backoffMs, temperature, topP, maxTokens })
     setCachedResponse(key, text)
     return { text }
@@ -267,85 +383,9 @@ export async function askQuestion (question, opts = {}) {
     if (returnApologyOnError) {
       return { text: 'Sorry, something went wrong trying to get a response from Gemini.' }
     }
-    throw error // let the caller decide to skip posting
+    throw error
   }
 }
-// ───────────────────────────────────────────────────────────
-// Image generation (Gemini REST)
-// ───────────────────────────────────────────────────────────
-async function generateImage (prompt) {
-  // Use the Free-tier friendly image model
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL_ID}:generateContent?key=${GEMINI_API_KEY}`
-
-  const body = {
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
-  }
-
-  try {
-    info('[image request][prompt]', { length: String(prompt || '').length })
-    if (isDebug) console.debug('[image prompt preview]', preview(prompt, 280))
-
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    })
-
-    const data = await res.json().catch(() => ({}))
-
-    // Surface HTTP errors (e.g., 429 quota exceeded)
-    if (!res.ok) {
-      const apiMsg = data?.error?.message || res.statusText || ''
-      throw new Error(`Gemini image API error ${res.status}: ${apiMsg}`)
-    }
-
-    const cand = data.candidates?.[0]
-    const parts = cand?.content?.parts || []
-
-    let outputText = ''
-    let base64Image = null
-    for (const part of parts) {
-      if (part.text) outputText += part.text
-      if (part.inlineData?.mimeType?.startsWith('image/')) {
-        base64Image = part.inlineData.data
-      }
-    }
-
-    const hasImage = !!base64Image
-    info('[image response]', { hasImage, textChars: (outputText || '').length })
-
-    // Success
-    if (hasImage) {
-      const dataUri = `data:image/png;base64,${base64Image}`
-      const safeText = (outputText && outputText.trim()) || 'Here’s your image!'
-      return { text: safeText, imageBase64: base64Image, dataUri }
-    }
-
-    // No image returned (safety block, quota oddities, etc.)
-    const explain = (outputText || '').trim() || 'No image was produced for this prompt.'
-    return { text: explain, imageBase64: null, dataUri: null }
-  } catch (error) {
-    console.error('Image generation error:', error)
-    return { text: 'Sorry, I couldn’t create an image this time.', imageBase64: null, dataUri: null }
-  }
-}
-
-
-
-// ───────────────────────────────────────────────────────────
-// Song-aware phrase replacement
-// ───────────────────────────────────────────────────────────
-const replaceThisSong = (question) => {
-  if (currentSong?.artistName && currentSong?.trackName) {
-    const songDetails = `Artist: ${currentSong.artistName}, Track: ${currentSong.trackName}`
-    return String(question).replace(/this song/gi, songDetails)
-  }
-  return question
-}
-
-// Public helpers
-export const setCurrentSong = (song) => { currentSong = song }
 
 export const chatWithBot = async (userMessage) => {
   try {
@@ -357,31 +397,14 @@ export const chatWithBot = async (userMessage) => {
 }
 
 // ───────────────────────────────────────────────────────────
-// Additional helper functions
+// Utility flows
 // ───────────────────────────────────────────────────────────
-/**
- * Generate a concise summary of the provided text.  Uses the underlying
- * language model with a summarisation prompt and respects cache settings.
- *
- * @param {string} text - The text to summarise.
- * @param {Object} [options] - Options controlling summarisation.
- * @param {number} [options.maxWords=100] - Maximum number of words to return.
- * @param {boolean} [options.returnApologyOnError=true] - Whether to catch errors and return an apology.
- * @param {number} [options.retries] - Number of retry rounds.
- * @param {number} [options.backoffMs] - Backoff interval in milliseconds.
- * @param {Array<string>} [options.models] - Ordered list of models to try.
- * @param {number} [options.temperature] - Optional sampling temperature.
- * @param {number} [options.topP] - Optional nucleus sampling probability.
- * @param {number} [options.maxTokens] - Optional maximum tokens.
- * @returns {Promise<{text: string}>} The summary result.
- */
 export async function summarizeText (text, {
   maxWords = 100,
   returnApologyOnError = true,
-  retries = 2,
-  backoffMs = 600,
-  // Use the Pro model first for summarization; fallback to Flash variants
-  models = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-flash'],
+  retries = AI_RETRIES,
+  backoffMs = AI_BACKOFF_MS,
+  models = TEXT_MODELS_DEFAULT,
   temperature,
   topP,
   maxTokens
@@ -390,28 +413,11 @@ export async function summarizeText (text, {
   return askQuestion(prompt, { returnApologyOnError, retries, backoffMs, models, temperature, topP, maxTokens })
 }
 
-/**
- * Translate the provided text into the specified language using the AI.  The
- * function constructs a translation prompt and delegates to askQuestion.
- *
- * @param {string} text - The text to translate.
- * @param {string} language - Target language (e.g. "Spanish", "French").
- * @param {Object} [options] - Options controlling translation.
- * @param {boolean} [options.returnApologyOnError=true] - Whether to catch errors and return an apology.
- * @param {number} [options.retries] - Number of retry rounds.
- * @param {number} [options.backoffMs] - Backoff interval in milliseconds.
- * @param {Array<string>} [options.models] - Ordered list of models to try.
- * @param {number} [options.temperature] - Optional sampling temperature.
- * @param {number} [options.topP] - Optional nucleus sampling probability.
- * @param {number} [options.maxTokens] - Optional maximum tokens.
- * @returns {Promise<{text: string}>} The translation result.
- */
 export async function translateText (text, language, {
   returnApologyOnError = true,
-  retries = 2,
-  backoffMs = 600,
-  // Prefer Pro for translation; fallback to Flash variants
-  models = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-flash'],
+  retries = AI_RETRIES,
+  backoffMs = AI_BACKOFF_MS,
+  models = TEXT_MODELS_DEFAULT,
   temperature,
   topP,
   maxTokens
@@ -420,30 +426,12 @@ export async function translateText (text, language, {
   return askQuestion(prompt, { returnApologyOnError, retries, backoffMs, models, temperature, topP, maxTokens })
 }
 
-/**
- * Categorize or classify the given text.  If no categories are provided the
- * model will infer appropriate labels.  You can supply an array of
- * categories to constrain the classification.
- *
- * @param {string} text - The text to categorize.
- * @param {Object} [options] - Options controlling categorisation.
- * @param {Array<string>} [options.categories] - Optional list of categories to choose from.
- * @param {boolean} [options.returnApologyOnError=true] - Whether to catch errors and return an apology.
- * @param {number} [options.retries] - Number of retry rounds.
- * @param {number} [options.backoffMs] - Backoff interval in milliseconds.
- * @param {Array<string>} [options.models] - Ordered list of models to try.
- * @param {number} [options.temperature] - Optional sampling temperature.
- * @param {number} [options.topP] - Optional nucleus sampling probability.
- * @param {number} [options.maxTokens] - Optional maximum tokens.
- * @returns {Promise<{text: string}>} The categorization result.
- */
 export async function categorizeText (text, {
   categories,
   returnApologyOnError = true,
-  retries = 2,
-  backoffMs = 600,
-  // Use Pro by default for categorisation; fallback to Flash variants
-  models = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-flash'],
+  retries = AI_RETRIES,
+  backoffMs = AI_BACKOFF_MS,
+  models = TEXT_MODELS_DEFAULT,
   temperature,
   topP,
   maxTokens

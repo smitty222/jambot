@@ -1,30 +1,26 @@
 name = "jamflow-site-api"
 main = "worker.js"
-compatibility_date = "2025-09-01"
-
-kv_namespaces = [
-  { binding = "SITEDATA", id = "16bbdd5af7a4490883296e840943352c", preview_id = "ce75ac7de9464941b44a827cf7c92be6" }
-]
-
-name = "jamflow-site-api"
-main = "worker/worker.js"
 compatibility_date = "2024-11-12"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
 
+# PROD KV binding
 [[kv_namespaces]]
 binding = "SITEDATA"
-id = "16bbdd5af7a4490883296e840943352c"
-preview_id = "ce75ac7de9464941b44a827cf7c92be6"
+id = "16bbdd5af7a4490883296e840943352c"   # SITEDATA
+preview_id = "ce75ac7de9464941b44a827cf7c92be6"  # SITEDATA_PREVIEW (optional with newer wrangler)
 
 [vars]
-PUBLIC_ORIGIN = "https://jambot-e72.pages.dev/"
+PUBLIC_ORIGIN = "https://your-pages-site.pages.dev"  # ← your prod Pages domain
 
+# DEV environment
 [env.dev]
 name = "jamflow-site-api-dev"
 
 [[env.dev.kv_namespaces]]
 binding = "SITEDATA"
-id = "86bc4cae2074474eaf9792037d91a97b"
-preview_id = "<dev_preview_id>"
+id = "86bc4cae2074474eaf9792037d91a97b"   # dev-SITEDATA
 
 [env.dev.vars]
-PUBLIC_ORIGIN = "https://your-pages-dev.pages.dev"
+PUBLIC_ORIGIN = "https://your-pages-dev.pages.dev"   # ← your dev Pages domain
+

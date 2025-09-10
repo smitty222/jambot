@@ -196,11 +196,22 @@ export default async (payload, room, state, roomBot) => {
 
   // ─── END HORSE‐RACE BLOCK ────────────────────────────────────────────────
 
-  // Send ALL craps-related commands straight to the router.
-  if (/^\/(craps|join|roll|pass|dontpass|come|place|removeplace)\b/i.test(txt)) {
-    console.log('▶ dispatch → routeCrapsMessage')
-    return routeCrapsMessage(payload)
-  }
+  // Allow "/join blackjack" as a friendly alias
+if (/^\/join\s+blackjack\b/i.test(txt)) {
+  await joinTable(userUUID, nickname, ctx)
+  return
+}
+
+
+  if (
+  /^\/craps\b/i.test(txt) ||
+  /^\/(roll|pass|dontpass|come|place|removeplace)\b/i.test(txt) ||
+  /^\/join\s+(craps|cr)\b/i.test(txt)
+) {
+  console.log('▶ dispatch → routeCrapsMessage')
+  return routeCrapsMessage(payload)
+}
+
 
   // ─── END CRAPS BLOCK ──────────────────────────
 
@@ -266,7 +277,7 @@ async function safeAskQuestion (prompt, askFn, logger) {
   try {
     const result = await Promise.race([
       askFn(prompt),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('AI_TIMEOUT')), 15000))
+      new Promise((_, rej) => setTimeout(() => rej(new Error('AI_TIMEOUT')), 45000))
     ])
     const txt = extractText(result)
     if (!txt) throw new Error('AI_EMPTY_RESPONSE')
@@ -404,7 +415,7 @@ if (
             await postMessage({ room, message: '🎨 Generating image...' })
           }
         }),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('AI_TIMEOUT')), 15000))
+        new Promise((_, rej) => setTimeout(() => rej(new Error('AI_TIMEOUT')), 45000))
       ])
 
       const images = Array.isArray(result?.images)

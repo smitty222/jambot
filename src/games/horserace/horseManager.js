@@ -11,7 +11,7 @@ import {
   getUserHorses,
   insertHorse
 } from '../../database/dbhorses.js'
-import { formatOdds } from '../../utils/oddsFormatter.js'
+import { formatOdds } from './utils/odds.js'
 
 const ROOM = process.env.ROOM_UUID
 
