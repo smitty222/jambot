@@ -1,17 +1,19 @@
 [
   {
-    "group": "Essentials",
+    "group": "Games",
     "items": [
       "/lottery",
-      "/queue",
-      "/like"
+      "/slots <amount>",
+      "/blackjack",
+      "/horserace"
     ]
   },
   {
-    "group": "Fun",
+    "group": "Gifs",
     "items": [
-      "/slots",
-      "/dive"
+      "/dance",
+      "/party",
+      "/beer"
     ]
   }
 ]

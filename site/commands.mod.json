@@ -12,10 +12,12 @@
     ]
   },
   {
-    "group": "Fun",
+    "group": "Avatar",
     "items": [
       "/cyber",
-      "/avatar random"
+      "/cosmic",
+      "/walrus",
+      "/spacebear"
     ]
   }
 ]
