@@ -15,6 +15,10 @@ import { setThemes } from './utils/roomThemes.js'
 import fs from 'fs/promises'
 import path from 'path'
 import { fileURLToPath } from 'url'
+
+// NEW: curated DB snapshot publisher
+import publishDbSnapshot from '../tools/publishSnapshot.js'
+
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
@@ -28,7 +32,7 @@ const SITE_PUBLISH_BASE =
   process.env.SITE_PUBLISH_BASE || 'https://jamflow-site-api.jamflowbot.workers.dev'
 const SITE_PUBLISH_TOKEN = process.env.SITE_PUBLISH_TOKEN
 
-function havePublishConfig() {
+function havePublishConfig () {
   if (!SITE_PUBLISH_BASE || !SITE_PUBLISH_TOKEN) {
     console.warn('[site publish] skipped (SITE_PUBLISH_BASE or SITE_PUBLISH_TOKEN missing)')
     return false
@@ -36,15 +40,15 @@ function havePublishConfig() {
   return true
 }
 
-async function postJson(pathname, body) {
+async function postJson (pathname, body) {
   if (!havePublishConfig()) return
   const res = await fetch(`${SITE_PUBLISH_BASE}${pathname}`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'authorization': `Bearer ${SITE_PUBLISH_TOKEN}`,
+      'authorization': `Bearer ${SITE_PUBLISH_TOKEN}`
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(body)
   })
   if (!res.ok) {
     const txt = await res.text().catch(() => '')
@@ -56,11 +60,11 @@ async function postJson(pathname, body) {
 // ───────────────────────────────────────────────────────────
 // Commands publisher (reads JSON → Worker KV)
 // ───────────────────────────────────────────────────────────
-async function readJsonSafe(p, fallback = []) {
+async function readJsonSafe (p, fallback = []) {
   try { return JSON.parse(await fs.readFile(p, 'utf-8')) } catch { return fallback }
 }
 
-async function buildCommandsFromFiles() {
+async function buildCommandsFromFiles () {
   const publicPath = path.resolve(__dirname, '../site/commands.public.json')
   const modPath    = path.resolve(__dirname, '../site/commands.mod.json')
   const commands     = await readJsonSafe(publicPath, [])
@@ -68,7 +72,7 @@ async function buildCommandsFromFiles() {
   return { commands, commands_mod }
 }
 
-async function publishCommandsFromFiles() {
+async function publishCommandsFromFiles () {
   try {
     const { commands, commands_mod } = await buildCommandsFromFiles()
     await postJson('/api/publishCommands', { commands, commands_mod })
@@ -81,7 +85,7 @@ async function publishCommandsFromFiles() {
 // ───────────────────────────────────────────────────────────
 // Stats publisher (Totals, Top Songs, Top Albums)
 // ───────────────────────────────────────────────────────────
-function buildStats() {
+function buildStats () {
   const topSongsRaw = db.prepare(`
     SELECT trackName, artistName, averageReview AS avg, playCount
     FROM room_stats
@@ -116,77 +120,13 @@ function buildStats() {
   return { totals, topSongs, topAlbums }
 }
 
-async function publishStats() {
+async function publishStats () {
   try {
     const stats = buildStats()
     await postJson('/api/publishStats', stats)
     console.log('[site publish] stats ok')
   } catch (err) {
     console.warn('[site publish] stats failed:', err?.message || err)
-  }
-}
-
-// ───────────────────────────────────────────────────────────
-// DB → KV snapshots (Data Explorer)
-// ───────────────────────────────────────────────────────────
-function getAllTableNames() {
-  return db
-    .prepare(`SELECT name FROM sqlite_master WHERE type='table'`)
-    .all()
-    .map(r => r.name)
-}
-
-function dumpTable(name) {
-  try { return db.prepare(`SELECT * FROM ${name}`).all() }
-  catch (e) { console.warn('[site publish] skip table', name, e.message); return null }
-}
-
-// Choose which tables are PUBLIC vs MOD-ONLY
-// Tweak these two sets to your comfort level
-const PUBLIC_TABLES = new Set([
-  'room_stats',
-  'album_stats',
-  'lottery_stats',
-  'recent_songs',
-  'themes',
-  'avatars',
-  'current_state',
-  'craps_records',
-  // 'horses', // uncomment if you want horses public too
-])
-
-const PRIVATE_ONLY = new Set([
-  'users',
-  'wallets',
-  'song_reviews',
-  'album_reviews',
-  'dj_queue',
-  'jackpot',
-  'lottery_winners',
-])
-
-async function publishDbSnapshot() {
-  try {
-    if (!havePublishConfig()) return
-
-    const names = getAllTableNames()
-    const tables = {}
-    for (const name of names) {
-      const rows = dumpTable(name)
-      if (rows) tables[name] = rows
-    }
-
-    const publicList = names.filter(n => PUBLIC_TABLES.has(n))
-    const privateOnly = names.filter(n => PRIVATE_ONLY.has(n))
-
-    await postJson('/api/publishDb', {
-      tables,
-      public: publicList,
-      privateOnly,
-    })
-    console.log('[site publish] db ok – tables:', Object.keys(tables).length)
-  } catch (err) {
-    console.warn('[site publish] db failed:', err?.message || err)
   }
 }
 
@@ -209,7 +149,7 @@ const startupTasks = async () => {
     // Publish on boot
     await publishCommandsFromFiles()
     await publishStats()
-    await publishDbSnapshot()
+    await publishDbSnapshot({ db, postJson, havePublishConfig })
   } catch (error) {
     console.error('Error during bot startup:', error.message)
   }
@@ -251,24 +191,13 @@ pollLoop() // start
 // ───────────────────────────────────────────────────────────
 // Timers (keep KV fresh)
 // ───────────────────────────────────────────────────────────
-const PUBLISH_INTERVAL_MS     = Number(process.env.SITE_PUBLISH_INTERVAL_MS || 90_000)
-const DB_PUBLISH_INTERVAL_MS  = Number(process.env.DB_PUBLISH_INTERVAL_MS || 5 * 60 * 1000)
-const STATS_PUBLISH_INTERVAL_MS = Number(process.env.STATS_PUBLISH_INTERVAL_MS || 5 * 60 * 1000)
+const PUBLISH_INTERVAL_MS        = Number(process.env.SITE_PUBLISH_INTERVAL_MS || 90_000)
+const DB_PUBLISH_INTERVAL_MS     = Number(process.env.DB_PUBLISH_INTERVAL_MS || 5 * 60 * 1000)
+const STATS_PUBLISH_INTERVAL_MS  = Number(process.env.STATS_PUBLISH_INTERVAL_MS || 5 * 60 * 1000)
 
 setInterval(() => { publishCommandsFromFiles() }, PUBLISH_INTERVAL_MS)
-setInterval(() => { publishDbSnapshot() }, DB_PUBLISH_INTERVAL_MS)
 setInterval(() => { publishStats() }, STATS_PUBLISH_INTERVAL_MS)
-
-// If you want instant updates when you edit the JSON files, install chokidar and uncomment:
-/*
-import chokidar from 'chokidar'
-chokidar
-  .watch([
-    path.resolve(__dirname, '../site/commands.public.json'),
-    path.resolve(__dirname, '../site/commands.mod.json')
-  ], { ignoreInitial: true })
-  .on('change', () => publishCommandsFromFiles())
-*/
+setInterval(() => { publishDbSnapshot({ db, postJson, havePublishConfig }) }, DB_PUBLISH_INTERVAL_MS)
 
 // ───────────────────────────────────────────────────────────
 // Minimal HTTP
