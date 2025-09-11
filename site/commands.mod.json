@@ -12,12 +12,70 @@
     ]
   },
   {
+    "group": "Theme",
+    "items": [
+      "/settheme <Albums|Covers|Rock|Country|Rap|Name Game>",
+      "Theme Names: Albums, Album Monday, Name Game",
+      "/removetheme"
+    ]
+  },
+  {
+    "group": "Bot Toggles",
+    "items": [
+      "/status",
+      "/addDJ",
+      "/removeDJ",
+      "/bopon | /bopoff",
+      "/songstatson | /songstatsoff",
+      "/greeton | /greetoff",
+      "/infoon | /infooff | /infotoggle",
+      "/infotone <neutral|playful|cratedigger|hype|classy|chartbot|djtech|vibe>"
+    ]
+  },
+  {
     "group": "Avatar",
     "items": [
       "/cyber",
       "/cosmic",
       "/walrus",
-      "/spacebear"
+      "/spacebear",
+      "/lovable",
+      "/dino",
+      "/duck",
+      "/alien",
+      "/alien2",
+      "/penguin",
+      "/vibesguy",
+      "/faces",
+      "/dodododo",
+      "/flowerpower",
+      "/dumdum",
+      "/randomavatar",
+      "/bot1",
+      "/bot2",
+      "/bot3",
+      "/botwalrus",
+      "/botdino",
+      "/botduck",
+      "/botalien",
+      "/botalien2",
+      "/botpenguin",
+      "/botrandom"
+    ]
+  },
+  {
+    "group": "Secret",
+    "items": [
+      "/bark | /barkbark",
+      "/djbeer | /djbeers | /getdjdrunk",
+      "/jam",
+      "/ass",
+      "/azz",
+      "/cam",
+      "/shirley",
+      "/berad",
+      "/ello",
+      "/allen"
     ]
   }
 ]

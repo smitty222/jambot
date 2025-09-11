@@ -1,9 +1,16 @@
-// site/app.js (modern1)
+// site/app.js (modern3)
 console.log("[jj] app.js booted", new Date().toISOString());
-const APP_VER = "modern1";
+const APP_VER = "modern3";
 
-// Point to your prod Worker API; switch to "" for same-origin after custom domain.
-const API_ORIGIN = "https://jamflow-site-api.jamflowbot.workers.dev";
+// Prefer an override set in index.html, otherwise auto-detect dev/prod,
+// falling back to prod if dev is unreachable.
+const CANDIDATE_ORIGINS = [
+  (typeof window !== "undefined" && window.JJ_API_ORIGIN) || null,
+  "https://jamflow-site-api-dev.jamflowbot.workers.dev",
+  "https://jamflow-site-api.jamflowbot.workers.dev",
+].filter(Boolean);
+
+let API_ORIGIN = null;
 
 // Safe helpers
 function escapeHtml(s) {
@@ -38,9 +45,11 @@ const els = {
   cmdSearch: $("cmdSearch"),
   toggleTokenVis: $("toggleTokenVis"),
   toastHost: $("toastHost"),
+  crapsRecord: $("crapsRecord"),
+  lotteryWinners: $("lotteryWinners"),
 };
 
-// Ensure buttons are clickable even if CSS accidentally disables pointer events
+// Ensure buttons are clickable even if CSS disables pointer events by accident
 for (const id of ["saveToken","clearToken","tabCommands","tabData","tabStats","tabSettings"]) {
   const b = $(id);
   if (b) { b.style.pointerEvents = "auto"; b.style.userSelect = "auto"; }
@@ -115,7 +124,6 @@ function setTokenStatus(msg, ok=false) {
 
 function getToken() { return localStorage.getItem("JJ_MOD_TOKEN") || "" }
 function setToken(val) { if (val) localStorage.setItem("JJ_MOD_TOKEN", val); else localStorage.removeItem("JJ_MOD_TOKEN") }
-
 if (els.tokenInput) els.tokenInput.value = getToken();
 
 async function saveTokenHandler() {
@@ -130,7 +138,6 @@ async function saveTokenHandler() {
     setTokenStatus("Saved, but error loading mod data.", false);
   }
 }
-
 function clearTokenHandler() {
   setToken("");
   if (els.tokenInput) els.tokenInput.value = "";
@@ -139,57 +146,84 @@ function clearTokenHandler() {
   refreshMod();
 }
 
-// API helpers
+// ---------- API bootstrap ----------
+async function pingOrigin(origin){
+  try {
+    const res = await fetch(`${origin}/api/tables`, { method:'GET' });
+    if (res.ok) return true;
+  } catch {}
+  return false;
+}
+async function chooseApiOrigin(){
+  for (const origin of CANDIDATE_ORIGINS) {
+    if (await pingOrigin(origin)) {
+      API_ORIGIN = origin;
+      console.log(`[jj] using API_ORIGIN: ${origin}`);
+      return;
+    }
+  }
+  // Last resort to avoid silent failures
+  API_ORIGIN = CANDIDATE_ORIGINS[CANDIDATE_ORIGINS.length - 1];
+  console.warn("[jj] No API responded; falling back to", API_ORIGIN);
+}
+
 async function apiGet(path, mod = false) {
+  if (!API_ORIGIN) throw new Error("API not ready");
   const res = await fetch(`${API_ORIGIN}${path}`, {
     headers: mod && getToken() ? { "authorization": `Bearer ${getToken()}` } : {}
   });
-  if (!res.ok) { if (res.status === 401) return null; throw new Error(`GET ${path} failed: ${res.status}`) }
+  if (!res.ok) {
+    const text = await res.text().catch(()=> "");
+    const err = new Error(`GET ${path} failed: ${res.status} ${text}`);
+    err.status = res.status;
+    throw err;
+  }
   return await res.json();
 }
 
-// Renderers
+// ---------- Render helpers ----------
 function groupToHtml(group) {
   const items = (group.items || []).map(i => `<code class="tag">${escapeHtml(i)}</code>`).join(" ");
   return `<div class="card"><div class="small muted">${escapeHtml(group.group || "")}</div><div style="margin:6px 0 6px;">${items}</div></div>`;
 }
-
 function nameBtn(name, isMod=false) {
   const safe = escapeHtml(name);
   const call = isMod ? `loadTable('${safe}', true)` : `loadTable('${safe}', false)`;
   return `<button class="button secondary" style="margin:4px 6px 6px 0" onclick="${call}">${safe}</button>`;
 }
 
-// Data loaders
+// ---------- Public & Mod (Commands + Data) ----------
 async function refreshPublic() {
   try {
     const cmds = await apiGet("/api/commands", false);
     window._publicCmdsRaw = (cmds || []);
     renderCommands();
   } catch (e) {
-    els.publicCmds.innerHTML = `<div class='muted small'>Error: ${escapeHtml(e.message)}</div>`;
+    if (els.publicCmds) els.publicCmds.innerHTML = `<div class='muted small'>Error: ${escapeHtml(e.message)}</div>`;
   }
 }
 
 async function refreshMod() {
   try {
-    const mod = await apiGet("/api/commands_mod", true);
-    els.modCmds.innerHTML = (!mod ? "<div class='muted small'>Unauthorized</div>" :
-      (mod || []).map(groupToHtml).join("") || "<div class='muted small'>None</div>");
-    const list = await apiGet("/api/tables_mod", true);
-    const pub = await apiGet("/api/tables", false);
+    const mod = await apiGet("/api/commands_mod", true).catch(() => null);
+    if (els.modCmds) {
+      els.modCmds.innerHTML = (!mod ? "<div class='muted small'>Unauthorized</div>" :
+        (mod || []).map(groupToHtml).join("") || "<div class='muted small'>None</div>");
+    }
+
+    const list = await apiGet("/api/tables_mod", true).catch(() => null);
+    const pub = await apiGet("/api/tables", false).catch(() => ({ public: [] }));
     const pubNames = (pub?.public || []);
     const modNames = (list?.mod || []);
     window._publicTableNames = pubNames;
     window._modTableNames = modNames;
     renderTableButtons();
   } catch (e) {
-    els.publicTables.innerHTML = `<div class='muted small'>Error: ${escapeHtml(e.message)}</div>`;
-    els.modTables.innerHTML    = `<div class='muted small'>Error: ${escapeHtml(e.message)}</div>`;
+    if (els.publicTables) els.publicTables.innerHTML = `<div class='muted small'>Error: ${escapeHtml(e.message)}</div>`;
+    if (els.modTables) els.modTables.innerHTML    = `<div class='muted small'>Error: ${escapeHtml(e.message)}</div>`;
   }
 }
 
-// Search filtering
 function renderCommands(){
   const q = (els.cmdSearch?.value || "").toLowerCase().trim();
   const groups = (window._publicCmdsRaw || []);
@@ -197,7 +231,7 @@ function renderCommands(){
     const items = (g.items || []).filter(i => i.toLowerCase().includes(q));
     return { ...g, items };
   }).filter(g => (g.items || []).length > 0);
-  els.publicCmds.innerHTML = filtered.map(groupToHtml).join("") || "<div class='muted small'>None</div>";
+  if (els.publicCmds) els.publicCmds.innerHTML = filtered.map(groupToHtml).join("") || "<div class='muted small'>None</div>";
 }
 if (els.cmdSearch) els.cmdSearch.addEventListener('input', renderCommands);
 
@@ -205,19 +239,22 @@ function renderTableButtons(){
   const q = (els.tableSearch?.value || "").toLowerCase().trim();
   const pub = (window._publicTableNames || []).filter(n => !q || n.toLowerCase().includes(q));
   const mod = (window._modTableNames || []).filter(n => !q || n.toLowerCase().includes(q));
-  els.publicTables.innerHTML = pub.map(n => nameBtn(n, false)).join("") || "<div class='muted small'>None</div>";
-  els.modTables.innerHTML    = mod.map(n => nameBtn(n, true)).join("") || "<div class='muted small'>None</div>";
+  if (els.publicTables) els.publicTables.innerHTML = pub.map(n => nameBtn(n, false)).join("") || "<div class='muted small'>None</div>";
+  if (els.modTables) els.modTables.innerHTML    = mod.map(n => nameBtn(n, true)).join("") || "<div class='muted small'>None</div>";
 }
 if (els.tableSearch) els.tableSearch.addEventListener('input', renderTableButtons);
 
 // Table view & sorting
 window._tableState = { name:null, mod:false, data:[], sort:null };
-
 window.loadTable = async (name, mod) => {
-  const data = await apiGet(mod ? `/api/db_mod/${name}` : `/api/db/${name}`, mod);
-  const arr = Array.isArray(data) ? data : [];
-  window._tableState = { name, mod, data: arr, sort: null };
-  renderTable();
+  try {
+    const data = await apiGet(mod ? `/api/db_mod/${name}` : `/api/db/${name}`, mod);
+    const arr = Array.isArray(data) ? data : [];
+    window._tableState = { name, mod, data: arr, sort: null };
+    renderTable();
+  } catch (e) {
+    if (els.tableDetail) els.tableDetail.innerHTML = `<div class='muted small'>Error: ${escapeHtml(e.message)}</div>`;
+  }
 };
 
 function renderTable(){
@@ -250,20 +287,21 @@ function renderTable(){
     return `<tr>${tds}</tr>`;
   }).join("");
 
-  els.tableDetail.innerHTML = `
-    <div class="section-title">
-      <div><strong>${mod ? "Mod" : "Public"} table:</strong> <code class="tag">${escapeHtml(name)}</code> <span class="badge">${count} rows</span></div>
-      <div class="row">
-        <button class="button" onclick="downloadJson('${escapeHtml(name)}', ${mod})">Download JSON</button>
+  if (els.tableDetail) {
+    els.tableDetail.innerHTML = `
+      <div class="section-title">
+        <div><strong>${mod ? "Mod" : "Public"} table:</strong> <code class="tag">${escapeHtml(name || "")}</code> <span class="badge">${count} rows</span></div>
+        <div class="row">
+          <button class="button" onclick="downloadJson('${escapeHtml(name || "")}', ${mod})">Download JSON</button>
+        </div>
       </div>
-    </div>
-    <div class="table-wrap">
-      <table id="dataTable"><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table>
-      <div class="muted small" style="margin-top: 6px;">Showing up to 200 rows.</div>
-    </div>
-  `;
+      <div class="table-wrap">
+        <table id="dataTable"><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table>
+        <div class="muted small" style="margin-top: 6px;">Showing up to 200 rows.</div>
+      </div>
+    `;
+  }
 
-  // header click sorting (delegated)
   const thead = document.querySelector("#dataTable thead");
   if (thead) {
     thead.onclick = (ev) => {
@@ -289,7 +327,9 @@ window.downloadJson = async (name, mod) => {
   a.click();
 };
 
+// ---------- Stats ----------
 async function refreshStats() {
+  // Totals (from /api/stats if available)
   try {
     const stats = await apiGet("/api/stats", false);
     const t = stats?.totals || {};
@@ -300,15 +340,74 @@ async function refreshStats() {
       <div><b>Song Reviews</b> ${t.songReviews ?? 0}</div>
       <div><b>Album Reviews</b> ${t.albumReviews ?? 0}</div>
     `;
-    const topSongItems = (stats?.topSongs || []).map(s => `<div class="tag">${escapeHtml(s.title || "")} — ${escapeHtml(s.artist || "")}</div>`).join(" ");
-    els.topSongs.innerHTML = topSongItems || "<div class='muted small'>None</div>";
-    const topAlbumItems = (stats?.topAlbums || []).map(s => `<div class="tag">${escapeHtml(s.title || "")} — ${escapeHtml(s.artist || "")}</div>`).join(" ");
-    els.topAlbums.innerHTML = topAlbumItems || "<div class='muted small'>None</div>";
   } catch (e) {
-    els.totals.innerHTML = `<div class='muted small'>Error: ${escapeHtml(e.message)}</div>`;
+    els.totals.innerHTML = `<div class='muted small'>Error: Failed to fetch (${escapeHtml(e.message)})</div>`;
+  }
+
+  // Craps Record (public view)
+  try {
+    const rec = await apiGet("/api/db/craps_records_public");
+    if (!Array.isArray(rec) || rec.length === 0) {
+      els.crapsRecord.innerHTML = `<div class="muted small">No record yet.</div>`;
+    } else {
+      const r = rec[0];
+      els.crapsRecord.innerHTML = `
+        <div class="row">
+          <div class="tag">Room</div> <code class="tag">${escapeHtml(r.roomId || r.room || "—")}</code>
+        </div>
+        <div style="margin-top:8px"><b>Max Rolls:</b> ${Number(r.maxRolls ?? r.max_rolls ?? 0)}</div>
+        <div><b>Shooter:</b> ${escapeHtml(r.shooterNickname || r.shooter || "—")}</div>
+        <div class="muted small">${escapeHtml(r.achievedAt || r.achieved_at || "")}</div>
+      `;
+    }
+  } catch (e) {
+    els.crapsRecord.innerHTML = `<div class="muted small">Error: ${escapeHtml(e.message)}</div>`;
+  }
+
+  // Lottery winners (public view)
+  try {
+    const winners = await apiGet("/api/db/lottery_winners_public");
+    if (!Array.isArray(winners) || winners.length === 0) {
+      els.lotteryWinners.innerHTML = `<div class="muted small">No winners yet.</div>`;
+    } else {
+      els.lotteryWinners.innerHTML = winners.slice(0, 6).map(w =>
+        `<div class="tag">${escapeHtml(w.nickname || "—")} — $${escapeHtml(String(w.amountWon ?? w.amount_won ?? ""))}</div>`
+      ).join(" ");
+    }
+  } catch (e) {
+    els.lotteryWinners.innerHTML = `<div class="muted small">Error: ${escapeHtml(e.message)}</div>`;
+  }
+
+  // Top Songs & Albums (public views)
+  try {
+    const songs = await apiGet("/api/db/top_songs");
+    els.topSongs.innerHTML = (songs || []).slice(0, 30).map(s =>
+      `<div class="tag">${escapeHtml(s.title || "")} — ${escapeHtml(s.artist || "")} (${s.plays ?? 0})</div>`
+    ).join(" ") || "<div class='muted small'>None</div>";
+  } catch (e) {
+    els.topSongs.innerHTML = `<div class="muted small">Error: ${escapeHtml(e.message)}</div>`;
+  }
+
+  try {
+    const albums = await apiGet("/api/db/album_stats_public");
+    els.topAlbums.innerHTML = (albums || []).slice(0, 30).map(a =>
+      `<div class="tag">${escapeHtml(a.title || "")} — ${escapeHtml(a.artist || "")} (avg ${a.avg ?? "—"})</div>`
+    ).join(" ") || "<div class='muted small'>None</div>";
+  } catch (e) {
+    els.topAlbums.innerHTML = `<div class="muted small">Error: ${escapeHtml(e.message)}</div>`;
   }
 }
 
+// ---------- Boot ----------
 async function refreshAll() { await Promise.all([refreshPublic(), refreshMod(), refreshStats()]) }
-refreshAll();
-setInterval(refreshStats, 15000);
+
+(async function init(){
+  try {
+    await chooseApiOrigin();
+    await refreshAll();
+    setInterval(refreshStats, 15000);
+  } catch (e) {
+    console.error("[jj] init failed", e);
+    toast("Init failed: " + e.message);
+  }
+})();

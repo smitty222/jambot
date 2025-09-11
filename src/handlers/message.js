@@ -27,18 +27,9 @@ import {
 import { getBalanceByNickname, getNicknamesFromWallets, addDollarsByUUID, loadWallets, removeFromUserWallet, getUserWallet } from '../database/dbwalletmanager.js'
 import { getJackpotValue, handleSlotsCommand } from './slots.js'
 import {
-  openBetting, 
-  joinTable,
-  leaveTable,
-  handleBlackjackBet,
-  handleHit,
-  handleStand,
-  handleDouble,
-  handleSurrender,
-  handleSplit,
-  getFullTableView,
-  getPhase,
-  isSeated
+  openBetting, joinTable, leaveTable,
+  handleBlackjackBet, handleHit, handleStand, handleDouble, handleSurrender, handleSplit,
+  getFullTableView, getPhase
 } from '../games/blackjack/blackJack.js'
 import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand, handleRandomCyberCommand, handleVibesGuyCommand, handleFacesCommand, handleDoDoCommand, handleFlowerPowerCommand, handleDumDumCommand, handleRandomCosmicCommand, handleRandomLovableCommand, handleBot3Command } from './avatarCommands.js'
 import { markUser, getMarkedUser } from '../utils/removalQueue.js'
@@ -195,13 +186,6 @@ export default async (payload, room, state, roomBot) => {
   if (typeof payload.message === 'string' && payload.message.startsWith('/tophorses')) return handleTopHorsesCommand(payload)
 
   // ─── END HORSE‐RACE BLOCK ────────────────────────────────────────────────
-
-  // Allow "/join blackjack" as a friendly alias
-if (/^\/join\s+blackjack\b/i.test(txt)) {
-  await joinTable(userUUID, nickname, ctx)
-  return
-}
-
 
   if (
   /^\/craps\b/i.test(txt) ||
@@ -1870,109 +1854,71 @@ Please refresh your page for the queue to update`
 
   /// ////////////////// BLACKJACK /////////////////////////
 
-  // ────────────────────────────────────────────────────────────────
-  // Blackjack commands (multi-table, context-aware)
-  // ────────────────────────────────────────────────────────────────
+  // inside your onMessage handler:
+const userUUID = payload.sender
+const nickname = await getSenderNickname(userUUID)
 
-  const ctx = { room } // consistent context for this room
+// Define ctx BEFORE any usage; add tableId to isolate per-room game state
+const ctx = { room, tableId: `blackjack:${room}` }
 
-  // /blackjack — opens the 30s lobby (via openBetting shim), then auto-seats opener
-  if (payload.message.startsWith('/blackjack')) {
-    const userUUID = payload.sender
-    const nickname = await getSenderNickname(userUUID)
+// 1) Primary command: "/blackjack" (alias "/bj") opens the table + auto-seats caller
+if (/^\/(blackjack|bj)\b$/i.test(txt)) {
+  await openBetting(ctx)                 // starts JOIN window if idle
+  await joinTable(userUUID, nickname, ctx)
+  return
+}
 
-    await openBetting(ctx) // starts Lobby -> Betting flow (module handles “already in progress”)
-    await joinTable(userUUID, nickname, ctx) // nice-to-have: auto-seat opener
-    return
-  }
+// 2) Subcommands: "/blackjack join", "/bj join", etc.
+if (/^\/(blackjack|bj)\s+join\b/i.test(txt)) {
+  await joinTable(userUUID, nickname, ctx)
+  return
+}
 
-  // /join — only allowed during lobby
-  if (payload.message.startsWith('/join')) {
-    const userUUID = payload.sender
-    const nickname = await getSenderNickname(userUUID)
-    await joinTable(userUUID, nickname, ctx)
-    return
-  }
+if (/^\/(blackjack|bj)\s+leave\b/i.test(txt)) {
+  await leaveTable(userUUID, ctx)
+  return
+}
 
-  // /leave — remove player during lobby/betting
-  if (payload.message.startsWith('/leave')) {
-    const userUUID = payload.sender
-    const phase = getPhase(ctx)
+if (/^\/(blackjack|bj)\s+bet\b/i.test(txt)) {
+  const amountStr = txt.split(/\s+/)[2] ?? '' // keep it as string
+  await handleBlackjackBet(userUUID, amountStr, nickname, ctx)
+  return
+}
 
-    if (phase === 'idle') {
-      await postMessage({ room, message: `<@uid:${userUUID}> there isn’t an active table right now.` })
-      return
-    }
-    if (phase === 'playing' || phase === 'settling') {
-      await postMessage({ room, message: `<@uid:${userUUID}> please wait until the round is over to leave.` })
-      return
-    }
-    if (!isSeated(userUUID, ctx)) {
-      await postMessage({ room, message: `<@uid:${userUUID}> you’re not seated at the table.` })
-      return
-    }
-    await leaveTable(userUUID, ctx) // module posts confirmation + handles early-start if applicable
-    return
-  }
+if (/^\/(blackjack|bj)\s+hit\b/i.test(txt))       { await handleHit(userUUID, nickname, ctx); return }
+if (/^\/(blackjack|bj)\s+stand\b/i.test(txt))     { await handleStand(userUUID, nickname, ctx); return }
+if (/^\/(blackjack|bj)\s+double\b/i.test(txt))    { await handleDouble(userUUID, nickname, ctx); return }
+if (/^\/(blackjack|bj)\s+surrender\b/i.test(txt)) { await handleSurrender(userUUID, nickname, ctx); return }
+if (/^\/(blackjack|bj)\s+split\b/i.test(txt))     { await handleSplit(userUUID, nickname, ctx); return }
 
-  // /bet <amount> — only during betting
-  if (payload.message.startsWith('/bet')) {
-    const userUUID = payload.sender
-    const nickname = await getSenderNickname(userUUID)
+if (/^\/(blackjack|bj)\s+table\b/i.test(txt)) {
+  const tableMessage = getFullTableView(ctx)
+  await postMessage({ room, message: tableMessage || '🪑 No one is at the table yet.' })
+  return
+}
 
-    const amountStr = (payload.message.split(/\s+/)[1] || '').trim()
-    const betAmount = Number.parseInt(amountStr, 10)
+// 3) Gentle router for plain "/join" and "/bet" so users don't have to type the alias
+//    We only claim them if Blackjack is actually in the appropriate phase.
+if (/^\/join\b/i.test(txt) && getPhase(ctx) === 'join') {
+  await joinTable(userUUID, nickname, ctx)
+  return
+}
 
-    // Signature in your updated file: (userUUID, betAmount, nickname, ctx)
-    await handleBlackjackBet(userUUID, betAmount, nickname, ctx)
-    return
-  }
+if (/^\/bet\b/i.test(txt) && getPhase(ctx) === 'betting') {
+  const amountStr = txt.split(/\s+/)[1] ?? ''
+  await handleBlackjackBet(userUUID, amountStr, nickname, ctx)
+  return
+}
 
-  // /hit
-  if (payload.message.startsWith('/hit')) {
-    const userUUID = payload.sender
-    const nickname = await getSenderNickname(userUUID)
-    await handleHit(userUUID, nickname, ctx)
-    return
-  }
-
-  // /stand
-  if (payload.message.startsWith('/stand')) {
-    const userUUID = payload.sender
-    const nickname = await getSenderNickname(userUUID)
-    await handleStand(userUUID, nickname, ctx)
-    return
-  }
-
-  // /double
-  if (payload.message.startsWith('/double')) {
-    const userUUID = payload.sender
-    const nickname = await getSenderNickname(userUUID)
-    await handleDouble(userUUID, nickname, ctx)
-    return
-  }
-
-  // /surrender
-  if (payload.message.startsWith('/surrender')) {
-    const userUUID = payload.sender
-    const nickname = await getSenderNickname(userUUID)
-    await handleSurrender(userUUID, nickname, ctx)
-    return
-  }
-
-  // /split
-  if (payload.message.startsWith('/split')) {
-    const userUUID = payload.sender
-    const nickname = await getSenderNickname(userUUID)
-    await handleSplit(userUUID, nickname, ctx)
-    return
-  }
-
-  // /table — show current seats/bets using module’s formatter
-  if (payload.message.startsWith('/table')) {
-    const tableMessage = getFullTableView(ctx)
-    await postMessage({ room, message: tableMessage || '🪑 No one is at the table yet.' })
-  }
+// 4) Shortcuts (only if we're in BJ acting phase)
+if (/^\/(hit|stand|double|surrender|split)\b/i.test(txt) && getPhase(ctx) === 'acting') {
+  const cmd = /^\/(\w+)/.exec(txt)[1].toLowerCase()
+  if (cmd === 'hit')       return await handleHit(userUUID, nickname, ctx)
+  if (cmd === 'stand')     return await handleStand(userUUID, nickname, ctx)
+  if (cmd === 'double')    return await handleDouble(userUUID, nickname, ctx)
+  if (cmd === 'surrender') return await handleSurrender(userUUID, nickname, ctx)
+  if (cmd === 'split')     return await handleSplit(userUUID, nickname, ctx)
+}
 
   /// /////////////////////// BOT AVATAR UPDATES //////////////////////////
   else if (payload.message.startsWith('/botrandom')) {

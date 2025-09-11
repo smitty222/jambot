@@ -1,11 +1,11 @@
 // src/games/blackjack/blackJack.js
-// A clean, self-contained Blackjack engine with:
-// • 30s JOIN window (no early close)
+// Blackjack engine with:
+// • 30s JOIN window
 // • 30s BETTING window (early close when all seated players have bet)
-// • Basic actions: hit, stand, double, surrender (split not yet supported)
-// • Multi-player, sequential turns; 6-deck shoe; dealer stands on soft 17
+// • Actions: hit, stand, double, surrender (split not yet supported)
+// • Multi-player; 6-deck shoe; dealer stands on soft 17
 //
-// Public API (kept stable for your message.js):
+// Public API (kept stable for message.js):
 //   openBetting(ctx)
 //   openJoin(ctx)
 //   joinTable(userUUID, nickname, ctx)
@@ -15,26 +15,35 @@
 //   handleStand(userUUID, nickname, ctx)
 //   handleDouble(userUUID, nickname, ctx)
 //   handleSurrender(userUUID, nickname, ctx)
-//   handleSplit(userUUID, nickname, ctx)   // stubbed; replies "not supported"
+//   handleSplit(userUUID, nickname, ctx)   // stub
 //   getFullTableView(ctx)
 //   getPhase(ctx)
 //   isSeated(userUUID, ctx)
 //
-// External deps expected in your project:
+// Externals:
 //   addToUserWallet(userUUID, amount)
 //   removeFromUserWallet(userUUID, amount) → boolean
-//   getUserWallet(userUUID) → number
-//   postMessage({ room, message })
+//   getUserWallet(userUUID) → number | Promise<number>
+//   postMessage({ room, message, ... })
 import { addToUserWallet, removeFromUserWallet, getUserWallet } from '../../database/dbwalletmanager.js'
 import { postMessage } from '../../libs/cometchat.js'
 
 // ─────────────────────────────────────────────────────────────
 // Config
 // ─────────────────────────────────────────────────────────────
-const JOIN_WINDOW_MS    = Number(process.env.BJ_JOIN_WINDOW_MS    ?? 30_000)
-const BETTING_WINDOW_MS = Number(process.env.BJ_BETTING_WINDOW_MS ?? 30_000)
-const EARLY_BET_CLOSE   = true
-const DECKS             = Number(process.env.BJ_DECKS ?? 6)
+const JOIN_WINDOW_MS      = Number(process.env.BJ_JOIN_WINDOW_MS      ?? 30_000)
+const BETTING_WINDOW_MS   = Number(process.env.BJ_BETTING_WINDOW_MS   ?? 30_000)
+const EARLY_BET_CLOSE     = true
+const DECKS               = Number(process.env.BJ_DECKS ?? 6)
+const HIT_SOFT_17         = false // dealer stands on soft 17
+
+// UX pacing
+const SUSPENSE_MS         = Number(process.env.BJ_SUSPENSE_MS         ?? 700)
+const DRAW_PAUSE_MS       = Number(process.env.BJ_DRAW_PAUSE_MS       ?? 650)
+
+// Turn timers
+const TURN_NUDGE_MS       = Number(process.env.BJ_TURN_NUDGE_MS       ?? 15_000)
+const TURN_AUTOSTAND_MS   = Number(process.env.BJ_TURN_AUTOSTAND_MS   ?? 25_000)
 
 // ─────────────────────────────────────────────────────────────
 // Internal state
@@ -70,11 +79,17 @@ const TABLES = new Map()
  * @property {Array<{r:string,s:string}>} deck
  * @property {Array<{r:string,s:string}>} dealerHand
  * @property {number} turnIndex
+ * @property {NodeJS.Timeout|null} turnNudgeTimer
+ * @property {NodeJS.Timeout|null} turnExpireTimer
+ * @property {string|null} turnFor
  */
 
-function keyOf (ctx) {
-  return String(ctx?.tableId || ctx?.room || 'global')
-}
+// ─────────────────────────────────────────────────────────────
+// Utils
+// ─────────────────────────────────────────────────────────────
+const sleep = (ms) => new Promise(res => setTimeout(res, ms))
+
+function keyOf (ctx) { return String(ctx?.tableId || ctx?.room || 'global') }
 
 function getTable (ctx) {
   const k = keyOf(ctx)
@@ -91,16 +106,25 @@ function getTable (ctx) {
       handOrder: [],
       deck: [],
       dealerHand: [],
-      turnIndex: 0
+      turnIndex: 0,
+      turnNudgeTimer: null,
+      turnExpireTimer: null,
+      turnFor: null
     })
   }
   return TABLES.get(k)
 }
 
 function clearTimer (t) { if (t) clearTimeout(t) }
+function clearTurnTimers (st) {
+  clearTimer(st.turnNudgeTimer);  st.turnNudgeTimer  = null
+  clearTimer(st.turnExpireTimer); st.turnExpireTimer = null
+  st.turnFor = null
+}
 function clearAllTimers (st) {
   clearTimer(st.joinTimer); st.joinTimer = null
-  clearTimer(st.betTimer);  st.betTimer = null
+  clearTimer(st.betTimer);  st.betTimer  = null
+  clearTurnTimers(st)
 }
 
 function mention (uuid) { return `<@uid:${uuid}>` }
@@ -125,17 +149,17 @@ function newShoe (deckCount = DECKS) {
   return cards
 }
 
+/** Compute a hand's value. "soft" => at least one Ace still counts as 11. */
 function handValue (cards) {
   let total = 0
-  let aces = 0
+  let acesAs11 = 0
   for (const c of cards) {
-    if (c.r === 'A') { aces++; total += 11 }
-    else if (['K','Q','J'].includes(c.r)) total += 10
+    if (c.r === 'A') { acesAs11++; total += 11 }
+    else if (c.r === 'K' || c.r === 'Q' || c.r === 'J' || c.r === '10') total += 10
     else total += Number(c.r)
   }
-  // Soften Aces
-  while (total > 21 && aces > 0) { total -= 10; aces-- }
-  const soft = cards.some(c => c.r === 'A') && total <= 21
+  while (total > 21 && acesAs11 > 0) { total -= 10; acesAs11-- }
+  const soft = acesAs11 > 0
   return { total, soft }
 }
 
@@ -154,10 +178,17 @@ function seatedPlayers (st) {
 
 function ensurePlayer (st, userUUID, nickname) {
   if (!st.players.has(userUUID)) {
-    TABLES.get(st.id) // noop to keep lint quiet
     st.players.set(userUUID, {
-      uuid: userUUID, nickname: nickname || '', seated: false, bet: 0,
-      hand: [], done: false, busted: false, surrendered: false, doubled: false, actionCount: 0
+      uuid: userUUID,
+      nickname: nickname || '',
+      seated: false,
+      bet: 0,
+      hand: [],
+      done: false,
+      busted: false,
+      surrendered: false,
+      doubled: false,
+      actionCount: 0
     })
     st.order.push(userUUID)
   } else if (nickname) {
@@ -169,13 +200,51 @@ function ensurePhase (st, expected) {
   if (st.phase !== expected) throw new Error(`Wrong phase: expected ${expected}, got ${st.phase}`)
 }
 
+// Schedule turn nudge + expiry for the given player (clears existing)
+function scheduleTurnTimers (ctx, id) {
+  const st = getTable(ctx)
+  clearTurnTimers(st)
+  st.turnFor = id
+
+  if (TURN_NUDGE_MS > 0) {
+    st.turnNudgeTimer = setTimeout(async () => {
+      const st2 = getTable(ctx)
+      if (st2.phase !== 'acting' || st2.handOrder[st2.turnIndex] !== id) return
+      const extra = (TURN_AUTOSTAND_MS > TURN_NUDGE_MS)
+        ? ` ${Math.max(1, Math.round((TURN_AUTOSTAND_MS - TURN_NUDGE_MS) / 1000))}s until auto-stand.`
+        : ''
+      await postMessage({ room: ctx.room, message: `⏳ ${mention(id)} still your turn.${extra}` })
+    }, TURN_NUDGE_MS)
+  }
+
+  if (TURN_AUTOSTAND_MS > 0) {
+    st.turnExpireTimer = setTimeout(async () => {
+      const st2 = getTable(ctx)
+      if (st2.phase !== 'acting' || st2.handOrder[st2.turnIndex] !== id) return
+      await postMessage({ room: ctx.room, message: `⌛ ${mention(id)} time’s up — auto-stand.` })
+      // Safe: handleStand checks phase + turn ownership again
+      await handleStand(id, st2.players.get(id)?.nickname || '', ctx)
+    }, TURN_AUTOSTAND_MS)
+  }
+}
+
+async function promptTurn (ctx, id, { rePrompt = false } = {}) {
+  if (SUSPENSE_MS && rePrompt) await sleep(Math.min(SUSPENSE_MS, 1000))
+  // clear old timers and schedule fresh ones for this player
+  scheduleTurnTimers(ctx, id)
+  await postMessage({
+    room: ctx.room,
+    message: `👉 ${mention(id)} it’s your turn. (**/bj hit**, **/bj stand**, **/bj double**, **/bj surrender**)`
+  })
+}
+
 // ─────────────────────────────────────────────────────────────
 // Public API
 // ─────────────────────────────────────────────────────────────
 export async function openBetting (ctx) {
   const st = getTable(ctx)
   if (st.phase !== 'idle') {
-    await postMessage({ room: ctx.room, message: `♠ Blackjack round already in progress (phase: ${st.phase}). Type **/table** for status.` })
+    await postMessage({ room: ctx.room, message: `♠ Blackjack round already in progress (phase: ${st.phase}). Type **/bj table** for status.` })
     return
   }
   await openJoin(ctx)
@@ -191,14 +260,17 @@ export async function openJoin (ctx) {
   st.joinDeadline = Date.now() + JOIN_WINDOW_MS
   clearAllTimers(st)
   st.handOrder = []
-  for (const id of st.order) { const p = st.players.get(id); if (p) { p.bet = 0; p.hand = []; p.done = p.busted = p.surrendered = p.doubled = false; p.actionCount = 0 } }
+  for (const id of st.order) {
+    const p = st.players.get(id)
+    if (p) { p.bet = 0; p.hand = []; p.done = p.busted = p.surrendered = p.doubled = false; p.actionCount = 0 }
+  }
   st.dealerHand = []
   st.turnIndex = 0
 
   await postMessage({ room: ctx.room, message: [
     `🃏 **Blackjack** table is open for **${Math.round(JOIN_WINDOW_MS/1000)}s**!`,
-    `Type **/join** to take a seat.`,
-    `After the join window: you’ll have ${Math.round(BETTING_WINDOW_MS/1000)}s to place bets with **/bet <amount>**`
+    `Type **/bj join** to take a seat.`,
+    `After join: you’ll have ${Math.round(BETTING_WINDOW_MS/1000)}s to place bets with **/bj bet <amount>**.`
   ].join('\n') })
 
   st.joinTimer = setTimeout(() => concludeJoin(ctx), JOIN_WINDOW_MS)
@@ -241,7 +313,7 @@ async function concludeJoin (ctx) {
   st.handOrder = seatedPlayers(st)
   if (st.handOrder.length === 0) {
     st.phase = 'idle'
-    await postMessage({ room: ctx.room, message: `No players joined. Start again with **/blackjack** when ready.` })
+    await postMessage({ room: ctx.room, message: `No players joined. Start again with **/bj** when ready.` })
     return
   }
   await postMessage({ room: ctx.room, message: `⏱️ Join closed. Players this hand: ${st.handOrder.map(mention).join(', ')}` })
@@ -253,12 +325,12 @@ async function startBetting (ctx) {
   st.phase = 'betting'
   st.betDeadline = Date.now() + BETTING_WINDOW_MS
   for (const id of st.handOrder) {
-    const p = st.players.get(id); if (p) { p.bet = 0 }
+    const p = st.players.get(id); if (p) p.bet = 0
   }
   await postMessage({ room: ctx.room, message: [
     `💰 **Betting open** for ${Math.round(BETTING_WINDOW_MS/1000)}s.`,
     `Players: ${st.handOrder.map(mention).join(', ')}`,
-    `Place your bet with **/bet <amount>**`
+    `Place your bet with **/bj bet <amount>**.`
   ].join('\n') })
 
   st.betTimer = setTimeout(() => concludeBetting(ctx), BETTING_WINDOW_MS)
@@ -280,6 +352,7 @@ async function concludeBetting (ctx) {
     return
   }
 
+  if (SUSPENSE_MS) await sleep(SUSPENSE_MS)
   await dealInitial(ctx)
 }
 
@@ -293,14 +366,14 @@ export async function handleBlackjackBet (userUUID, amountStr, nickname, ctx) {
     await postMessage({ room: ctx.room, message: `${mention(userUUID)} you’re not in this round.` })
     return
   }
-  const amount = Number(String(amountStr).replace(/[^\d.]/g,''))
+  const amount = Number(String(amountStr ?? '').replace(/[^\d.]/g, ''))
   if (!Number.isFinite(amount) || amount <= 0) {
     await postMessage({ room: ctx.room, message: `${mention(userUUID)} enter a valid bet amount greater than 0.` })
     return
   }
-  const bal = getUserWallet(userUUID)
+  const bal = await getUserWallet(userUUID)
   if (bal < amount) {
-    await postMessage({ room: ctx.room, message: `${mention(userUUID)} you have $${bal.toFixed(1)} — not enough for a $${amount.toFixed(1)} bet.` })
+    await postMessage({ room: ctx.room, message: `${mention(userUUID)} you have $${Number(bal).toFixed(1)} — not enough for a $${amount.toFixed(1)} bet.` })
     return
   }
   const ok = removeFromUserWallet(userUUID, amount)
@@ -309,13 +382,14 @@ export async function handleBlackjackBet (userUUID, amountStr, nickname, ctx) {
     return
   }
   const p = st.players.get(userUUID)
-  p.bet = amount
+  p.bet = Number(amount.toFixed(1))
 
-  await postMessage({ room: ctx.room, message: `✅ ${mention(userUUID)} bet **$${amount.toFixed(1)}**.` })
+  await postMessage({ room: ctx.room, message: `✅ ${mention(userUUID)} bet **$${p.bet.toFixed(1)}**.` })
 
-  if (EARLY_BET_CLOSE && st.handOrder.every(id => st.players.get(id)?.bet > 0)) {
+  if (EARLY_BET_CLOSE && st.handOrder.every(id => (st.players.get(id)?.bet || 0) > 0)) {
     clearTimer(st.betTimer); st.betTimer = null
     await postMessage({ room: ctx.room, message: `All bets in. Dealing…` })
+    if (SUSPENSE_MS) await sleep(SUSPENSE_MS)
     await dealInitial(ctx)
   }
 }
@@ -352,23 +426,22 @@ async function dealInitial (ctx) {
 
   // Otherwise, advance to first player who is not auto-done
   st.phase = 'acting'
+  if (SUSPENSE_MS) await sleep(Math.max(250, Math.min(1200, SUSPENSE_MS)))
   await advanceIfDoneAndPrompt(ctx)
 }
 
 async function advanceIfDoneAndPrompt (ctx) {
   const st = getTable(ctx)
-  // Move turnIndex until we find a player who can act
   while (st.turnIndex < st.handOrder.length) {
     const id = st.handOrder[st.turnIndex]
     const p = st.players.get(id)
     if (!p) { st.turnIndex++; continue }
     const hv = handValue(p.hand).total
     if (p.surrendered || p.busted || hv >= 21) { p.done = true; st.turnIndex++; continue }
-    // Found an active player
-    await postMessage({ room: ctx.room, message: `👉 ${mention(id)} it’s your turn. (**/hit**, **/stand**, **/double**, **/surrender**)` })
-    return
+    return promptTurn(ctx, id)
   }
   // No more players → dealer
+  clearTurnTimers(st)
   await dealerPlay(ctx)
 }
 
@@ -378,6 +451,8 @@ export async function handleHit (userUUID, nickname, ctx) {
   const id = st.handOrder[st.turnIndex]
   if (id !== userUUID) return // silently ignore out-of-turn
 
+  clearTurnTimers(st) // user acted, cancel timers
+
   const p = st.players.get(userUUID)
   p.actionCount++
   p.hand.push(draw(st))
@@ -386,14 +461,23 @@ export async function handleHit (userUUID, nickname, ctx) {
   if (v > 21) { p.busted = true; p.done = true }
 
   await postMessage({ room: ctx.room, message: `🫳 ${mention(userUUID)} hits: ${formatHand(p.hand)}${p.busted ? ' — **BUST**' : ''}` })
-  if (p.busted) { st.turnIndex++; return advanceIfDoneAndPrompt(ctx) }
-  // still same player's turn
+
+  if (p.busted) {
+    st.turnIndex++
+    return advanceIfDoneAndPrompt(ctx)
+  } else {
+    // still same player's turn — explicitly re-prompt
+    return promptTurn(ctx, userUUID, { rePrompt: true })
+  }
 }
 
 export async function handleStand (userUUID, nickname, ctx) {
   const st = getTable(ctx)
   ensurePhase(st, 'acting')
   if (st.handOrder[st.turnIndex] !== userUUID) return
+
+  clearTurnTimers(st)
+
   const p = st.players.get(userUUID)
   p.done = true
   await postMessage({ room: ctx.room, message: `✋ ${mention(userUUID)} stands on ${handValue(p.hand).total}.` })
@@ -405,12 +489,15 @@ export async function handleDouble (userUUID, nickname, ctx) {
   const st = getTable(ctx)
   ensurePhase(st, 'acting')
   if (st.handOrder[st.turnIndex] !== userUUID) return
+
+  clearTurnTimers(st)
+
   const p = st.players.get(userUUID)
   if (p.actionCount > 0 || p.hand.length !== 2) {
     await postMessage({ room: ctx.room, message: `${mention(userUUID)} you can only **double** as your first action on two cards.` })
     return
   }
-  const bal = getUserWallet(userUUID)
+  const bal = await getUserWallet(userUUID)
   if (bal < p.bet) {
     await postMessage({ room: ctx.room, message: `${mention(userUUID)} you don’t have enough to double (need another $${p.bet.toFixed(1)}).` })
     return
@@ -437,6 +524,9 @@ export async function handleSurrender (userUUID, nickname, ctx) {
   const st = getTable(ctx)
   ensurePhase(st, 'acting')
   if (st.handOrder[st.turnIndex] !== userUUID) return
+
+  clearTurnTimers(st)
+
   const p = st.players.get(userUUID)
   if (p.actionCount > 0 || p.hand.length !== 2) {
     await postMessage({ room: ctx.room, message: `${mention(userUUID)} you can only **surrender** as your first action on two cards.` })
@@ -461,16 +551,19 @@ export async function handleSplit (userUUID, nickname, ctx) {
 async function dealerPlay (ctx) {
   const st = getTable(ctx)
   st.phase = 'dealer'
+  clearTurnTimers(st)
+
   // Reveal dealer hole card
   await postMessage({ room: ctx.room, message: `🂠 Dealer reveals: ${formatHand(st.dealerHand)}` })
+  if (DRAW_PAUSE_MS) await sleep(DRAW_PAUSE_MS)
 
-  // If any player has natural blackjack and dealer also has blackjack, they push.
-  // Dealer draws to 17 (stand on soft 17).
+  // Dealer draws to 17 (stand on soft 17 unless HIT_SOFT_17 is true).
   let { total, soft } = handValue(st.dealerHand)
-  while (total < 17 || (total === 17 && soft === true && false /* hitSoft17 = false */)) {
+  while (total < 17 || (total === 17 && soft === true && HIT_SOFT_17)) {
     st.dealerHand.push(draw(st))
     const hv = handValue(st.dealerHand); total = hv.total; soft = hv.soft
     await postMessage({ room: ctx.room, message: `Dealer draws → ${formatHand(st.dealerHand)}` })
+    if (DRAW_PAUSE_MS) await sleep(DRAW_PAUSE_MS)
   }
 
   await settleRound(ctx)
@@ -479,6 +572,8 @@ async function dealerPlay (ctx) {
 async function settleRound (ctx) {
   const st = getTable(ctx)
   st.phase = 'payout'
+  clearTurnTimers(st)
+
   const dealerVal = handValue(st.dealerHand).total
   const dealerBJ = isBlackjack(st.dealerHand)
   const dealerBust = dealerVal > 21
@@ -501,7 +596,7 @@ async function settleRound (ctx) {
     let payout = 0
     if (bj && !dealerBJ) {
       outcome = 'blackjack'
-      payout = p.bet * 2.5 // return (2.5x) since stake already removed
+      payout = p.bet * 2.5 // 3:2 payout (stake already deducted)
     } else if (dealerBJ && bj) {
       outcome = 'push'
       payout = p.bet // return stake
@@ -528,7 +623,7 @@ async function settleRound (ctx) {
   st.dealerHand = []
   st.turnIndex = 0
   clearAllTimers(st)
-  await postMessage({ room: ctx.room, message: `Type **/blackjack** to open a new table.` })
+  await postMessage({ room: ctx.room, message: `Type **/bj** to open a new table.` })
 }
 
 // ─────────────────────────────────────────────────────────────

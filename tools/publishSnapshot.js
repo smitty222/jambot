@@ -20,6 +20,35 @@ export const PUBLIC_VIEWS = {
     `
   },
 
+  // Highest craps record (1 row)
+  craps_records_public: {
+    sql: `
+      SELECT
+        roomId,
+        maxRolls,
+        shooterNickname,
+        shooterId,
+        achievedAt
+      FROM craps_records
+      ORDER BY maxRolls DESC
+      LIMIT 1
+    `
+  },
+
+  // Recent lottery winners (safe columns)
+  lottery_winners_public: {
+    sql: `
+      SELECT
+        nickname,
+        userId,
+        amountWon,
+        timestamp
+      FROM lottery_winners
+      ORDER BY datetime(timestamp) DESC
+      LIMIT 50
+    `
+  },
+
   // Room stats (safe columns only)
   room_stats_public: {
     sql: `
@@ -51,9 +80,11 @@ export const PUBLIC_VIEWS = {
   // Themes (very small, safe)
   themes_public: {
     sql: `
-      SELECT key AS theme, active
+      SELECT
+        roomId AS room,
+        theme
       FROM themes
-      ORDER BY active DESC, key ASC
+      ORDER BY room ASC
       LIMIT 100
     `
   },

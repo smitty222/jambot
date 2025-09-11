@@ -4,23 +4,30 @@ compatibility_date = "2024-11-12"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
-# PROD KV binding
+# ── PROD (default / top-level) ────────────────────────────────────────────────
+# Inherit these when you deploy with --env production or no --env.
 [[kv_namespaces]]
-binding = "SITEDATA"
-id = "16bbdd5af7a4490883296e840943352c"   # SITEDATA
-preview_id = "ce75ac7de9464941b44a827cf7c92be6"  # SITEDATA_PREVIEW (optional with newer wrangler)
+binding   = "SITEDATA"
+id        = "16bbdd5af7a4490883296e840943352c"
+preview_id = "ce75ac7de9464941b44a827cf7c92be6" # optional
 
 [vars]
-PUBLIC_ORIGIN = "*"  # ← your prod Pages domain
+# CORS allowlist for the Worker. "*" is fine for workers.dev.
+PUBLIC_ORIGIN = "*"
 
-# DEV environment
+[env.production]
+name = "jamflow-site-api"
+# If you want stricter CORS, uncomment and set your custom domain:
+# [env.production.vars]
+# PUBLIC_ORIGIN = "https://jamflow-site-api.jamflowbot.workers.dev"
+
+# ── DEV ──────────────────────────────────────────────────────────────────────
 [env.dev]
 name = "jamflow-site-api-dev"
 
 [[env.dev.kv_namespaces]]
 binding = "SITEDATA"
-id = "86bc4cae2074474eaf9792037d91a97b"   # dev-SITEDATA
+id      = "86bc4cae2074474eaf9792037d91a97b"
 
 [env.dev.vars]
-PUBLIC_ORIGIN = "https://08f0433c.jambot-e72.pages.dev/"   # ← your dev Pages domain
-
+PUBLIC_ORIGIN = "https://dev.jambot-e72.pages.dev"
