@@ -15,7 +15,6 @@
     "group": "Theme",
     "items": [
       "/settheme <Albums|Covers|Rock|Country|Rap|Name Game>",
-      "Theme Names: Albums, Album Monday, Name Game",
       "/removetheme"
     ]
   },
@@ -66,8 +65,11 @@
   {
     "group": "Secret",
     "items": [
-      "/bark | /barkbark",
-      "/djbeer | /djbeers | /getdjdrunk",
+      "/secret",
+      "/bark",
+      "/barkbark",
+      "/djbeers",
+      "/getdjdrunk",
       "/jam",
       "/ass",
       "/azz",
@@ -75,7 +77,48 @@
       "/shirley",
       "/berad",
       "/ello",
-      "/allen"
+      "/allen",
+      "/jump",
+      "/drink",
+      "/titties"
+    ]
+  },
+  {
+    "group": "Allen @ Triggers",
+    "items": [
+      "hide",
+      "create an image <prompt>",
+      "did the Yankees win?",
+      "you good?",
+      "whats 9 + 10?",
+      "dj with us",
+      "stop djing",
+      "get tf off the stage",
+      "are you a bot?", 
+      "spin that wheel",
+      "this song (include 'this song' in any phrase for Allen to recognize currently playing"
+    ]
+  },
+  {
+    "group": "Spotify Playlists",
+    "items": [
+      "/addsong : https://open.spotify.com/playlist/61vNvZ72Ay7rQgFZYmDixU",
+      "/addsong <beach> : https://open.spotify.com/playlist/4Tt9V6IcbWzNslWjcq1fHW",
+      "/addsong <happy> : https://open.spotify.com/playlist/2RVTpHNYkbo0L9CoTlfEbV",
+      "/addsong <dance> : https://open.spotify.com/playlist/49mjqOEOIzlagk8pSrRGFY",
+      "/removesong : https://open.spotify.com/playlist/61vNvZ72Ay7rQgFZYmDixU",
+      "/removesong <beach> : https://open.spotify.com/playlist/4Tt9V6IcbWzNslWjcq1fHW",
+      "/removesong <happy> : https://open.spotify.com/playlist/2RVTpHNYkbo0L9CoTlfEbV",
+      "/removesong <dance> : https://open.spotify.com/playlist/49mjqOEOIzlagk8pSrRGFY",
+      "/blacklist+ : Allen will never play this song again",
+      "/blacklist- : Remove a song from the blacklist"
+    ]
+  },
+  {
+    "group": "Albums",
+    "items": [
+      "/searchalbums",
+      "/qalbum"
     ]
   }
 ]

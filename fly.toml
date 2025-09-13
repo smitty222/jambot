@@ -1,6 +1,28 @@
-app = "jamflowbot-allen-v4"   # <- your Fly app name
-primary_region = "iad"        # optional but recommended
+app = "jamflowbot-allen-v4"
+primary_region = "iad"
 
+# Ensure Fly doesn't spin up a second machine during deploys.
+[deploy]
+  strategy = "immediate"
+
+# Env for the cron-based site publisher and app
+[env]
+  ENABLE_SITE_PUBLISH_CRON = "1"
+  PUBLISH_TZ = "America/New_York"
+  # 09:00, 13:00, 17:00 ET daily; change as you like (cron in local TZ above)
+  PUBLISH_CRON = "0 9,13,17 * * *"
+  PUBLISH_RUN_ON_BOOT = "1"
+  PUBLISH_SCRIPT = "tools/publish-site-data.mjs"
+
+  # Where the publisher posts (your Worker API)
+  API_BASE = "https://jamflow-site-api.jamflowbot.workers.dev"
+  # SQLite + publisher state live on the mounted volume
+  DB_PATH = "/data/app.db"
+  PUBLISH_STATE_FILE = "/data/.publish-state.json"
+
+  LOG_LEVEL = "info"
+
+# Single always-on machine; no autosuspend
 [http_service]
   internal_port = 8080
   force_https = true
@@ -14,3 +36,14 @@ primary_region = "iad"        # optional but recommended
     method = "GET"
     path = "/health"
     grace_period = "10s"
+
+# Persist DB and publisher state across restarts
+[[mounts]]
+  source = "jamflowbot_data"
+  destination = "/data"
+
+# (Optional) VM sizing; adjust as needed
+# [[vm]]
+#   memory = "512mb"
+#   cpu_kind = "shared"
+#   cpus = 1

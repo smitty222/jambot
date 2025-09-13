@@ -49,6 +49,24 @@ export const PUBLIC_VIEWS = {
     `
   },
 
+  // 🔵 Just Balls tab: aggregated counts by ball number (padded 1..99)
+lottery_stats_public: {
+  sql: `
+    WITH RECURSIVE n(x) AS (
+      SELECT 1
+      UNION ALL
+      SELECT x + 1 FROM n WHERE x < 99
+    )
+    SELECT
+      n.x AS number,
+      COALESCE(ls.count, 0) AS count
+    FROM n
+    LEFT JOIN lottery_stats ls ON ls.number = n.x
+    ORDER BY n.x ASC
+  `
+},
+
+
   // Room stats (safe columns only)
   room_stats_public: {
     sql: `
@@ -125,6 +143,9 @@ function runSqlSafe (db, sql) {
 
 /**
  * Publish curated views to public (`db:`) and raw tables to mod-only (`dbmod:`).
+ * Accepts Worker handlers that expect either:
+ *   - { tables, public, privateOnly }  (object map)
+ *   - { items,  pubList, privateOnly } (array of {name,data})
  * @param {{ db:any, postJson:Function, havePublishConfig:Function, logger?:Console }} opts
  */
 export default async function publishDbSnapshot (opts) {
@@ -146,16 +167,23 @@ export default async function publishDbSnapshot (opts) {
       publicViews[viewName] = runSqlSafe(db, cfg.sql)
     }
 
-    // 3) Merge and publish
+    // 3) Merge and publish (support both payload shapes)
     Object.assign(tables, publicViews)
-    const publicList = Object.keys(publicViews)          // only these appear in the site's Data tab
-    const privateOnly = rawNames                         // raw DB tables are mod-only
+    const publicList = Object.keys(publicViews) // these appear at /api/db/*
+    const privateOnly = rawNames              // raw DB tables are mod-only
 
-    await postJson('/api/publishDb', {
+    // Also build the array shape for Workers that expect items/pubList
+    const items = Object.entries(tables).map(([name, data]) => ({ name, data }))
+    const payload = {
       tables,
       public: publicList,
-      privateOnly
-    })
+      privateOnly,
+      // compatibility extras:
+      items,
+      pubList: publicList
+    }
+
+    await postJson('/api/publishDb', payload)
 
     logger.log('[site publish] db ok – public:', publicList.join(', '))
   } catch (err) {

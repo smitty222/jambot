@@ -3,136 +3,73 @@ import 'dotenv/config'
 import './database/initdb.js'
 import './database/seedavatars.js'
 import express from 'express'
-import fetch from 'node-fetch'
-import db from './database/db.js'
 import { Bot, getCurrentDJUUIDs } from './libs/bot.js'
 import { updateCurrentUsers } from './utils/currentUsers.js'
 import { fetchCurrentUsers } from './utils/API.js'
 import * as themeStorage from './utils/themeManager.js'
 import { setThemes } from './utils/roomThemes.js'
 
-// File + path utils for reading JSON command lists
-import fs from 'fs/promises'
-import path from 'path'
-import { fileURLToPath } from 'url'
+// ──────────────────────────────────────────────────────────────
+// Scheduled publisher (cron → runs tools/publish-site-data.mjs)
+// ──────────────────────────────────────────────────────────────
+import cron from 'node-cron'
+import { spawn } from 'node:child_process'
 
-// NEW: curated DB snapshot publisher
-import publishDbSnapshot from '../tools/publishSnapshot.js'
+function startSitePublisherCron () {
+  if (process.env.ENABLE_SITE_PUBLISH_CRON !== '1') {
+    console.log('[publish-cron] disabled (set ENABLE_SITE_PUBLISH_CRON=1 to enable)')
+    return
+  }
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+  const TZ = process.env.PUBLISH_TZ || 'America/New_York'
+  const CRON = process.env.PUBLISH_CRON || '0 9,13,17 * * *' // 09:00, 13:00, 17:00 (TZ)
+  const SCRIPT = process.env.PUBLISH_SCRIPT || 'tools/publish-site-data.mjs'
+  const RUN_ON_BOOT = process.env.PUBLISH_RUN_ON_BOOT === '1'
 
+  // Only pass what the script needs; inherits everything else from process.env
+  const PUB_ENV = {
+    API_BASE: process.env.API_BASE,                 // e.g., https://jamflow-site-api.jamflowbot.workers.dev
+    PUBLISH_TOKEN: process.env.PUBLISH_TOKEN,       // set via secrets
+    DB_PATH: process.env.DB_PATH || '/data/app.db',
+    PUBLISH_STATE_FILE: process.env.PUBLISH_STATE_FILE || '/data/.publish-state.json',
+    LOG_LEVEL: process.env.LOG_LEVEL || 'info'
+  }
+
+  let running = false
+  const runOnce = () => {
+    if (running) {
+      console.log('[publish-cron] previous run still in progress, skipping')
+      return
+    }
+    running = true
+    console.log(`[publish-cron] start: node ${SCRIPT}`)
+    const child = spawn('node', [SCRIPT], {
+      stdio: 'inherit',
+      env: { ...process.env, ...PUB_ENV }
+    })
+    child.on('exit', (code) => {
+      console.log(`[publish-cron] finished with code ${code}`)
+      running = false
+    })
+    child.on('error', (err) => {
+      console.error('[publish-cron] spawn error:', err)
+      running = false
+    })
+  }
+
+  cron.schedule(CRON, runOnce, { timezone: TZ })
+  console.log(`[publish-cron] scheduled "${CRON}" (TZ=${TZ}); script=${SCRIPT}`)
+
+  if (RUN_ON_BOOT) runOnce()
+}
+
+// ──────────────────────────────────────────────────────────────
+// App / Bot bootstrap
+// ──────────────────────────────────────────────────────────────
 const app = express()
+
 const roomBot = new Bot(process.env.JOIN_ROOM)
 
-// ───────────────────────────────────────────────────────────
-// Config for site publishing
-// ───────────────────────────────────────────────────────────
-const SITE_PUBLISH_BASE =
-  process.env.SITE_PUBLISH_BASE || 'https://jamflow-site-api.jamflowbot.workers.dev'
-const SITE_PUBLISH_TOKEN = process.env.SITE_PUBLISH_TOKEN
-
-function havePublishConfig () {
-  if (!SITE_PUBLISH_BASE || !SITE_PUBLISH_TOKEN) {
-    console.warn('[site publish] skipped (SITE_PUBLISH_BASE or SITE_PUBLISH_TOKEN missing)')
-    return false
-  }
-  return true
-}
-
-async function postJson (pathname, body) {
-  if (!havePublishConfig()) return
-  const res = await fetch(`${SITE_PUBLISH_BASE}${pathname}`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'authorization': `Bearer ${SITE_PUBLISH_TOKEN}`
-    },
-    body: JSON.stringify(body)
-  })
-  if (!res.ok) {
-    const txt = await res.text().catch(() => '')
-    throw new Error(`${pathname} ${res.status} ${res.statusText} – ${txt}`)
-  }
-  return res.json()
-}
-
-// ───────────────────────────────────────────────────────────
-// Commands publisher (reads JSON → Worker KV)
-// ───────────────────────────────────────────────────────────
-async function readJsonSafe (p, fallback = []) {
-  try { return JSON.parse(await fs.readFile(p, 'utf-8')) } catch { return fallback }
-}
-
-async function buildCommandsFromFiles () {
-  const publicPath = path.resolve(__dirname, '../site/commands.public.json')
-  const modPath    = path.resolve(__dirname, '../site/commands.mod.json')
-  const commands     = await readJsonSafe(publicPath, [])
-  const commands_mod = await readJsonSafe(modPath, [])
-  return { commands, commands_mod }
-}
-
-async function publishCommandsFromFiles () {
-  try {
-    const { commands, commands_mod } = await buildCommandsFromFiles()
-    await postJson('/api/publishCommands', { commands, commands_mod })
-    console.log('[site publish] commands ok')
-  } catch (err) {
-    console.warn('[site publish] commands failed:', err?.message || err)
-  }
-}
-
-// ───────────────────────────────────────────────────────────
-// Stats publisher (Totals, Top Songs, Top Albums)
-// ───────────────────────────────────────────────────────────
-function buildStats () {
-  const topSongsRaw = db.prepare(`
-    SELECT trackName, artistName, averageReview AS avg, playCount
-    FROM room_stats
-    WHERE averageReview IS NOT NULL
-    ORDER BY averageReview DESC, playCount DESC
-    LIMIT 20
-  `).all()
-
-  const topAlbumsRaw = db.prepare(`
-    SELECT albumName, artistName, averageReview AS avg, trackCount
-    FROM album_stats
-    WHERE averageReview IS NOT NULL
-    ORDER BY averageReview DESC, trackCount DESC
-    LIMIT 20
-  `).all()
-
-  const totals = {
-    songsTracked:  db.prepare('SELECT COUNT(*) AS c FROM room_stats').get().c,
-    albumsTracked: db.prepare('SELECT COUNT(*) AS c FROM album_stats').get().c,
-    songReviews:   db.prepare('SELECT COUNT(*) AS c FROM song_reviews').get().c,
-    albumReviews:  db.prepare('SELECT COUNT(*) AS c FROM album_reviews').get().c,
-    updatedAt:     new Date().toISOString()
-  }
-
-  const topSongs = topSongsRaw.map(r => ({
-    title: r.trackName, artist: r.artistName, avg: r.avg, playCount: r.playCount
-  }))
-  const topAlbums = topAlbumsRaw.map(r => ({
-    title: r.albumName, artist: r.artistName, avg: r.avg, trackCount: r.trackCount
-  }))
-
-  return { totals, topSongs, topAlbums }
-}
-
-async function publishStats () {
-  try {
-    const stats = buildStats()
-    await postJson('/api/publishStats', stats)
-    console.log('[site publish] stats ok')
-  } catch (err) {
-    console.warn('[site publish] stats failed:', err?.message || err)
-  }
-}
-
-// ───────────────────────────────────────────────────────────
-// Bot startup
-// ───────────────────────────────────────────────────────────
 const startupTasks = async () => {
   try {
     await roomBot.connect()
@@ -145,11 +82,6 @@ const startupTasks = async () => {
     console.log('Current DJs', currentDJs)
 
     updateCurrentUsers(currentUsers)
-
-    // Publish on boot
-    await publishCommandsFromFiles()
-    await publishStats()
-    await publishDbSnapshot({ db, postJson, havePublishConfig })
   } catch (error) {
     console.error('Error during bot startup:', error.message)
   }
@@ -157,16 +89,13 @@ const startupTasks = async () => {
 
 startupTasks()
 
-// Load & apply saved themes
 const savedThemes = themeStorage.loadThemes()
 setThemes(savedThemes)
 
-// ───────────────────────────────────────────────────────────
-// Adaptive poll loop (unchanged)
-// ───────────────────────────────────────────────────────────
+// --- Adaptive poll loop (replaces setInterval) ---
 const BASE_MS = 900
 const STEP_MS = 300
-const MAX_BACKOFF_STEPS = 4
+const MAX_BACKOFF_STEPS = 4 // up to ~ +1200ms
 
 function jitter (ms) {
   const delta = Math.floor(ms * 0.15) // ±15%
@@ -188,29 +117,19 @@ async function pollLoop () {
 
 pollLoop() // start
 
-// ───────────────────────────────────────────────────────────
-// Timers (keep KV fresh)
-// ───────────────────────────────────────────────────────────
-const PUBLISH_INTERVAL_MS        = Number(process.env.SITE_PUBLISH_INTERVAL_MS || 90_000)
-const DB_PUBLISH_INTERVAL_MS     = Number(process.env.DB_PUBLISH_INTERVAL_MS || 5 * 60 * 1000)
-const STATS_PUBLISH_INTERVAL_MS  = Number(process.env.STATS_PUBLISH_INTERVAL_MS || 5 * 60 * 1000)
-
-setInterval(() => { publishCommandsFromFiles() }, PUBLISH_INTERVAL_MS)
-setInterval(() => { publishStats() }, STATS_PUBLISH_INTERVAL_MS)
-setInterval(() => { publishDbSnapshot({ db, postJson, havePublishConfig }) }, DB_PUBLISH_INTERVAL_MS)
-
-// ───────────────────────────────────────────────────────────
-// Minimal HTTP
-// ───────────────────────────────────────────────────────────
-app.get('/', (_req, res) => {
+app.get('/', (req, res) => {
   res.send('Jamflow bot is alive and running!')
 })
 
-app.get('/health', (_req, res) => {
+app.get('/health', (req, res) => {
   res.status(200).send('OK')
 })
 
-const port = process.env.PORT || 3000
+// Default to 8080 (Fly internal_port); override with PORT if set
+const port = Number(process.env.PORT || 8080)
 app.listen(port, '0.0.0.0', () => console.log(`Listening on ${port}`))
+
+// Start the scheduled publisher after server boot so logs are visible
+startSitePublisherCron()
 
 export { roomBot }

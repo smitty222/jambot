@@ -871,7 +871,7 @@ Please refresh your page for the queue to update`
     /// /////////////// General Commands ////////////////
 
     } else if (payload.message === '/site') {
-  await postMessage({ room, message: 'Jamflow Bot Hub → https://jambot-e72.pages.dev/' })
+  await postMessage({ room, message: 'Jamflow Bot Hub → https://dev.jambot-e72.pages.dev/' })
 
     } else if (payload.message.startsWith('/tip')) {
   try {
@@ -889,14 +889,14 @@ Please refresh your page for the queue to update`
       return
     }
 
-    const currentDJUUIDs = getCurrentDJUUIDs(state)
-    if (!currentDJUUIDs || currentDJUUIDs.length === 0) {
+    const currentDJ = getCurrentDJ(state)
+    if (!currentDJ || currentDJ.length === 0) {
       await postMessage({ room, message: `<@uid:${senderUUID}>, there is no DJ currently playing.` })
       return
     }
 
     // exclude the tipper from recipients
-    const recipients = currentDJUUIDs.filter(u => u && u !== senderUUID)
+    const recipients = currentDJ.filter(u => u && u !== senderUUID)
     if (recipients.length === 0) {
       await postMessage({ room, message: 'You cannot tip yourself.' })
       return

@@ -9,16 +9,30 @@ const API_BASE = process.env.API_BASE;
 const PUBLISH_TOKEN = process.env.PUBLISH_TOKEN;
 const DB_PATH = process.env.DB_PATH || path.resolve('src/data/app.db');
 
-if (!API_BASE || !PUBLISH_TOKEN) {
-  console.error('[publish] Missing API_BASE or PUBLISH_TOKEN');
-  process.exit(1);
+// Cooldowns
+const COOLDOWN_MINUTES_DB       = Number(process.env.PUBLISH_DB_EVERY_MIN    || 240);
+const COOLDOWN_MINUTES_COMMANDS = Number(process.env.PUBLISH_CMDS_EVERY_MIN  || 240);
+const COOLDOWN_MINUTES_STATS    = Number(process.env.PUBLISH_STATS_EVERY_MIN || 240);
+// NEW: siteData cooldown (default 10 min is fine)
+const COOLDOWN_MINUTES_SITEDATA = Number(process.env.PUBLISH_SITEDATA_EVERY_MIN || 10);
+
+const STATE_FILE = process.env.PUBLISH_STATE_FILE || path.resolve('.publish-state.json');
+
+function loadState() {
+  try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8')); } catch { return { last: {} }; }
 }
-console.log('[publish] DB_PATH:', DB_PATH);
+function saveState(state) {
+  try { fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2)); } catch {}
+}
+function minutesSince(ts) {
+  if (!ts) return Infinity;
+  const diffMs = Date.now() - new Date(ts).getTime();
+  return diffMs / 60000;
+}
 
 function tryReadJson(p) { try { return JSON.parse(fs.readFileSync(p,'utf-8')); } catch { return null; } }
-
-const commands = tryReadJson(process.env.COMMANDS_JSON || 'site/commands.public.json') || [];
-const commands_mod = tryReadJson(process.env.COMMANDS_MOD_JSON || 'site/commands.mod.json') || [];
+const commands     = tryReadJson(process.env.COMMANDS_JSON     || 'site/commands.public.json') || [];
+const commands_mod = tryReadJson(process.env.COMMANDS_MOD_JSON || 'site/commands.mod.json')    || [];
 
 async function postJson(pathname, payload) {
   const res = await fetch(`${API_BASE}${pathname}`, {
@@ -30,57 +44,131 @@ async function postJson(pathname, payload) {
   return res.json();
 }
 
-async function publishCommands() {
+// ─────────────────────────────────────────────────────────────
+// Publish: Commands
+// ─────────────────────────────────────────────────────────────
+async function publishCommands(state) {
   if (!commands.length && !commands_mod.length) return;
+  if (minutesSince(state.last?.commands) < COOLDOWN_MINUTES_COMMANDS) {
+    console.log('[publish] commands skipped (cooldown)');
+    return;
+  }
+  const nextHash = JSON.stringify([commands, commands_mod]);
+  if (state.last?.commandsHash === nextHash) {
+    console.log('[publish] commands unchanged; skipped');
+    state.last.commands = new Date().toISOString();
+    saveState(state);
+    return;
+  }
   console.log('[publish] commands');
   await postJson('/api/publishCommands', { commands, commands_mod });
+  state.last.commands = new Date().toISOString();
+  state.last.commandsHash = nextHash;
+  saveState(state);
 }
 
-async function publishDb() {
+// ─────────────────────────────────────────────────────────────
+// Publish: Per-table DB mirrors (unchanged)
+// ─────────────────────────────────────────────────────────────
+async function publishDb(state) {
+  if (minutesSince(state.last?.db) < COOLDOWN_MINUTES_DB) {
+    console.log('[publish] db skipped (cooldown)');
+    return;
+  }
   console.log('[publish] db snapshots');
   const db = new Database(DB_PATH, { readonly: true });
   try {
-    // Build curated public views + mirror all raw tables for mod
-    let lastPublic = [];
     await publishDbSnapshot({
       db,
       havePublishConfig: () => true,
-      logger: { 
-        log: (...a) => { 
-          console.log(...a);
-          // try to capture view list from publishDbSnapshot log (optional)
-        },
-        warn: (...a) => console.warn(...a)
-      },
-      // Shim postJson so we can ensure both 'public' and 'publicTables' are sent
-      postJson: async (pathname, payload) => {
-        if (pathname === '/api/publishDb') {
-          const { tables, public: pubList = [], privateOnly = [] } = payload || {};
-          lastPublic = pubList;
-          return postJson('/api/publishDb', {
-            tables,
-            public: pubList,
-            publicTables: pubList,   // <— compatibility with older Worker
-            privateOnly
-          });
-        }
-        return postJson(pathname, payload);
-      }
+      logger: console,
+      postJson: async (pathname, payload) => postJson(pathname, payload)
     });
+    state.last.db = new Date().toISOString();
+    saveState(state);
   } finally {
     db.close();
   }
 }
 
-async function publishStats() {
+// ─────────────────────────────────────────────────────────────
+// Publish: Stats (unchanged)
+// ─────────────────────────────────────────────────────────────
+async function publishStats(state) {
+  if (minutesSince(state.last?.stats) < COOLDOWN_MINUTES_STATS) {
+    console.log('[publish] stats skipped (cooldown)');
+    return;
+  }
   const now = new Date().toISOString();
-  try { await postJson('/api/publishStats', { totals: { updatedAt: now }, topSongs: [], topAlbums: [] }); } catch {}
+  try {
+    await postJson('/api/publishStats', { totals: { updatedAt: now }, topSongs: [], topAlbums: [] });
+    state.last.stats = now;
+    saveState(state);
+  } catch (e) {
+    console.warn('[publish] stats failed:', e?.message || e);
+  }
 }
 
+// ─────────────────────────────────────────────────────────────
+// NEW: Publish siteData (single public snapshot used by the UI)
+// ─────────────────────────────────────────────────────────────
+function fill1toN(list, n, toKey = x => x.number, toVal = x => x.count) {
+  const map = new Map(list.map(x => [Number(toKey(x)), Number(toVal(x)) || 0]));
+  const out = [];
+  for (let i = 1; i <= n; i++) out.push({ number: i, count: map.get(i) ?? 0 });
+  return out;
+}
+
+async function publishSiteData(state) {
+  if (minutesSince(state.last?.siteData) < COOLDOWN_MINUTES_SITEDATA) {
+    console.log('[publish] siteData skipped (cooldown)');
+    return;
+  }
+
+  console.log('[publish] siteData snapshot');
+  const db = new Database(DB_PATH, { readonly: true });
+  try {
+    // Pull the minimal pieces the UI needs
+    const lotteryRows = db.prepare(`
+      SELECT number, count
+      FROM lottery_stats
+      ORDER BY number ASC
+    `).all();
+
+    // 1..99 (change to 100 if your game is 1..100)
+    const lotteryStats = fill1toN(lotteryRows || [], 99, r => r.number, r => r.count);
+
+    const snapshot = {
+      schemaVersion: 1,
+      updatedAt: new Date().toISOString(),
+      lottery: {
+        stats: lotteryStats
+      }
+      // You can add more top-level data here later (e.g., winners summary)
+    };
+
+    await postJson('/api/siteData', snapshot);
+    state.last.siteData = snapshot.updatedAt;
+    saveState(state);
+  } finally {
+    db.close();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Main
+// ─────────────────────────────────────────────────────────────
 const main = async () => {
-  await publishCommands();
-  await publishDb();
-  await publishStats();
+  if (!API_BASE || !PUBLISH_TOKEN) {
+    console.error('Missing API_BASE or PUBLISH_TOKEN');
+    process.exit(1);
+  }
+  const state = loadState();
+  await publishCommands(state);
+  await publishDb(state);
+  await publishStats(state);
+  await publishSiteData(state); // ← NEW
   console.log('[publish] done');
 };
+
 main().catch(err => { console.error(err); process.exit(1); });

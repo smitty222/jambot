@@ -193,3 +193,39 @@ button:focus-visible, .input:focus-visible, a:focus-visible{
   outline: none; box-shadow: 0 0 0 3px var(--ring);
   border-color: color-mix(in hsl, var(--border) 30%, var(--brand) 70%);
 }
+/* ===== Lottery grid ===== */
+.lottery-grid{
+  display:grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr)); /* exactly 10 columns */
+  gap:10px;
+}
+
+/* A single ball */
+.ball{
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  aspect-ratio:1 / 1;
+  border-radius:999px;
+  border:1px solid var(--border);
+  background: linear-gradient(180deg, color-mix(in hsl, var(--bg-elev) 94%, #000 3%), var(--bg-elev));
+  box-shadow: var(--shadow);
+  user-select:none;
+}
+.ball .num{ font-weight:800; font-size:16px; line-height:1; }
+.ball .cnt{ font-size:11px; color: var(--muted); margin-top:2px }
+
+/* Pastel fills by count */
+.ball.count-1{
+  background: linear-gradient(180deg, #ecfdf5, #bbf7d0); /* pastel green */
+  border-color: color-mix(in hsl, var(--border) 60%, #16a34a 40%);
+  color:#064e3b;
+}
+.ball.count-2{
+  background: linear-gradient(180deg, #fefce8, #fef9c3); /* pastel yellow */
+  border-color: color-mix(in hsl, var(--border) 60%, #eab308 40%);
+  color:#713f12;
+}
+.ball.count-3{
+  background: linear-gradient(180deg, #eff6ff, #bfdbfe); /* pastel blue */
+  border-color: color-mix(in hsl, var(--border) 60%, #2563eb 40%);
+  color:#1e3a8a;
+}

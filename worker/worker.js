@@ -56,6 +56,16 @@ function hasBearer (request, token) {
   return !!provided && provided === token;
 }
 
+// Compare-and-skip writes to save KV puts
+export async function putIfChanged(env, key, value) {
+  const incoming = typeof value === 'string' ? value : JSON.stringify(value ?? []);
+  const existing = await env.SITEDATA.get(key); // string compare is fine
+  if (existing === incoming) return { wrote: false };
+  await env.SITEDATA.put(key, incoming);
+  return { wrote: true };
+}
+
+
 // ───────────────────────────────────────────────────────────────
 // Worker
 // ───────────────────────────────────────────────────────────────
@@ -72,6 +82,24 @@ export default {
     // Helpers that return Response|null
     const requireMod = () => hasBearer(request, env.MOD_READ_TOKEN) ? null : unauthorized(env, request);
     const requirePublish = () => hasBearer(request, env.PUBLISH_TOKEN) ? null : unauthorized(env, request);
+
+    // ───────────────────────────────────────────────────────────
+    // siteData (single public snapshot)
+    // ───────────────────────────────────────────────────────────
+    if (method === 'GET' && url.pathname === '/api/siteData') {
+      const data = await env.SITEDATA.get('siteData', { type: 'json' });
+      // Return a minimal object if empty so the site doesn't hard-fail
+      return json(env, request, data ?? { schemaVersion: 1, updatedAt: null });
+    }
+
+    if (method === 'POST' && url.pathname === '/api/siteData') {
+      const authErr = requirePublish(); if (authErr) return authErr;
+      let body;
+      try { body = await request.json(); }
+      catch { return json(env, request, { error: 'invalid JSON' }, 400); }
+      const res = await putIfChanged(env, 'siteData', body || {});
+      return json(env, request, { ok: true, ...res });
+    }
 
     // ───────────────────────────────────────────────────────────
     // Commands
@@ -91,9 +119,12 @@ export default {
       const authErr = requirePublish(); if (authErr) return authErr;
       let body; try { body = await request.json(); } catch { return json(env, request, { error: 'invalid JSON' }, 400); }
       const { commands, commands_mod } = body || {};
-      if (commands)     await env.SITEDATA.put('commands', JSON.stringify(commands));
-      if (commands_mod) await env.SITEDATA.put('commands_mod', JSON.stringify(commands_mod));
-      return json(env, request, { ok: true });
+
+      const result = {};
+      if (commands)     result.commands     = await putIfChanged(env, 'commands',     commands);
+      if (commands_mod) result.commands_mod = await putIfChanged(env, 'commands_mod', commands_mod);
+
+      return json(env, request, { ok: true, ...result });
     }
 
     // ───────────────────────────────────────────────────────────
@@ -111,8 +142,8 @@ export default {
     if (method === 'POST' && url.pathname === '/api/publishStats') {
       const authErr = requirePublish(); if (authErr) return authErr;
       let body; try { body = await request.json(); } catch { return json(env, request, { error: 'invalid JSON' }, 400); }
-      await env.SITEDATA.put('stats', JSON.stringify(body || {}));
-      return json(env, request, { ok: true });
+      const res = await putIfChanged(env, 'stats', body || {});
+      return json(env, request, { ok: true, ...res });
     }
 
     // ───────────────────────────────────────────────────────────
@@ -146,7 +177,7 @@ export default {
     }
 
     // ───────────────────────────────────────────────────────────
-    // DB snapshots
+    // DB snapshots (per-table model, kept for backwards compat)
     // ───────────────────────────────────────────────────────────
     if (method === 'GET' && url.pathname.startsWith('/api/db_mod/')) {
       const authErr = requireMod(); if (authErr) return authErr;
@@ -184,16 +215,17 @@ export default {
         const jsonStr = JSON.stringify(data ?? []);
         if (privateOnly.has(name)) {
           // mod-only
-          await env.SITEDATA.put(`dbmod:${name}`, jsonStr);
+          await putIfChanged(env, `dbmod:${name}`, jsonStr);
         } else if (pubList.has(name)) {
           // public + mirror to mod
-          await env.SITEDATA.put(`db:${name}`, jsonStr);
-          await env.SITEDATA.put(`dbmod:${name}`, jsonStr);
+          await putIfChanged(env, `db:${name}`, jsonStr);
+          await putIfChanged(env, `dbmod:${name}`, jsonStr);
         } else {
           // default to mod-only
-          await env.SITEDATA.put(`dbmod:${name}`, jsonStr);
+          await putIfChanged(env, `dbmod:${name}`, jsonStr);
         }
       }
+
       return json(env, request, { ok: true, wrote: items.map(x => x.name) });
     }
 
