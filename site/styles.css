@@ -229,3 +229,59 @@ button:focus-visible, .input:focus-visible, a:focus-visible{
   border-color: color-mix(in hsl, var(--border) 60%, #2563eb 40%);
   color:#1e3a8a;
 }
+
+/* ===== Songs tab styling ===== */
+#viewSongs .table-wrap{ max-height: 70vh } /* taller for songs list */
+
+#viewSongs table.data th,
+#viewSongs table.data td{
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+#viewSongs td.rank{ width:56px; text-align:center; color:var(--muted); font-weight:700 }
+
+#viewSongs td.title-cell{ max-width: 340px }
+#viewSongs td.artist-cell{ max-width: 220px }
+
+#viewSongs .truncate{
+  display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+
+#viewSongs .avg-cell{ text-align:right; }
+#viewSongs .avg-badge{
+  display:inline-flex; align-items:center; gap:6px;
+  padding: 2px 8px; border-radius:999px; border:1px solid var(--border);
+  background: color-mix(in hsl, var(--bg-elev) 88%, black 4%);
+  font-weight:600;
+}
+
+/* Plays bar */
+#viewSongs .plays-cell{ width:220px }
+#viewSongs .plays{
+  display:flex; align-items:center; gap:10px;
+}
+#viewSongs .bar{
+  position:relative; flex:1 1 auto; height:8px; border-radius:999px;
+  background: color-mix(in hsl, var(--bg-elev) 92%, #000 6%);
+  border:1px solid var(--border);
+  overflow:hidden;
+}
+#viewSongs .bar-fill{
+  height:100%; border-radius:999px;
+  background: linear-gradient(90deg, var(--brand), var(--brand-2));
+}
+#viewSongs .count{ width:60px; text-align:right; font-variant-numeric: tabular-nums; }
+
+/* Last played */
+#viewSongs .recent-cell{ color:var(--muted) }
+
+/* Responsive: tuck artist under title on narrow screens */
+@media (max-width: 900px){
+  #viewSongs td.artist-cell{ display:none }
+  #viewSongs .artist-mobile{ display:block }
+}
+@media (min-width: 901px){
+  #viewSongs .artist-mobile{ display:none }
+}
+

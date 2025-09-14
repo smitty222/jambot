@@ -510,7 +510,7 @@ function renderAlbums(){
     return { ...a, _id:id, _title:title, _artist:artist, _cover:cover, _avg:avg, _reviews:reviews };
   });
 
-  // filters: reviewed only
+  // reviewed only
   rows = rows.filter(a => (typeof a._avg === "number") && a._reviews > 0);
 
   if (q) rows = rows.filter(a =>
@@ -518,27 +518,31 @@ function renderAlbums(){
   );
   if (minReviews > 0) rows = rows.filter(a => a._reviews >= minReviews);
 
-  // sorting
+  // ✅ Correct sorting (no .reverse())
   const [key, dir] = sortSel.split(':');
   const mult = dir === 'asc' ? 1 : -1;
   rows.sort((a,b) => {
     switch (key) {
-      case 'reviews': return (a._reviews - b._reviews) * mult;
-      case 'title':   return a._title.localeCompare(b._title) * mult;
-      case 'artist':  return a._artist.localeCompare(b._artist) * mult;
+      case 'reviews':
+        return (a._reviews - b._reviews) * mult;
+      case 'title':
+        return a._title.localeCompare(b._title, undefined, { sensitivity: 'base' }) * mult;
+      case 'artist':
+        return a._artist.localeCompare(b._artist, undefined, { sensitivity: 'base' }) * mult;
       case 'avg':
       default: {
         const av = a._avg ?? -Infinity;
         const bv = b._avg ?? -Infinity;
-        return (av - bv) * mult;
+        return (av - bv) * mult; // desc => largest first; asc => smallest first
       }
     }
-  }).reverse(); // to maintain your previous "desc first" feel
+  });
 
   els.albumsAll.innerHTML = rows.length
     ? renderAlbumsTable(rows)
     : `<div class="muted small">No reviewed albums match.</div>`;
 }
+
 
 async function refreshAlbums(){
   if (!els.albumsAll) return;
