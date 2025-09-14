@@ -572,13 +572,22 @@ if (els.albumSort)     els.albumSort.addEventListener("change", renderAlbums);
 
 // ------------- Songs -------------
 let _songsRaw = [];
+// helper: set/select current sort and re-render
+function setSongSort(key, dir){
+  const next = `${key}:${dir}`;
+  if (els.songSort) els.songSort.value = next;   // keep dropdown in sync
+  renderSongs();
+}
+
 function renderSongs(){
   if (!els.songsList) return;
+
   const q = (els.songSearch?.value || "").toLowerCase().trim();
-  const sort = (els.songSort?.value || "plays:desc").toLowerCase();
+  const sortSel = (els.songSort?.value || "plays:desc").toLowerCase(); // key:dir
 
   let rows = Array.isArray(_songsRaw) ? [..._songsRaw] : [];
 
+  // normalize
   rows = rows.map(s => {
     const title  = String(val(s, "title","name") ?? "");
     const artist = String(val(s, "artist","artist_name") ?? "");
@@ -589,14 +598,16 @@ function renderSongs(){
     return { ...s, _title:title, _artist:artist, _plays:plays, _avg:avg, _recent:recent };
   });
 
-  // 🚫 drop “unknown” titles
+  // drop “unknown” titles
   rows = rows.filter(s => s._title && s._title.trim().toLowerCase() !== "unknown");
 
-  // search filter
-  if (q) rows = rows.filter(s => s._title.toLowerCase().includes(q) || s._artist.toLowerCase().includes(q));
+  // search
+  if (q) rows = rows.filter(s =>
+    s._title.toLowerCase().includes(q) || s._artist.toLowerCase().includes(q)
+  );
 
-  // sort (fix: remove the old .reverse())
-  const [key, dir] = sort.split(":");
+  // sort
+  const [key, dir] = sortSel.split(":");
   const mult = dir === "asc" ? 1 : -1;
   rows.sort((a,b) => {
     switch (key) {
@@ -609,10 +620,10 @@ function renderSongs(){
         const bt = b._recent ? new Date(b._recent).getTime() : 0;
         return (at - bt) * mult;
       }
-      case "title":  return a._title.localeCompare(b._title)   * mult;
-      case "artist": return a._artist.localeCompare(b._artist) * mult;
+      case "title":  return a._title.localeCompare(b._title, undefined, {sensitivity:"base"}) * mult;
+      case "artist": return a._artist.localeCompare(b._artist, undefined, {sensitivity:"base"}) * mult;
       case "plays":
-      default:       return (a._plays - b._plays) * mult; // plays:desc gives highest first
+      default:       return (a._plays - b._plays) * mult; // plays:desc = highest first
     }
   });
 
@@ -620,17 +631,75 @@ function renderSongs(){
     els.songsList.innerHTML = `<div class="muted small">No songs match.</div>`;
     return;
   }
-  const html = rows.slice(0, 300).map(s => `
-    <div class="row tight" style="margin:6px 0; flex-wrap:wrap;">
-      <div class="tag">${escapeHtml(s._title)}</div>
-      <div class="tag">${escapeHtml(s._artist)}</div>
-      ${typeof s._avg === "number" ? `<div class="tag">avg ${s._avg.toFixed(2)}</div>` : ``}
-      <div class="tag">${s._plays} plays</div>
-      ${s._recent ? `<div class="muted small">last ${escapeHtml(briefDate(s._recent))}</div>` : ``}
+
+  const maxPlays = Math.max(1, ...rows.map(r => r._plays));
+
+  // compute header chevrons
+  const icon = (k) => {
+    const [ck, cd] = sortSel.split(":");
+    if (k !== ck) return `<span class="sort">↕</span>`;
+    return `<span class="sort">${cd === "asc" ? "▲" : "▼"}</span>`;
+  };
+
+  // build table body
+  const body = rows.slice(0, 300).map((s, i) => {
+    const pct = Math.round((s._plays / maxPlays) * 100);
+    const avgHtml = typeof s._avg === "number" ? `<span class="avg-badge">${s._avg.toFixed(2)}</span>` : "—";
+    const recent  = s._recent ? briefDate(s._recent) : "—";
+    return `
+      <tr>
+        <td class="rank">${i + 1}</td>
+        <td class="title-cell">
+          <span class="truncate" title="${escapeHtml(s._title)}">${escapeHtml(s._title)}</span>
+          <span class="artist-mobile muted small truncate" title="${escapeHtml(s._artist)}">${escapeHtml(s._artist)}</span>
+        </td>
+        <td class="artist-cell"><span class="truncate" title="${escapeHtml(s._artist)}">${escapeHtml(s._artist)}</span></td>
+        <td class="avg-cell">${avgHtml}</td>
+        <td class="plays-cell">
+          <div class="plays" title="${s._plays} plays">
+            <div class="bar"><div class="bar-fill" style="width:${pct}%"></div></div>
+            <div class="count">${s._plays}</div>
+          </div>
+        </td>
+        <td class="recent-cell small">${escapeHtml(recent)}</td>
+      </tr>
+    `;
+  }).join("");
+
+  // render table + wire header clicks
+  els.songsList.innerHTML = `
+    <div class="table-wrap">
+      <table class="data" id="songsDataTable">
+        <thead>
+          <tr>
+            <th style="width:56px;text-align:center;">#</th>
+            <th data-col="title">Title ${icon("title")}</th>
+            <th data-col="artist">Artist ${icon("artist")}</th>
+            <th style="width:120px;text-align:right;" data-col="avg">Avg ${icon("avg")}</th>
+            <th style="width:220px;" data-col="plays">Plays ${icon("plays")}</th>
+            <th style="width:170px;" data-col="recency">Last played ${icon("recency")}</th>
+          </tr>
+        </thead>
+        <tbody>${body}</tbody>
+      </table>
+      <div class="muted small" style="margin-top:6px;">Showing ${Math.min(rows.length, 300)} of ${rows.length} songs.</div>
     </div>
-  `).join("");
-  els.songsList.innerHTML = html;
+  `;
+
+  // header-click sorting
+  const thead = document.querySelector("#songsDataTable thead");
+  if (thead) {
+    thead.onclick = (ev) => {
+      const th = ev.target.closest("th[data-col]");
+      if (!th) return;
+      const col = th.getAttribute("data-col");
+      const [ck, cd] = sortSel.split(":");
+      const nextDir = (ck === col) ? (cd === "asc" ? "desc" : "asc") : (col === "title" || col === "artist" ? "asc" : "desc");
+      setSongSort(col, nextDir);
+    };
+  }
 }
+
 
 
 async function refreshSongs(){
