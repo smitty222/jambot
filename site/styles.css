@@ -239,49 +239,81 @@ button:focus-visible, .input:focus-visible, a:focus-visible{
   vertical-align: middle;
 }
 
-#viewSongs td.rank{ width:56px; text-align:center; color:var(--muted); font-weight:700 }
+#viewSongs td.rank{
+  width:56px; text-align:center; color:var(--muted); font-weight:700;
+}
 
 #viewSongs td.title-cell{ max-width: 340px }
 #viewSongs td.artist-cell{ max-width: 220px }
 
 #viewSongs .truncate{
-  display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  display:inline-block; max-width:100%;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
 
-#viewSongs .avg-cell{ text-align:right; }
+/* Avg / reaction chips */
+#viewSongs .avg-cell,
+#viewSongs .likes-cell,
+#viewSongs .dislikes-cell,
+#viewSongs .stars-cell{
+  text-align:right;
+}
 #viewSongs .avg-badge{
   display:inline-flex; align-items:center; gap:6px;
   padding: 2px 8px; border-radius:999px; border:1px solid var(--border);
   background: color-mix(in hsl, var(--bg-elev) 88%, black 4%);
-  font-weight:600;
+  font-weight:600; font-variant-numeric: tabular-nums;
+}
+
+/* Chips for likes / dislikes / stars */
+#viewSongs .chip{
+  display:inline-flex; align-items:center; gap:6px;
+  padding: 2px 8px; border-radius:999px; border:1px solid var(--border);
+  background: color-mix(in hsl, var(--bg-elev) 88%, black 4%);
+  font-weight:600; font-variant-numeric: tabular-nums;
+}
+#viewSongs .chip-ok{
+  border-color: color-mix(in hsl, var(--border) 40%, var(--ok) 60%);
+}
+#viewSongs .chip-warn{
+  border-color: color-mix(in hsl, var(--border) 40%, var(--warn) 60%);
 }
 
 /* Plays bar */
-#viewSongs .plays-cell{ width:220px }
+#viewSongs .plays-cell{ width:240px }
 #viewSongs .plays{
   display:flex; align-items:center; gap:10px;
 }
 #viewSongs .bar{
   position:relative; flex:1 1 auto; height:8px; border-radius:999px;
   background: color-mix(in hsl, var(--bg-elev) 92%, #000 6%);
-  border:1px solid var(--border);
-  overflow:hidden;
+  border:1px solid var(--border); overflow:hidden;
 }
 #viewSongs .bar-fill{
   height:100%; border-radius:999px;
   background: linear-gradient(90deg, var(--brand), var(--brand-2));
 }
-#viewSongs .count{ width:60px; text-align:right; font-variant-numeric: tabular-nums; }
+#viewSongs .count{
+  width:70px; text-align:right; font-variant-numeric: tabular-nums;
+}
 
 /* Last played */
 #viewSongs .recent-cell{ color:var(--muted) }
 
-/* Responsive: tuck artist under title on narrow screens */
+/* Suggested column widths */
+#viewSongs th[data-col="avg"]{ width:120px; text-align:right }
+#viewSongs th[data-col="likes"]{ width:110px; text-align:right }
+#viewSongs th[data-col="dislikes"]{ width:120px; text-align:right }
+#viewSongs th[data-col="stars"]{ width:100px; text-align:right }
+#viewSongs th[data-col="plays"]{ width:240px }
+
+/* Responsive: tuck artist under title and hide some cols on narrow screens */
 @media (max-width: 900px){
   #viewSongs td.artist-cell{ display:none }
   #viewSongs .artist-mobile{ display:block }
+  #viewSongs td.dislikes-cell,
+  #viewSongs td.stars-cell{ display:none } /* optional hide on small screens */
 }
 @media (min-width: 901px){
   #viewSongs .artist-mobile{ display:none }
 }
-

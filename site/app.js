@@ -572,10 +572,10 @@ if (els.albumSort)     els.albumSort.addEventListener("change", renderAlbums);
 
 // ------------- Songs -------------
 let _songsRaw = [];
-// helper: set/select current sort and re-render
+// keep this helper if you already added it
 function setSongSort(key, dir){
   const next = `${key}:${dir}`;
-  if (els.songSort) els.songSort.value = next;   // keep dropdown in sync
+  if (els.songSort) els.songSort.value = next;
   renderSongs();
 }
 
@@ -587,43 +587,42 @@ function renderSongs(){
 
   let rows = Array.isArray(_songsRaw) ? [..._songsRaw] : [];
 
-  // normalize
+  // normalize fields coming from /api/db/top_songs
   rows = rows.map(s => {
-    const title  = String(val(s, "title","name") ?? "");
-    const artist = String(val(s, "artist","artist_name") ?? "");
-    const plays  = Number(val(s, "plays","numPlays","total_plays")) || 0;
-    const avgVal = Number(val(s, "avg","avg_rating","avg_score"));
-    const avg    = isNaN(avgVal) ? undefined : avgVal;
-    const recent = val(s, "lastPlayed","last_played","recent_played_at","updatedAt","updated_at");
-    return { ...s, _title:title, _artist:artist, _plays:plays, _avg:avg, _recent:recent };
+    const title   = String(val(s, "title","name") ?? "");
+    const artist  = String(val(s, "artist","artist_name") ?? "");
+    const plays   = Number(val(s, "plays","numPlays","total_plays")) || 0;
+    const avgVal  = Number(val(s, "avg","avg_rating","avg_score"));
+    const avg     = isNaN(avgVal) ? undefined : avgVal;
+    const recent  = val(s, "lastPlayed","last_played","recent_played_at","updatedAt","updated_at");
+    const likes   = Number(val(s, "likes","likeCount","like_count")) || 0;
+    const dislikes= Number(val(s, "dislikes","dislikeCount","dislike_count")) || 0;
+    const stars   = Number(val(s, "stars","starCount","star_count","starRating","star_rating")) || 0;
+    return { ...s, _title:title, _artist:artist, _plays:plays, _avg:avg, _recent:recent, _likes:likes, _dislikes:dislikes, _stars:stars };
   });
 
-  // drop “unknown” titles
+  // drop “unknown”, then search
   rows = rows.filter(s => s._title && s._title.trim().toLowerCase() !== "unknown");
-
-  // search
-  if (q) rows = rows.filter(s =>
-    s._title.toLowerCase().includes(q) || s._artist.toLowerCase().includes(q)
-  );
+  if (q) rows = rows.filter(s => s._title.toLowerCase().includes(q) || s._artist.toLowerCase().includes(q));
 
   // sort
   const [key, dir] = sortSel.split(":");
   const mult = dir === "asc" ? 1 : -1;
   rows.sort((a,b) => {
     switch (key) {
-      case "avg": {
-        const av = a._avg ?? -Infinity, bv = b._avg ?? -Infinity;
-        return (av - bv) * mult;
-      }
+      case "avg":      return ((a._avg ?? -Infinity)      - (b._avg ?? -Infinity))      * mult;
       case "recency": {
-        const at = a._recent ? new Date(a._recent).getTime() : 0;
-        const bt = b._recent ? new Date(b._recent).getTime() : 0;
+        const at = a._recent ? new Date(typeof a._recent === 'number' && a._recent < 1e12 ? a._recent*1000 : a._recent).getTime() : 0;
+        const bt = b._recent ? new Date(typeof b._recent === 'number' && b._recent < 1e12 ? b._recent*1000 : b._recent).getTime() : 0;
         return (at - bt) * mult;
       }
-      case "title":  return a._title.localeCompare(b._title, undefined, {sensitivity:"base"}) * mult;
-      case "artist": return a._artist.localeCompare(b._artist, undefined, {sensitivity:"base"}) * mult;
+      case "title":    return a._title .localeCompare(b._title,  undefined, {sensitivity:"base"}) * mult;
+      case "artist":   return a._artist.localeCompare(b._artist, undefined, {sensitivity:"base"}) * mult;
+      case "likes":    return (a._likes    - b._likes)    * mult;
+      case "dislikes": return (a._dislikes - b._dislikes) * mult;
+      case "stars":    return (a._stars    - b._stars)    * mult;
       case "plays":
-      default:       return (a._plays - b._plays) * mult; // plays:desc = highest first
+      default:         return (a._plays    - b._plays)    * mult;
     }
   });
 
@@ -633,19 +632,16 @@ function renderSongs(){
   }
 
   const maxPlays = Math.max(1, ...rows.map(r => r._plays));
-
-  // compute header chevrons
   const icon = (k) => {
     const [ck, cd] = sortSel.split(":");
     if (k !== ck) return `<span class="sort">↕</span>`;
     return `<span class="sort">${cd === "asc" ? "▲" : "▼"}</span>`;
   };
 
-  // build table body
   const body = rows.slice(0, 300).map((s, i) => {
-    const pct = Math.round((s._plays / maxPlays) * 100);
-    const avgHtml = typeof s._avg === "number" ? `<span class="avg-badge">${s._avg.toFixed(2)}</span>` : "—";
-    const recent  = s._recent ? briefDate(s._recent) : "—";
+    const pct    = Math.round((s._plays / maxPlays) * 100);
+    const avgTxt = (typeof s._avg === "number") ? s._avg.toFixed(2) : "—";
+    const recent = s._recent ? briefDate(s._recent) : "—";
     return `
       <tr>
         <td class="rank">${i + 1}</td>
@@ -654,7 +650,10 @@ function renderSongs(){
           <span class="artist-mobile muted small truncate" title="${escapeHtml(s._artist)}">${escapeHtml(s._artist)}</span>
         </td>
         <td class="artist-cell"><span class="truncate" title="${escapeHtml(s._artist)}">${escapeHtml(s._artist)}</span></td>
-        <td class="avg-cell">${avgHtml}</td>
+        <td class="avg-cell"><span class="avg-badge">${avgTxt}</span></td>
+        <td class="likes-cell"><span class="chip chip-ok" title="Likes">👍 ${s._likes}</span></td>
+        <td class="dislikes-cell"><span class="chip chip-warn" title="Dislikes">👎 ${s._dislikes}</span></td>
+        <td class="stars-cell"><span class="chip" title="Stars">⭐ ${s._stars}</span></td>
         <td class="plays-cell">
           <div class="plays" title="${s._plays} plays">
             <div class="bar"><div class="bar-fill" style="width:${pct}%"></div></div>
@@ -666,7 +665,6 @@ function renderSongs(){
     `;
   }).join("");
 
-  // render table + wire header clicks
   els.songsList.innerHTML = `
     <div class="table-wrap">
       <table class="data" id="songsDataTable">
@@ -675,8 +673,11 @@ function renderSongs(){
             <th style="width:56px;text-align:center;">#</th>
             <th data-col="title">Title ${icon("title")}</th>
             <th data-col="artist">Artist ${icon("artist")}</th>
-            <th style="width:120px;text-align:right;" data-col="avg">Avg ${icon("avg")}</th>
-            <th style="width:220px;" data-col="plays">Plays ${icon("plays")}</th>
+            <th style="width:110px;text-align:right;" data-col="avg">Avg ${icon("avg")}</th>
+            <th style="width:110px;text-align:right;" data-col="likes">Likes ${icon("likes")}</th>
+            <th style="width:120px;text-align:right;" data-col="dislikes">Dislikes ${icon("dislikes")}</th>
+            <th style="width:100px;text-align:right;" data-col="stars">Stars ${icon("stars")}</th>
+            <th style="width:240px;" data-col="plays">Plays ${icon("plays")}</th>
             <th style="width:170px;" data-col="recency">Last played ${icon("recency")}</th>
           </tr>
         </thead>
@@ -694,13 +695,12 @@ function renderSongs(){
       if (!th) return;
       const col = th.getAttribute("data-col");
       const [ck, cd] = sortSel.split(":");
-      const nextDir = (ck === col) ? (cd === "asc" ? "desc" : "asc") : (col === "title" || col === "artist" ? "asc" : "desc");
+      const defaultDir = (col === "title" || col === "artist") ? "asc" : "desc";
+      const nextDir = (ck === col) ? (cd === "asc" ? "desc" : "asc") : defaultDir;
       setSongSort(col, nextDir);
     };
   }
 }
-
-
 
 async function refreshSongs(){
   if (!els.songsList) return;

@@ -8,18 +8,23 @@
 export const PUBLIC_VIEWS = {
   // Most-played songs (public, compact)
   top_songs: {
-    sql: `
-      SELECT
-      trackName  AS title,
-      artistName AS artist,
-      playCount  AS plays,
-      averageReview AS avg
+  sql: `
+    SELECT
+      trackName     AS title,
+      artistName    AS artist,
+      playCount     AS plays,
+      averageReview AS avg,
+      lastPlayed,      
+      likes,                    
+      dislikes,
+      stars
     FROM room_stats
-    WHERE LOWER(COALESCE(trackName, '')) <> 'unknown'   -- 👈 filter here
+    WHERE LOWER(COALESCE(trackName, '')) <> 'unknown'
     ORDER BY playCount DESC, COALESCE(averageReview, 0) DESC, trackName ASC
     LIMIT 200
-    `
-  },
+  `
+},
+
 
   // Highest craps record (1 row)
   craps_records_public: {
