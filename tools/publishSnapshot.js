@@ -1,4 +1,4 @@
-// src/publish/publishDbSnapshot.js
+// src/tools/publishSnapshot.js
 // Publishes curated PUBLIC views to /api/db/* and mirrors ALL raw DB tables to MOD-only /api/db_mod/*
 
 /**
@@ -85,15 +85,26 @@ lottery_stats_public: {
   album_stats_public: {
     sql: `
       SELECT
-        albumName  AS title,
-        artistName AS artist,
-        trackCount AS tracks,
-        averageReview AS avg
+      id,
+      albumName,
+      artistName,
+      albumArt,
+      averageReview
       FROM album_stats
-      ORDER BY avg DESC, tracks DESC, title ASC
+      ORDER BY averageReview DESC, trackCount DESC, albumName ASC
       LIMIT 200
-    `
+      `
   },
+
+  album_review_counts_public: {
+  sql: `
+    SELECT
+      albumId AS id,
+      COUNT(*) AS reviews
+    FROM album_reviews
+    GROUP BY albumId
+  `
+},
 
   // Themes (very small, safe)
   themes_public: {
