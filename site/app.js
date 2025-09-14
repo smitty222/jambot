@@ -76,11 +76,10 @@ const els = {
   // albums
   albumSearch: $("albumSearch"),
   albumSort: $("albumSort"),
-  albumMinRated: $("albumMinRated"),
+  albumMinRated: $("albumMinRated"),   // ok if it doesn't exist; we ignore it
   albumMinPlays: $("albumMinPlays"),
-  albumsList: $("albumsList"),
-  albumsTop5: $("albumsTop5"),
-  albumsRest: $("albumsRest"),
+  albumsAll: $("albumsAll"),           // NEW
+  albumsList: $("albumsList"),      
 
   // songs
   songSearch: $("songSearch"),
@@ -453,58 +452,15 @@ async function getAlbumReviewCounts(){
   return map;
 }
 
-function renderAlbums(){
-  if (!els.albumsTop5 || !els.albumsRest) return;
-
-  const q = (els.albumSearch?.value || "").toLowerCase().trim();
-  const minReviews = Math.max(0, Number(els.albumMinPlays?.value || 0));
-  const hideUnrated = !!els.albumMinRated?.checked;
-
-  let rows = Array.isArray(_albumsRaw) ? [..._albumsRaw] : [];
-  rows = rows.map(a => {
-    const id      = Number(a.id);
-    const title   = String(a.albumName ?? "");
-    const artist  = String(a.artistName ?? "");
-    const cover   = String(a.albumArt ?? "");
-    const avgRaw  = a.averageReview;
-    const avg     = (avgRaw == null || isNaN(Number(avgRaw))) ? undefined : Number(avgRaw);
-    const reviews = Number(_reviewCounts[id] || 0);
-    return { ...a, _id:id, _title:title, _artist:artist, _cover:cover, _avg:avg, _reviews:reviews };
-  });
-
-  if (q) rows = rows.filter(a => a._title.toLowerCase().includes(q) || a._artist.toLowerCase().includes(q));
-  if (hideUnrated) rows = rows.filter(a => typeof a._avg === "number");
-  if (minReviews > 0) rows = rows.filter(a => a._reviews >= minReviews);
-
-  const reviewed = rows.filter(a => (typeof a._avg === "number") && a._reviews > 0);
-
-  reviewed.sort((a,b) => {
-    if ((b._avg ?? -Infinity) !== (a._avg ?? -Infinity)) return (b._avg ?? -Infinity) - (a._avg ?? -Infinity);
-    if (b._reviews !== a._reviews) return b._reviews - a._reviews;
-    return a._title.localeCompare(b._title);
-  });
-
-  const top5 = reviewed.slice(0, 5);
-  els.albumsTop5.innerHTML = top5.length === 0
-    ? `<div class="muted small">No reviewed albums found.</div>`
-    : renderTop5Table(top5);
-
-  const rest = reviewed.slice(5);
-  els.albumsRest.innerHTML = rest.length === 0
-    ? `<div class="muted small">No more reviewed albums.</div>`
-    : renderRestTable(rest, 6);
-}
-
-function renderTop5Table(list){
+function renderAlbumsTable(list){
   const rows = list.map((a, i) => {
-    const rank = i + 1;
     const cover = a._cover
       ? `<img src="${escapeHtml(a._cover)}" alt="" loading="lazy" referrerpolicy="no-referrer"
               style="width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid #eee;" />`
       : `<div style="width:44px;height:44px;border-radius:6px;background:#f3f4f6;border:1px solid #eee;"></div>`;
     return `
       <tr>
-        <td style="text-align:center;">${rank}</td>
+        <td style="text-align:center;">${i + 1}</td>
         <td>${cover}</td>
         <td>${escapeHtml(a._title)}</td>
         <td>${escapeHtml(a._artist)}</td>
@@ -516,74 +472,93 @@ function renderTop5Table(list){
 
   return `
     <div class="table-wrap">
-      <table class="data">
+      <table class="data" id="albumsDataTable">
         <thead>
           <tr>
             <th style="width:48px;text-align:center;">#</th>
             <th style="width:60px;">Cover</th>
-            <th>Album</th>
-            <th>Artist</th>
-            <th style="width:120px;text-align:right;">Avg rating</th>
-            <th style="width:120px;text-align:right;">Reviews</th>
+            <th data-col="title">Album</th>
+            <th data-col="artist">Artist</th>
+            <th style="width:140px;text-align:right;" data-col="avg">Avg rating</th>
+            <th style="width:140px;text-align:right;" data-col="reviews">Reviews</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
+      <div class="muted small" style="margin-top:6px;">Showing ${list.length} reviewed albums.</div>
     </div>
   `;
 }
 
-function renderRestTable(list, startRank){
-  const rows = list.map((a, idx) => {
-    const rank = startRank + idx;
-    return `
-      <tr>
-        <td style="text-align:center;">${rank}</td>
-        <td>${escapeHtml(a._title)}</td>
-        <td>${escapeHtml(a._artist)}</td>
-        <td style="text-align:right;">${Number(a._avg).toFixed(2)}</td>
-        <td style="text-align:right;">${a._reviews}</td>
-      </tr>
-    `;
-  }).join("");
+function renderAlbums(){
+  if (!els.albumsAll) return;
 
-  return `
-    <div class="table-wrap">
-      <table class="data">
-        <thead>
-          <tr>
-            <th style="width:48px;text-align:center;">#</th>
-            <th>Album</th>
-            <th>Artist</th>
-            <th style="width:120px;text-align:right;">Avg rating</th>
-            <th style="width:120px;text-align:right;">Reviews</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-      <div class="muted small" style="margin-top:6px;">Showing ${list.length} albums.</div>
-    </div>
-  `;
+  const q = (els.albumSearch?.value || "").toLowerCase().trim();
+  const minReviews = Math.max(0, Number(els.albumMinPlays?.value || 0));
+  const sortSel = (els.albumSort?.value || "avg:desc").toLowerCase(); // key:dir
+
+  // normalize
+  let rows = Array.isArray(_albumsRaw) ? [..._albumsRaw] : [];
+  rows = rows.map(a => {
+    const id      = Number(a.id ?? a.albumId ?? a.album_id);
+    const title   = String(a.albumName ?? a.title ?? "");
+    const artist  = String(a.artistName ?? a.artist ?? "");
+    const cover   = String(a.albumArt ?? a.cover ?? "");
+    const avgRaw  = a.averageReview ?? a.avg;
+    const avg     = (avgRaw == null || isNaN(Number(avgRaw))) ? undefined : Number(avgRaw);
+    const reviews = Number(_reviewCounts[id] || a.reviews || 0);
+    return { ...a, _id:id, _title:title, _artist:artist, _cover:cover, _avg:avg, _reviews:reviews };
+  });
+
+  // filters: reviewed only
+  rows = rows.filter(a => (typeof a._avg === "number") && a._reviews > 0);
+
+  if (q) rows = rows.filter(a =>
+    a._title.toLowerCase().includes(q) || a._artist.toLowerCase().includes(q)
+  );
+  if (minReviews > 0) rows = rows.filter(a => a._reviews >= minReviews);
+
+  // sorting
+  const [key, dir] = sortSel.split(':');
+  const mult = dir === 'asc' ? 1 : -1;
+  rows.sort((a,b) => {
+    switch (key) {
+      case 'reviews': return (a._reviews - b._reviews) * mult;
+      case 'title':   return a._title.localeCompare(b._title) * mult;
+      case 'artist':  return a._artist.localeCompare(b._artist) * mult;
+      case 'avg':
+      default: {
+        const av = a._avg ?? -Infinity;
+        const bv = b._avg ?? -Infinity;
+        return (av - bv) * mult;
+      }
+    }
+  }).reverse(); // to maintain your previous "desc first" feel
+
+  els.albumsAll.innerHTML = rows.length
+    ? renderAlbumsTable(rows)
+    : `<div class="muted small">No reviewed albums match.</div>`;
 }
 
 async function refreshAlbums(){
-  if (!els.albumsTop5 || !els.albumsRest) return;
+  if (!els.albumsAll) return;
   try {
-    els.albumsTop5.innerHTML = `<div class="muted small">Loading…</div>`;
-    els.albumsRest.innerHTML = `<div class="muted small">Loading…</div>`;
+    els.albumsAll.innerHTML = `<div class="muted small">Loading…</div>`;
 
+    // album stats (public view)
     const stats = await apiGet("/api/db/album_stats_public");
     _albumsRaw = Array.isArray(stats) ? stats : [];
 
+    // review counts (prefer public aggregate)
     _reviewCounts = await getAlbumReviewCounts();
 
     renderAlbums();
   } catch (e) {
     const err = `<div class="muted small">Error: ${escapeHtml(e.message)}</div>`;
-    els.albumsTop5.innerHTML = err;
-    els.albumsRest.innerHTML = err;
+    els.albumsAll.innerHTML = err;
   }
 }
+
 
 // Controls
 if (els.albumSearch)   els.albumSearch.addEventListener("input", renderAlbums);
@@ -596,24 +571,30 @@ let _songsRaw = [];
 function renderSongs(){
   if (!els.songsList) return;
   const q = (els.songSearch?.value || "").toLowerCase().trim();
-  const sort = els.songSort?.value || "plays:desc";
+  const sort = (els.songSort?.value || "plays:desc").toLowerCase();
 
   let rows = Array.isArray(_songsRaw) ? [..._songsRaw] : [];
 
   rows = rows.map(s => {
-    const title = String(val(s, "title","name") ?? "");
+    const title  = String(val(s, "title","name") ?? "");
     const artist = String(val(s, "artist","artist_name") ?? "");
-    const plays = Number(val(s, "plays","numPlays","total_plays")) || 0;
-    const avg = Number(val(s, "avg","avg_rating","avg_score"));
+    const plays  = Number(val(s, "plays","numPlays","total_plays")) || 0;
+    const avgVal = Number(val(s, "avg","avg_rating","avg_score"));
+    const avg    = isNaN(avgVal) ? undefined : avgVal;
     const recent = val(s, "lastPlayed","last_played","recent_played_at","updatedAt","updated_at");
-    return { ...s, _title:title, _artist:artist, _plays:plays, _avg: isNaN(avg) ? undefined : avg, _recent:recent };
+    return { ...s, _title:title, _artist:artist, _plays:plays, _avg:avg, _recent:recent };
   });
 
+  // 🚫 drop “unknown” titles
+  rows = rows.filter(s => s._title && s._title.trim().toLowerCase() !== "unknown");
+
+  // search filter
   if (q) rows = rows.filter(s => s._title.toLowerCase().includes(q) || s._artist.toLowerCase().includes(q));
 
+  // sort (fix: remove the old .reverse())
   const [key, dir] = sort.split(":");
+  const mult = dir === "asc" ? 1 : -1;
   rows.sort((a,b) => {
-    const mult = (dir === "asc" ? 1 : -1);
     switch (key) {
       case "avg": {
         const av = a._avg ?? -Infinity, bv = b._avg ?? -Infinity;
@@ -624,12 +605,12 @@ function renderSongs(){
         const bt = b._recent ? new Date(b._recent).getTime() : 0;
         return (at - bt) * mult;
       }
-      case "title": return a._title.localeCompare(b._title) * mult;
+      case "title":  return a._title.localeCompare(b._title)   * mult;
       case "artist": return a._artist.localeCompare(b._artist) * mult;
       case "plays":
-      default: return (a._plays - b._plays) * mult;
+      default:       return (a._plays - b._plays) * mult; // plays:desc gives highest first
     }
-  }).reverse();
+  });
 
   if (rows.length === 0) {
     els.songsList.innerHTML = `<div class="muted small">No songs match.</div>`;
@@ -644,8 +625,9 @@ function renderSongs(){
       ${s._recent ? `<div class="muted small">last ${escapeHtml(briefDate(s._recent))}</div>` : ``}
     </div>
   `).join("");
-  els.songsList.innerHTML = html || `<div class="muted small">No songs.</div>`;
+  els.songsList.innerHTML = html;
 }
+
 
 async function refreshSongs(){
   if (!els.songsList) return;

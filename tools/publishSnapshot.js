@@ -10,13 +10,14 @@ export const PUBLIC_VIEWS = {
   top_songs: {
     sql: `
       SELECT
-        trackName  AS title,
-        artistName AS artist,
-        playCount  AS plays,
-        averageReview AS avg
-      FROM room_stats
-      ORDER BY playCount DESC, COALESCE(averageReview, 0) DESC, trackName ASC
-      LIMIT 200
+      trackName  AS title,
+      artistName AS artist,
+      playCount  AS plays,
+      averageReview AS avg
+    FROM room_stats
+    WHERE LOWER(COALESCE(trackName, '')) <> 'unknown'   -- 👈 filter here
+    ORDER BY playCount DESC, COALESCE(averageReview, 0) DESC, trackName ASC
+    LIMIT 200
     `
   },
 

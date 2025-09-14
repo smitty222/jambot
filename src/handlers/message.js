@@ -2042,7 +2042,7 @@ if (/^\/(hit|stand|double|surrender|split)\b/i.test(txt) && getPhase(ctx) === 'a
   // 1) DB-backed current_state first
   let song = null
   try {
-    const row = await getCurrentState?.()
+    const row = await Promise.resolve(getCurrentState?.())
     if (row?.trackName && row?.artistName) {
       song = {
         songId: row.songId ?? null,
@@ -2129,7 +2129,7 @@ if (/^\/(hit|stand|double|surrender|split)\b/i.test(txt) && getPhase(ctx) === 'a
         // If we have a spotifyTrackId, enrich the card; else post plain text
           if (song.spotifyTrackId) {
             const songData = await fetchSongData(song.spotifyTrackId)
-            const reviewText = `${parseFloat(song.averageReview).toFixed(1)}⭐ from ${song.reviewCount} review${song.reviewCount > 1 ? 's' : ''}`
+            const reviewText = `${parseFloat(song.averageReview).toFixed(1)}/10 ⭐ from ${song.reviewCount} review${song.reviewCount > 1 ? 's' : ''}`
             const songLabel = `*${song.artistName} – ${song.trackName}*`
 
             await postMessage({
@@ -2148,14 +2148,14 @@ if (/^\/(hit|stand|double|surrender|split)\b/i.test(txt) && getPhase(ctx) === 'a
               }
             })
           } else {
-            const reviewText = `${parseFloat(song.averageReview).toFixed(1)}⭐ from ${song.reviewCount} review${song.reviewCount > 1 ? 's' : ''}`
+            const reviewText = `${parseFloat(song.averageReview).toFixed(1)}/10 ⭐ from ${song.reviewCount} review${song.reviewCount > 1 ? 's' : ''}`
             const songLabel = `*${song.artistName} – ${song.trackName}*`
             await postMessage({ room, message: `${emoji} ${songLabel} (${reviewText})` })
           }
         } catch (err) {
           console.error(`❌ Failed to fetch song data for ${song.trackName}:`, err.message)
           // Fallback to text if the fetch fails
-          const reviewText = `${parseFloat(song.averageReview).toFixed(1)}⭐ from ${song.reviewCount} review${song.reviewCount > 1 ? 's' : ''}`
+          const reviewText = `${parseFloat(song.averageReview).toFixed(1)}/10 ⭐ from ${song.reviewCount} review${song.reviewCount > 1 ? 's' : ''}`
           const songLabel = `*${song.artistName} – ${song.trackName}*`
           await postMessage({ room, message: `${emoji} ${songLabel} (${reviewText})` })
         }
@@ -2331,9 +2331,9 @@ if (/^\/(hit|stand|double|surrender|split)\b/i.test(txt) && getPhase(ctx) === 'a
       })
     } else {
       await postMessage({
-        room,
-        message: `"${currentSong.trackName}" by ${currentSong.artistName} has an average rating of ${ratingInfo.average}/10 from ${ratingInfo.count} review${ratingInfo.count === 1 ? '' : 's'}.`
-      })
+    room,
+    message: `"${currentSong.trackName}" by ${currentSong.artistName} has an average rating of ${Number(ratingInfo.average).toFixed(1)}/10 from ${ratingInfo.count} review${ratingInfo.count === 1 ? '' : 's'}.`
+    })
     }
   } else if (payload.message.startsWith('/albumreview')) {
     const __rStr = payload.message.replace('/albumreview', '').trim()
@@ -2357,7 +2357,7 @@ if (/^\/(hit|stand|double|surrender|split)\b/i.test(txt) && getPhase(ctx) === 'a
 
     // 3️⃣ Fallback to DB if needed
     if (!album) {
-      const row = getCurrentState() // from dbcurrent.js
+      const row = await Promise.resolve(getCurrentState?.())
       if (row && row.albumAlbumID && row.albumNameField) {
         album = {
           albumID: row.albumAlbumID,
@@ -2936,7 +2936,7 @@ Set with: /infotone <tone>`
 
     // new fallback (correct)
     if (!song) {
-      const row = getCurrentState()
+      const row = await Promise.resolve(getCurrentState?.())
       if (row?.currentSong?.trackName) {
         const cs = row.currentSong
         song = {
@@ -3037,6 +3037,15 @@ Set with: /infotone <tone>`
     `).get(songStats.songId ?? currentSong.songId)
       const reviewsCount = reviewRow?.cnt ?? 0
 
+      // Live average from song_reviews (rounded 1 decimal)
+    const avgRow = db.prepare(`
+      SELECT ROUND(AVG(rating), 1) AS avg
+      FROM song_reviews
+      WHERE songId = ?
+      `).get(songStats.songId ?? currentSong.songId)
+      const avgLive = (avgRow?.avg != null) ? Number(avgRow.avg).toFixed(1) : null
+
+
       // First played (by names)
       const bounds = db.prepare(`
       SELECT MIN(playedAt) AS firstPlayed
@@ -3058,7 +3067,8 @@ Set with: /infotone <tone>`
       const heartsPP = perPlay(hearts, plays)
       const engagePP = perPlay(likes + dislikes + hearts, plays)
 
-      const avg = songStats.averageReview != null ? Number(songStats.averageReview).toFixed(1) : null
+      const avg = (avgLive != null) ? avgLive
+      : (songStats.averageReview != null ? Number(songStats.averageReview).toFixed(1) : null)
       const durationStr = formatDuration(
         songStats.songDuration,
         [currentSong.songDuration, currentSong.duration]
@@ -3146,7 +3156,7 @@ Set with: /infotone <tone>`
 
   // 2) DB fallback (map fields from current_state singleton)
   if (!album) {
-    const row = getCurrentState?.()
+    const row = await Promise.resolve(getCurrentState?.())
     if (row && (row.albumNameField || row.albumAlbumID || row.albumArtistName)) {
       album = {
         albumID: row.albumAlbumID ?? row.albumID ?? null,
@@ -3207,7 +3217,7 @@ Set with: /infotone <tone>`
 
     // 2️⃣ DB fallback
     if (!artUrl) {
-      const row = getCurrentState()
+      const row = await Promise.resolve(getCurrentState?.())
       artUrl = row?.albumArt || null
     }
 
@@ -3227,7 +3237,7 @@ Set with: /infotone <tone>`
 
     // 2️⃣ DB fallback
     if (!song) {
-      const row = getCurrentState()
+      const row = await Promise.resolve(getCurrentState?.())
       if (row && row.trackName) {
         song = {
           trackName: row.trackName,
