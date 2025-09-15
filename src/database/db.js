@@ -7,15 +7,31 @@ import { fileURLToPath } from 'url'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-// Allow override with DB_PATH; default to repo-local
-const defaultPath = path.join(__dirname, '../data/app.db')
-const dbPath = process.env.DB_PATH || defaultPath
+// Prefer explicit env, then Fly volume, then repo-local file
+const repoDefault = path.join(__dirname, '../data/app.db')
+const flyDir = '/data'
 
-fs.mkdirSync(path.dirname(dbPath), { recursive: true })
+const candidates = [
+  process.env.DB_PATH,                                  // e.g. /data/app.db (Fly)
+  fs.existsSync(flyDir) ? path.join(flyDir, 'app.db') : null, // auto-pick /data if mounted
+  repoDefault,                                          // local dev fallback
+].filter(Boolean)
 
-const db = new Database(dbPath)
+const DB_PATH = candidates[0]
+
+// Ensure parent directory exists
+fs.mkdirSync(path.dirname(DB_PATH), { recursive: true })
+
+// Helpful boot log to confirm which file is used in Fly logs
+const source =
+  process.env.DB_PATH ? 'env'
+  : (DB_PATH.startsWith('/data') ? 'fly-auto' : 'repo-default')
+console.log(`[db] Using ${DB_PATH} (${source})`)
+
+const db = new Database(DB_PATH)
 db.pragma('journal_mode = WAL')
 db.pragma('synchronous = NORMAL')
 db.pragma('busy_timeout = 5000')
 
+export { DB_PATH }
 export default db
