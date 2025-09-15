@@ -305,7 +305,7 @@ export async function announceNowPlaying (room) {
     }
 
     if (avgInfo.found) {
-      message += `\n⭐ ${avgInfo.average}/5 (${avgInfo.count} rating${avgInfo.count === 1 ? '' : 's'})`
+      message += `\n⭐ ${avgInfo.average}/10 (${avgInfo.count} rating${avgInfo.count === 1 ? '' : 's'})`
     }
 
     // Always post the base message immediately
