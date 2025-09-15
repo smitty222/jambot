@@ -149,7 +149,7 @@ const handleAlbumTheme = async (_payload) => {
 📀 Now Playing: *${trackName}*  
 📊 Progress: ${progressBar}
 
-💬 Use \`/albumreview\` to rate tracks. Type \`/reviewhelp\` to see the rating scale!`
+💬 Use \`/albumreview\` to rate this album. Type \`/reviewhelp\` to see the rating scale!`
       })
     }
 

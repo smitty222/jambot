@@ -31,7 +31,7 @@ import {
   handleBlackjackBet, handleHit, handleStand, handleDouble, handleSurrender, handleSplit,
   getFullTableView, getPhase
 } from '../games/blackjack/blackJack.js'
-import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand, handleRandomCyberCommand, handleVibesGuyCommand, handleFacesCommand, handleDoDoCommand, handleFlowerPowerCommand, handleDumDumCommand, handleRandomCosmicCommand, handleRandomLovableCommand, handleBot3Command } from './avatarCommands.js'
+import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand, handleRandomCyberCommand, handleVibesGuyCommand, handleFacesCommand, handleDoDoCommand, handleFlowerPowerCommand, handleDumDumCommand, handleRandomCosmicCommand, handleRandomLovableCommand, handleBot3Command, handleAnonCommand, handleGhostCommand } from './avatarCommands.js'
 import { markUser, getMarkedUser } from '../utils/removalQueue.js'
 import { extractUserFromText, isLotteryQuestion } from '../database/dblotteryquestionparser.js'
 import { askMagic8Ball } from './magic8Ball.js'
@@ -889,54 +889,57 @@ Please refresh your page for the queue to update`
       return
     }
 
-    const currentDJ = getCurrentDJ(state)
-    if (!currentDJ || currentDJ.length === 0) {
+    // Use the same API you use for /djbeers, then pick the *now-playing* DJ
+    const currentDJUUIDs = getCurrentDJUUIDs(state)
+    if (!currentDJUUIDs || currentDJUUIDs.length === 0) {
       await postMessage({ room, message: `<@uid:${senderUUID}>, there is no DJ currently playing.` })
       return
     }
 
-    // exclude the tipper from recipients
-    const recipients = currentDJ.filter(u => u && u !== senderUUID)
-    if (recipients.length === 0) {
+    // Convention: index 0 is the currently playing DJ
+    const recipientUUID = currentDJUUIDs[0]
+
+    // Prevent tipping yourself
+    if (!recipientUUID || recipientUUID === senderUUID) {
       await postMessage({ room, message: 'You cannot tip yourself.' })
       return
     }
 
+    // Verify balance
     const balance = await getUserWallet(senderUUID)
-    if (!Number.isFinite(balance) || balance < amount) {
-      await postMessage({ room, message: `Insufficient funds. Your balance is $${(Number(balance) || 0).toFixed(2)}.` })
+    const numericBalance = Number(balance) || 0
+    if (!Number.isFinite(numericBalance) || numericBalance < amount) {
+      await postMessage({ room, message: `Insufficient funds. Your balance is $${numericBalance.toFixed(2)}.` })
       return
     }
 
-    // deduct once from sender
-    const deducted = removeFromUserWallet(senderUUID, amount)
+    // Deduct from tipper
+    const deducted = await removeFromUserWallet(senderUUID, amount) // ensure this is awaited
     if (!deducted) {
       await postMessage({ room, message: 'Insufficient funds.' })
       return
     }
 
-    // credit recipients evenly
-    const splits = splitEvenly(amount, recipients.length)
+    // Credit the now-playing DJ
     try {
-      for (let i = 0; i < recipients.length; i++) {
-        await addDollarsByUUID(recipients[i], splits[i])
-      }
+      await addDollarsByUUID(recipientUUID, amount)
     } catch (creditErr) {
-      // refund if crediting fails
+      // Refund on failure
       try { await addDollarsByUUID(senderUUID, amount) } catch {}
       console.error('Tip credit error:', creditErr)
       await postMessage({ room, message: 'Could not complete the tip. Your funds were returned.' })
       return
     }
 
-    const mentionText = naturalJoin(recipients.map(uuid => `<@uid:${uuid}>`))
+    // Nice formatting
     const fromName = await getSenderNickname(senderUUID).catch(() => `<@uid:${senderUUID}>`)
+    const toMention = `<@uid:${recipientUUID}>`
     const gif = randomTipGif()
 
-    const per = recipients.length > 1 ? ` ($${splits[0].toFixed(2)} each)` : ''
-    const msg = `💸 ${fromName} tipped $${amount.toFixed(2)} to ${mentionText}!${per}`
-
-    await postMessage({ room, message: msg})
+    await postMessage({
+      room,
+      message: `💸 ${fromName} tipped $${amount.toFixed(2)} to ${toMention}!`
+    })
     await postMessage({ room, message: '', images: [gif] })
   } catch (error) {
     console.error('Error handling /tip command:', error)
@@ -1959,12 +1962,16 @@ if (/^\/(hit|stand|double|surrender|split)\b/i.test(txt) && getPhase(ctx) === 'a
     await handleFacesCommand(payload.sender, room, postMessage)
   } else if (payload.message.startsWith('/dodo')) {
     await handleDoDoCommand(payload.sender, room, postMessage)
-  } else if (payload.message.startsWith('/dumdum' || 'dumbdumb')) {
+  } else if (payload.message.startsWith('/dumdum' || '/dumbdumb')) {
     await handleDumDumCommand(payload.sender, room, postMessage)
-  } else if (payload.message.startsWith('/flowerpower' || 'flower')) {
-    await handleDoDoCommand(payload.sender, room, postMessage)
+  } else if (payload.message.startsWith('/flowerpower' || '/flower')) {
+    await handleFlowerPowerCommand(payload.sender, room, postMessage)
+    } else if (payload.message.startsWith('/anon' || '/anonymous')) {
+    await handleAnonCommand(payload.sender, room, postMessage)
   } else if (payload.message.startsWith('/cyber')) {
     await handleRandomCyberCommand(payload.sender, room, postMessage)
+    } else if (payload.message.startsWith('/ghost')) {
+    await handleGhostCommand(payload.sender, room, postMessage)
   } else if (payload.message.startsWith('/cosmic')) {
     await handleRandomCosmicCommand(payload.sender, room, postMessage)
   } else if (payload.message.startsWith('/lovable')) {

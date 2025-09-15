@@ -1,4 +1,4 @@
-// src/libs/initDb.js
+// src/database/initdb.js
 import db from './db.js'
 
 // Users

@@ -378,6 +378,32 @@ export async function handleFlowerPowerCommand (senderUuid, room, postMessage) {
     await postMessage({ room, message: 'Something went wrong transforming you into a flower' })
   }
 }
+export async function handleAnonCommand (senderUuid, room, postMessage) {
+  const userToken = userTokenMap[senderUuid]
+  if (!userToken) {
+    await postMessage({ room, message: 'Sorry, this command is only available to people i like' })
+    return
+  }
+  try {
+    await updateUserAvatar(userToken, 'dj-tybolden-1', '#a199a0ff')
+    await postMessage({ room, message: 'Hello Mr. Anonymous' })
+  } catch (error) {
+    await postMessage({ room, message: 'Something went wrong transforming you into anon' })
+  }
+}
+export async function handleGhostCommand (senderUuid, room, postMessage) {
+  const userToken = userTokenMap[senderUuid]
+  if (!userToken) {
+    await postMessage({ room, message: 'Sorry, this command is only available to people i like' })
+    return
+  }
+  try {
+    await updateUserAvatar(userToken, 'ghost', '#ffffffff')
+    await postMessage({ room, message: 'Boo!' })
+  } catch (error) {
+    await postMessage({ room, message: 'Something went wrong transforming you into a ghost' })
+  }
+}
 
 export async function handleRandomAvatarCommand (senderUuid, room, postMessage) {
   const userToken = userTokenMap[senderUuid]
