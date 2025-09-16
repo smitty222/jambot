@@ -9,9 +9,10 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY
 // Models
 // ───────────────────────────────────────────────────────────
 // Text-capable models (newest/fastest first)
+// NOTE: use stable aliases by default; override with AI_TEXT_MODELS if desired
 const TEXT_MODELS_DEFAULT = (
   process.env.AI_TEXT_MODELS ||
-  'gemini-2.5-pro,gemini-2.5-flash,gemini-1.5-flash'
+  'gemini-1.5-pro-latest,gemini-1.5-flash-latest,gemini-2.0-flash'
 )
   .split(',')
   .map(s => s.trim())
@@ -138,6 +139,30 @@ function isImageIntent (raw) {
 }
 
 // ───────────────────────────────────────────────────────────
+// Model discovery (optional; filters TEXT_MODELS_DEFAULT)
+// ───────────────────────────────────────────────────────────
+let availableModelsCache = null
+async function listModelsAvailable () {
+  if (availableModelsCache) return availableModelsCache
+  try {
+    const res = await fetchWithTimeout(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_API_KEY}`,
+      { method: 'GET' },
+      10_000
+    )
+    const data = await res.json().catch(() => ({}))
+    const names = (data.models || [])
+      .map(m => String(m.name || '').replace(/^models\//, ''))
+      .filter(Boolean)
+    availableModelsCache = names
+    return names
+  } catch {
+    // If discovery fails, just proceed with provided models
+    return []
+  }
+}
+
+// ───────────────────────────────────────────────────────────
 // Text generation via REST (AbortController-aware) with retries
 // ───────────────────────────────────────────────────────────
 async function generateTextREST (modelName, prompt, genCfg = {}, timeoutMs = AI_REQUEST_TIMEOUT_MS) {
@@ -161,8 +186,18 @@ async function generateTextREST (modelName, prompt, genCfg = {}, timeoutMs = AI_
     throw e
   }
 
-  const parts = data?.candidates?.[0]?.content?.parts || []
+  const cand = data?.candidates?.[0]
+  const parts = cand?.content?.parts || []
   const out = parts.map(p => p?.text || '').join('').trim()
+
+  if (!out) {
+    const fr = String(cand?.finishReason || '').toUpperCase()
+    // Graceful text when safety or blocklist prevents output
+    if (fr.includes('SAFETY') || fr.includes('BLOCKLIST') || fr.includes('OTHER')) {
+      return "I can’t answer that as asked. Try rephrasing or asking for general info."
+    }
+  }
+
   return out
 }
 
@@ -175,8 +210,24 @@ async function generateTextWithRetries (prompt, {
   maxTokens = undefined
 } = {}) {
   let lastErr
+
+  // Filter requested models to ones this key can actually access (best-effort)
+  let modelList = [...models]
+  try {
+    const available = await listModelsAvailable()
+    if (available.length) {
+      const filtered = modelList.filter(m => available.includes(m))
+      if (filtered.length) modelList = filtered
+      // As a fallback, pick a sensible subset if nothing matched
+      if (!filtered.length) {
+        const fallback = available.filter(n => /1\.5-(pro|flash)-latest|2\.0-flash/.test(n))
+        if (fallback.length) modelList = fallback
+      }
+    }
+  } catch { /* ignore discovery issues */ }
+
   for (let attempt = 0; attempt <= retries; attempt++) {
-    for (const modelName of models) {
+    for (const modelName of modelList) {
       try {
         info('[text request]', { model: modelName, attempt })
         debug('[prompt]', { length: String(prompt || '').length })
@@ -188,7 +239,7 @@ async function generateTextWithRetries (prompt, {
         if (maxTokens !== undefined) genCfg.maxOutputTokens = maxTokens
 
         const out = await generateTextREST(modelName, prompt, genCfg, AI_REQUEST_TIMEOUT_MS)
-        info('[text response]', { model: modelName, chars: out.length })
+        info('[text response]', { model: modelName, chars: (out || '').length })
         if (isDebug) console.debug('[response preview]', preview(out, 240))
 
         if (out) return out
@@ -199,6 +250,10 @@ async function generateTextWithRetries (prompt, {
         const msg = (e?.message || '').toLowerCase()
         const transient = isTransientAiError(e)
         console.warn('[AI][error]', { model: modelName, attempt, code, msg, transient })
+        // Fail fast on auth/permission/unknown-model and most 400s (non-transient)
+        if ([400, 401, 403, 404].includes(code) && !/timeout|temporar|overload/.test(msg)) {
+          throw e
+        }
       }
     }
     if (attempt < retries) {
@@ -381,6 +436,13 @@ export async function askQuestion (question, opts = {}) {
   } catch (error) {
     console.error('AI Error:', error)
     if (returnApologyOnError) {
+      const code = error?.status || error?.code
+      if (code === 401 || code === 403) {
+        return { text: "I couldn't access the AI service (auth/permissions). Try again in a bit, and make sure the API key is set." }
+      }
+      if (code === 404) {
+        return { text: "That model isn't available on this key. I'll fall back to a supported one next time." }
+      }
       return { text: 'Sorry, something went wrong trying to get a response from Gemini.' }
     }
     throw error

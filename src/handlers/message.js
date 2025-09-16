@@ -248,6 +248,32 @@ function expandSongQuestion (rawQ, song) {
     `this song:\n${songCard}\n\nPlease give a short, fun blurb with notable facts (samples, origin, chart peaks, vibe), then 1 similar-track rec.`
   )
 }
+// Put near expandSongQuestion
+function expandAlbumQuestion(rawQ, albumName, artistName) {
+  if (!albumName && !artistName) return rawQ;
+
+  const parts = [];
+  if (albumName)  parts.push(`Album: ${albumName}`);
+  if (artistName) parts.push(`Artist: ${artistName}`);
+  const albumCard = parts.join(' | ');
+
+  const q = rawQ
+    .replace(/\u2019/g, "'") // normalize curly apostrophes
+    .replace(/\b(tell me about|what is|what's|info on|details about)\s+(this (album|record|lp|ep))\b/gi, '$1 THE_ALBUM')
+    .replace(/\b(this (album|record|lp|ep)|current album|album that is playing|the album)\b/gi, 'THE_ALBUM');
+
+  return q.replace(
+    /THE_ALBUM/g,
+    `this album:\n${albumCard}\n\nPlease give a short, fun blurb (context/era, standout tracks, reception), then 1 similar-album recommendation.`
+  );
+}
+function isAlbumQuery(q) {
+  const s = (q || '').toLowerCase().replace(/\u2019/g, "'");
+  return /\b(what's|what is|tell me about|info on|details about)\s+this\s+(album|record|lp|ep)\b/.test(s)
+      || /\b(this\s+(album|record|lp|ep)|current album|album that is playing)\b/.test(s);
+}
+
+
 
 function extractText (reply) {
   if (!reply) return null
@@ -381,6 +407,36 @@ if (
       await postMessage({ room, message: aiReplyText })
       return
     }
+
+    // --- ALBUM INTENT -----------------------------------------------------
+
+    if (isAlbumQuery(question)) {
+  // Try a dedicated album object first; fall back to the song’s album fields
+  const currentAlbumName  = roomBot.currentAlbum?.albumName  ?? roomBot.currentSong?.albumName;
+  const currentArtistName = roomBot.currentAlbum?.artistName ?? roomBot.currentSong?.artistName;
+
+  if (!currentAlbumName && !currentArtistName) {
+    await postMessage({ room, message: 'No album info available for the current track.' });
+    return;
+  }
+
+  // Optional: persist if you keep album state (mirrors setCurrentSong)
+  if (typeof setCurrentAlbum === 'function') {
+    setCurrentAlbum({ albumName: currentAlbumName, artistName: currentArtistName });
+  }
+
+  const prompt = expandAlbumQuestion(question, currentAlbumName, currentArtistName);
+  console.log('Expanded album prompt for AI:', prompt);
+  logger.info('Expanded album prompt for AI prepared');
+
+  const aiReplyText = await safeAskQuestion(prompt, askQuestion, logger);
+  console.log('AI Reply (album):', aiReplyText);
+  logger.info(`AI Reply (album): ${aiReplyText}`);
+
+  await postMessage({ room, message: aiReplyText });
+  return;
+}
+
 
     // --- OTHER CONTEXT (e.g., popularity explanation) -------------------
     if (question.includes('yankees')) {
