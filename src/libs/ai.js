@@ -1,4 +1,4 @@
-// src/libs/ai.js — updated to honor Retry-After on 429s, add jittered backoff, and a tiny local rate limiter
+// src/libs/ai.js — updated to honor Retry-After on 429s, add jittered backoff, per-model cooldowns, and a tiny local rate limiter
 // ESM module
 
 import fetch from 'node-fetch'
@@ -164,10 +164,9 @@ async function listModelsAvailable () {
 }
 
 // ───────────────────────────────────────────────────────────
-// 429 handling helpers
+// 429 handling helpers + per-model cooldowns
 // ───────────────────────────────────────────────────────────
 function parseRetryAfterSeconds (err) {
-  // Prefer Retry-After header if we attached headers to the error
   try {
     const ra = err?.headers?.get?.('retry-after')
     if (ra) {
@@ -175,7 +174,6 @@ function parseRetryAfterSeconds (err) {
       if (Number.isFinite(secs) && secs > 0) return Math.ceil(secs)
     }
   } catch {}
-  // Fallback: parse “…retry in 36.97s.” from message
   const m = /retry in\s+([0-9.]+)s/i.exec(String(err?.message || err?.msg || ''))
   if (m) {
     const secs = parseFloat(m[1])
@@ -188,6 +186,20 @@ function expoBackoffMs (attempt, baseMs = 500, capMs = 20_000) {
   const pow = Math.min(capMs, baseMs * 2 ** (attempt - 1))
   const jitter = Math.floor(Math.random() * 250)
   return pow + jitter
+}
+
+// Per-model cooldowns
+const MODEL_COOLDOWNS = new Map() // modelName -> timestamp(ms) until available
+function modelIsCoolingDown (modelName) {
+  const until = MODEL_COOLDOWNS.get(modelName)
+  if (!until) return false
+  if (Date.now() >= until) { MODEL_COOLDOWNS.delete(modelName); return false }
+  return true
+}
+function msUntilModelReady (modelName) {
+  const until = MODEL_COOLDOWNS.get(modelName)
+  if (!until) return 0
+  return Math.max(0, until - Date.now())
 }
 
 // ───────────────────────────────────────────────────────────
@@ -213,7 +225,6 @@ async function generateTextREST (modelName, prompt, genCfg = {}, timeoutMs = AI_
     const message = data?.error?.message || res.statusText || rawText || ''
     const e = new Error(`Gemini text API error ${res.status}: ${message}`)
     e.status = res.status
-    // attach headers so parseRetryAfterSeconds can read Retry-After if present
     e.headers = res.headers
     throw e
   }
@@ -256,7 +267,25 @@ async function generateTextWithRetries (prompt, {
   } catch {}
 
   for (let attempt = 1; attempt <= (retries + 1); attempt++) {
-    for (const modelName of modelList) {
+    // Filter out models currently cooling down
+    let readyModels = modelList.filter(m => !modelIsCoolingDown(m))
+
+    // If all are cooling, wait for the soonest to be ready once, then recompute
+    if (readyModels.length === 0) {
+      const waits = modelList.map(msUntilModelReady).filter(ms => ms > 0)
+      if (waits.length) {
+        const minWait = Math.min(...waits)
+        info('[AI][cooldown] all models cooling, waiting', { ms: minWait })
+        await sleep(minWait)
+        readyModels = modelList.filter(m => !modelIsCoolingDown(m))
+      }
+    }
+
+    const modelsToTry = readyModels.length ? readyModels : modelList
+
+    for (const modelName of modelsToTry) {
+      if (modelIsCoolingDown(modelName)) continue
+
       try {
         info('[text request]', { model: modelName, attempt })
         debug('[prompt]', { length: String(prompt || '').length })
@@ -285,19 +314,17 @@ async function generateTextWithRetries (prompt, {
           throw e
         }
 
-        // If 429, honor Retry-After / "retry in Xs"
-        if (code === 429 && attempt <= retries) {
-          const waitS = parseRetryAfterSeconds(e)
-          if (waitS) {
-            info('[AI][rate-limit] honoring Retry-After', { seconds: waitS })
-            await sleep(waitS * 1000)
-            continue
-          }
+        // If 429, cool this model down and immediately try the next one
+        if (code === 429) {
+          const waitS = parseRetryAfterSeconds(e) || 45
+          MODEL_COOLDOWNS.set(modelName, Date.now() + waitS * 1000)
+          info('[AI][rate-limit] model cooling down', { model: modelName, seconds: waitS })
+          continue // move to next model right away
         }
       }
     }
 
-    // Between attempts (across models), do exponential backoff with jitter
+    // Between outer attempts, do exponential backoff (unless we just set model-specific cooldowns)
     if (attempt <= retries) {
       const waitMs = expoBackoffMs(attempt, backoffMs)
       info('[AI][backoff]', { attempt, waitMs })
@@ -494,7 +521,6 @@ export async function askQuestion (question, opts = {}) {
       if (code === 404) {
         return { text: "That model isn't available on this key. I'll fall back to a supported one next time." }
       }
-      // If we hit a 429 again somewhere in the chain, be explicit
       if (code === 429) {
         const waitS = parseRetryAfterSeconds(error)
         if (waitS) return { text: `Rate limited. I’ll be ready again in about ${waitS}s.` }
