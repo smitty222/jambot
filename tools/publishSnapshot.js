@@ -5,6 +5,8 @@
  * Configure which curated views are public (names become the table names under /api/db/<name>).
  * Tweak SQL to add/remove fields, limits, or sorting.
  */
+
+const SONGS_LIMIT = Number(process.env.PUBLIC_SONGS_LIMIT || 1000);
 export const PUBLIC_VIEWS = {
   // Most-played songs (public, compact)
   top_songs: {
@@ -21,7 +23,7 @@ export const PUBLIC_VIEWS = {
     FROM room_stats
     WHERE LOWER(COALESCE(trackName, '')) <> 'unknown'
     ORDER BY playCount DESC, COALESCE(averageReview, 0) DESC, trackName ASC
-    LIMIT 200
+    LIMIT ${SONGS_LIMIT}
   `
 },
 
