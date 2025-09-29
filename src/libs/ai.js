@@ -1,4 +1,4 @@
-// src/libs/ai.js — updated with request timeouts, aborts, and cleaner retries
+// src/libs/ai.js — updated to honor Retry-After on 429s, add jittered backoff, and a tiny local rate limiter
 // ESM module
 
 import fetch from 'node-fetch'
@@ -8,8 +8,6 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY
 // ───────────────────────────────────────────────────────────
 // Models
 // ───────────────────────────────────────────────────────────
-// Text-capable models (newest/fastest first)
-// NOTE: use stable aliases by default; override with AI_TEXT_MODELS if desired
 const TEXT_MODELS_DEFAULT = (
   process.env.AI_TEXT_MODELS ||
   'gemini-1.5-pro-latest,gemini-1.5-flash-latest,gemini-2.0-flash'
@@ -18,9 +16,7 @@ const TEXT_MODELS_DEFAULT = (
   .map(s => s.trim())
   .filter(Boolean)
 
-// Image-capable models (newest first)
-// Primary = 2.5 Flash Image Preview (returns TEXT+IMAGE)
-// Fallback = 2.0 Flash Preview Image Generation (legacy)
+// Image-capable models
 const IMAGE_MODEL_PRIMARY =
   process.env.IMAGE_MODEL_PRIMARY || 'gemini-2.5-flash-image-preview'
 
@@ -46,7 +42,6 @@ const PROMPT_MAX = Math.max(80, parseInt(process.env.AI_PROMPT_MAX_CHARS || '600
 const info = (...a) => { if (isInfo) console.log('[AI]', ...a) }
 const debug = (...a) => { if (isDebug) console.debug('[AI]', ...a) }
 
-// Safe truncation for logs
 function preview (str, max = PROMPT_MAX) {
   const s = String(str ?? '')
     .replace(/\r/g, '')
@@ -59,7 +54,6 @@ function preview (str, max = PROMPT_MAX) {
 const isTransientAiError = (err) => {
   const code = err?.status || err?.code
   const msg = String(err?.message || '').toLowerCase()
-  // Treat rate limit + common 5xx + timeout-ish as transient
   return [429, 500, 502, 503, 504].includes(code) ||
          /quota|rate|limit|temporar|overload|unavail|timeout|timed out|aborted/.test(msg)
 }
@@ -72,12 +66,29 @@ const AI_IMAGE_TIMEOUT_MS   = Number(process.env.AI_IMAGE_TIMEOUT_MS   ?? 45_000
 const AI_RETRIES            = Number(process.env.AI_RETRIES            ?? 3)
 const AI_BACKOFF_MS         = Number(process.env.AI_BACKOFF_MS         ?? 800)
 
+// Local token-bucket rate limiter (defense-in-depth)
+const AI_LOCAL_RL_TOKENS    = Number(process.env.AI_LOCAL_RL_TOKENS    ?? 6)
+const AI_LOCAL_RL_WINDOW_MS = Number(process.env.AI_LOCAL_RL_WINDOW_MS ?? 30_000)
+const rlBucket = { tokens: AI_LOCAL_RL_TOKENS, lastRefill: Date.now() }
+
+function rlRefill () {
+  const now = Date.now()
+  if (now - rlBucket.lastRefill >= AI_LOCAL_RL_WINDOW_MS) {
+    rlBucket.tokens = AI_LOCAL_RL_TOKENS
+    rlBucket.lastRefill = now
+  }
+}
+function rlTryTake () {
+  rlRefill()
+  if (rlBucket.tokens > 0) { rlBucket.tokens--; return true }
+  return false
+}
+
 // Response caching (in-memory)
 const AI_CACHE_TTL_MS  = Number(process.env.AI_CACHE_TTL_MS  ?? 300_000) // 5 min
 const AI_CACHE_MAX_SIZE = Number(process.env.AI_CACHE_MAX_SIZE ?? 50)
 
 const aiCache = new Map()
-
 function getCachedResponse (key) {
   const rec = aiCache.get(key)
   if (!rec) return null
@@ -87,7 +98,6 @@ function getCachedResponse (key) {
   }
   return rec.value
 }
-
 function setCachedResponse (key, value) {
   if (aiCache.size >= AI_CACHE_MAX_SIZE) {
     const firstKey = aiCache.keys().next().value
@@ -117,22 +127,14 @@ function isImageIntent (raw) {
   let q = raw.toLowerCase().trim()
   if (/\b(how to|how do i|explain|what is|tell me about|define|history of|lyrics|instructions)\b/.test(q)) return false
 
-  // Remove polite fillers so patterns match
   q = q.replace(/\b(can you|could you|would you|please|plz|kindly)\b/g, '')
     .replace(/\b(for (me|us)|me|us)\b/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 
-  // “make me an image of …”, etc.
   if (/(make|create|generate|draw|paint|illustrate|render|sketch)\s+(an?|the)?\s*(image|picture|pic|photo|poster|logo|graphic)?\s*(of|about)\s+\S/.test(q)) return true
-
-  // direct verb+noun “create an image/poster…”
   if (/(make|create|generate|draw|paint|illustrate|render|sketch)\s+(an?|the)?\s*(image|picture|pic|photo|poster|logo|graphic)\b/.test(q)) return true
-
-  // noun-led “image/poster of …”
   if (/^(image|picture|pic|photo|poster|logo|graphic)\b.*\b(of|that says)\b/.test(q)) return true
-
-  // file / output hints
   if (/\b(png|jpg|jpeg|svg|transparent|square|wallpaper|banner|thumbnail|avatar|icon|sticker|dpi|aspect ratio|pixels?)\b/.test(q)) return true
 
   return false
@@ -157,9 +159,35 @@ async function listModelsAvailable () {
     availableModelsCache = names
     return names
   } catch {
-    // If discovery fails, just proceed with provided models
     return []
   }
+}
+
+// ───────────────────────────────────────────────────────────
+// 429 handling helpers
+// ───────────────────────────────────────────────────────────
+function parseRetryAfterSeconds (err) {
+  // Prefer Retry-After header if we attached headers to the error
+  try {
+    const ra = err?.headers?.get?.('retry-after')
+    if (ra) {
+      const secs = Number(ra)
+      if (Number.isFinite(secs) && secs > 0) return Math.ceil(secs)
+    }
+  } catch {}
+  // Fallback: parse “…retry in 36.97s.” from message
+  const m = /retry in\s+([0-9.]+)s/i.exec(String(err?.message || err?.msg || ''))
+  if (m) {
+    const secs = parseFloat(m[1])
+    if (Number.isFinite(secs) && secs > 0) return Math.ceil(secs)
+  }
+  return null
+}
+
+function expoBackoffMs (attempt, baseMs = 500, capMs = 20_000) {
+  const pow = Math.min(capMs, baseMs * 2 ** (attempt - 1))
+  const jitter = Math.floor(Math.random() * 250)
+  return pow + jitter
 }
 
 // ───────────────────────────────────────────────────────────
@@ -177,12 +205,16 @@ async function generateTextREST (modelName, prompt, genCfg = {}, timeoutMs = AI_
     body: JSON.stringify(body)
   }, timeoutMs)
 
-  const data = await res.json().catch(() => ({}))
+  const rawText = await res.text()
+  let data = {}
+  try { data = JSON.parse(rawText) } catch {}
 
   if (!res.ok) {
-    const message = data?.error?.message || res.statusText || ''
+    const message = data?.error?.message || res.statusText || rawText || ''
     const e = new Error(`Gemini text API error ${res.status}: ${message}`)
     e.status = res.status
+    // attach headers so parseRetryAfterSeconds can read Retry-After if present
+    e.headers = res.headers
     throw e
   }
 
@@ -192,12 +224,10 @@ async function generateTextREST (modelName, prompt, genCfg = {}, timeoutMs = AI_
 
   if (!out) {
     const fr = String(cand?.finishReason || '').toUpperCase()
-    // Graceful text when safety or blocklist prevents output
     if (fr.includes('SAFETY') || fr.includes('BLOCKLIST') || fr.includes('OTHER')) {
       return "I can’t answer that as asked. Try rephrasing or asking for general info."
     }
   }
-
   return out
 }
 
@@ -205,28 +235,27 @@ async function generateTextWithRetries (prompt, {
   models = TEXT_MODELS_DEFAULT,
   retries = AI_RETRIES,
   backoffMs = AI_BACKOFF_MS,
-  temperature = undefined,
-  topP = undefined,
-  maxTokens = undefined
+  temperature,
+  topP,
+  maxTokens
 } = {}) {
   let lastErr
 
-  // Filter requested models to ones this key can actually access (best-effort)
+  // Best-effort: restrict to models actually available to the key
   let modelList = [...models]
   try {
     const available = await listModelsAvailable()
     if (available.length) {
       const filtered = modelList.filter(m => available.includes(m))
       if (filtered.length) modelList = filtered
-      // As a fallback, pick a sensible subset if nothing matched
       if (!filtered.length) {
         const fallback = available.filter(n => /1\.5-(pro|flash)-latest|2\.0-flash/.test(n))
         if (fallback.length) modelList = fallback
       }
     }
-  } catch { /* ignore discovery issues */ }
+  } catch {}
 
-  for (let attempt = 0; attempt <= retries; attempt++) {
+  for (let attempt = 1; attempt <= (retries + 1); attempt++) {
     for (const modelName of modelList) {
       try {
         info('[text request]', { model: modelName, attempt })
@@ -250,16 +279,32 @@ async function generateTextWithRetries (prompt, {
         const msg = (e?.message || '').toLowerCase()
         const transient = isTransientAiError(e)
         console.warn('[AI][error]', { model: modelName, attempt, code, msg, transient })
-        // Fail fast on auth/permission/unknown-model and most 400s (non-transient)
+
+        // Hard fail on auth/permission/unknown-model and most 400s
         if ([400, 401, 403, 404].includes(code) && !/timeout|temporar|overload/.test(msg)) {
           throw e
         }
+
+        // If 429, honor Retry-After / "retry in Xs"
+        if (code === 429 && attempt <= retries) {
+          const waitS = parseRetryAfterSeconds(e)
+          if (waitS) {
+            info('[AI][rate-limit] honoring Retry-After', { seconds: waitS })
+            await sleep(waitS * 1000)
+            continue
+          }
+        }
       }
     }
-    if (attempt < retries) {
-      await sleep(backoffMs * (attempt + 1))
+
+    // Between attempts (across models), do exponential backoff with jitter
+    if (attempt <= retries) {
+      const waitMs = expoBackoffMs(attempt, backoffMs)
+      info('[AI][backoff]', { attempt, waitMs })
+      await sleep(waitMs)
     }
   }
+
   throw lastErr || new Error('AI_FAILED')
 }
 
@@ -271,7 +316,6 @@ async function generateImageWithFallback (prompt) {
   for (const modelId of IMAGE_MODELS) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${GEMINI_API_KEY}`
 
-    // Must request both TEXT and IMAGE per Google docs (image-only output not supported)
     const body = {
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
@@ -287,14 +331,15 @@ async function generateImageWithFallback (prompt) {
         body: JSON.stringify(body)
       }, AI_IMAGE_TIMEOUT_MS)
 
-      const data = await res.json().catch(() => ({}))
+      const rawText = await res.text()
+      let data = {}
+      try { data = JSON.parse(rawText) } catch {}
 
       if (!res.ok) {
-        const message = data?.error?.message || res.statusText || ''
+        const message = data?.error?.message || res.statusText || rawText || ''
         const e = new Error(`Gemini image API error ${res.status}: ${message}`)
         e.status = res.status
 
-        // If the model is text-only, continue to next model
         if (res.status === 400 && /only supports text output/i.test(message)) {
           console.warn('[image model-mismatch]', { modelId, status: res.status })
           lastErr = e
@@ -307,7 +352,6 @@ async function generateImageWithFallback (prompt) {
           continue
         }
 
-        // Non-transient hard error
         console.error('[image fatal http]', { modelId, status: res.status, message })
         throw e
       }
@@ -333,7 +377,6 @@ async function generateImageWithFallback (prompt) {
         return { text: safeText, imageBase64: base64Image, dataUri, modelId }
       }
 
-      // No image produced (safety block or model didn’t return one). Try next model.
       console.warn('[image no-image-returned]', { modelId })
       lastErr = new Error('NO_IMAGE_RETURNED')
       continue
@@ -366,7 +409,6 @@ const replaceThisSong = (question) => {
   return question
 }
 
-// Public helpers
 export const setCurrentSong = (song) => { currentSong = song }
 
 // ───────────────────────────────────────────────────────────
@@ -384,14 +426,13 @@ export async function askQuestion (question, opts = {}) {
     onStartImage
   } = opts
 
-  // Replace "this song" with actual details if available
   if (typeof question === 'string' && question.toLowerCase().includes('this song')) {
     const before = question
     question = replaceThisSong(question)
     if (before !== question) info('[replaceThisSong]', { applied: true })
   }
 
-  // Detect image-style prompts
+  // Image path (cached)
   const isImagePrompt = isImageIntent(question)
   if (isImagePrompt) {
     info('[image request] detected')
@@ -410,6 +451,11 @@ export async function askQuestion (question, opts = {}) {
 
     try { await onStartImage?.() } catch {}
 
+    // Soft local rate limit even for images
+    if (!rlTryTake()) {
+      return { text: 'I’m getting a lot of requests—try that image again in a moment.' }
+    }
+
     const result = await generateImageWithFallback(String(question))
     if (result.dataUri) {
       const value = { text: result.text, images: [result.dataUri] }
@@ -421,13 +467,18 @@ export async function askQuestion (question, opts = {}) {
     return value
   }
 
-  // Text requests
+  // Text path (cached + local rate limit)
   try {
     const key = String(question).replace(/\s+/g, ' ').trim().toLowerCase()
     const cached = getCachedResponse(key)
     if (cached) {
       info('[cache hit]', { key })
       return { text: cached }
+    }
+
+    if (!rlTryTake()) {
+      // Don’t hit the API; keep the room responsive
+      return { text: 'Taking a quick breather due to high traffic—try that again in a few seconds.' }
     }
 
     const text = await generateTextWithRetries(String(question), { models, retries, backoffMs, temperature, topP, maxTokens })
@@ -442,6 +493,12 @@ export async function askQuestion (question, opts = {}) {
       }
       if (code === 404) {
         return { text: "That model isn't available on this key. I'll fall back to a supported one next time." }
+      }
+      // If we hit a 429 again somewhere in the chain, be explicit
+      if (code === 429) {
+        const waitS = parseRetryAfterSeconds(error)
+        if (waitS) return { text: `Rate limited. I’ll be ready again in about ${waitS}s.` }
+        return { text: 'Rate limited right now. Try again shortly.' }
       }
       return { text: 'Sorry, something went wrong trying to get a response from Gemini.' }
     }
