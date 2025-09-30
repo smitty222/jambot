@@ -140,7 +140,7 @@ export function getNowPlayingInfoBlurbTone () { return INFO_BLURB_TONE }
 // Blurb cache
 // ───────────────────────────────────────────────────────────
 const BLURB_TTL_MS = 15 * 60 * 1000
-const BLURB_MAX_CHARS = Number(process.env.NOWPLAYING_BLURB_MAX_CHARS || 320) // multi-sentence cap
+const BLURB_MAX_CHARS = Number(process.env.NOWPLAYING_BLURB_MAX_CHARS || 320)
 const blurbCache = new Map() // key -> { text, ts }
 function blurbKey (song) {
   return song.songId || song.spotifyTrackId || `${song.trackName}|${song.artistName}`
@@ -223,19 +223,14 @@ function smartClipToSentences (text, {
   let used = 0
   for (const s of parts) {
     const will = used + (out.length ? 1 : 0) + s.length // +1 for joining space
-    if (out.length < minSentences && will <= maxChars) {
-      out.push(s); used = will; continue
-    }
+    if (out.length < minSentences && will <= maxChars) { out.push(s); used = will; continue }
     if (out.length >= maxSentences) break
-    if (will <= maxChars) {
-      out.push(s); used = will; continue
-    }
+    if (will <= maxChars) { out.push(s); used = will; continue }
     break
   }
 
   let final = out.join(' ')
   if (!final && parts.length) {
-    // ensure at least the first sentence, clipped hard if needed
     final = parts[0].slice(0, Math.max(0, maxChars - 1)).replace(/[ ,;:.?!-]+$/, '') + '…'
   } else if (final.length > maxChars) {
     final = final.slice(0, Math.max(0, maxChars - 1)).replace(/[ ,;:.?!-]+$/, '') + '…'
@@ -273,7 +268,7 @@ function isBlandBlurb (t = '') {
 }
 
 // ───────────────────────────────────────────────────────────
-// AI summarization (Genius only) — multi-sentence, reliable free-tier models
+// AI summarization (Genius only) — uses your ai.js model logic
 // ───────────────────────────────────────────────────────────
 const NOWPLAYING_AI_MODEL = (
   process.env.NOWPLAYING_AI_MODEL ||
@@ -288,11 +283,11 @@ const AI_HARD_TIMEOUT_MS = 45000
 function buildGeniusBlurbPrompt (song, aboutText, tone = 'neutral') {
   const { trackName, artistName } = song || {}
   const safeAbout = String(aboutText || '').slice(0, 4000)
-  return `Summarize the following Genius "About" section for a song as **2–3 short sentences** (clear, readable).
+  return `Summarize the following Genius "About" section for a song as 2–3 short sentences (clear, readable).
 - Keep it under about ${BLURB_MAX_CHARS} characters total.
 - Base ONLY on the provided text.
-- Include **one concrete detail** (e.g., a year, chart peak + country, certification, notable collaborator, or label).
-- Do **not** repeat the song title or artist name.
+- Include one concrete detail (e.g., a year, chart peak + country, certification, notable collaborator, or label).
+- Do not repeat the song title or artist name.
 - No hashtags, no links, no quotes; avoid generic filler.
 
 ${toneLineFor(tone)}
@@ -309,10 +304,10 @@ async function summarizeGeniusAbout (song, aboutText, tone = 'neutral') {
     log('[NowPlaying][Blurb][AI][MODEL]', NOWPLAYING_AI_MODEL.join(','))
     const p = askQuestion(prompt, {
       returnApologyOnError: false,
-      retries: 0,              // avoid multiplying traffic on 429/503
+      retries: 0,            // do not multiply traffic
       backoffMs: 600,
       models: NOWPLAYING_AI_MODEL,
-      maxTokens: 180           // a few sentences; still compact
+      maxTokens: 180
     })
     const result = await Promise.race([
       p,
@@ -331,6 +326,26 @@ async function summarizeGeniusAbout (song, aboutText, tone = 'neutral') {
 }
 
 // ───────────────────────────────────────────────────────────
+// Safe post with tiny retry for the BASE message only
+// ───────────────────────────────────────────────────────────
+async function postWithRetry ({ room, message }, tries = 2) {
+  let lastErr
+  for (let i = 0; i < tries; i++) {
+    try {
+      await postMessage({ room, message })
+      return true
+    } catch (e) {
+      lastErr = e
+      const wait = 300 + Math.floor(Math.random() * 300)
+      console.warn('[NowPlaying][POST][RETRY]', { attempt: i + 1, wait })
+      await new Promise(r => setTimeout(r, wait))
+    }
+  }
+  console.error('[NowPlaying][POST][FAILED]', lastErr?.message || lastErr)
+  return false
+}
+
+// ───────────────────────────────────────────────────────────
 // Main
 // ───────────────────────────────────────────────────────────
 export async function announceNowPlaying (room) {
@@ -346,47 +361,58 @@ export async function announceNowPlaying (room) {
       return
     }
 
-    const stats = db.prepare(`
-      SELECT playCount, lastPlayed
-      FROM room_stats
-      WHERE songId = ?
-    `).get(song.songId)
-
-    const avgInfo = await getAverageRating(song)
-
-    let message = `🎵 Now playing: “${song.trackName}” by ${song.artistName}`
-
-    if (!stats?.lastPlayed || stats.playCount === 1) {
-      message += '\n🆕 First time playing in this room!'
-    } else {
-      message += `\n🔁 Played ${stats.playCount} time${stats.playCount !== 1 ? 's' : ''}`
-      const lastPlayedTime = formatDistanceToNow(new Date(stats.lastPlayed), { addSuffix: true })
-      message += `\n🕒 Last played ${lastPlayedTime}`
-    }
-
-    if (avgInfo.found) {
-      message += `\n⭐ ${avgInfo.average}/10 (${avgInfo.count} rating${avgInfo.count === 1 ? '' : 's'})`
-    }
-
-    // Always post the base message immediately
-    await postMessage({ room, message })
+    // ── 1) Always build & POST the base line first (no dependencies)
+    let base = `🎵 Now playing: “${song.trackName}” by ${song.artistName}`
+    await postWithRetry({ room, message: base })
     log('[NowPlaying][POST][BASE]', JSON.stringify({ track: song.trackName, artist: song.artistName }))
 
-    // If info blurbs are disabled, stop here
+    // ── 2) Best-effort: enrich the same message with stats (wrapped, non-fatal)
+    try {
+      const stats = db.prepare(`
+        SELECT playCount, lastPlayed
+        FROM room_stats
+        WHERE songId = ?
+      `).get(song.songId)
+
+      const lines = []
+      if (!stats?.lastPlayed || stats.playCount === 1) {
+        lines.push('🆕 First time playing in this room!')
+      } else {
+        lines.push(`🔁 Played ${stats.playCount} time${stats.playCount !== 1 ? 's' : ''}`)
+        const lastPlayedTime = formatDistanceToNow(new Date(stats.lastPlayed), { addSuffix: true })
+        lines.push(`🕒 Last played ${lastPlayedTime}`)
+      }
+
+      try {
+        const avgInfo = await getAverageRating(song)
+        if (avgInfo?.found) {
+          lines.push(`⭐ ${avgInfo.average}/10 (${avgInfo.count} rating${avgInfo.count === 1 ? '' : 's'})`)
+        }
+      } catch (e) {
+        console.warn('[NowPlaying][AVG][WARN]', e?.message || e)
+      }
+
+      if (lines.length) {
+        await postWithRetry({ room, message: lines.join('\n') })
+        log('[NowPlaying][POST][STATS]', { lines: lines.length })
+      }
+    } catch (e) {
+      console.warn('[NowPlaying][STATS][WARN]', e?.message || e)
+    }
+
+    // ── 3) Optional blurb flow (fire-and-forget). Never blocks nor affects base send.
     if (!INFO_BLURB_ENABLED) return
 
-    // If we have a cached blurb, send it now
     const key = blurbKey(song)
     const cached = blurbCache.get(key)
     if (cached && (Date.now() - cached.ts < BLURB_TTL_MS)) {
-      await postMessage({ room, message: `ℹ️ ${cached.text}` })
+      await postWithRetry({ room, message: `ℹ️ ${cached.text}` })
       log('[NowPlaying][Blurb][POST][CACHE]', JSON.stringify({
         track: song.trackName, artist: song.artistName, source: 'genius', length: cached.text.length
       }))
       return
     }
 
-    // Fire-and-forget: fetch Genius → summarize → post if good
     ;(async () => {
       try {
         log('[NowPlaying][Blurb][GENIUS][FETCH]', JSON.stringify({ title: song.trackName, artist: song.artistName }))
@@ -406,7 +432,7 @@ export async function announceNowPlaying (room) {
         }
 
         blurbCache.set(key, { text: blurb, ts: Date.now() })
-        await postMessage({ room, message: `ℹ️ ${blurb}` })
+        await postWithRetry({ room, message: `ℹ️ ${blurb}` })
         log('[NowPlaying][Blurb][POST]', JSON.stringify({
           track: song.trackName, artist: song.artistName, source: 'genius', length: blurb.length
         }))
@@ -415,6 +441,7 @@ export async function announceNowPlaying (room) {
       }
     })()
   } catch (err) {
+    // Even if a top-level error happens after base, it won’t retract the already-sent base message
     console.error('Error in announceNowPlaying:', err)
   }
 }

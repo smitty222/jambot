@@ -587,30 +587,32 @@ function renderSongs(){
 
   let rows = Array.isArray(_songsRaw) ? [..._songsRaw] : [];
 
-  // normalize fields coming from /api/db/top_songs
+  // normalize fields coming from /api/db/top_songs (or songs_public)
   rows = rows.map(s => {
-    const title   = String(val(s, "title","name") ?? "");
-    const artist  = String(val(s, "artist","artist_name") ?? "");
-    const plays   = Number(val(s, "plays","numPlays","total_plays")) || 0;
-    const avgVal  = Number(val(s, "avg","avg_rating","avg_score"));
-    const avg     = isNaN(avgVal) ? undefined : avgVal;
-    const recent  = val(s, "lastPlayed","last_played","recent_played_at","updatedAt","updated_at");
-    const likes   = Number(val(s, "likes","likeCount","like_count")) || 0;
-    const dislikes= Number(val(s, "dislikes","dislikeCount","dislike_count")) || 0;
-    const stars   = Number(val(s, "stars","starCount","star_count","starRating","star_rating")) || 0;
+    const title    = String(val(s, "title","name") ?? "");
+    const artist   = String(val(s, "artist","artist_name") ?? "");
+    const plays    = Number(val(s, "plays","numPlays","total_plays")) || 0;
+    const avgVal   = Number(val(s, "avg","avg_rating","avg_score"));
+    const avg      = isNaN(avgVal) ? undefined : avgVal;
+    const recent   = val(s, "lastPlayed","last_played","recent_played_at","updatedAt","updated_at");
+    const likes    = Number(val(s, "likes","likeCount","like_count")) || 0;
+    const dislikes = Number(val(s, "dislikes","dislikeCount","dislike_count")) || 0;
+    const stars    = Number(val(s, "stars","starCount","star_count","starRating","star_rating")) || 0;
     return { ...s, _title:title, _artist:artist, _plays:plays, _avg:avg, _recent:recent, _likes:likes, _dislikes:dislikes, _stars:stars };
   });
 
   // drop “unknown”, then search
   rows = rows.filter(s => s._title && s._title.trim().toLowerCase() !== "unknown");
-  if (q) rows = rows.filter(s => s._title.toLowerCase().includes(q) || s._artist.toLowerCase().includes(q));
+  if (q) rows = rows.filter(s =>
+    s._title.toLowerCase().includes(q) || s._artist.toLowerCase().includes(q)
+  );
 
   // sort
   const [key, dir] = sortSel.split(":");
   const mult = dir === "asc" ? 1 : -1;
   rows.sort((a,b) => {
     switch (key) {
-      case "avg":      return ((a._avg ?? -Infinity)      - (b._avg ?? -Infinity))      * mult;
+      case "avg":      return ((a._avg ?? -Infinity) - (b._avg ?? -Infinity)) * mult;
       case "recency": {
         const at = a._recent ? new Date(typeof a._recent === 'number' && a._recent < 1e12 ? a._recent*1000 : a._recent).getTime() : 0;
         const bt = b._recent ? new Date(typeof b._recent === 'number' && b._recent < 1e12 ? b._recent*1000 : b._recent).getTime() : 0;
@@ -638,7 +640,7 @@ function renderSongs(){
     return `<span class="sort">${cd === "asc" ? "▲" : "▼"}</span>`;
   };
 
-  const body = rows.slice(0, 300).map((s, i) => {
+  const body = rows.map((s, i) => {
     const pct    = Math.round((s._plays / maxPlays) * 100);
     const avgTxt = (typeof s._avg === "number") ? s._avg.toFixed(2) : "—";
     const recent = s._recent ? briefDate(s._recent) : "—";
@@ -683,7 +685,7 @@ function renderSongs(){
         </thead>
         <tbody>${body}</tbody>
       </table>
-      <div class="muted small" style="margin-top:6px;">Showing ${Math.min(rows.length, 300)} of ${rows.length} songs.</div>
+      <div class="muted small" style="margin-top:6px;">Showing ${rows.length} songs.</div>
     </div>
   `;
 
@@ -701,6 +703,7 @@ function renderSongs(){
     };
   }
 }
+
 
 async function refreshSongs(){
   if (!els.songsList) return;
