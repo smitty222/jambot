@@ -90,7 +90,7 @@ function toneLineFor (tone) {
   const map = {
     neutral: 'Tone: neutral, informative.',
     playful: 'Tone: playful—light slang ok; one tasteful emoji allowed.',
-    cratedigger: 'Tone: cratedigger—one micro fact (producer, sample, label, chart stat).',
+    cratedigger: 'Tone: cratedigger—include one micro fact (producer, sample, label, or chart stat).',
     hype: 'Tone: hype—energetic, crowd-facing; one short exclamation allowed; no caps-lock.',
     classy: 'Tone: classy—no slang, no emojis; concise editorial style.',
     chartbot: 'Tone: chartbot—prefer chart peaks (with country) or certifications.',
@@ -140,6 +140,7 @@ export function getNowPlayingInfoBlurbTone () { return INFO_BLURB_TONE }
 // Blurb cache
 // ───────────────────────────────────────────────────────────
 const BLURB_TTL_MS = 15 * 60 * 1000
+const BLURB_MAX_CHARS = Number(process.env.NOWPLAYING_BLURB_MAX_CHARS || 320) // multi-sentence cap
 const blurbCache = new Map() // key -> { text, ts }
 function blurbKey (song) {
   return song.songId || song.spotifyTrackId || `${song.trackName}|${song.artistName}`
@@ -152,7 +153,6 @@ const GENIUS_TTL_MS = 12 * 60 * 60 * 1000 // 12h
 const GENIUS_TIMEOUT_MS = Number(process.env.NOWPLAYING_GENIUS_TIMEOUT_MS || 3000)
 const geniusCache = new Map() // key -> { about: string, ts: number }
 
-// Treat trivial/placeholder text as "no info"
 function normalizeGeniusAbout (about) {
   const t = String(about || '').trim()
   if (!t) return null
@@ -163,7 +163,6 @@ function normalizeGeniusAbout (about) {
   return t
 }
 
-// Race getGeniusAbout against a timeout (cannot cancel underlying HTTP)
 async function fetchGeniusAboutWithTimeout (title, artist) {
   const k = `${title}::${artist}`
   const now = Date.now()
@@ -203,24 +202,47 @@ async function fetchGeniusAboutWithTimeout (title, artist) {
 }
 
 // ───────────────────────────────────────────────────────────
-// AI summarization (Genius only)
+// Blurb formatting helpers (multi-sentence, smart clipping)
 // ───────────────────────────────────────────────────────────
-const AI_HARD_TIMEOUT_MS = 45000
+const SENTENCE_SPLIT_RE = /(?<=\S[.?!])\s+(?=(?:["'“”‘’]?\p{Lu}|\d))/gu
 
-function buildGeniusBlurbPrompt (song, aboutText, tone = 'neutral') {
-  const { trackName, artistName } = song || {}
-  const safeAbout = String(aboutText || '').slice(0, 4000)
-  return `Summarize the following Genius "About" section for a song into ONE sharp blurb (max 160 characters).
-- Base ONLY on the provided text.
-- Include exactly ONE concrete detail (e.g., a year, chart peak + country, certification, notable collaborator, label).
-- DO NOT repeat the song title or artist name.
-- One sentence; no hashtags, no links, no quotes. Keep it specific; avoid generic filler.
+function smartClipToSentences (text, {
+  maxChars = BLURB_MAX_CHARS,
+  minSentences = 2,
+  maxSentences = 3
+} = {}) {
+  const clean = String(text || '')
+    .replace(/\s+/g, ' ')
+    .replace(/\s([,;:.?!])/g, '$1')
+    .trim()
 
-${toneLineFor(tone)}
+  const parts = clean.split(SENTENCE_SPLIT_RE).filter(Boolean)
+  if (parts.length === 0) return ''
 
-Song: ${trackName || 'Unknown'} — ${artistName || 'Unknown'}
-About (Genius):
-"""${safeAbout}"""`
+  const out = []
+  let used = 0
+  for (const s of parts) {
+    const will = used + (out.length ? 1 : 0) + s.length // +1 for joining space
+    if (out.length < minSentences && will <= maxChars) {
+      out.push(s); used = will; continue
+    }
+    if (out.length >= maxSentences) break
+    if (will <= maxChars) {
+      out.push(s); used = will; continue
+    }
+    break
+  }
+
+  let final = out.join(' ')
+  if (!final && parts.length) {
+    // ensure at least the first sentence, clipped hard if needed
+    final = parts[0].slice(0, Math.max(0, maxChars - 1)).replace(/[ ,;:.?!-]+$/, '') + '…'
+  } else if (final.length > maxChars) {
+    final = final.slice(0, Math.max(0, maxChars - 1)).replace(/[ ,;:.?!-]+$/, '') + '…'
+  } else if (out.length < parts.length) {
+    final = final + '…'
+  }
+  return final
 }
 
 // Sanitize output (remove IDs/names/etc.)
@@ -238,7 +260,7 @@ function sanitizeBlurb (text, song) {
     const re = new RegExp(`\\b${escapeRegExp(n)}\\b`, 'ig')
     t = t.replace(re, ' ')
   }
-  t = t.replace(/^[\-–—:,\s]+/, '').replace(/\s{2,}/g, ' ').trim()
+  t = t.replace(/\s{2,}/g, ' ').replace(/^[\-–—:,\s]+/, '').trim()
   t = t.replace(/[,;:]\s*[,;:]+/g, ', ')
   return t || null
 }
@@ -247,14 +269,51 @@ function isBlandBlurb (t = '') {
   const s = String(t).toLowerCase()
   const generic = /(a song by|single by|track by|an? american (singer|dj)|popular song|club single)/i.test(s)
   const hasConcrete = /(\b(19|20)\d{2}\b|billboard|hot\s*100|uk\s*singles|no\.\s*\d|platinum|gold|certified|produced by|label)/i.test(s)
-  return generic || !hasConcrete || s.length < 40
+  return generic || !hasConcrete || s.split(/\s+/).length < 10
+}
+
+// ───────────────────────────────────────────────────────────
+// AI summarization (Genius only) — multi-sentence, reliable free-tier models
+// ───────────────────────────────────────────────────────────
+const NOWPLAYING_AI_MODEL = (
+  process.env.NOWPLAYING_AI_MODEL ||
+  'gemini-2.5-flash-lite,gemini-2.0-flash-lite,gemini-2.5-flash,gemini-2.0-flash'
+)
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean)
+
+const AI_HARD_TIMEOUT_MS = 45000
+
+function buildGeniusBlurbPrompt (song, aboutText, tone = 'neutral') {
+  const { trackName, artistName } = song || {}
+  const safeAbout = String(aboutText || '').slice(0, 4000)
+  return `Summarize the following Genius "About" section for a song as **2–3 short sentences** (clear, readable).
+- Keep it under about ${BLURB_MAX_CHARS} characters total.
+- Base ONLY on the provided text.
+- Include **one concrete detail** (e.g., a year, chart peak + country, certification, notable collaborator, or label).
+- Do **not** repeat the song title or artist name.
+- No hashtags, no links, no quotes; avoid generic filler.
+
+${toneLineFor(tone)}
+
+Song: ${trackName || 'Unknown'} — ${artistName || 'Unknown'}
+About (Genius):
+"""${safeAbout}"""`
 }
 
 async function summarizeGeniusAbout (song, aboutText, tone = 'neutral') {
   const prompt = buildGeniusBlurbPrompt(song, aboutText, tone)
   debug('[NowPlaying][Blurb][AI][PROMPT]', prompt)
   try {
-    const p = askQuestion(prompt, { returnApologyOnError: false, retries: 2, backoffMs: 600 })
+    log('[NowPlaying][Blurb][AI][MODEL]', NOWPLAYING_AI_MODEL.join(','))
+    const p = askQuestion(prompt, {
+      returnApologyOnError: false,
+      retries: 0,              // avoid multiplying traffic on 429/503
+      backoffMs: 600,
+      models: NOWPLAYING_AI_MODEL,
+      maxTokens: 180           // a few sentences; still compact
+    })
     const result = await Promise.race([
       p,
       new Promise((_, rej) => setTimeout(() => rej(new Error('AI_TIMEOUT')), AI_HARD_TIMEOUT_MS))
@@ -262,8 +321,9 @@ async function summarizeGeniusAbout (song, aboutText, tone = 'neutral') {
     const txt = (typeof result === 'string') ? result : result?.text
     if (!txt) throw new Error('AI_EMPTY_RESPONSE')
     let blurb = sanitizeBlurb(txt, song)
-    if (blurb && blurb.length > 200) blurb = blurb.slice(0, 197) + '…'
-    return blurb || null
+    blurb = smartClipToSentences(blurb, { maxChars: BLURB_MAX_CHARS, minSentences: 2, maxSentences: 3 })
+    if (!blurb || isBlandBlurb(blurb)) return null
+    return blurb
   } catch (e) {
     console.error('[NowPlaying][Blurb][AI][ERROR]', e?.message || e)
     return null
@@ -338,7 +398,7 @@ export async function announceNowPlaying (room) {
         debug('[NowPlaying][Blurb][GENIUS][FOUND]', JSON.stringify({ len: about.length }))
 
         const blurb = await summarizeGeniusAbout(song, about, INFO_BLURB_TONE)
-        if (!blurb || isBlandBlurb(blurb)) {
+        if (!blurb) {
           log('[NowPlaying][Blurb][SKIP]', JSON.stringify({
             reason: 'ai-bland-or-failed', track: song.trackName, artist: song.artistName
           }))
