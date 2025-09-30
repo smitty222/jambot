@@ -6,7 +6,7 @@
  * Tweak SQL to add/remove fields, limits, or sorting.
  */
 
-const SONGS_LIMIT = Number(process.env.PUBLIC_SONGS_LIMIT || 1000);
+const SONGS_LIMIT = Number(process.env.PUBLIC_SONGS_LIMIT || 5000);
 export const PUBLIC_VIEWS = {
   // Most-played songs (public, compact)
   top_songs: {
