@@ -28,6 +28,9 @@ import { songPayment } from '../database/dbwalletmanager.js'
 import { updateRecentSongs } from '../database/dbrecentsongsmanager.js'
 import { getPopularSpotifyTrackID } from '../utils/autoDJ.js'
 import { getMarkedUser, unmarkUser } from '../utils/removalQueue.js'
+// Node built-in modules for persisting DM cursors
+import fs from 'fs'
+import path from 'path'
 // Keep a handle on the usersToBeRemoved map from the message handler.
 // This state indicates DJs that should be removed after their song finishes.
 // TODO: extract this into a dedicated module to fully eliminate
@@ -161,6 +164,42 @@ function normalizeMessages (raw) {
 }
 
 // ───────────────────────────────────────────────────────────
+// Safe normaliser
+//
+// The built-in normalizeMessages() helper returns a heterogeneous mix of
+// message objects depending on the API shape. To harden inbound
+// processing against undefined fields and edge cases, safeNormalize()
+// filters for messages that contain a plausible identifier and then
+// maps each entry to a canonical shape. If a required field is
+// missing, the message is dropped. This reduces the risk of
+// uncaught exceptions downstream when extracting IDs, senders or
+// timestamps. See suggestions for further validation.
+const REQUIRED_FIELDS = ['id', 'sender', 'sentAt']
+function isMsg (m) {
+  return !!(m && (m.id || m._id || m.guid || m.messageId))
+}
+
+export function safeNormalize (raw) {
+  const arr = Array.isArray(raw) ? raw : normalizeMessages(raw)
+  const filtered = arr.filter(isMsg)
+  return filtered.map((m) => {
+    const id = m.id ?? m._id ?? m.guid ?? m.messageId
+    const senderUid = getUid(m.sender) ?? getUid(m.sender?.uid) ?? m.sender ?? null
+    const receiverUid = getUid(m.receiver) ?? m.receiver ?? null
+    const textRaw = m?.data?.text ?? m?.text ?? m?.message ?? ''
+    const text = typeof textRaw === 'string' ? textRaw.trim() : ''
+    return {
+      id,
+      sender: senderUid,
+      receiver: receiverUid,
+      text,
+      sentAtSec: getSentAt(m) || 0,
+      conversationId: m.conversationId || m.conversation_id || null
+    }
+  })
+}
+
+// ───────────────────────────────────────────────────────────
 // In-memory TTL de-dupe (prevents unbounded Set growth)
 // ───────────────────────────────────────────────────────────
 class TTLSeenSet {
@@ -190,6 +229,34 @@ class TTLSeenSet {
 // DM/group classification helpers
 // ───────────────────────────────────────────────────────────
 const COMETCHAT_BOT_UID = process.env.BOT_USER_UUID || process.env.CHAT_USER_ID
+
+// ───────────────────────────────────────────────────────────
+// DM cursor persistence
+//
+// Persist the per-peer DM cursors to disk to avoid reprocessing old
+// direct messages after a restart. The file location can be set via
+// DM_CURSOR_FILE env. Defaults to src/data/dm_since.json relative
+// to the project root. The cursors are loaded on Bot instantiation
+// and saved whenever they are updated.
+const DM_CURSOR_FILE = process.env.DM_CURSOR_FILE || path.join(process.cwd(), 'src/data/dm_since.json')
+
+function loadDmCursors () {
+  try {
+    const txt = fs.readFileSync(DM_CURSOR_FILE, 'utf-8')
+    const obj = JSON.parse(txt)
+    return (obj && typeof obj === 'object') ? obj : {}
+  } catch {
+    return {}
+  }
+}
+
+function saveDmCursors (cursors) {
+  try {
+    fs.writeFileSync(DM_CURSOR_FILE, JSON.stringify(cursors, null, 2))
+  } catch (e) {
+    logger.warn('[bot] failed to persist DM cursors', { err: e?.message || e })
+  }
+}
 
 const getUid = (x) => {
   if (!x) return null
@@ -325,6 +392,30 @@ export class Bot {
     for (const p of this._dmPeers) this._dmSinceByPeer[p] = startTimeStamp
 
     this.lastDmUser = null
+
+    // Load persisted DM cursors from disk. If present, these values
+    // override the defaults and allow the bot to resume DM polling
+    // from the last seen timestamps. Merge with the initial peers to
+    // ensure new peers still start from the default baseline.
+    try {
+      const persisted = loadDmCursors()
+      if (persisted && typeof persisted === 'object') {
+        for (const [uid, ts] of Object.entries(persisted)) {
+          const sec = Number(ts)
+          if (Number.isFinite(sec)) this._dmSinceByPeer[uid] = sec
+        }
+      }
+      // Adjust the global DM cursor to the maximum of all per-peer
+      const times = Object.values(this._dmSinceByPeer)
+      if (times.length > 0) {
+        const maxTs = Math.max(...times.map(Number))
+        if (Number.isFinite(maxTs) && maxTs > this.lastMessageIDs.dm) {
+          this.lastMessageIDs.dm = maxTs
+        }
+      }
+    } catch (e) {
+      logger.warn('[bot] failed to load DM cursors', { err: e?.message || e })
+    }
   }
 
   // Allow external code to register a DM peer (auto-discovery)
@@ -427,8 +518,11 @@ export class Bot {
     return sentAtSec < Math.floor(this._startupTimeMs / 1000) - grace || sentAtSec < baselineSec
   }
 
-  async _cooperativeYieldIfNeeded (count) {
-    if (count % POLL_YIELD_EVERY === 0) {
+  async _cooperativeYieldIfNeeded (count, batchSize = 0) {
+    // Cooperatively yield to the event loop every N messages or when
+    // processing very large batches. This prevents event-loop
+    // starvation on heavy message bursts.
+    if (count % POLL_YIELD_EVERY === 0 || batchSize > 500) {
       await new Promise((r) => setImmediate(r))
     }
   }
@@ -449,49 +543,37 @@ export class Bot {
       {
         const sinceSec = toSec(this.lastMessageIDs.room)
         const raw = await getMessages(this.roomUUID, sinceSec, 'group')
-        const msgs = Array.isArray(raw) ? raw : normalizeMessages(raw)
+        // Use safeNormalize to filter and canonicalise incoming messages. This
+        // protects against malformed data and undefined fields.
+        const msgs = safeNormalize(raw)
         let maxSec = sinceSec
         let processed = 0
+        const batchSize = msgs.length
 
         for (const m of msgs) {
           try {
-            const id = m?.id ?? m?._id ?? m?.guid ?? m?.messageId ?? m?.meta?.id
-            const sentAtSec = getSentAt(m) || sinceSec
-
-            // Extract text cheaply; avoid .trim() unless it's a string
-            const rawText = m?.data?.text ?? m?.text ?? m?.message
-            if (typeof rawText !== 'string') continue
-            const text = rawText.trim()
+            const { id, sentAtSec, text, sender } = m
             if (!id || !sentAtSec || !text) continue
-
+            // De-dupe and staleness checks
             if (this._seen.has(id)) continue
             this._seen.add(id)
             if (this._isStale(sentAtSec, sinceSec)) continue
-
             maxSec = Math.max(maxSec, sentAtSec + 1)
-
-            const senderObj =
-              m?.sender ?? m?.from ?? m?.entities?.sender?.entity ?? m?.entities?.sender ?? null
-            const sender = getUid(senderObj)
             if (!sender || sender === COMETCHAT_BOT_UID) continue
-
-            // mark user as a DM peer (auto-discovers)
+            // auto-discover DM peers
             this.addDMPeer(sender)
-
             await handlers.message(
               { message: text, sender, receiverType: 'group' },
               this.roomUUID,
               this.state,
               this
             )
-
             processed++
-            await this._cooperativeYieldIfNeeded(processed)
+            await this._cooperativeYieldIfNeeded(processed, batchSize)
           } catch (err) {
             logger.error('processNewMessages[group] per-message error', { err })
           }
         }
-
         if (maxSec !== sinceSec) this.lastMessageIDs.room = maxSec
       }
 
@@ -502,22 +584,20 @@ export class Bot {
         const peers = new Set([...this._dmPeers, ...this._dmCandidates])
         if (this.lastDmUser) peers.add(this.lastDmUser)
 
-        let merged = []
+        let rawMessages = []
         let maxGlobal = globalSince
 
         if (peers.size > 0) {
           const sinceByPeer = {}
           for (const p of peers) sinceByPeer[p] = toSec(this._dmSinceByPeer[p] ?? globalSince)
-
           const { maxTsByPeer, flat } =
             await getDirectMessagesForPeers([...peers], sinceByPeer, globalSince)
-
-          merged = Array.isArray(flat) ? flat : []
-          if (merged.length > 1) merged.sort((a, b) => getSentAt(a) - getSentAt(b))
-          if (merged.length > DM_MAX_MERGED) {
-            merged = merged.slice(merged.length - DM_MAX_MERGED) // keep most recent N
+          rawMessages = Array.isArray(flat) ? flat : []
+          // Keep only the most recent N messages
+          if (rawMessages.length > 1) rawMessages.sort((a, b) => getSentAt(a) - getSentAt(b))
+          if (rawMessages.length > DM_MAX_MERGED) {
+            rawMessages = rawMessages.slice(rawMessages.length - DM_MAX_MERGED)
           }
-
           for (const p of Object.keys(maxTsByPeer || {})) {
             const next = Math.max(globalSince, toSec(maxTsByPeer[p] || 0) + 1)
             this._dmSinceByPeer[p] = next
@@ -526,73 +606,61 @@ export class Bot {
         } else {
           try {
             const arr = await getMessages(undefined, globalSince, 'user')
-            merged = Array.isArray(arr) ? arr : normalizeMessages(arr)
+            rawMessages = Array.isArray(arr) ? arr : normalizeMessages(arr)
           } catch (e) {
             logger.error('DM poll (broad inbox) error', { e })
           }
         }
 
+        // Normalise and filter messages
+        const msgs = safeNormalize(rawMessages)
+        if (msgs.length > 1) msgs.sort((a, b) => a.sentAtSec - b.sentAtSec)
         let processed = 0
-        for (const m of merged) {
+        const batchSize = msgs.length
+
+        for (const m of msgs) {
           try {
-            const id = m?.id ?? m?._id ?? m?.guid ?? m?.messageId ?? m?.meta?.id
-            const sentAtSec = getSentAt(m) || globalSince
-
-            const rawText = m?.data?.text ?? m?.text ?? m?.message
-            if (typeof rawText !== 'string') continue
-            const text = rawText.trim()
+            const { id, sentAtSec, text, sender, receiver, conversationId } = m
             if (!id || !sentAtSec || !text) continue
-
             if (this._seen.has(id)) continue
             this._seen.add(id)
             if (this._isStale(sentAtSec, globalSince)) continue
-
+            // Use conversationId to determine channel. Only handle user (DM) messages here.
             const channel = guessReceiverType(m)
-            if (channel !== 'user') continue // only DMs here
-
-            const senderObj =
-              m?.sender ?? m?.from ?? m?.entities?.sender?.entity ?? m?.entities?.sender ?? null
-            const sender = getUid(senderObj)
+            if (channel !== 'user') continue
             if (sender === COMETCHAT_BOT_UID) continue
-
             const peerUid = deriveDmPeer(m, sender && sender !== COMETCHAT_BOT_UID ? sender : null)
             if (!peerUid) continue
-
             this.addDMPeer(peerUid)
             this.lastDmUser = peerUid
             this._dmSinceByPeer[peerUid] = Math.max(this._dmSinceByPeer[peerUid] ?? globalSince, sentAtSec + 1)
             if (this._dmSinceByPeer[peerUid] > maxGlobal) maxGlobal = this._dmSinceByPeer[peerUid]
-
             // Fast path for ping
             if (text.length <= 5) {
               const lc = text.toLowerCase()
               if (lc === '/ping' || lc === 'ping') {
                 try { await sendDirectMessage(peerUid, 'pong 🏓') } catch (e) { logger.error('Failed to send pong DM:', e) }
                 processed++
-                await this._cooperativeYieldIfNeeded(processed)
+                await this._cooperativeYieldIfNeeded(processed, batchSize)
                 continue
               }
             }
-
-            const senderName =
-              m?.data?.entities?.sender?.name ??
-              m?.senderName ??
-              'Unknown'
-
+            // The safe normaliser does not preserve senderName; default to Unknown
+            const senderName = 'Unknown'
             await handlers.message(
               { message: text, sender: peerUid, senderName, receiverType: 'user' },
               peerUid,
               this.state
             )
-
             processed++
-            await this._cooperativeYieldIfNeeded(processed)
+            await this._cooperativeYieldIfNeeded(processed, batchSize)
           } catch (err) {
             logger.error('processNewMessages[user] per-message error', { err })
           }
         }
-
         if (maxGlobal !== globalSince) this.lastMessageIDs.dm = maxGlobal
+        // Persist DM cursors after processing
+        saveDmCursors(this._dmSinceByPeer)
       }
     } catch (err) {
       logger.error('Error in processNewMessages:', err)

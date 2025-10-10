@@ -45,6 +45,11 @@ const els = {
   modCmds: $("modCmds"),
   totals: $("totals"),
   // stats detail
+  // craps & lottery containers now live in the Games tab
+  gamesCrapsRecord: $("gamesCrapsRecord"),
+  gamesLotteryWinners: $("gamesLotteryWinners"),
+
+  // old stats elements retained for back-compat but unused
   crapsRecord: $("crapsRecord"),
   lotteryWinners: $("lotteryWinners"),
 
@@ -63,6 +68,7 @@ const els = {
   tabStats: $("tabStats"),
   tabAlbums: $("tabAlbums"),
   tabSongs: $("tabSongs"),
+  tabGames: $("tabGames"),
   tabLottery: $("tabLottery"),
   tabSettings: $("tabSettings"),
   viewCommands: $("viewCommands"),
@@ -70,6 +76,7 @@ const els = {
   viewStats: $("viewStats"),
   viewAlbums: $("viewAlbums"),
   viewSongs: $("viewSongs"),
+  viewGames: $("viewGames"),
   viewLottery: $("viewLottery"),
   viewSettings: $("viewSettings"),
 
@@ -101,7 +108,7 @@ const els = {
 // Keep header controls clickable
 for (const id of [
   "saveToken","clearToken",
-  "tabCommands","tabData","tabStats","tabAlbums","tabSongs","tabLottery","tabSettings"
+  "tabCommands","tabData","tabStats","tabAlbums","tabSongs","tabGames","tabLottery","tabSettings"
 ]) {
   const b = $(id);
   if (b) { b.style.pointerEvents = "auto"; b.style.userSelect = "auto"; }
@@ -125,6 +132,7 @@ const TAB_MAP = {
   tabStats:    "viewStats",
   tabAlbums:   "viewAlbums",
   tabSongs:    "viewSongs",
+  tabGames:    "viewGames",
   tabLottery:  "viewLottery",
   tabSettings: "viewSettings",
 };
@@ -370,38 +378,62 @@ async function refreshStats() {
   } catch (e) {
     if (els.totals) els.totals.innerHTML = `<div class='muted small'>Error: Failed to fetch (${escapeHtml(e.message)})</div>`;
   }
+}
 
+// Refresh games: craps record and lottery winners
+async function refreshGames() {
+  // Craps record
   try {
     const rec = await apiGet("/api/db/craps_records_public");
+    const container = els.gamesCrapsRecord;
+    if (!container) return;
     if (!Array.isArray(rec) || rec.length === 0) {
-      if (els.crapsRecord) els.crapsRecord.innerHTML = `<div class="muted small">No record yet.</div>`;
+      container.innerHTML = `<div class="muted small">No record yet.</div>`;
     } else {
       const r = rec[0];
-      if (els.crapsRecord) els.crapsRecord.innerHTML = `
-        <div class="row">
-          <div class="tag">Room</div> <code class="tag">${escapeHtml(r.roomId || r.room || "—")}</code>
+      // Build a richer card: highlight max rolls and shooter
+      const maxRolls = Number(r.maxRolls ?? r.max_rolls ?? 0);
+      const shooter  = r.shooterNickname || r.shooter || "—";
+      const achieved = r.achievedAt || r.achieved_at || "";
+      const room     = r.roomId || r.room || "—";
+      container.innerHTML = `
+        <div class="games-record">
+          <div class="record-value">${maxRolls}</div>
+          <div class="record-label">Max Rolls</div>
+          <div class="record-player"><strong>Shooter:</strong> ${escapeHtml(shooter)}</div>
+          <div class="record-room"><strong>Room:</strong> <code class="tag">${escapeHtml(room)}</code></div>
+          <div class="record-date muted small">${escapeHtml(achieved)}</div>
         </div>
-        <div style="margin-top:8px"><b>Max Rolls:</b> ${Number(r.maxRolls ?? r.max_rolls ?? 0)}</div>
-        <div><b>Shooter:</b> ${escapeHtml(r.shooterNickname || r.shooter || "—")}</div>
-        <div class="muted small">${escapeHtml(r.achievedAt || r.achieved_at || "")}</div>
       `;
     }
   } catch (e) {
-    if (els.crapsRecord) els.crapsRecord.innerHTML = `<div class="muted small">Error: ${escapeHtml(e.message)}</div>`;
+    const container = els.gamesCrapsRecord;
+    if (container) container.innerHTML = `<div class="muted small">Error: ${escapeHtml(e.message)}</div>`;
   }
 
+  // Lottery winners
   try {
     const winners = await apiGet("/api/db/lottery_winners_public");
-    if (els.lotteryWinners) {
-      els.lotteryWinners.innerHTML =
-        (!Array.isArray(winners) || winners.length === 0)
-          ? `<div class="muted small">No winners yet.</div>`
-          : winners.slice(0, 6).map(w =>
-              `<div class="tag">${escapeHtml(w.nickname || "—")} — $${escapeHtml(String(w.amountWon ?? w.amount_won ?? ""))}</div>`
-            ).join(" ");
+    const container = els.gamesLotteryWinners;
+    if (!container) return;
+    if (!Array.isArray(winners) || winners.length === 0) {
+      container.innerHTML = `<div class="muted small">No winners yet.</div>`;
+    } else {
+      // Show up to 10 winners in a responsive grid
+      const html = winners.slice(0, 10).map(w => {
+        const name = escapeHtml(w.nickname || "—");
+        const amt  = escapeHtml(String(w.amountWon ?? w.amount_won ?? ""));
+        return `
+          <div class="winner-card">
+            <div class="winner-name">${name}</div>
+            <div class="winner-amount">$${amt}</div>
+          </div>`;
+      }).join("");
+      container.innerHTML = `<div class="winners-grid">${html}</div>`;
     }
   } catch (e) {
-    if (els.lotteryWinners) els.lotteryWinners.innerHTML = `<div class="muted small">Error: ${escapeHtml(e.message)}</div>`;
+    const container = els.gamesLotteryWinners;
+    if (container) container.innerHTML = `<div class="muted small">Error: ${escapeHtml(e.message)}</div>`;
   }
 }
 
@@ -512,6 +544,29 @@ function renderAlbums(){
 
   // reviewed only
   rows = rows.filter(a => (typeof a._avg === "number") && a._reviews > 0);
+
+  // Group by album title (case-insensitive) to merge duplicates with different artist names
+  const grouped = {};
+  for (const a of rows) {
+    const keyTitle = a._title.trim().toLowerCase();
+    if (!grouped[keyTitle]) {
+      grouped[keyTitle] = { ...a };
+    } else {
+      const g = grouped[keyTitle];
+      // Save current review count before updating
+      const prevReviews = g._reviews;
+      // accumulate reviews and weighted average
+      const totalReviews = prevReviews + a._reviews;
+      const weightedAvg = ((g._avg ?? 0) * prevReviews + (a._avg ?? 0) * a._reviews) / totalReviews;
+      g._reviews = totalReviews;
+      g._avg = weightedAvg;
+      // prefer cover art if missing on group
+      if (!g._cover && a._cover) g._cover = a._cover;
+      // choose artist name from whichever has more reviews (use previous count)
+      if ((a._reviews > prevReviews) && a._artist) g._artist = a._artist;
+    }
+  }
+  rows = Object.values(grouped);
 
   if (q) rows = rows.filter(a =>
     a._title.toLowerCase().includes(q) || a._artist.toLowerCase().includes(q)
@@ -755,6 +810,7 @@ async function refreshAll() {
     refreshPublic(),
     refreshMod(),
     refreshStats(),
+    refreshGames(),
     refreshAlbums(),
     refreshSongs(),
     refreshLottery(),
@@ -767,6 +823,7 @@ async function refreshAll() {
     await chooseApiOrigin();
     await refreshAll();
     setInterval(refreshStats, 15000);
+    setInterval(refreshGames, 30000);
     setInterval(refreshLottery, 30000);
     setInterval(refreshAlbums, 60000);
     setInterval(refreshSongs, 60000);

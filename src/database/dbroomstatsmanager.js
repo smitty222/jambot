@@ -1,40 +1,63 @@
 import db from './db.js'
 
+// Helper to compute a canonical key for songs. We prefer using the
+// provided songId if present; otherwise fall back to a lowercased
+// combination of trackName and artistName separated by a pipe. This
+// prevents expensive OR conditions in queries and aligns with the
+// database migration introduced in initdb.js.
+function getCanonSongKey (song) {
+  if (!song) return null
+  if (song.songId) return String(song.songId)
+  const track = String(song.trackName || '').toLowerCase().trim()
+  const artist = String(song.artistName || '').toLowerCase().trim()
+  if (!track || !artist) return null
+  return `${track}|${artist}`
+}
+
 // 🔁 Add or update current song stats
 export function logCurrentSong (song, likes = 0, dislikes = 0, stars = 0) {
   if (!song || !song.trackName || !song.artistName) return
-
-  const existing = db.prepare(`
-    SELECT * FROM room_stats
-    WHERE (songId IS NOT NULL AND songId = ?)
-       OR (songId IS NULL AND trackName = ? AND artistName = ?)
-  `).get(song.songId || null, song.trackName, song.artistName)
+  const canon = getCanonSongKey(song)
+  // Look up existing stats by canonical song key. This avoids OR
+  // conditions and leverages the idx_room_stats_canon index.
+  const existing = canon
+    ? db.prepare('SELECT * FROM room_stats WHERE canonSongKey = ?').get(canon)
+    : null
 
   if (existing) {
-    db.prepare(`
-      UPDATE room_stats SET
+    // Update existing row: increment play count and reactions. Also
+    // set canonical fields if they were previously null. Use the
+    // computed canon so that a previously unknown songId can promote
+    // the canonical key from track|artist to songId.
+    db.prepare(
+      `UPDATE room_stats SET
         playCount = playCount + 1,
         likes = likes + ?,
         dislikes = dislikes + ?,
         stars = stars + ?,
         songId = COALESCE(songId, ?),
         spotifyTrackId = COALESCE(spotifyTrackId, ?),
-        songDuration = COALESCE(songDuration, ?)
-      WHERE id = ?
-    `).run(
-      likes, dislikes, stars,
+        songDuration = COALESCE(songDuration, ?),
+        canonSongKey = COALESCE(canonSongKey, ?)
+      WHERE id = ?`
+    ).run(
+      likes,
+      dislikes,
+      stars,
       song.songId || null,
       song.spotifyTrackId || null,
       song.songDuration || null,
+      canon,
       existing.id
     )
   } else {
-    db.prepare(`
-      INSERT INTO room_stats (
+    // Insert a new row with canonical key and initial stats.
+    db.prepare(
+      `INSERT INTO room_stats (
         trackName, artistName, songId, spotifyTrackId, songDuration,
-        playCount, likes, dislikes, stars
-      ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
-    `).run(
+        playCount, likes, dislikes, stars, canonSongKey
+      ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`
+    ).run(
       song.trackName,
       song.artistName,
       song.songId || null,
@@ -42,7 +65,8 @@ export function logCurrentSong (song, likes = 0, dislikes = 0, stars = 0) {
       song.songDuration || null,
       likes,
       dislikes,
-      stars
+      stars,
+      canon
     )
   }
 }
@@ -50,19 +74,17 @@ export function logCurrentSong (song, likes = 0, dislikes = 0, stars = 0) {
 // ⏱️ Update lastPlayed timestamp
 export function updateLastPlayed (song) {
   if (!song || !song.trackName || !song.artistName) return
-
   const now = new Date().toISOString()
-
-  db.prepare(`
-    UPDATE room_stats
-    SET lastPlayed = ?
-    WHERE (songId IS NOT NULL AND songId = ?)
-       OR (songId IS NULL AND trackName = ? AND artistName = ?)
-  `).run(
+  const canon = getCanonSongKey(song)
+  if (!canon) return
+  db.prepare(
+    `UPDATE room_stats
+      SET lastPlayed = ?, canonSongKey = COALESCE(canonSongKey, ?)
+      WHERE canonSongKey = ?`
+  ).run(
     now,
-    song.songId || null,
-    song.trackName,
-    song.artistName
+    canon,
+    canon
   )
 }
 

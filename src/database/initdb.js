@@ -247,6 +247,49 @@ try {
   console.warn('⚠️ Could not create ux_song_reviews index:', e.message)
 }
 
+// ─────────────────────────────────────────────────────────────
+// Additional index creation and canonSongKey migration
+// These indexes improve performance on frequent lookup queries and
+// provide a canonical key to avoid OR conditions on room_stats
+// lookups. They are idempotent and safe to execute on existing
+// databases.
+try {
+  // Add canonSongKey column for deduplicated song lookups
+  if (!hasColumn('room_stats', 'canonSongKey')) {
+    db.exec('ALTER TABLE room_stats ADD COLUMN canonSongKey TEXT;')
+    console.log('✅ Added room_stats.canonSongKey')
+    // Backfill canonSongKey for existing rows. Use songId if present
+    // otherwise fall back to lower-cased trackName|artistName. This
+    // ensures consistent key generation for future queries.
+    db.exec(`UPDATE room_stats
+      SET canonSongKey = COALESCE(songId, LOWER(trackName || '|' || artistName))
+      WHERE canonSongKey IS NULL OR canonSongKey = ''`)
+  }
+} catch (e) {
+  console.warn('⚠️ Could not add canonSongKey or backfill:', e.message)
+}
+
+// Create indexes to speed up common queries. These calls are wrapped
+// in try/catch so they fail gracefully on older SQLite versions.
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_room_stats_songId ON room_stats(songId)') } catch (e) { console.warn('⚠️ Could not create idx_room_stats_songId:', e.message) }
+// The track\_artist index is no longer needed now that canonSongKey provides a
+// single lookup key. Remove the idx_room_stats_track_artist index if it exists
+// and avoid creating a duplicate index on writes. Extra indexes slow down
+// writes and provide little benefit once canonSongKey is in place.
+try {
+  // Drop the old compound index if present to reduce write overhead
+  db.exec('DROP INDEX IF EXISTS idx_room_stats_track_artist')
+} catch (e) {
+  console.warn('⚠️ Could not drop idx_room_stats_track_artist:', e.message)
+}
+// Note: we intentionally omit recreating idx_room_stats_track_artist.
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_room_stats_lastPlayed ON room_stats(lastPlayed)') } catch (e) { console.warn('⚠️ Could not create idx_room_stats_lastPlayed:', e.message) }
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_song_reviews_song_user ON song_reviews(songId, userId)') } catch (e) { console.warn('⚠️ Could not create idx_song_reviews_song_user:', e.message) }
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_album_reviews_album ON album_reviews(albumId)') } catch (e) { console.warn('⚠️ Could not create idx_album_reviews_album:', e.message) }
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_themes_room ON themes(roomId)') } catch (e) { console.warn('⚠️ Could not create idx_themes_room:', e.message) }
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_wallets_uuid ON wallets(uuid)') } catch (e) { console.warn('⚠️ Could not create idx_wallets_uuid:', e.message) }
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_room_stats_canon ON room_stats(canonSongKey)') } catch (e) { console.warn('⚠️ Could not create idx_room_stats_canon:', e.message) }
+
 console.log('✅ Database initialized')
 
 

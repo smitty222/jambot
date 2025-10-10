@@ -80,6 +80,28 @@ const TONE_ALIASES = {
   vibe: 'vibe',
   chill: 'vibe'
 }
+
+// ---------------------------------------------------------------------------
+// HTML Escaper
+//
+// When constructing chat messages that include user-provided text (such as
+// track names or artist names), we must escape HTML entities to prevent
+// accidental formatting or injection. The esc() helper replaces
+// characters like &, <, >, ", and ' with their HTML entity equivalents.
+//
+function esc (str) {
+  return String(str || '').replace(/[&<>\'"/]/g, (ch) => {
+    switch (ch) {
+      case '&': return '&amp;'
+      case '<': return '&lt;'
+      case '>': return '&gt;'
+      case '"': return '&quot;'
+      case "'": return '&#39;'
+      case '/': return '&#47;'
+      default: return ch
+    }
+  })
+}
 function normalizeTone (raw) {
   const t = String(raw || '').toLowerCase()
   const aliased = TONE_ALIASES[t] || t
@@ -362,24 +384,27 @@ export async function announceNowPlaying (room) {
     }
 
     // ── 1) Always build & POST the base line first (no dependencies)
-    let base = `🎵 Now playing: “${song.trackName}” by ${song.artistName}`
+    // Escape user-provided text to avoid chat formatting quirks
+    let base = `🎵 Now playing: “${esc(song.trackName)}” by ${esc(song.artistName)}`
     await postWithRetry({ room, message: base })
     log('[NowPlaying][POST][BASE]', JSON.stringify({ track: song.trackName, artist: song.artistName }))
 
     // ── 2) Best-effort: enrich the same message with stats (wrapped, non-fatal)
     try {
-      const stats = db.prepare(`
-        SELECT playCount, lastPlayed
-        FROM room_stats
-        WHERE songId = ?
-      `).get(song.songId)
-
+      // Fetch play count from room_stats, but compute last-played from recent_songs.
+      const stats = db.prepare(
+        `SELECT playCount FROM room_stats WHERE songId = ?`
+      ).get(song.songId)
       const lines = []
-      if (!stats?.lastPlayed || stats.playCount === 1) {
+      // Look up the second most recent play of this track and artist in recent_songs.
+      const lastRow = db.prepare(
+        `SELECT playedAt FROM recent_songs WHERE trackName = ? AND artistName = ? ORDER BY playedAt DESC LIMIT 1 OFFSET 1`
+      ).get(song.trackName, song.artistName)
+      if (!lastRow || !stats?.playCount || stats.playCount === 1) {
         lines.push('🆕 First time playing in this room!')
       } else {
         lines.push(`🔁 Played ${stats.playCount} time${stats.playCount !== 1 ? 's' : ''}`)
-        const lastPlayedTime = formatDistanceToNow(new Date(stats.lastPlayed), { addSuffix: true })
+        const lastPlayedTime = formatDistanceToNow(new Date(lastRow.playedAt), { addSuffix: true })
         lines.push(`🕒 Last played ${lastPlayedTime}`)
       }
 

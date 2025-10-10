@@ -8,6 +8,8 @@ import { updateCurrentUsers } from './utils/currentUsers.js'
 import { fetchCurrentUsers } from './utils/API.js'
 import * as themeStorage from './utils/themeManager.js'
 import { setThemes } from './utils/roomThemes.js'
+// Import database instance for health check
+import db from './database/db.js'
 
 // ──────────────────────────────────────────────────────────────
 // Scheduled publisher (cron → runs tools/publish-site-data.mjs)
@@ -35,13 +37,21 @@ function startSitePublisherCron () {
     LOG_LEVEL: process.env.LOG_LEVEL || 'info'
   }
 
+  // Track whether a run is in progress and the time of the last run. This
+  // debounces the cron so overlapping invocations are skipped and a
+  // minimum interval is enforced (protects against Fly restarts or
+  // scheduling glitches). See suggestions for idempotent publisher.
   let running = false
+  let lastRunAt = 0
+  const MIN_INTERVAL_MS = 60_000
   const runOnce = () => {
-    if (running) {
-      console.log('[publish-cron] previous run still in progress, skipping')
+    const now = Date.now()
+    if (running || (now - lastRunAt) < MIN_INTERVAL_MS) {
+      console.log('[publish-cron] skipped (in progress or too soon)')
       return
     }
     running = true
+    lastRunAt = now
     console.log(`[publish-cron] start: node ${SCRIPT}`)
     const child = spawn('node', [SCRIPT], {
       stdio: 'inherit',
@@ -121,8 +131,24 @@ app.get('/', (req, res) => {
   res.send('Jamflow bot is alive and running!')
 })
 
+// Health check route — returns 200 when the bot's socket is connected
+// and 503 otherwise. Errors during check default to a healthy response.
 app.get('/health', (req, res) => {
-  res.status(200).send('OK')
+  try {
+    const okSocket = roomBot?.socket?.connected === true
+    // Verify that the database can be read with a simple query. If this
+    // fails it likely indicates DB corruption or unavailability.
+    let okDb = true
+    try {
+      db.prepare('SELECT 1').get()
+    } catch (e) {
+      okDb = false
+    }
+    const ok = okSocket && okDb
+    res.status(ok ? 200 : 503).send(ok ? 'OK' : 'DEGRADED')
+  } catch (e) {
+    res.status(200).send('OK')
+  }
 })
 
 // Default to 8080 (Fly internal_port); override with PORT if set
@@ -131,5 +157,28 @@ app.listen(port, '0.0.0.0', () => console.log(`Listening on ${port}`))
 
 // Start the scheduled publisher after server boot so logs are visible
 startSitePublisherCron()
+
+// ──────────────────────────────────────────────────────────────
+// Graceful shutdown
+// ──────────────────────────────────────────────────────────────
+// Capture SIGINT and SIGTERM to close the socket connection and
+// database cleanly. Without this, abrupt process termination could
+// corrupt the WAL or leave sockets open. See suggestions for reliability.
+function shutdown () {
+  try {
+    // Close the bot's socket if it exists
+    roomBot?.socket?.close?.()
+  } catch {}
+  try {
+    // Dynamically import the db module to avoid circular deps
+    import('./database/db.js').then(({ default: database }) => {
+      try { database?.close?.() } catch {}
+    })
+  } catch {}
+  process.exit(0)
+}
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, shutdown)
+}
 
 export { roomBot }

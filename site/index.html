@@ -26,6 +26,8 @@
         <button id="tabCommands" class="button ghost">Commands</button>
         <button id="tabAlbums" class="button ghost">Albums</button>
         <button id="tabSongs" class="button ghost">Songs</button>
+        <!-- New Games tab shows craps records and lottery winners -->
+        <button id="tabGames" class="button ghost">Games</button>
         <button id="tabLottery" class="button ghost">Just Balls</button>
         <button id="tabData" class="button ghost">Data</button>
         <button id="tabStats" class="button ghost">Stats</button>
@@ -84,20 +86,24 @@
 
     <!-- STATS -->
     <section id="viewStats" class="view">
-      <div class="row" style="gap:12px; flex-wrap:wrap">
-        <div class="card" style="flex:1 1 460px; min-width:320px;">
-          <div class="section-title"><strong>Craps Record</strong></div>
-          <div id="crapsRecord"><div class="muted small">Loading…</div></div>
-        </div>
-        <div class="card" style="flex:1 1 460px; min-width:320px;">
-          <div class="section-title"><strong>Lottery Winners</strong></div>
-          <div id="lotteryWinners" class="row tight"><div class="muted small">Loading…</div></div>
-        </div>
-      </div>
-
+      <!-- The Stats page now focuses solely on aggregate totals. Games related info moved to the Games tab -->
       <div class="card">
         <div class="section-title"><strong>Totals</strong></div>
         <div id="totals"></div>
+      </div>
+    </section>
+
+    <!-- GAMES -->
+    <section id="viewGames" class="view">
+      <div class="row" style="gap:12px; flex-wrap:wrap">
+        <div class="card games-card" style="flex:1 1 460px; min-width:320px;">
+          <div class="section-title"><strong>Craps Record</strong></div>
+          <div id="gamesCrapsRecord"><div class="muted small">Loading…</div></div>
+        </div>
+        <div class="card games-card" style="flex:1 1 460px; min-width:320px;">
+          <div class="section-title"><strong>Lottery Winners</strong></div>
+          <div id="gamesLotteryWinners" class="winners-grid"><div class="muted small">Loading…</div></div>
+        </div>
       </div>
     </section>
 

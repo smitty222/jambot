@@ -32,6 +32,12 @@ const db = new Database(DB_PATH)
 db.pragma('journal_mode = WAL')
 db.pragma('synchronous = NORMAL')
 db.pragma('busy_timeout = 5000')
+// Enable enforcement of foreign key constraints. This ensures that
+// referenced rows cannot be removed without handling dependent rows
+// and improves relational integrity across the database. If a
+// database created before this change already had foreign keys
+// disabled, this pragma will turn them on for all new connections.
+db.pragma('foreign_keys = ON')
 
 export { DB_PATH }
 export default db

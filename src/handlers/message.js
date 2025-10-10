@@ -24,7 +24,16 @@ import {
   showAllBets,
   rouletteGameActive
 } from './roulette.js'
-import { getBalanceByNickname, getNicknamesFromWallets, addDollarsByUUID, loadWallets, removeFromUserWallet, getUserWallet } from '../database/dbwalletmanager.js'
+import {
+  getBalanceByNickname,
+  getNicknamesFromWallets,
+  addDollarsByUUID,
+  loadWallets,
+  removeFromUserWallet,
+  getUserWallet,
+  transferTip,
+  addOrUpdateUser
+} from '../database/dbwalletmanager.js'
 import { getJackpotValue, handleSlotsCommand } from './slots.js'
 import {
   openBetting, joinTable, leaveTable,
@@ -939,9 +948,16 @@ Please refresh your page for the queue to update`
       return
     }
 
-    const amount = parseTipAmount(parts.slice(1).join(' '))
-    if (!Number.isFinite(amount) || amount <= 0) {
-      await postMessage({ room, message: 'Please specify a positive amount (e.g., /tip 5 or /tip 2.50).' })
+    const rawAmountStr = parts.slice(1).join(' ')
+    // Strict amount validation: only digits with optional one or two decimal places
+    if (!/^[0-9]+(?:\.[0-9]{1,2})?$/.test(rawAmountStr)) {
+      await postMessage({ room, message: 'Please specify a valid dollar amount with up to 2 decimal places (e.g., /tip 5 or /tip 2.50).' })
+      return
+    }
+    const amount = parseTipAmount(rawAmountStr)
+    // Enforce minimum and maximum allowed amounts
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 1000) {
+      await postMessage({ room, message: 'Tip amount must be between 0 and 1000 dollars.' })
       return
     }
 
@@ -969,21 +985,17 @@ Please refresh your page for the queue to update`
       return
     }
 
-    // Deduct from tipper
-    const deducted = await removeFromUserWallet(senderUUID, amount) // ensure this is awaited
-    if (!deducted) {
-      await postMessage({ room, message: 'Insufficient funds.' })
-      return
-    }
-
-    // Credit the now-playing DJ
+    // Perform atomic transfer. Ensure the recipient exists in the users table
     try {
-      await addDollarsByUUID(recipientUUID, amount)
-    } catch (creditErr) {
-      // Refund on failure
-      try { await addDollarsByUUID(senderUUID, amount) } catch {}
-      console.error('Tip credit error:', creditErr)
-      await postMessage({ room, message: 'Could not complete the tip. Your funds were returned.' })
+      await addOrUpdateUser(recipientUUID)
+      transferTip({ fromUuid: senderUUID, toUuid: recipientUUID, amount })
+    } catch (err) {
+      if (err?.message === 'INSUFFICIENT_FUNDS') {
+        await postMessage({ room, message: `Insufficient funds. Your balance is $${numericBalance.toFixed(2)}.` })
+      } else {
+        console.error('Tip transfer error:', err)
+        await postMessage({ room, message: 'Could not complete the tip. Your funds were returned.' })
+      }
       return
     }
 
