@@ -121,7 +121,11 @@ async function drawWinningNumber () {
       await addToUserWallet(userId, LOTTERY_WIN_AMOUNT, cleanNick)
       // Determine the winner name for recording: prefer the stored
       // nickname in users table; fall back to cleanNick or UUID
-      const winnerName = getDisplayName(userId)
+      // Prefer a cleaned nickname for the winner. If none is available
+      // (e.g. they only have a mention or no stored nickname), fall back
+      // to getDisplayName() which itself falls back to the UUID. This
+      // avoids persisting raw mention tokens into the lottery_winners table.
+      const winnerName = cleanNick || getDisplayName(userId)
       db.prepare(`
         INSERT INTO lottery_winners (userId, nickname, winningNumber, amountWon)
         VALUES (?, ?, ?, ?)

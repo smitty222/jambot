@@ -78,11 +78,24 @@ import db from '../database/db.js'
 
 export function getDisplayName (userId) {
   try {
+    // Look up the stored nickname for this user. Because callers use this
+    // helper to present human‑friendly names on the site, we need to
+    // treat raw Turntable mentions like "<@uid:abcd>" as unusable. Such
+    // tokens should be considered absent and the UUID returned instead.
     const row = db.prepare('SELECT nickname FROM users WHERE uuid = ?').get(userId)
-    const name = row?.nickname
-    // If the nickname is empty or undefined, fall back to the UUID
-    return name && String(name).trim().length > 0 ? name : userId
+    const raw = row?.nickname
+    if (!raw) return userId
+    const name = String(raw).trim()
+    // An empty string or a value that matches the mention pattern
+    // indicates that we have not yet learned a human nickname. In those
+    // cases, fall back to the UUID so that consumers always get a
+    // defined string instead of an unreadable mention token.
+    if (name.length === 0 || /^<@uid:[^>]+>$/.test(name)) {
+      return userId
+    }
+    return name
   } catch {
+    // On any database error just return the UUID as a safe fallback.
     return userId
   }
 }

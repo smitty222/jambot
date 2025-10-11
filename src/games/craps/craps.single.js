@@ -18,7 +18,7 @@ import { addToUserWallet, removeFromUserWallet, getUserWallet, addOrUpdateUser }
 import { PHASES } from './crapsState.js'
 import db from '../../database/db.js'
 import { getSenderNickname } from '../../utils/helpers.js'
-import { getDisplayName } from '../../utils/names.js'
+import { getDisplayName, sanitizeNickname } from '../../utils/names.js'
 
 async function persistRecord (room, rolls, shooterId) {
   // Determine a human‑friendly shooter name for persistence. First
@@ -29,21 +29,50 @@ async function persistRecord (room, rolls, shooterId) {
   // UUID. This ensures that craps_records.shooterNickname stores a
   // clean name rather than a raw mention.
   try {
+    // Fetch a raw mention string for the shooter. If this is returned
+    // as a Turntable mention (e.g. "<@uid:abcd>"), sanitise it to a
+    // human‑friendly nickname. Sanitising will strip the mention tokens
+    // and remove leading punctuation; if the result is empty we
+    // intentionally leave the nickname undefined so that
+    // addOrUpdateUser() preserves any existing human nickname or falls
+    // back to the UUID.
     const rawMention = await getSenderNickname(shooterId).catch(() => null)
-    // Sanitise and upsert the user record; addOrUpdateUser will
-    // preserve existing nicknames if the sanitised result is empty.
-    if (rawMention) await addOrUpdateUser(shooterId, rawMention)
-  } catch {}
-  const shooterNickname = getDisplayName(shooterId)
-  db.prepare(`
-    INSERT INTO craps_records (roomId, maxRolls, shooterId, shooterNickname, achievedAt)
-    VALUES (?, ?, ?, ?, datetime('now'))
-    ON CONFLICT(roomId) DO UPDATE SET
-      maxRolls = excluded.maxRolls,
-      shooterId = excluded.shooterId,
-      shooterNickname = excluded.shooterNickname,
-      achievedAt = excluded.achievedAt
-  `).run(room, rolls, shooterId, shooterNickname)
+    const clean = sanitizeNickname(rawMention)
+    // Upsert the user record with the cleaned nickname. The
+    // addOrUpdateUser helper will ignore empty nicknames and instead
+    // use the existing stored nickname or the UUID if none exists.
+    await addOrUpdateUser(shooterId, clean)
+    // Determine a shooter name for persistence. Prefer the cleaned
+    // nickname; if none is available fall back to the stored
+    // display name (which itself falls back to the UUID when
+    // necessary). This avoids persisting raw mention tokens like
+    // "<@uid:abcd>" into the craps_records table.
+    const shooterNickname = clean || getDisplayName(shooterId)
+    db.prepare(`
+      INSERT INTO craps_records (roomId, maxRolls, shooterId, shooterNickname, achievedAt)
+      VALUES (?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(roomId) DO UPDATE SET
+        maxRolls = excluded.maxRolls,
+        shooterId = excluded.shooterId,
+        shooterNickname = excluded.shooterNickname,
+        achievedAt = excluded.achievedAt
+    `).run(room, rolls, shooterId, shooterNickname)
+  } catch {
+    // In the unlikely event of an error when sanitising or persisting
+    // the shooter record, fall back to storing the raw UUID. This
+    // ensures that the record is still recorded for display on the
+    // games tab. Without this catch, an exception would silently
+    // swallow the insert and no record would be stored.
+    db.prepare(`
+      INSERT INTO craps_records (roomId, maxRolls, shooterId, shooterNickname, achievedAt)
+      VALUES (?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(roomId) DO UPDATE SET
+        maxRolls = excluded.maxRolls,
+        shooterId = excluded.shooterId,
+        shooterNickname = excluded.shooterNickname,
+        achievedAt = excluded.achievedAt
+    `).run(room, rolls, shooterId, shooterId)
+  }
 }
 
 const ROOM_DEFAULT = (typeof process !== 'undefined' && process.env && process.env.ROOM_UUID) || ''

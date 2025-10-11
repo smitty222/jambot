@@ -79,12 +79,19 @@ function roundToTenth (amount) {
  */
 export function addOrUpdateUser (userUUID, nickname = null) {
   const clean = sanitizeNickname(nickname)
-  // Determine whether to update the nickname: only update if we have a
-  // non‑empty cleaned nickname. Otherwise preserve the existing value.
-  // On insert the nickname column defaults to the UUID (see
-  // persistWallet()) so we always provide some value.
-  const existing = db.prepare('SELECT nickname FROM users WHERE uuid = ?').get(userUUID)
-  const finalNickname = clean || existing?.nickname || userUUID
+  // Fetch the current nickname (if any) from the database. We treat
+  // stored mention tokens like "<@uid:abcd>" as no nickname so that
+  // callers don't persist these robot strings. When deciding on the
+  // final nickname we prioritise a non‑empty cleaned nickname from the
+  // caller; otherwise we retain an existing human nickname if one is
+  // present; if neither exists, we use the user UUID as a fallback.
+  const existingRow = db.prepare('SELECT nickname FROM users WHERE uuid = ?').get(userUUID)
+  let existing = existingRow?.nickname
+  // Normalise the existing nickname: treat mention tokens as empty.
+  if (existing && /^<@uid:[^>]+>$/.test(String(existing).trim())) {
+    existing = ''
+  }
+  const finalNickname = clean || existing || userUUID
   try {
     db.prepare(
       `INSERT INTO users (uuid, nickname)
