@@ -8,6 +8,12 @@ import { roomThemes } from '../utils/roomThemes.js'
 import * as themeManager from '../utils/themeManager.js'
 import { askQuestion } from '../libs/ai.js'
 
+// Persist or update user information when they join. This avoids
+// storing mention tokens as nicknames and ensures the users table
+// contains a human‑friendly name and the current balance. See
+// dbwalletmanager.js for implementation details.
+import { addOrUpdateUser } from '../database/dbwalletmanager.js'
+
 /** ───────────────────────────────────────────────────────────────
  * TOGGLES
  * - greetingMessagesEnabled → controls STANDARD greet only
@@ -210,6 +216,17 @@ const handleUserJoinedWithStatePatch = async (payload) => {
       null
 
     console.log('[greet] resolved UUID:', uuid, 'nickname:', nickname)
+
+    // Persist the user's nickname in the database. If the nickname
+    // looks like a mention (e.g. <@uid:…>) the helper will ignore it
+    // and fall back to storing the UUID as the nickname. This call
+    // intentionally does not await because it performs a synchronous
+    // upsert and should not block the greeting logic.
+    try {
+      addOrUpdateUser(uuid, nickname)
+    } catch (e) {
+      console.error('[userJoined] Failed to add/update user:', e?.message || e)
+    }
 
     const welcomeMessage = await generateWelcomeMessage(uuid, nickname, ROOM)
 

@@ -1,8 +1,10 @@
 // src/libs/dbWalletManager.js
 import db from './db.js'
-// Import the standalone nickname util instead of importing from the
-// message handler. This avoids circular dependencies.
-import { getUserNickname } from '../utils/nickname.js'
+// Helpers for working with mentions and nicknames. We avoid storing
+// mention strings (e.g. `<@uid:abcd>`) in the users table. Instead we
+// keep the human‑friendly nickname when available and compute the
+// mention format on the fly when sending messages.
+import { sanitizeNickname } from '../utils/names.js'
 import { fetchRecentSongs } from '../utils/API.js'
 
 // ───────────────────────────────────────────────────────────
@@ -31,7 +33,10 @@ let _transferQueue = Promise.resolve()
 // the cache on demand.
 function ensureWalletCache () {
   if (walletCache.size > 0) return
-  const rows = db.prepare('SELECT uuid, balance FROM wallets').all()
+  // Load balances directly from the users table. We no longer use
+  // the legacy wallets table for primary data storage. See initdb.js
+  // for migration logic that copies balances into users.balance.
+  const rows = db.prepare('SELECT uuid, balance FROM users').all()
   for (const { uuid, balance } of rows) {
     walletCache.set(uuid, roundToTenth(balance))
   }
@@ -41,10 +46,16 @@ function ensureWalletCache () {
 // setImmediate from getUserWallet/addToUserWallet/removeFromUserWallet.
 function persistWallet (uuid, balance) {
   try {
+    // Upsert the balance into the users table. We default the
+    // nickname to the UUID if the row does not yet exist to satisfy
+    // the NOT NULL constraint on users.nickname. A later call to
+    // addOrUpdateUser() can update the nickname when a human name is
+    // known. We intentionally avoid updating nickname here.
     db.prepare(
-      `INSERT INTO wallets (uuid, balance) VALUES (?, ?)
+      `INSERT INTO users (uuid, nickname, balance)
+       VALUES (?, ?, ?)
        ON CONFLICT(uuid) DO UPDATE SET balance = excluded.balance`
-    ).run(uuid, balance)
+    ).run(uuid, uuid, balance)
   } catch (err) {
     logger.error('[WalletCache] Failed to persist wallet', { err: err?.message || err })
   }
@@ -54,14 +65,35 @@ function roundToTenth (amount) {
   return Math.round(amount * 10) / 10
 }
 
-export async function addOrUpdateUser (userUUID) {
-  const nickname = await getUserNickname(userUUID)
-  if (!nickname) return
-  db.prepare(
-    `INSERT INTO users (uuid, nickname)
-     VALUES (?, ?)
-     ON CONFLICT(uuid) DO UPDATE SET nickname = excluded.nickname`
-  ).run(userUUID, nickname)
+/**
+ * Insert or update a user record. When a nickname is provided it is
+ * sanitised and, if non‑empty, saved to the users table. If no
+ * nickname is provided or the nickname sanitises to an empty string
+ * (e.g. it was a mention token), then the existing nickname is left
+ * unchanged. On first insert, the nickname falls back to the UUID so
+ * the NOT NULL constraint on users.nickname is satisfied. Balance
+ * remains untouched by this helper.
+ *
+ * @param {string} userUUID The user’s UUID
+ * @param {string|null|undefined} nickname The raw nickname from a source event
+ */
+export function addOrUpdateUser (userUUID, nickname = null) {
+  const clean = sanitizeNickname(nickname)
+  // Determine whether to update the nickname: only update if we have a
+  // non‑empty cleaned nickname. Otherwise preserve the existing value.
+  // On insert the nickname column defaults to the UUID (see
+  // persistWallet()) so we always provide some value.
+  const existing = db.prepare('SELECT nickname FROM users WHERE uuid = ?').get(userUUID)
+  const finalNickname = clean || existing?.nickname || userUUID
+  try {
+    db.prepare(
+      `INSERT INTO users (uuid, nickname)
+       VALUES (?, ?)
+       ON CONFLICT(uuid) DO UPDATE SET nickname = excluded.nickname`
+    ).run(userUUID, finalNickname)
+  } catch (err) {
+    logger.error('[addOrUpdateUser] Failed to upsert user', { err: err?.message || err })
+  }
 }
 
 export function loadWallets () {
@@ -97,21 +129,21 @@ export function transferTip ({ fromUuid, toUuid, amount }) {
         ensureWalletCache()
         // Perform both operations within a single transaction for atomicity
         const tx = db.transaction((fromUuid, toUuid, amount) => {
-          const row = db.prepare('SELECT balance FROM wallets WHERE uuid = ?').get(fromUuid) || { balance: 0 }
+          const row = db.prepare('SELECT balance FROM users WHERE uuid = ?').get(fromUuid) || { balance: 0 }
           const fromBalance = row.balance ?? 0
           if (fromBalance < amount) throw new Error('INSUFFICIENT_FUNDS')
           // Debit sender
-          db.prepare('UPDATE wallets SET balance = balance - ? WHERE uuid = ?').run(amount, fromUuid)
-          // Credit recipient (upsert). Note: inserts a new wallet row if needed.
+          db.prepare('UPDATE users SET balance = balance - ? WHERE uuid = ?').run(amount, fromUuid)
+          // Credit recipient (upsert). Note: inserts a new user row if needed.
           db.prepare(
-            `INSERT INTO wallets (uuid, balance) VALUES (?, ?)
-             ON CONFLICT(uuid) DO UPDATE SET balance = balance + excluded.balance`
-          ).run(toUuid, amount)
+            `INSERT INTO users (uuid, nickname, balance) VALUES (?, ?, ?)
+             ON CONFLICT(uuid) DO UPDATE SET balance = users.balance + excluded.balance`
+          ).run(toUuid, toUuid, amount)
         })
         tx(fromUuid, toUuid, amount)
         // Read fresh balances from DB to update cache accurately
-        const senderRow = db.prepare('SELECT balance FROM wallets WHERE uuid = ?').get(fromUuid) || { balance: 0 }
-        const recipientRow = db.prepare('SELECT balance FROM wallets WHERE uuid = ?').get(toUuid) || { balance: 0 }
+        const senderRow = db.prepare('SELECT balance FROM users WHERE uuid = ?').get(fromUuid) || { balance: 0 }
+        const recipientRow = db.prepare('SELECT balance FROM users WHERE uuid = ?').get(toUuid) || { balance: 0 }
         const senderBal = roundToTenth(senderRow.balance ?? 0)
         const recipientBal = roundToTenth(recipientRow.balance ?? 0)
         walletCache.set(fromUuid, senderBal)
@@ -152,7 +184,8 @@ export function removeFromUserWallet (userUUID, amount) {
 }
 
 export async function addToUserWallet (userUUID, amount, nickname = null) {
-  await addOrUpdateUser(userUUID, nickname)
+  // Ensure the user exists and update their nickname if provided
+  addOrUpdateUser(userUUID, nickname)
   ensureWalletCache()
   const current = getUserWallet(userUUID)
   const newBalance = roundToTenth(current + amount)
@@ -171,13 +204,11 @@ export function loadUsers () {
 }
 
 export function getNicknamesFromWallets () {
-  const wallets = db.prepare(`
-    SELECT u.uuid, u.nickname, w.balance
-    FROM wallets w
-    LEFT JOIN users u ON u.uuid = w.uuid
+  const rows = db.prepare(`
+    SELECT uuid, nickname, balance
+    FROM users
   `).all()
-
-  return wallets.map(({ uuid, nickname, balance }) => ({
+  return rows.map(({ uuid, nickname, balance }) => ({
     uuid,
     nickname: nickname || 'Unknown',
     balance: roundToTenth(balance)
@@ -202,11 +233,9 @@ export async function addDollarsByUUID (userUuid, amount) {
 
 export function getBalanceByNickname (nickname) {
   const row = db.prepare(`
-    SELECT w.balance FROM wallets w
-    JOIN users u ON u.uuid = w.uuid
-    WHERE LOWER(u.nickname) = ?
+    SELECT balance FROM users
+    WHERE LOWER(nickname) = ?
   `).get(nickname.toLowerCase())
-
   return row ? roundToTenth(row.balance) : null
 }
 

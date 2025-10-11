@@ -2,14 +2,28 @@
 import db from './db.js'
 
 // Users
+//
+// The users table now stores both a human‑friendly nickname and the
+// current wallet balance. The nickname column is kept NOT NULL to
+// preserve existing constraints; however when inserting a new user
+// via persistWallet() we supply the UUID as a fallback nickname.
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     uuid TEXT PRIMARY KEY,
-    nickname TEXT NOT NULL
+    nickname TEXT NOT NULL,
+    balance REAL DEFAULT 0
   )
 `)
 
 // Wallets
+//
+// Historically balances were stored in a separate wallets table. To
+// simplify the schema we merge these values into users.balance and
+// provide a backward‑compatible view named "wallets". See the
+// migration section at the bottom of this file for details.
+// We still create the wallets table here in case a legacy database
+// expects it, but its contents will be copied into users and then
+// dropped during migration.
 db.exec(`
   CREATE TABLE IF NOT EXISTS wallets (
     uuid TEXT PRIMARY KEY,
@@ -363,4 +377,53 @@ try {
 } catch (e) {
   // Non-fatal: log and continue
   console.error('[initdb] ratings migration check failed:', e?.message || e);
+}
+
+// ───────────────────────────────────────────────────────────────────────
+// Wallets → Users migration
+//
+// Older versions of the database stored wallet balances in a separate
+// `wallets` table. Beginning in October 2025 we merge balances into
+// the `users` table via the `balance` column. This block copies any
+// existing balances into users.balance, drops the wallets table, and
+// creates a backward‑compatible view named "wallets" so legacy queries
+// continue to work. The operations are idempotent: they run safely
+// even if the migration has already been applied.
+try {
+  // Ensure users.balance column exists. New installs create it above
+  // but older databases may lack the column.
+  if (!hasColumn('users', 'balance')) {
+    db.exec('ALTER TABLE users ADD COLUMN balance REAL DEFAULT 0;')
+    console.log('✅ Added users.balance')
+  }
+  // Check if a real table named wallets exists (type='table'). If so
+  // copy its data, drop the table and create a view.
+  const walletsTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='wallets'").get()
+  if (walletsTable) {
+    // Copy balances into users. Use COALESCE to preserve any
+    // existing balances already stored in users.balance
+    db.exec(`
+      UPDATE users
+      SET balance = COALESCE(
+        (SELECT balance FROM wallets WHERE wallets.uuid = users.uuid),
+        balance
+      )
+    `)
+    // Drop the old wallets table
+    db.exec('DROP TABLE IF EXISTS wallets;')
+    // Create a view that exposes uuid and balance from users for
+    // backward compatibility. View creation fails silently if the
+    // view already exists.
+    db.exec('CREATE VIEW IF NOT EXISTS wallets AS SELECT uuid, balance FROM users;')
+    console.log('✅ Merged wallets into users and created wallets view')
+  } else {
+    // If wallets is a view or does not exist, ensure the view is present
+    const walletsView = db.prepare("SELECT name FROM sqlite_master WHERE type='view' AND name='wallets'").get()
+    if (!walletsView) {
+      db.exec('CREATE VIEW IF NOT EXISTS wallets AS SELECT uuid, balance FROM users;')
+      console.log('✅ Ensured wallets view exists')
+    }
+  }
+} catch (e) {
+  console.warn('⚠️ Could not merge wallets into users:', e?.message || e)
 }
