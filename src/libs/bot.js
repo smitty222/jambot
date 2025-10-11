@@ -775,12 +775,22 @@ export class Bot {
               this._lastAlbumThemeSongId = songIdForDedupe
             }
           } else {
-            announceNowPlaying(this.roomUUID).catch(err =>
+            // Post the now playing announcement before updating play counts.
+            // Await the announcement so that stats reflect the previous play.
+            // Without awaiting, updateLastPlayed() may run before the
+            // announcement queries room_stats, causing the lastPlayed timestamp
+            // to be "less than a minute ago".
+            try {
+              await announceNowPlaying(this.roomUUID)
+            } catch (err) {
               logger.error('announceNowPlaying failed:', err)
-            )
+            }
           }
 
-          try { logCurrentSong(this.currentSong, 0, 0, 0) } catch (error) {
+          // After announcing, increment play counts and persist the recent song.
+          try {
+            logCurrentSong(this.currentSong, 0, 0, 0)
+          } catch (error) {
             logger.error('Error logging current song to roomStats DB:', error)
           }
           updateLastPlayed(this.currentSong)

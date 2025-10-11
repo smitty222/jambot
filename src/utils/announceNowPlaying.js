@@ -391,21 +391,44 @@ export async function announceNowPlaying (room) {
 
     // ── 2) Best-effort: enrich the same message with stats (wrapped, non-fatal)
     try {
-      // Fetch play count from room_stats, but compute last-played from recent_songs.
-      const stats = db.prepare(
-        `SELECT playCount FROM room_stats WHERE songId = ?`
-      ).get(song.songId)
+      // Fetch play count and lastPlayed from room_stats using a canonical song key.
+      // The old lookup by songId failed when a songId was not set, which falsely
+      // reported first plays. We compute a canonical key: prefer songId; otherwise
+      // use lowercased track|artist. See dbroomstatsmanager.js for details.
+      const trackLower = String(song.trackName || '').toLowerCase().trim()
+      const artistLower = String(song.artistName || '').toLowerCase().trim()
+      const canonId = song.songId ? String(song.songId) : null
+      const canonTrack = (trackLower && artistLower) ? `${trackLower}|${artistLower}` : null
+
+      let stats = null
+      // Prefer reading both playCount and lastPlayed from room_stats via the canonical
+      // song key.  Fallback to track|artist key if no row exists for songId.
+      if (canonId) {
+        stats = db.prepare('SELECT playCount, lastPlayed FROM room_stats WHERE canonSongKey = ?').get(canonId)
+        if (!stats && canonTrack) {
+          stats = db.prepare('SELECT playCount, lastPlayed FROM room_stats WHERE canonSongKey = ?').get(canonTrack)
+        }
+      } else if (canonTrack) {
+        stats = db.prepare('SELECT playCount, lastPlayed FROM room_stats WHERE canonSongKey = ?').get(canonTrack)
+      }
       const lines = []
-      // Look up the second most recent play of this track and artist in recent_songs.
-      const lastRow = db.prepare(
-        `SELECT playedAt FROM recent_songs WHERE trackName = ? AND artistName = ? ORDER BY playedAt DESC LIMIT 1 OFFSET 1`
-      ).get(song.trackName, song.artistName)
-      if (!lastRow || !stats?.playCount || stats.playCount === 1) {
+      // Determine how many times this song has been played previously and
+      // the timestamp of the last play.  Since announceNowPlaying() is
+      // called before logCurrentSong() updates room_stats, stats.playCount
+      // reflects the number of *previous* plays.  stats.lastPlayed holds
+      // the previous last-played timestamp.  A zero-like playCount
+      // indicates that this is the first play.
+      const prevCount = Number(stats?.playCount || 0)
+      const totalPlays = prevCount + 1
+      if (prevCount < 1) {
         lines.push('🆕 First time playing in this room!')
       } else {
-        lines.push(`🔁 Played ${stats.playCount} time${stats.playCount !== 1 ? 's' : ''}`)
-        const lastPlayedTime = formatDistanceToNow(new Date(lastRow.playedAt), { addSuffix: true })
-        lines.push(`🕒 Last played ${lastPlayedTime}`)
+        lines.push(`🔁 Played ${totalPlays} time${totalPlays !== 1 ? 's' : ''}`)
+        const lp = stats?.lastPlayed
+        if (lp) {
+          const lastPlayedTime = formatDistanceToNow(new Date(lp), { addSuffix: true })
+          lines.push(`🕒 Last played ${lastPlayedTime}`)
+        }
       }
 
       try {

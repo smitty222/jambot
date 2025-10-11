@@ -265,6 +265,25 @@ try {
       SET canonSongKey = COALESCE(songId, LOWER(trackName || '|' || artistName))
       WHERE canonSongKey IS NULL OR canonSongKey = ''`)
   }
+
+  // ────────────── Normalisation columns for fuzzy matching ────────────
+  // To support fuzzy deduplication across different platforms, we
+  // introduce fields that store normalised forms of the track and
+  // artist names. These fields are populated by a one-time script
+  // (see dedupe-room-stats.js) and maintained on insert/update
+  // thereafter. They can exist on older databases without harm.
+  if (!hasColumn('room_stats', 'normTrack')) {
+    db.exec('ALTER TABLE room_stats ADD COLUMN normTrack TEXT;')
+    console.log('✅ Added room_stats.normTrack')
+  }
+  if (!hasColumn('room_stats', 'normArtist')) {
+    db.exec('ALTER TABLE room_stats ADD COLUMN normArtist TEXT;')
+    console.log('✅ Added room_stats.normArtist')
+  }
+  if (!hasColumn('room_stats', 'normSongKey')) {
+    db.exec('ALTER TABLE room_stats ADD COLUMN normSongKey TEXT;')
+    console.log('✅ Added room_stats.normSongKey')
+  }
 } catch (e) {
   console.warn('⚠️ Could not add canonSongKey or backfill:', e.message)
 }
@@ -289,6 +308,12 @@ try { db.exec('CREATE INDEX IF NOT EXISTS idx_album_reviews_album ON album_revie
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_themes_room ON themes(roomId)') } catch (e) { console.warn('⚠️ Could not create idx_themes_room:', e.message) }
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_wallets_uuid ON wallets(uuid)') } catch (e) { console.warn('⚠️ Could not create idx_wallets_uuid:', e.message) }
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_room_stats_canon ON room_stats(canonSongKey)') } catch (e) { console.warn('⚠️ Could not create idx_room_stats_canon:', e.message) }
+
+// Create indexes on the new normalisation fields. These indexes
+// improve lookups by normalised key and artist, which are used by
+// dbroomstatsmanager.js when performing fuzzy deduplication.
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_room_stats_normSongKey ON room_stats(normSongKey)') } catch (e) { console.warn('⚠️ Could not create idx_room_stats_normSongKey:', e.message) }
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_room_stats_normArtist ON room_stats(normArtist)') } catch (e) { console.warn('⚠️ Could not create idx_room_stats_normArtist:', e.message) }
 
 console.log('✅ Database initialized')
 
