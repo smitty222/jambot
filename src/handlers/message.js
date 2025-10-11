@@ -915,19 +915,20 @@ Please refresh your page for the queue to update`
       message: 'testing!'
     })
   } else if (payload.message.startsWith('/crapsrecord')) {
+    // Fetch the current record, preferring the stored nickname in the
+    // users table when available. If both the craps_records nickname and
+    // users.nickname are empty, fall back to the shooterId.
     const row = db.prepare(`
-      SELECT maxRolls, shooterNickname, shooterId, achievedAt
-      FROM craps_records
-      WHERE roomId = ?
+      SELECT cr.maxRolls,
+             COALESCE(NULLIF(cr.shooterNickname, ''), u.nickname, cr.shooterId) AS displayName,
+             cr.achievedAt
+      FROM craps_records cr
+      LEFT JOIN users u ON u.uuid = cr.shooterId
+      WHERE cr.roomId = ?
     `).get(room)
-
     const count = row?.maxRolls ?? 0
-    let who = row?.shooterNickname || '—'
-    if (!row?.shooterNickname && row?.shooterId) {
-      who = await getUserNickname(row.shooterId).catch(() => 'Someone')
-    }
+    const who = row?.displayName || '—'
     const when = row?.achievedAt || '—'
-
     return postMessage({
       room,
       message: `🏆 **Current record:** ${count} roll(s) by **${who}**\n🗓️ Set: ${when}`
@@ -1820,14 +1821,13 @@ Please refresh your page for the queue to update`
       winners.sort((a, b) => new Date(a.date) - new Date(b.date))
 
       const formattedWinners = winners.map((w, i) => {
-        const uid = w.userId ?? w.userID ?? w.uid // primary: userId
-        const userDisplay = uid ? `<@uid:${uid}>` : 'Unknown user'
+        // Use the provided nickname when available; fall back to the UUID.
+        const name = w.nickname || w.userId || 'Unknown user'
         const amount = Math.round(Number(w.amountWon) || 0).toLocaleString()
         const num = (w.winningNumber ?? '?')
         const dateStr = w.date || 'unknown date'
-        return `${i + 1}. ${userDisplay}: Won $${amount} with number ${num} on ${dateStr}`
+        return `${i + 1}. ${name}: Won $${amount} with number ${num} on ${dateStr}`
       })
-
       const finalMessage = `💰 💵 **Lottery Winners List** 💵 💰\n\n${formattedWinners.join('\n')}`
       await postMessage({ room: process.env.ROOM_UUID, message: finalMessage })
     } catch (error) {

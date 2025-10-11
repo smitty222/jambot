@@ -4,6 +4,8 @@ import { postMessage } from '../libs/cometchat.js'
 // Use the standalone nickname util instead of importing from the
 // message handler. Avoids circular dependencies and simplifies testing.
 import { getUserNickname } from '../utils/nickname.js'
+// Helpers to work with mentions and display names
+import { sanitizeNickname, formatMention, getDisplayName } from '../utils/names.js'
 import { addToUserWallet, getUserWallet, removeFromUserWallet } from '../database/dbwalletmanager.js'
 import { findUserIdAndNickname } from '../database/dblotteryquestionparser.js'
 import { storeItems } from '../libs/jamflowStore.js'
@@ -107,15 +109,25 @@ async function drawWinningNumber () {
 
   if (winners.length > 0) {
     for (const [userId] of winners) {
-      const nickname = await getUserNickname(userId)
-      await addToUserWallet(userId, LOTTERY_WIN_AMOUNT)
-
+      // Fetch a raw mention string and sanitise it. We store the
+      // sanitised nickname (if available) in the users table via
+      // addToUserWallet() so that future lookups return a human name.
+      const rawNick = await getUserNickname(userId)
+      // Sanitise the nickname: if it’s a mention token the result
+      // will be an empty string, triggering a fallback to the UUID.
+      const cleanNick = sanitizeNickname(rawNick)
+      // Credit the user’s wallet and update their nickname in the
+      // users table (handled by addToUserWallet when a nickname is passed)
+      await addToUserWallet(userId, LOTTERY_WIN_AMOUNT, cleanNick)
+      // Determine the winner name for recording: prefer the stored
+      // nickname in users table; fall back to cleanNick or UUID
+      const winnerName = getDisplayName(userId)
       db.prepare(`
         INSERT INTO lottery_winners (userId, nickname, winningNumber, amountWon)
         VALUES (?, ?, ?, ?)
-      `).run(userId, nickname, winningNumber, LOTTERY_WIN_AMOUNT)
-
-      message += `\n🎉 @${nickname} wins $${LOTTERY_WIN_AMOUNT.toLocaleString()}!`
+      `).run(userId, winnerName, winningNumber, LOTTERY_WIN_AMOUNT)
+      // Compose a message using the mention syntax for the chat
+      message += `\n🎉 ${formatMention(userId)} wins $${LOTTERY_WIN_AMOUNT.toLocaleString()}!`
     }
   } else {
     message += '\n💀 No winners this round. Try again next time!'
@@ -138,16 +150,24 @@ async function drawWinningNumber () {
 // ✅ Get winners list from DB
 // ✅ Get winners list from DB
 export function getLotteryWinners (limit = 20) {
+  // Fetch winners joined with users to prefer the stored nickname
   const rows = db.prepare(`
-    SELECT userId, nickname, winningNumber, amountWon, timestamp
-    FROM lottery_winners
-    ORDER BY timestamp DESC
+    SELECT lw.userId,
+           -- Prefer a non-empty nickname from lottery_winners,
+           -- otherwise fall back to the users table; if both are
+           -- empty, use the UUID for display purposes.
+           COALESCE(NULLIF(lw.nickname, ''), u.nickname, lw.userId) AS displayName,
+           lw.winningNumber,
+           lw.amountWon,
+           lw.timestamp
+    FROM lottery_winners lw
+    LEFT JOIN users u ON u.uuid = lw.userId
+    ORDER BY datetime(lw.timestamp) ASC
     LIMIT ?
   `).all(limit)
-
   return rows.map(row => ({
-    userId: row.userId, // ← keep it!
-    nickname: row.nickname || 'Unknown',
+    userId: row.userId,
+    nickname: row.displayName || row.userId,
     winningNumber: row.winningNumber,
     amountWon: row.amountWon,
     date: new Date(row.timestamp).toLocaleString()

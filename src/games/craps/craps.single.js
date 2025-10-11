@@ -14,13 +14,27 @@
 // Env (optional): CRAPS_MIN_BET, CRAPS_MAX_BET, CRAPS_JOIN_SECS, CRAPS_BET_SECS
 
 import { postMessage } from '../../libs/cometchat.js'
-import { addToUserWallet, removeFromUserWallet, getUserWallet } from '../../database/dbwalletmanager.js'
+import { addToUserWallet, removeFromUserWallet, getUserWallet, addOrUpdateUser } from '../../database/dbwalletmanager.js'
 import { PHASES } from './crapsState.js'
 import db from '../../database/db.js'
 import { getSenderNickname } from '../../utils/helpers.js'
+import { getDisplayName } from '../../utils/names.js'
 
-async function persistRecord(room, rolls, shooterId) {
-  const shooterNickname = (await getSenderNickname(shooterId).catch(() => null)) || shooterId
+async function persistRecord (room, rolls, shooterId) {
+  // Determine a human‑friendly shooter name for persistence. First
+  // attempt to derive a raw nickname via getSenderNickname (which
+  // yields a mention), update the users table with a sanitised
+  // nickname via addOrUpdateUser(), then fetch the display name from
+  // the users table. If no nickname is available, fall back to the
+  // UUID. This ensures that craps_records.shooterNickname stores a
+  // clean name rather than a raw mention.
+  try {
+    const rawMention = await getSenderNickname(shooterId).catch(() => null)
+    // Sanitise and upsert the user record; addOrUpdateUser will
+    // preserve existing nicknames if the sanitised result is empty.
+    if (rawMention) await addOrUpdateUser(shooterId, rawMention)
+  } catch {}
+  const shooterNickname = getDisplayName(shooterId)
   db.prepare(`
     INSERT INTO craps_records (roomId, maxRolls, shooterId, shooterNickname, achievedAt)
     VALUES (?, ?, ?, ?, datetime('now'))

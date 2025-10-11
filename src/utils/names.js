@@ -61,3 +61,28 @@ export function sanitizeNickname (nickname) {
   // Remove leading @ (from @username) and any stray angle brackets
   return s.replace(/^@/, '').replace(/[<>]/g, '').trim()
 }
+
+/**
+ * Lookup a user's display name from the database. Given a UUID, this
+ * helper fetches the stored nickname from the users table. If no
+ * record exists or the nickname column is null/empty, the UUID is
+ * returned as a fallback. This should be used when you need a
+ * human‑friendly name (e.g. for site display) rather than a raw
+ * Turntable mention. Note: This function performs a synchronous
+ * SQLite query; avoid calling it in tight loops on the hot path.
+ *
+ * @param {string} userId The unique identifier for the user
+ * @returns {string} The user’s stored nickname or their UUID
+ */
+import db from '../database/db.js'
+
+export function getDisplayName (userId) {
+  try {
+    const row = db.prepare('SELECT nickname FROM users WHERE uuid = ?').get(userId)
+    const name = row?.nickname
+    // If the nickname is empty or undefined, fall back to the UUID
+    return name && String(name).trim().length > 0 ? name : userId
+  } catch {
+    return userId
+  }
+}
