@@ -920,7 +920,10 @@ Please refresh your page for the queue to update`
     // users.nickname are empty, fall back to the shooterId.
     const row = db.prepare(`
       SELECT cr.maxRolls,
-             COALESCE(NULLIF(cr.shooterNickname, ''), u.nickname, cr.shooterId) AS displayName,
+             -- Prefer the shooterDisplayName stored on the record,
+             -- then fall back to the users table displayname, and
+             -- finally the shooterId.
+             COALESCE(NULLIF(cr.shooterDisplayName, ''), NULLIF(u.displayname, ''), cr.shooterId) AS displayName,
              cr.achievedAt
       FROM craps_records cr
       LEFT JOIN users u ON u.uuid = cr.shooterId
