@@ -5,6 +5,7 @@ import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, displayTriviaIn
 import { logger } from '../utils/logging.js'
 import { getAlbumsByArtist, getAlbumTracks, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSongData, updateRoomInfo, isUserOwner, searchSpotify, getMLBScores, getNHLScores, getNBAScores, getSimilarTracks, getTopChartTracks, addSongsToCrate, getUserToken, clearUserQueueCrate, getUserQueueCrateId, getRandomDogImage } from '../utils/API.js'
 import { handleLotteryCommand, handleLotteryNumber, handleTopLotteryStatsCommand, handleSingleNumberQuery, handleLotteryCheck, LotteryGameActive, getLotteryWinners } from '../database/dblotterymanager.js'
+import { formatMention } from '../utils/names.js'
 import { enableSongStats, disableSongStats, isSongStatsEnabled, saveSongReview, getAverageRating } from '../utils/voteCounts.js'
 import {
   enableGreetingMessages,
@@ -920,10 +921,7 @@ Please refresh your page for the queue to update`
     // users.nickname are empty, fall back to the shooterId.
     const row = db.prepare(`
       SELECT cr.maxRolls,
-             -- Prefer the shooterDisplayName stored on the record,
-             -- then fall back to the users table displayname, and
-             -- finally the shooterId.
-             COALESCE(NULLIF(cr.shooterDisplayName, ''), NULLIF(u.displayname, ''), cr.shooterId) AS displayName,
+             COALESCE(NULLIF(cr.shooterNickname, ''), u.nickname, cr.shooterId) AS displayName,
              cr.achievedAt
       FROM craps_records cr
       LEFT JOIN users u ON u.uuid = cr.shooterId
@@ -1824,8 +1822,9 @@ Please refresh your page for the queue to update`
       winners.sort((a, b) => new Date(a.date) - new Date(b.date))
 
       const formattedWinners = winners.map((w, i) => {
-        // Use the provided nickname when available; fall back to the UUID.
-        const name = w.nickname || w.userId || 'Unknown user'
+        // Compose a mention for chat messages. We ignore the display name
+        // here because the bot should tag the winner via their UUID.
+        const name = w.userId ? formatMention(w.userId) : (w.nickname || 'Unknown user')
         const amount = Math.round(Number(w.amountWon) || 0).toLocaleString()
         const num = (w.winningNumber ?? '?')
         const dateStr = w.date || 'unknown date'
