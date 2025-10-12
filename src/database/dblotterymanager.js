@@ -23,10 +23,20 @@ let LotteryGameActive = false
 db.exec(`
   CREATE TABLE IF NOT EXISTS lottery_winners (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    -- UUID of the winner. We use TEXT because Turntable UUIDs are
+    -- strings. This column is NOT NULL because every record must
+    -- reference a user.
     userId TEXT NOT NULL,
-    nickname TEXT,
+    -- Raw mention format (<@uid:...>) used when tagging users in chat.
+    nickname TEXT NOT NULL,
+    -- Sanitised display name shown on the website. Always a human‑
+    -- friendly name (e.g. "DJ Stewie") or falls back to the UUID.
+    displayName TEXT NOT NULL,
+    -- The number the user guessed for this drawing. Required.
     winningNumber INTEGER NOT NULL,
+    -- Amount awarded for this win. Defaults to LOTTERY_WIN_AMOUNT.
     amountWon INTEGER DEFAULT ${LOTTERY_WIN_AMOUNT},
+    -- Timestamp of the win. Defaults to CURRENT_TIMESTAMP for new rows.
     timestamp TEXT DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -119,19 +129,20 @@ async function drawWinningNumber () {
       // Credit the user’s wallet and update their nickname in the
       // users table (handled by addToUserWallet when a nickname is passed)
       await addToUserWallet(userId, LOTTERY_WIN_AMOUNT, cleanNick)
-      // Determine the winner name for recording: prefer the stored
-      // nickname in users table; fall back to cleanNick or UUID
-      // Prefer a cleaned nickname for the winner. If none is available
-      // (e.g. they only have a mention or no stored nickname), fall back
-      // to getDisplayName() which itself falls back to the UUID. This
-      // avoids persisting raw mention tokens into the lottery_winners table.
-      const winnerName = cleanNick || getDisplayName(userId)
+      // Compute both the mention string for chat and the human display
+      // name for the website. The mention string is always in the
+      // format <@uid:uuid> while the display name is a sanitised
+      // version of the user’s nickname or their UUID if no clean
+      // nickname exists. We avoid storing raw mention tokens in
+      // displayName so the site never renders them.
+      const mention = formatMention(userId)
+      const displayName = cleanNick || getDisplayName(userId)
       db.prepare(`
-        INSERT INTO lottery_winners (userId, nickname, winningNumber, amountWon)
-        VALUES (?, ?, ?, ?)
-      `).run(userId, winnerName, winningNumber, LOTTERY_WIN_AMOUNT)
+        INSERT INTO lottery_winners (userId, nickname, displayName, winningNumber, amountWon)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(userId, mention, displayName, winningNumber, LOTTERY_WIN_AMOUNT)
       // Compose a message using the mention syntax for the chat
-      message += `\n🎉 ${formatMention(userId)} wins $${LOTTERY_WIN_AMOUNT.toLocaleString()}!`
+      message += `\n🎉 ${mention} wins $${LOTTERY_WIN_AMOUNT.toLocaleString()}!`
     }
   } else {
     message += '\n💀 No winners this round. Try again next time!'
@@ -154,13 +165,12 @@ async function drawWinningNumber () {
 // ✅ Get winners list from DB
 // ✅ Get winners list from DB
 export function getLotteryWinners (limit = 20) {
-  // Fetch winners joined with users to prefer the stored nickname
+  // Fetch each winner with both the display name and mention. We
+  // prefer the displayName stored on lottery_winners, then the
+  // displayname from users, and finally fall back to the UUID.
   const rows = db.prepare(`
     SELECT lw.userId,
-           -- Prefer a non-empty nickname from lottery_winners,
-           -- otherwise fall back to the users table; if both are
-           -- empty, use the UUID for display purposes.
-           COALESCE(NULLIF(lw.nickname, ''), u.nickname, lw.userId) AS displayName,
+           COALESCE(NULLIF(lw.displayName, ''), NULLIF(u.displayname, ''), lw.userId) AS displayName,
            lw.winningNumber,
            lw.amountWon,
            lw.timestamp
@@ -171,10 +181,15 @@ export function getLotteryWinners (limit = 20) {
   `).all(limit)
   return rows.map(row => ({
     userId: row.userId,
-    nickname: row.displayName || row.userId,
+    // The display name used on the site. Fallback to the UUID when no
+    // name is available.
+    displayName: row.displayName || row.userId,
+    // Compose the mention string via formatMention so it always has
+    // the correct syntax for chat messages.
+    mention: formatMention(row.userId),
     winningNumber: row.winningNumber,
     amountWon: row.amountWon,
-    date: new Date(row.timestamp).toLocaleString()
+    timestamp: row.timestamp
   }))
 }
 

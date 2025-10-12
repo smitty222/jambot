@@ -32,11 +32,17 @@ db.exec(`
 `)
 
 // Lottery winners
+// The lottery_winners table stores both a mention string (nickname)
+// and a sanitised display name for each winner. A separate
+// displayName column ensures that the website can show a human
+// friendly name while the bot can still mention users via their
+// raw UID syntax. See update_nickname_display.mjs for migrations.
 db.exec(`
   CREATE TABLE IF NOT EXISTS lottery_winners (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     userId TEXT NOT NULL,
-    nickname TEXT,
+    nickname TEXT NOT NULL,
+    displayName TEXT NOT NULL,
     winningNumber INTEGER,
     amountWon REAL,
     timestamp TEXT
@@ -377,6 +383,32 @@ try {
 } catch (e) {
   // Non-fatal: log and continue
   console.error('[initdb] ratings migration check failed:', e?.message || e);
+}
+
+// ───────────────────────────────────────────────────────────────────────
+// Lottery winners migration: ensure nickname/displayName columns exist
+//
+// Legacy databases may lack one or both of these fields. We add them
+// here and backfill displayName from nickname if necessary. A more
+// thorough sanitisation of names can be performed by running
+// update_nickname_display.mjs, but this lightweight migration
+// guarantees that the schema is present and the site has a value to
+// display. It is idempotent and safe to re-run.
+try {
+  if (!hasColumn('lottery_winners', 'nickname')) {
+    db.exec('ALTER TABLE lottery_winners ADD COLUMN nickname TEXT NOT NULL DEFAULT \"\";')
+    console.log('✅ Added lottery_winners.nickname (default empty)')
+  }
+  if (!hasColumn('lottery_winners', 'displayName')) {
+    db.exec('ALTER TABLE lottery_winners ADD COLUMN displayName TEXT NOT NULL DEFAULT \"\";')
+    // Copy existing nicknames into displayName as a simple backfill. If
+    // nickname is empty the displayName remains empty; update_nickname_display
+    // can later normalise this.
+    db.exec('UPDATE lottery_winners SET displayName = nickname WHERE displayName = \"\" OR displayName IS NULL;')
+    console.log('✅ Added lottery_winners.displayName and backfilled from nickname')
+  }
+} catch (e) {
+  console.warn('⚠️ Could not migrate lottery_winners columns:', e?.message || e)
 }
 
 // ───────────────────────────────────────────────────────────────────────
