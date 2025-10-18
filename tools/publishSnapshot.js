@@ -1,211 +1,141 @@
-// src/tools/publishSnapshot.js
-// Publishes curated PUBLIC views to /api/db/* and mirrors ALL raw DB tables to MOD-only /api/db_mod/*
+// tools/publishSnapshot.js
+// Safer raw snapshot publisher for low-RAM Fly instances.
+// - Mirrors ONLY allowlisted tables to avoid OOM.
+// - Can be run as a CLI or imported and used programmatically.
 
-/**
- * Configure which curated views are public (names become the table names under /api/db/<name>).
- * Tweak SQL to add/remove fields, limits, or sorting.
- */
+import fs from 'fs/promises'
+import path from 'path'
+import Database from 'better-sqlite3'
+import url from 'url'
 
-const SONGS_LIMIT = Number(process.env.PUBLIC_SONGS_LIMIT || 5000);
-export const PUBLIC_VIEWS = {
-  // Most-played songs (public, compact)
-  top_songs: {
-  sql: `
-    SELECT
-      trackName     AS title,
-      artistName    AS artist,
-      playCount     AS plays,
-      averageReview AS avg,
-      lastPlayed,      
-      likes,                    
-      dislikes,
-      stars
-    FROM room_stats
-    WHERE LOWER(COALESCE(trackName, '')) <> 'unknown'
-    ORDER BY playCount DESC, COALESCE(averageReview, 0) DESC, trackName ASC
-    LIMIT ${SONGS_LIMIT}
-  `
-},
+// ---------------------------
+// Environment/config
+// ---------------------------
+const DB_PATH = process.env.DB_PATH || '/data/app.db'
+const OUTPUT_DIR = process.env.OUTPUT_DIR || '/data/app'     // where to write JSON
+const OUTPUT_FILE = process.env.OUTPUT_FILE || 'db_raw.json' // filename inside OUTPUT_DIR
+const PRETTY = process.env.PUBLISH_JSON_PRETTY === '1'
 
+// Comma-separated list of tables to mirror. Keep this tight to avoid memory spikes.
+const RAW_TABLE_ALLOWLIST = (process.env.RAW_TABLE_ALLOWLIST || [
+  'users',
+  'wallets',
+  'lottery_winners',
+  'lottery_stats',
+  'dj_queue',
+  'themes',
+  'jackpot',
+  'horses',
+  'avatars',
+  'current_state',
+  'craps_records'
+].join(','))
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean)
 
-  // Highest craps record (1 row)
-  craps_records_public: {
-    sql: `
-      SELECT
-        roomId,
-        maxRolls,
-        shooterNickname,
-        shooterId,
-        achievedAt
-      FROM craps_records
-      ORDER BY maxRolls DESC
-      LIMIT 1
-    `
-  },
-
-  // Recent lottery winners (safe columns)
-  lottery_winners_public: {
-    sql: `
-      SELECT
-        nickname,
-        userId,
-        amountWon,
-        timestamp
-      FROM lottery_winners
-      ORDER BY datetime(timestamp) DESC
-      LIMIT 50
-    `
-  },
-
-  // 🔵 Just Balls tab: aggregated counts by ball number (padded 1..99)
-lottery_stats_public: {
-  sql: `
-    WITH RECURSIVE n(x) AS (
-      SELECT 1
-      UNION ALL
-      SELECT x + 1 FROM n WHERE x < 99
-    )
-    SELECT
-      n.x AS number,
-      COALESCE(ls.count, 0) AS count
-    FROM n
-    LEFT JOIN lottery_stats ls ON ls.number = n.x
-    ORDER BY n.x ASC
-  `
-},
-
-
-  // Room stats (safe columns only)
-  room_stats_public: {
-    sql: `
-      SELECT
-        trackName  AS title,
-        artistName AS artist,
-        playCount  AS plays,
-        averageReview AS avg
-      FROM room_stats
-      ORDER BY playCount DESC, COALESCE(averageReview, 0) DESC, trackName ASC
-      LIMIT 500
-    `
-  },
-
-  // Album stats (safe columns)
-  album_stats_public: {
-    sql: `
-      SELECT
-      id,
-      albumName,
-      artistName,
-      albumArt,
-      averageReview
-      FROM album_stats
-      ORDER BY averageReview DESC, trackCount DESC, albumName ASC
-      LIMIT 200
-      `
-  },
-
-  album_review_counts_public: {
-  sql: `
-    SELECT
-      albumId AS id,
-      COUNT(*) AS reviews
-    FROM album_reviews
-    GROUP BY albumId
-  `
-},
-
-  // Themes (very small, safe)
-  themes_public: {
-    sql: `
-      SELECT
-        roomId AS room,
-        theme
-      FROM themes
-      ORDER BY room ASC
-      LIMIT 100
-    `
-  },
-
-  // Example: enable if you have a plays table
-  // latest_plays_public: {
-  //   sql: `
-  //     SELECT title, artist, played_at
-  //     FROM song_plays
-  //     ORDER BY played_at DESC
-  //     LIMIT 200
-  //   `
-  // },
+// ---------------------------
+// Helpers
+// ---------------------------
+function ensureDir (dir) {
+  return fs.mkdir(dir, { recursive: true })
 }
 
-/**
- * Utility: list all raw table names in SQLite
- */
 function getAllTableNames (db) {
-  return db
-    .prepare(`SELECT name FROM sqlite_master WHERE type='table'`)
-    .all()
-    .map(r => r.name)
+  // We only use this for existence/validation if needed.
+  const stmt = db.prepare(`
+    SELECT name FROM sqlite_master
+    WHERE type='table' AND name NOT LIKE 'sqlite_%'
+    ORDER BY name
+  `)
+  return stmt.all().map(r => r.name)
 }
 
-/**
- * Utility: dump a whole table (use only for mod-only mirrors)
- */
-function dumpTable (db, name) {
-  try { return db.prepare(`SELECT * FROM "${name}"`).all() } // quote name in case of reserved words
-  catch (e) { console.warn('[site publish] skip table', name, e.message); return null }
-}
-
-function runSqlSafe (db, sql) {
-  try { return db.prepare(sql).all() }
-  catch (e) { console.warn('[site publish] view build failed:', e.message); return [] }
-}
-
-/**
- * Publish curated views to public (`db:`) and raw tables to mod-only (`dbmod:`).
- * Accepts Worker handlers that expect either:
- *   - { tables, public, privateOnly }  (object map)
- *   - { items,  pubList, privateOnly } (array of {name,data})
- * @param {{ db:any, postJson:Function, havePublishConfig:Function, logger?:Console }} opts
- */
-export default async function publishDbSnapshot (opts) {
-  const { db, postJson, havePublishConfig, logger = console } = opts || {}
+function dumpTableAll (db, name) {
   try {
-    if (!havePublishConfig || !havePublishConfig()) return
-
-    // 1) Dump ALL raw tables → mod-only
-    const rawNames = getAllTableNames(db)
-    const tables = {}
-    for (const name of rawNames) {
-      const rows = dumpTable(db, name)
-      if (rows) tables[name] = rows // will be tagged as privateOnly
-    }
-
-    // 2) Build curated public views
-    const publicViews = {}
-    for (const [viewName, cfg] of Object.entries(PUBLIC_VIEWS)) {
-      publicViews[viewName] = runSqlSafe(db, cfg.sql)
-    }
-
-    // 3) Merge and publish (support both payload shapes)
-    Object.assign(tables, publicViews)
-    const publicList = Object.keys(publicViews) // these appear at /api/db/*
-    const privateOnly = rawNames              // raw DB tables are mod-only
-
-    // Also build the array shape for Workers that expect items/pubList
-    const items = Object.entries(tables).map(([name, data]) => ({ name, data }))
-    const payload = {
-      tables,
-      public: publicList,
-      privateOnly,
-      // compatibility extras:
-      items,
-      pubList: publicList
-    }
-
-    await postJson('/api/publishDb', payload)
-
-    logger.log('[site publish] db ok – public:', publicList.join(', '))
-  } catch (err) {
-    console.warn('[site publish] db failed:', err?.message || err)
+    return db.prepare(`SELECT * FROM "${name}"`).all()
+  } catch (e) {
+    console.warn(`[publish-snapshot] skip "${name}": ${e.message}`)
+    return null
   }
+}
+
+// Small utility to reduce risk of accidental huge payloads.
+// If a table explodes in size later, we can cap rows via env.
+function maybeCapRows (rows, name) {
+  const capCfg = process.env.RAW_TABLE_ROW_CAPS || '' // e.g. "users:20000,lottery_winners:10000"
+  if (!capCfg) return rows
+  const caps = Object.fromEntries(capCfg
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map(pair => {
+      const [tbl, capStr] = pair.split(':').map(x => x.trim())
+      return [tbl, Number(capStr || '0')]
+    }))
+  const cap = caps[name]
+  if (cap && rows.length > cap) {
+    console.warn(`[publish-snapshot] table "${name}" capped at ${cap} rows (had ${rows.length})`)
+    return rows.slice(0, cap)
+  }
+  return rows
+}
+
+// ---------------------------
+// Core
+// ---------------------------
+export function buildRawSnapshot (db) {
+  const existingTables = new Set(getAllTableNames(db))
+  const chosen = RAW_TABLE_ALLOWLIST.filter(t => {
+    if (!existingTables.has(t)) {
+      console.warn(`[publish-snapshot] allowlisted table "${t}" does not exist; skipping`)
+      return false
+    }
+    return true
+  })
+
+  const out = {}
+  for (const name of chosen) {
+    const rows = dumpTableAll(db, name)
+    if (!rows) continue
+    out[name] = maybeCapRows(rows, name)
+  }
+  return out
+}
+
+export async function writeRawSnapshotToDisk ({
+  dbPath = DB_PATH,
+  outputDir = OUTPUT_DIR,
+  outputFile = OUTPUT_FILE
+} = {}) {
+  const started = Date.now()
+  const db = new Database(dbPath, { readonly: true })
+  try {
+    const payload = buildRawSnapshot(db)
+    await ensureDir(outputDir)
+
+    const full = path.join(outputDir, outputFile)
+    const body = PRETTY ? JSON.stringify(payload, null, 2) : JSON.stringify(payload)
+    await fs.writeFile(full, body, 'utf8')
+
+    const kb = Math.round(Buffer.byteLength(body, 'utf8') / 1024)
+    console.log(`[publish-snapshot] wrote ${outputFile} (${kb} KB) in ${Date.now() - started} ms`)
+    return { path: full, bytes: Buffer.byteLength(body, 'utf8'), tables: Object.keys(payload).length }
+  } finally {
+    db.close()
+  }
+}
+
+// ---------------------------
+// CLI support
+// ---------------------------
+if (import.meta.url === url.pathToFileURL(process.argv[1]).href) {
+  // Usage:
+  //   node tools/publishSnapshot.js
+  // Env:
+  //   DB_PATH=/data/app.db OUTPUT_DIR=/data/app RAW_TABLE_ALLOWLIST="users,lottery_winners"
+  writeRawSnapshotToDisk().catch(err => {
+    console.error('[publish-snapshot] ERROR:', err)
+    process.exitCode = 1
+  })
 }
