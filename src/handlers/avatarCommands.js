@@ -239,7 +239,7 @@ export async function handleDinoCommand (senderUuid, room, postMessage) {
     return
   }
 
-  // 🦖 Allowed Jurassic avatars (only pick from these)
+  // 🦖 Allowed Jurassic avatars (these are the only ones we'll choose from)
   const allowedSlugs = [
     'jurassic-01',
     'jurassic-02',
@@ -249,38 +249,48 @@ export async function handleDinoCommand (senderUuid, room, postMessage) {
     'jurassic-07'
   ]
 
-  // 🎨 Optional: per-avatar color accents (8-digit RGBA hex like cyber)
-  // Tune these however you want. These should match the vibe/colors in each dino avatar.
+  // 🎨 Per-avatar accent color
+  // These are 8-digit RGBA hex strings like you did for cyber.
+  // I chose a "signature" color that fits what you showed:
+  //
+  // jurassic-01: green lizard w/ hot orange frill → warm lava/orange pop
+  // jurassic-02: bright lime triceratops → electric lime
+  // jurassic-03: purple/gray dino in shades → neon violet
+  // jurassic-05: caramel/orange dino w/ cream forehead → golden amber
+  // jurassic-06: stone/brown horned bruiser → bone/ivory horn tone
+  // jurassic-07: bright green baby dino w/ yellow crest → highlighter yellow/crest
+  //
   const COLOR_BY_SLUG = {
-    'jurassic-01': '#6BFF5AFF', // toxic green / raptor glow
-    'jurassic-02': '#FFB347FF', // amber/orange fossil light
-    'jurassic-03': '#3DDCFFFF', // teal/ice dino
-    'jurassic-05': '#FF6B6BFF', // lava red
-    'jurassic-06': '#C084FFFF', // purple belly / nebula
-    'jurassic-07': '#A3FF00FF'  // electric lime rex
+    'jurassic-01': '#FF7A1CFF', // fiery orange frill / warning display
+    'jurassic-02': '#A6FF00FF', // toxic lime body plates
+    'jurassic-03': '#9B5DE5FF', // neon purple visor-energy sunglasses vibe
+    'jurassic-05': '#FFB347FF', // amber/golden caramel shell
+    'jurassic-06': '#FFECC2FF', // horn/bone ivory accent on the tough brown one
+    'jurassic-07': '#FFD500FF'  // bright crest yellow on the baby dino
   }
 
-  // 🦴 fallback palette if a slug doesn't have a custom color
+  // 🦴 fallback colors if for some reason we don't have a specific color
   const DINO_COLORS = [
-    '#FFB347FF', // warm amber
-    '#6BFF5AFF', // neon green
-    '#3DDCFFFF', // teal
-    '#FF6B6BFF', // red
-    '#A3FF00FF', // slime green
-    '#C084FFFF'  // violet
+    '#A6FF00FF', // lime
+    '#FF7A1CFF', // orange
+    '#9B5DE5FF', // violet
+    '#FFB347FF', // amber
+    '#FFECC2FF', // bone/ivory
+    '#FFD500FF'  // crest yellow
   ]
 
-  // 🗣️ Fun per-avatar lines to send in chat
+  // 🗣️ Per-avatar announcement line
+  // Tone: fun, a little RP, matches their "look"
   const DINO_LINES = {
-    'jurassic-01': '🦖 Raptor online. Keep your hands and arms inside the club at all times.',
-    'jurassic-02': '🦕 Amber glow activated. Life, uh… finds a vibe.',
-    'jurassic-03': '❄️ Ice Rex emerges from the deep chill.',
-    'jurassic-05': '🌋 Lava Lizard stomps in. Seismic activity detected.',
-    'jurassic-06': '🌀 Cosmic Dino descends from the nebula.',
-    'jurassic-07': '💚 Toxic Rex roars. Please do not tap the glass.'
+    'jurassic-01': '🦖 Frill Lizard deployed. Back up — the warning display means you’re already too close.',
+    'jurassic-02': '🦕 Trike Tank online. Horns polished, tail swaying, crowd control engaged.',
+    'jurassic-03': '😎 Cretaceous Cool slid in. Shades on. Herbivores free. Mammals behave.',
+    'jurassic-05': '🟤 Desert Drake emerges. Warm scales, steady stare, zero fear.',
+    'jurassic-06': '💀 Bonebreaker is awake. Heavy steps. Low patience.',
+    'jurassic-07': '💚 Baby Rex activated. Absolutely adorable. Absolutely still a predator.'
   }
 
-  // Pull the actual avatar objects for just those slugs
+  // Pull the avatar objects for those slugs, same pattern as cyber
   const filtered = getAvatarsBySlugs(allowedSlugs)
 
   if (!filtered || filtered.length === 0) {
@@ -291,7 +301,7 @@ export async function handleDinoCommand (senderUuid, room, postMessage) {
     return
   }
 
-  // Choose one at random
+  // pick one at random
   const chosen = filtered[Math.floor(Math.random() * filtered.length)]
   const slug = chosen?.slug
 
@@ -304,17 +314,17 @@ export async function handleDinoCommand (senderUuid, room, postMessage) {
     return
   }
 
-  // Pick a color for that specific slug, fall back to random
+  // find color for that slug or fall back to one of the jurassic palette colors
   const color =
     COLOR_BY_SLUG[slug] ||
     DINO_COLORS[Math.floor(Math.random() * DINO_COLORS.length)]
 
-  // Pick the chat line for that slug
+  // pick the line for that slug
   const line =
     DINO_LINES[slug] ||
-    `🦖 ${slugToTitle(slug)} equipped. Welcome to the Late Cretaceous.`
+    `🦖 ${slugToTitle(slug)} enters the timeline. Please keep arms and snacks inside the vehicle.`
 
-  // helpful logs for debugging
+  // helpful log for debugging + analytics
   console.log('[dino] attempt', {
     senderUuid,
     slug,
@@ -323,7 +333,6 @@ export async function handleDinoCommand (senderUuid, room, postMessage) {
   })
 
   try {
-    // update their avatar in Turntable or wherever
     await updateUserAvatar(userToken, slug, color)
 
     console.log('[dino] success', {
@@ -332,7 +341,6 @@ export async function handleDinoCommand (senderUuid, room, postMessage) {
       color
     })
 
-    // announce it in chat
     await postMessage({
       room,
       message: line
@@ -352,13 +360,13 @@ export async function handleDinoCommand (senderUuid, room, postMessage) {
     })
   }
 
-  // local helper (same pattern you used in cyber version)
   function slugToTitle (s) {
     return s
       .replace(/-/g, ' ')
       .replace(/\b\w/g, c => c.toUpperCase())
   }
 }
+
 
 
 export async function handleDuckCommand (senderUuid, room, postMessage) {
