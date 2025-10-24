@@ -232,11 +232,14 @@ export async function handleBot1Command (room, postMessage, isUserAuthorized, se
 export async function handleDinoCommand (senderUuid, room, postMessage) {
   const userToken = userTokenMap[senderUuid]
   if (!userToken) {
-    await postMessage({ room, message: 'Sorry, this command is only available to authorized users 🦕.' })
+    await postMessage({
+      room,
+      message: 'Sorry, this command is only available to authorized users 🦕.'
+    })
     return
   }
 
-  // 🦖 Allowed Jurassic avatars
+  // 🦖 Allowed Jurassic avatars (only pick from these)
   const allowedSlugs = [
     'jurassic-01',
     'jurassic-02',
@@ -246,28 +249,117 @@ export async function handleDinoCommand (senderUuid, room, postMessage) {
     'jurassic-07'
   ]
 
-  const filteredAvatars = getAvatarsBySlugs(allowedSlugs)
+  // 🎨 Optional: per-avatar color accents (8-digit RGBA hex like cyber)
+  // Tune these however you want. These should match the vibe/colors in each dino avatar.
+  const COLOR_BY_SLUG = {
+    'jurassic-01': '#6BFF5AFF', // toxic green / raptor glow
+    'jurassic-02': '#FFB347FF', // amber/orange fossil light
+    'jurassic-03': '#3DDCFFFF', // teal/ice dino
+    'jurassic-05': '#FF6B6BFF', // lava red
+    'jurassic-06': '#C084FFFF', // purple belly / nebula
+    'jurassic-07': '#A3FF00FF'  // electric lime rex
+  }
 
-  if (filteredAvatars.length === 0) {
-    await postMessage({ room, message: 'No Jurassic avatars found in the allowed list 🦴' })
+  // 🦴 fallback palette if a slug doesn't have a custom color
+  const DINO_COLORS = [
+    '#FFB347FF', // warm amber
+    '#6BFF5AFF', // neon green
+    '#3DDCFFFF', // teal
+    '#FF6B6BFF', // red
+    '#A3FF00FF', // slime green
+    '#C084FFFF'  // violet
+  ]
+
+  // 🗣️ Fun per-avatar lines to send in chat
+  const DINO_LINES = {
+    'jurassic-01': '🦖 Raptor online. Keep your hands and arms inside the club at all times.',
+    'jurassic-02': '🦕 Amber glow activated. Life, uh… finds a vibe.',
+    'jurassic-03': '❄️ Ice Rex emerges from the deep chill.',
+    'jurassic-05': '🌋 Lava Lizard stomps in. Seismic activity detected.',
+    'jurassic-06': '🌀 Cosmic Dino descends from the nebula.',
+    'jurassic-07': '💚 Toxic Rex roars. Please do not tap the glass.'
+  }
+
+  // Pull the actual avatar objects for just those slugs
+  const filtered = getAvatarsBySlugs(allowedSlugs)
+
+  if (!filtered || filtered.length === 0) {
+    await postMessage({
+      room,
+      message: 'No Jurassic avatars found in the allowed list 🦴'
+    })
     return
   }
 
-  const randomAvatar = getRandomAvatarSlug()
-  const randomColor = randomColors[Math.floor(Math.random() * randomColors.length)]
+  // Choose one at random
+  const chosen = filtered[Math.floor(Math.random() * filtered.length)]
+  const slug = chosen?.slug
+
+  if (!slug) {
+    console.warn('[dino] No slug on selected avatar object:', chosen)
+    await postMessage({
+      room,
+      message: 'No dinosaur avatars available right now 😬'
+    })
+    return
+  }
+
+  // Pick a color for that specific slug, fall back to random
+  const color =
+    COLOR_BY_SLUG[slug] ||
+    DINO_COLORS[Math.floor(Math.random() * DINO_COLORS.length)]
+
+  // Pick the chat line for that slug
+  const line =
+    DINO_LINES[slug] ||
+    `🦖 ${slugToTitle(slug)} equipped. Welcome to the Late Cretaceous.`
+
+  // helpful logs for debugging
+  console.log('[dino] attempt', {
+    senderUuid,
+    slug,
+    color,
+    title: slugToTitle(slug)
+  })
 
   try {
-    await updateUserAvatar(userToken, randomAvatar, randomColor)
-    if (!randomAvatar) {
-      await postMessage({ room, message: 'No avatars available right now 😬' })
-      return
-    }
+    // update their avatar in Turntable or wherever
+    await updateUserAvatar(userToken, slug, color)
 
-    await postMessage({ room, message: '🦖 You’ve gone full Jurassic. Roar on!' })
+    console.log('[dino] success', {
+      senderUuid,
+      slug,
+      color
+    })
+
+    // announce it in chat
+    await postMessage({
+      room,
+      message: line
+    })
   } catch (error) {
-    await postMessage({ room, message: 'Failed to update to dinosaur avatar 😬' })
+    console.error('[handleDinoCommand] update failed', {
+      senderUuid,
+      slugTried: slug,
+      colorTried: color,
+      error: error?.message || String(error),
+      stack: error?.stack
+    })
+
+    await postMessage({
+      room,
+      message: 'Failed to update dinosaur avatar 😞'
+    })
+  }
+
+  // local helper (same pattern you used in cyber version)
+  function slugToTitle (s) {
+    return s
+      .replace(/-/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase())
   }
 }
+
 
 export async function handleDuckCommand (senderUuid, room, postMessage) {
   const userToken = userTokenMap[senderUuid]
