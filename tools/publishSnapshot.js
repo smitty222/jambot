@@ -82,7 +82,7 @@ function maybeCapRows (rows, name) {
 }
 
 // ---------------------------
-// Core
+// Core snapshot builders
 // ---------------------------
 export function buildRawSnapshot (db) {
   const existingTables = new Set(getAllTableNames(db))
@@ -126,59 +126,72 @@ export async function writeRawSnapshotToDisk ({
   }
 }
 
+// ---------------------------
+// publishDbSnapshot: used by publish-site-data.mjs
+// ---------------------------
+//
+// This is what publish-site-data.mjs calls. It expects us to:
+// 1. build the snapshot from an already-open db
+// 2. write it locally to /data/app/db_raw.json
+// 3. POST it to the external API (if that succeeds)
+// 4. NOT crash the whole cron job if the POST fails
+//
 export async function publishDbSnapshot({
   db,
   havePublishConfig,
   logger,
   postJson
 }) {
-  // havePublishConfig is passed in but currently always returns true
+  // graceful logger helpers
+  const log = logger?.log ? logger.log.bind(logger) : console.log
+  const warn = logger?.warn ? logger.warn.bind(logger) : console.warn
+
   if (!havePublishConfig || !havePublishConfig()) {
-    logger?.log?.('[publish-snapshot] skipped: no publish config');
-    return;
+    log('[publish-snapshot] skipped: no publish config')
+    return
   }
 
-  // 1. Build the current raw snapshot from the DB that's already open
-  const payload = buildRawSnapshot(db);
+  // 1. Build snapshot in-memory from the db handle we were given
+  const payload = buildRawSnapshot(db)
 
-  // 2. Optionally also write to disk (nice for debugging / durability)
-  //    This mirrors what writeRawSnapshotToDisk() does, but reuses
-  //    the in-memory payload and avoids reopening the DB.
+  // 2. Write snapshot to disk for durability/debug
   try {
-    await ensureDir(OUTPUT_DIR);
-    const full = path.join(OUTPUT_DIR, OUTPUT_FILE);
+    await ensureDir(OUTPUT_DIR)
+    const full = path.join(OUTPUT_DIR, OUTPUT_FILE)
     const body = PRETTY
       ? JSON.stringify(payload, null, 2)
-      : JSON.stringify(payload);
+      : JSON.stringify(payload)
 
-    await fs.writeFile(full, body, 'utf8');
+    await fs.writeFile(full, body, 'utf8')
 
-    const kb = Math.round(Buffer.byteLength(body, 'utf8') / 1024);
-    logger?.log?.(
-      `[publish-snapshot] wrote ${OUTPUT_FILE} (${kb} KB) to disk`
-    );
+    const kb = Math.round(Buffer.byteLength(body, 'utf8') / 1024)
+    log(`[publish-snapshot] wrote ${OUTPUT_FILE} (${kb} KB) to disk`)
   } catch (e) {
-    logger?.warn?.('[publish-snapshot] failed local write:', e?.message || e);
+    warn('[publish-snapshot] failed local write:', e?.message || e)
   }
 
-  // 3. Send snapshot to the external API via the callback you gave us
-  //    Your publish-site-data.mjs passes:
-  //    postJson: (pathname, payload) => postJson(pathname, payload)
-  //    so we respect that shape here.
-  await postJson('/api/publishDbSnapshot', payload);
-
-  logger?.log?.('[publish-snapshot] remote publish complete');
+  // 3. Try to POST snapshot upstream.
+  //    If the worker route (/api/publishDbSnapshot) doesn't exist yet,
+  //    it will 404. We do NOT want that to crash the cron.
+  try {
+    await postJson('/api/publishDbSnapshot', payload)
+    log('[publish-snapshot] remote publish complete')
+  } catch (err) {
+    warn('[publish-snapshot] remote publish failed:', err?.message || err)
+    // swallow so cron can continue and set cooldowns
+  }
 }
-
 
 // ---------------------------
 // CLI support
 // ---------------------------
+//
+// Usage:
+//   node tools/publishSnapshot.js
+// Env:
+//   DB_PATH=/data/app.db OUTPUT_DIR=/data/app RAW_TABLE_ALLOWLIST="users,lottery_winners"
+//
 if (import.meta.url === url.pathToFileURL(process.argv[1]).href) {
-  // Usage:
-  //   node tools/publishSnapshot.js
-  // Env:
-  //   DB_PATH=/data/app.db OUTPUT_DIR=/data/app RAW_TABLE_ALLOWLIST="users,lottery_winners"
   writeRawSnapshotToDisk().catch(err => {
     console.error('[publish-snapshot] ERROR:', err)
     process.exitCode = 1
