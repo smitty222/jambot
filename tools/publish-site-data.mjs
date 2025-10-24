@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import Database from 'better-sqlite3';
 import process from 'process';
-import publishDbSnapshot from './publishSnapshot.js';
+import {publishDbSnapshot} from './publishSnapshot.js';
 
 // ── Resolve API + auth ───────────────────────────────────────
 const API_BASE = process.env.API_BASE;
