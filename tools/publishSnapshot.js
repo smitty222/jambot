@@ -126,6 +126,51 @@ export async function writeRawSnapshotToDisk ({
   }
 }
 
+export async function publishDbSnapshot({
+  db,
+  havePublishConfig,
+  logger,
+  postJson
+}) {
+  // havePublishConfig is passed in but currently always returns true
+  if (!havePublishConfig || !havePublishConfig()) {
+    logger?.log?.('[publish-snapshot] skipped: no publish config');
+    return;
+  }
+
+  // 1. Build the current raw snapshot from the DB that's already open
+  const payload = buildRawSnapshot(db);
+
+  // 2. Optionally also write to disk (nice for debugging / durability)
+  //    This mirrors what writeRawSnapshotToDisk() does, but reuses
+  //    the in-memory payload and avoids reopening the DB.
+  try {
+    await ensureDir(OUTPUT_DIR);
+    const full = path.join(OUTPUT_DIR, OUTPUT_FILE);
+    const body = PRETTY
+      ? JSON.stringify(payload, null, 2)
+      : JSON.stringify(payload);
+
+    await fs.writeFile(full, body, 'utf8');
+
+    const kb = Math.round(Buffer.byteLength(body, 'utf8') / 1024);
+    logger?.log?.(
+      `[publish-snapshot] wrote ${OUTPUT_FILE} (${kb} KB) to disk`
+    );
+  } catch (e) {
+    logger?.warn?.('[publish-snapshot] failed local write:', e?.message || e);
+  }
+
+  // 3. Send snapshot to the external API via the callback you gave us
+  //    Your publish-site-data.mjs passes:
+  //    postJson: (pathname, payload) => postJson(pathname, payload)
+  //    so we respect that shape here.
+  await postJson('/api/publishDbSnapshot', payload);
+
+  logger?.log?.('[publish-snapshot] remote publish complete');
+}
+
+
 // ---------------------------
 // CLI support
 // ---------------------------
