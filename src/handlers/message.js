@@ -1496,7 +1496,6 @@ Please refresh your page for the queue to update`
       // Send as an image (no text), matching your /burp style
       await postMessage({
         room,
-        message: '',
         images: [imgUrl]
       })
     } catch (error) {
