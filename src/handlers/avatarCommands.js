@@ -352,6 +352,389 @@ export async function handleDinoCommand (senderUuid, room, postMessage) {
   }
 }
 
+export async function handleBouncerCommand (senderUuid, room, postMessage) {
+  const userToken = userTokenMap[senderUuid]
+  if (!userToken) {
+    await postMessage({
+      room,
+      message: '🚫 This command is only available to authorized users.'
+    })
+    return
+  }
+
+  // 🛡 Allowed security / staff avatars
+  const allowedSlugs = [
+    'mod-bear-black',
+    'mod-bear-orange',
+    'staff-bear',
+    'staff'
+  ]
+
+  // 🎨 Per-avatar accent/chat color (8-digit RGBA-style hex)
+  // Pick something that matches their most obvious visual accent:
+  // - mod-bear-black   → blackout / shades
+  // - mod-bear-orange  → hazard orange / high-vis
+  // - staff-bear       → bright yellow hair buns
+  // - staff            → black STAFF jumpsuit
+  const COLOR_BY_SLUG = {
+    'mod-bear-black':  '#1A1A1AFF',  // deep charcoal / "night security"
+    'mod-bear-orange': '#FF6A00FF',  // vivid hazard orange / radio earpiece
+    'staff-bear':      '#FFC300FF',  // bright golden staff hair
+    'staff':           '#1A1A1AFF'   // black STAFF uniform
+  }
+
+  // backup palette if we somehow don't have a color
+  const BOUNCER_COLORS = [
+    '#1A1A1AFF',  // blackout
+    '#FF6A00FF',  // warning orange
+    '#FFC300FF'   // high-vis yellow
+  ]
+
+  // 🗣 per-avatar announcement line for chat
+  // tone: door control / crowd control / you-are-being-watched
+  const BOUNCER_LINES = {
+    'mod-bear-black':
+      '🕶️ Black Ops Bear on duty. If your name’s not on the list, you’re not on the stage.',
+    'mod-bear-orange':
+      '🟠 Floor Security online. Badge visible, attitude checked, behave in the booth.',
+    'staff-bear':
+      '💛 Staff Bear reporting in — cute face, zero tolerance.',
+    'staff':
+      '👔 Venue Staff present. Keep the energy up and the drama down.'
+  }
+
+  // get avatar objects by slug
+  const filtered = getAvatarsBySlugs(allowedSlugs)
+
+  if (!filtered || filtered.length === 0) {
+    await postMessage({
+      room,
+      message: 'No security avatars are available right now. 🔒'
+    })
+    return
+  }
+
+  // choose one at random
+  const chosen = filtered[Math.floor(Math.random() * filtered.length)]
+  const slug = chosen?.slug
+
+  if (!slug) {
+    console.warn('[bouncer] No slug on selected avatar object:', chosen)
+    await postMessage({
+      room,
+      message: 'Could not equip security mode 😬'
+    })
+    return
+  }
+
+  // pick its mapped color or fallback
+  const color =
+    COLOR_BY_SLUG[slug] ||
+    BOUNCER_COLORS[Math.floor(Math.random() * BOUNCER_COLORS.length)]
+
+  // choose chat line
+  const line =
+    BOUNCER_LINES[slug] ||
+    `🕶️ ${slugToTitle(slug)} on patrol. Respect the booth.`
+
+  // log for debugging
+  console.log('[bouncer] attempt', {
+    senderUuid,
+    slug,
+    color,
+    title: slugToTitle(slug)
+  })
+
+  try {
+    // actually update their avatar in TT
+    await updateUserAvatar(userToken, slug, color)
+
+    console.log('[bouncer] success', {
+      senderUuid,
+      slug,
+      color
+    })
+
+    await postMessage({
+      room,
+      message: line
+    })
+  } catch (error) {
+    console.error('[handleBouncerCommand] update failed', {
+      senderUuid,
+      slugTried: slug,
+      colorTried: color,
+      error: error?.message || String(error),
+      stack: error?.stack
+    })
+
+    await postMessage({
+      room,
+      message: 'Avatar update failed. Security is temporarily offline 😞'
+    })
+  }
+
+  function slugToTitle (s) {
+    return s
+      .replace(/-/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase())
+  }
+}
+
+
+export async function handleSpookyCommand (senderUuid, room, postMessage) {
+  const userToken = userTokenMap[senderUuid]
+  if (!userToken) {
+    await postMessage({
+      room,
+      message: 'Sorry, this command is only available to authorized users 🦇.'
+    })
+    return
+  }
+
+  // 🎃 Allowed Halloween / Spooky avatars
+  const allowedSlugs = [
+    'Harvest-08',
+    'Harvest-07',
+    'Harvest-06',
+    'Harvest-05',
+    'Dj-mummyv1-1',
+    'Dj-mummyv2-1',
+    'Ghost',
+    'Dj-vamplife-1',
+    'Dj-witchv1-1',
+    'Dj-witchv2-1'
+  ]
+
+  // 🔮 Per-avatar accent / chat color (8-digit RGBA hex)
+  // Try to match their strongest highlight color:
+  // - Pumpkins: hot pumpkin orange / molten candy-glow
+  // - Scarecrows: haunted green vs straw/gold
+  // - Mummies: undead bandage ivory vs cursed purple/yellow eye
+  // - Ghost: pale ectoplasm white
+  // - Vampire: blood red
+  // - Witch: toxic witch green / hat band color
+  const COLOR_BY_SLUG = {
+    'Harvest-08':    '#FF6A00FF', // vivid jack-o-lantern orange glow
+    'Harvest-07':    '#FFB84BFF', // softer harvest pumpkin / candy corn yellow-orange
+    'Harvest-06':    '#FFB84BFF', // straw yellow / autumn hat band orange
+    'Harvest-05':    '#00FF66FF', // cursed neon green eyes
+    'Dj-mummyv1-1':  '#C9C9C9FF', // bandage gray-white w/ spooky purple eye
+    'Dj-mummyv2-1':  '#FFF4CCFF', // warmer bandage + yellow eye
+    'Ghost':         '#FFFFFFFF', // pure spectral white
+    'Dj-vamplife-1': '#B00020FF', // deep blood red
+    'Dj-witchv1-1':  '#32C24DFF', // witch skin toxic green
+    'Dj-witchv2-1':  '#FF7A1CFF'  // orange hat band / warm charm
+  }
+
+  // 🩸 spooky fallback palette if a slug is missing a mapping
+  const SPOOKY_COLORS = [
+    '#FF6A00FF', // pumpkin orange
+    '#00FF66FF', // toxic green
+    '#FFFFFFFF', // ghost white
+    '#B00020FF', // blood red
+    '#C9C9C9FF'  // linen mummy wrap
+  ]
+
+  // 👻 Per-avatar chat voice lines
+  // Short, punchy, flavor-y. Mentions vibe of each avatar.
+  const SPOOKY_LINES = {
+    'Harvest-08':   '🎃 Pumpkin Beast online. The candle’s real, the smile is not.',
+    'Harvest-07':   '🕯️ Harvest Lantern lit. Cozy vibe, suspicious grin.',
+    'Harvest-06':   '🌾 Field Watcher reports in. Stitch-smile, zero heartbeat.',
+    'Harvest-05':   '🌽 Haunted Scarecrow rises — eyes glowing green, birds evacuated.',
+    'Dj-mummyv1-1': '🧻 Ancient Wrap v1 awakened. Do not tug the bandages.',
+    'Dj-mummyv2-1': '🧟‍♂️ Experimental Wrap v2 online. Extra stitches, extra curse.',
+    'Ghost':        '👻 Friendly Ghost materialized. Floating. Watching. Vibing.',
+    'Dj-vamplife-1':'🩸 Vamplife engaged. Pale face, dark night, louder than midnight.',
+    'Dj-witchv1-1': '🧪 Swamp Witch enters the booth — cauldron bass only.',
+    'Dj-witchv2-1': '🧹 Midnight Witch glides in. Hat sharp, spell sharper.'
+  }
+
+  // Grab only these avatars from inventory
+  const filtered = getAvatarsBySlugs(allowedSlugs)
+
+  if (!filtered || filtered.length === 0) {
+    await postMessage({
+      room,
+      message: 'No spooky avatars found in the allowed set 🪦'
+    })
+    return
+  }
+
+  // pick one at random
+  const chosen = filtered[Math.floor(Math.random() * filtered.length)]
+  const slug = chosen?.slug
+
+  if (!slug) {
+    console.warn('[spooky] No slug on selected avatar object:', chosen)
+    await postMessage({
+      room,
+      message: 'No spooky avatar available right now 😬'
+    })
+    return
+  }
+
+  // Pick a matching chat color for that avatar, else random fallback
+  const color =
+    COLOR_BY_SLUG[slug] ||
+    SPOOKY_COLORS[Math.floor(Math.random() * SPOOKY_COLORS.length)]
+
+  // Pick the line for that slug
+  const line =
+    SPOOKY_LINES[slug] ||
+    `🦇 ${slugToTitle(slug)} has entered the haunt.`
+
+  // Debug info for server logs
+  console.log('[spooky] attempt', {
+    senderUuid,
+    slug,
+    color,
+    title: slugToTitle(slug)
+  })
+
+  try {
+    // actually set their avatar
+    await updateUserAvatar(userToken, slug, color)
+
+    console.log('[spooky] success', {
+      senderUuid,
+      slug,
+      color
+    })
+
+    // announce to room
+    await postMessage({
+      room,
+      message: line
+    })
+  } catch (error) {
+    console.error('[handleSpookyCommand] update failed', {
+      senderUuid,
+      slugTried: slug,
+      colorTried: color,
+      error: error?.message || String(error),
+      stack: error?.stack
+    })
+
+    await postMessage({
+      room,
+      message: 'Failed to equip spooky avatar 😞'
+    })
+  }
+
+  function slugToTitle (s) {
+    return s
+      .replace(/-/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase())
+  }
+}
+export async function handleRecordGuyCommand (senderUuid, room, postMessage) {
+  const userToken = userTokenMap[senderUuid]
+  if (!userToken) {
+    await postMessage({
+      room,
+      message: '🎟️ Sorry, this command is only available to authorized users.'
+    })
+    return
+  }
+
+  const slug = 'Stadiumseason-04a'
+
+  // Color: black/white record mascot with orange shoes.
+  // We’ll go with that warm sneaker orange for chat color.
+  const color = '#FF9A00FF'
+
+  const line = '🏟️ Record Mascot on the floor — crowd noise activated, hype levels rising.'
+
+  console.log('[recordguy] attempt', {
+    senderUuid,
+    slug,
+    color
+  })
+
+  try {
+    await updateUserAvatar(userToken, slug, color)
+
+    console.log('[recordguy] success', {
+      senderUuid,
+      slug,
+      color
+    })
+
+    await postMessage({
+      room,
+      message: line
+    })
+  } catch (error) {
+    console.error('[handleRecordGuyCommand] update failed', {
+      senderUuid,
+      slug,
+      colorTried: color,
+      error: error?.message || String(error),
+      stack: error?.stack
+    })
+
+    await postMessage({
+      room,
+      message: 'Could not equip Record Mascot 😞'
+    })
+  }
+}
+
+export async function handleJukeboxCommand (senderUuid, room, postMessage) {
+  const userToken = userTokenMap[senderUuid]
+  if (!userToken) {
+    await postMessage({
+      room,
+      message: '📻 Sorry, this command is only available to authorized users.'
+    })
+    return
+  }
+
+  const slug = 'Dj-jukebox-1'
+
+  // Color: neon safety yellow body with red "JukBox" text.
+  // We’ll choose the highlighter yellow for chat color.
+  const color = '#FFF000FF'
+
+  const line = '📼 Jukebox engaged. Old hits, deep cuts, all requests considered.'
+
+  console.log('[jukebox] attempt', {
+    senderUuid,
+    slug,
+    color
+  })
+
+  try {
+    await updateUserAvatar(userToken, slug, color)
+
+    console.log('[jukebox] success', {
+      senderUuid,
+      slug,
+      color
+    })
+
+    await postMessage({
+      room,
+      message: line
+    })
+  } catch (error) {
+    console.error('[handleJukeboxCommand] update failed', {
+      senderUuid,
+      slug,
+      colorTried: color,
+      error: error?.message || String(error),
+      stack: error?.stack
+    })
+
+    await postMessage({
+      room,
+      message: 'Could not equip Jukebox 😞'
+    })
+  }
+}
+
 
 
 export async function handleDuckCommand (senderUuid, room, postMessage) {

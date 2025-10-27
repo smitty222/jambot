@@ -41,7 +41,7 @@ import {
   handleBlackjackBet, handleHit, handleStand, handleDouble, handleSurrender, handleSplit,
   getFullTableView, getPhase
 } from '../games/blackjack/blackJack.js'
-import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand, handleRandomCyberCommand, handleVibesGuyCommand, handleFacesCommand, handleDoDoCommand, handleFlowerPowerCommand, handleDumDumCommand, handleRandomCosmicCommand, handleRandomLovableCommand, handleBot3Command, handleAnonCommand, handleGhostCommand, handleTeacupCommand } from './avatarCommands.js'
+import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand, handleRandomCyberCommand, handleVibesGuyCommand, handleFacesCommand, handleDoDoCommand, handleFlowerPowerCommand, handleDumDumCommand, handleRandomCosmicCommand, handleRandomLovableCommand, handleBot3Command, handleAnonCommand, handleGhostCommand, handleTeacupCommand, handleBouncerCommand, handleSpookyCommand, handleRecordGuyCommand, handleJukeboxCommand } from './avatarCommands.js'
 import { markUser, getMarkedUser } from '../utils/removalQueue.js'
 import { extractUserFromText, isLotteryQuestion } from '../database/dblotteryquestionparser.js'
 import { askMagic8Ball } from './magic8Ball.js'
@@ -2021,8 +2021,16 @@ if (/^\/(hit|stand|double|surrender|split)\b/i.test(txt) && getPhase(ctx) === 'a
     await handleDinoCommand(payload.sender, room, postMessage)
   } else if (payload.message.startsWith('/teacup')) {
     await handleTeacupCommand(payload.sender, room, postMessage)
+  } else if (payload.message.startsWith('/spooky')) {
+    await handleSpookyCommand(payload.sender, room, postMessage)
+  } else if (payload.message.startsWith('/bouncer')) {
+    await handleBouncerCommand(payload.sender, room, postMessage)
   } else if (payload.message.startsWith('/duck')) {
     await handleDuckCommand(payload.sender, room, postMessage)
+  } else if (payload.message.startsWith('/record' || 'recordguy')) {
+    await handleRecordGuyCommand(payload.sender, room, postMessage)
+  } else if (payload.message.startsWith('/jukebox' || 'jukeboxguy')) {
+    await handleJukeboxCommand(payload.sender, room, postMessage)
   } else if (payload.message.startsWith('/spacebear')) {
     await handleSpaceBearCommand(payload.sender, room, postMessage)
   } else if (payload.message.startsWith('/walrus')) {
