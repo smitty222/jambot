@@ -2021,6 +2021,8 @@ if (/^\/(hit|stand|double|surrender|split)\b/i.test(txt) && getPhase(ctx) === 'a
     await handleDinoCommand(payload.sender, room, postMessage)
   } else if (payload.message.startsWith('/duck')) {
     await handleDuckCommand(payload.sender, room, postMessage)
+  } else if (payload.message.startsWith('/teacup')) {
+    await handleDuckCommand(payload.sender, room, postMessage)
   } else if (payload.message.startsWith('/spacebear')) {
     await handleSpaceBearCommand(payload.sender, room, postMessage)
   } else if (payload.message.startsWith('/walrus')) {

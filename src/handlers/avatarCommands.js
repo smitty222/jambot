@@ -383,6 +383,20 @@ export async function handleDuckCommand (senderUuid, room, postMessage) {
     await postMessage({ room, message: 'Duck transformation failed' })
   }
 }
+export async function handleTeacupCommand (senderUuid, room, postMessage) {
+  const userToken = userTokenMap[senderUuid]
+  if (!userToken) {
+    await postMessage({ room, message: 'Sorry, this command is only available to authorized dino users 🦖.' })
+    return
+  }
+
+  try {
+    await updateUserAvatar(userToken, 'dj-greentea-1', '#6EFAC8FF')
+    await postMessage({ room, message: '🍵 Green Tea avatar equipped — serenity and caffeine achieved.' })
+  } catch (error) {
+    await postMessage({ room, message: 'Teacup transformation failed' })
+  }
+}
 export async function handleSpaceBearCommand (senderUuid, room, postMessage) {
   const userToken = userTokenMap[senderUuid]
   if (!userToken) {
