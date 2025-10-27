@@ -2019,9 +2019,9 @@ if (/^\/(hit|stand|double|surrender|split)\b/i.test(txt) && getPhase(ctx) === 'a
 
   else if (payload.message.startsWith('/dino')) {
     await handleDinoCommand(payload.sender, room, postMessage)
-  } else if (payload.message.startsWith('/duck')) {
-    await handleTeacupCommand(payload.sender, room, postMessage)
   } else if (payload.message.startsWith('/teacup')) {
+    await handleTeacupCommand(payload.sender, room, postMessage)
+  } else if (payload.message.startsWith('/duck')) {
     await handleDuckCommand(payload.sender, room, postMessage)
   } else if (payload.message.startsWith('/spacebear')) {
     await handleSpaceBearCommand(payload.sender, room, postMessage)
