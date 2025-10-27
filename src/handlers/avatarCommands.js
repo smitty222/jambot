@@ -208,34 +208,6 @@ export async function handleBot3Command (room, postMessage, isUserAuthorized, se
     await postMessage({ room, message: 'Failed to update bot profile' })
   }
 }
-export async function handleBotStaffCommand (room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
-  const isMod = await isUserAuthorized(senderUuid, ttlUserToken)
-  if (!isMod) {
-    await postMessage({ room, message: 'You need to be a moderator to execute this command.' })
-    return
-  }
-
-  const avatarId = 'mod-bear-orange'
-  const color = '#FF6A00FF' // hot magenta to match Pixel accents
-
-  try {
-    console.log('[botstaff] attempt', { senderUuid, avatar: avatarId, color })
-    await updateUserAvatar(ttlUserToken, avatarId, color)
-    setChatIdentity({ avatarId, color })
-    console.log('[botstaff] success', { senderUuid, avatar: avatarId })
-
-    await postMessage({ room, message: '🟠 Allen toggled High-Vis Protocol. Crowd under control', identity: { avatarId, color } })
-  } catch (error) {
-    console.error('[handleBotStaffCommand] update failed', {
-      senderUuid,
-      avatarTried: avatarId,
-      colorTried: color,
-      error: error?.message || String(error),
-      stack: error?.stack
-    })
-    await postMessage({ room, message: 'Failed to update bot profile' })
-  }
-}
 
 export async function handleBot1Command (room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
   const isMod = await isUserAuthorized(senderUuid, ttlUserToken)

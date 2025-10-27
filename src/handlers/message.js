@@ -2013,8 +2013,6 @@ if (/^\/(hit|stand|double|surrender|split)\b/i.test(txt) && getPhase(ctx) === 'a
     await handleBot2Command(payload.sender, room, postMessage)
   } else if (payload.message.startsWith('/bot3')) {
     await handleBot3Command(payload.sender, room, postMessage)
-  } else if (payload.message.startsWith('/botstaff')) {
-    await handleBotStaffCommand(payload.sender, room, postMessage)
   }
 
   /// /////////////////////// USER AVATAR UPDATES //////////////////////////
