@@ -494,16 +494,16 @@ export async function handleSpookyCommand (senderUuid, room, postMessage) {
 
   // 🎃 Allowed Halloween / Spooky avatars
   const allowedSlugs = [
-    'Harvest-08',
-    'Harvest-07',
-    'Harvest-06',
-    'Harvest-05',
-    'Dj-mummyv1-1',
-    'Dj-mummyv2-1',
-    'Ghost',
-    'Dj-vamplife-1',
-    'Dj-witchv1-1',
-    'Dj-witchv2-1'
+    'harvest-08',
+    'harvest-07',
+    'harvest-06',
+    'harvest-05',
+    'dj-mummyv1-1',
+    'dj-mummyv2-1',
+    'ghost',
+    'dj-vamplife-1',
+    'dj-witchv1-1',
+    'dj-witchv2-1'
   ]
 
   // 🔮 Per-avatar accent / chat color (8-digit RGBA hex)
@@ -639,7 +639,7 @@ export async function handleRecordGuyCommand (senderUuid, room, postMessage) {
     return
   }
 
-  const slug = 'Stadiumseason-04a'
+  const slug = 'stadiumseason-04a'
 
   // Color: black/white record mascot with orange shoes.
   // We’ll go with that warm sneaker orange for chat color.
@@ -692,7 +692,7 @@ export async function handleJukeboxCommand (senderUuid, room, postMessage) {
     return
   }
 
-  const slug = 'Dj-jukebox-1'
+  const slug = 'dj-jukebox-1'
 
   // Color: neon safety yellow body with red "JukBox" text.
   // We’ll choose the highlighter yellow for chat color.
