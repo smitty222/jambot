@@ -208,74 +208,23 @@ export async function handleBot3Command (room, postMessage, isUserAuthorized, se
     await postMessage({ room, message: 'Failed to update bot profile' })
   }
 }
-export async function handleBotStaffCommand (
-  room,
-  postMessage,
-  isUserAuthorized,
-  senderUuid,
-  ttlUserToken
-) {
-  // 1. Permission check
+export async function handleBot3Command (room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
   const isMod = await isUserAuthorized(senderUuid, ttlUserToken)
   if (!isMod) {
-    await postMessage({
-      room,
-      message: '🛡️ You need to be a moderator to execute this command.'
-    })
+    await postMessage({ room, message: 'You need to be a moderator to execute this command.' })
     return
   }
 
-  // 2. Allowed security/staff avatars
-  const allowedSlugs = [
-    'mod-bear-black',
-    'mod-bear-orange',
-    'staff-bear',
-    'staff'
-  ]
-
-  // 3. Accent/chat color per avatar
-  const COLOR_BY_SLUG = {
-    'mod-bear-black':  '#1A1A1AFF', // blackout / shades
-    'mod-bear-orange': '#FF6A00FF', // hazard orange
-    'staff-bear':      '#FFC300FF', // golden buns / "staff-bear"
-    'staff':           '#1A1A1AFF'  // STAFF jumpsuit black
-  }
-
-  // 4. Voice lines per avatar
-  const BOT_LINES = {
-    'mod-bear-black':
-      '🕶️ Allen switched to Security Mode (Black Ops Bear). Access restricted.',
-    'mod-bear-orange':
-      '🟠 Allen toggled High-Vis Protocol. Crowd under control.',
-    'staff-bear':
-      '💛 Allen is now Staff Bear — friendly face, firm rules.',
-    'staff':
-      '👔 Allen switched to STAFF uniform — monitoring vibes and volume.'
-  }
-
-  // 5. Pick one avatar at random
-  const avatarId = allowedSlugs[Math.floor(Math.random() * allowedSlugs.length)]
-  const color = COLOR_BY_SLUG[avatarId] || '#1A1A1AFF'
-  const line = BOT_LINES[avatarId] || '🔒 Allen is now on security detail.'
+  const avatarId = 'mod-bear-orange'
+  const color = '#FF6A00FF' // hot magenta to match Pixel accents
 
   try {
-    console.log('[botstaff] attempt', { senderUuid, avatarId, color })
-
-    // 6. Update the bot user's avatar in TT
+    console.log('[botstaff] attempt', { senderUuid, avatar: avatarId, color })
     await updateUserAvatar(ttlUserToken, avatarId, color)
-
-    // 7. Update in-memory bot chat identity for future messages
     setChatIdentity({ avatarId, color })
+    console.log('[botstaff] success', { senderUuid, avatar: avatarId })
 
-    console.log('[botstaff] success', { senderUuid, avatarId, color })
-
-    // 8. Announce to the room
-    // IMPORTANT: we are NOT passing `identity` here anymore,
-    // because your postMessage in this code path chokes on it.
-    await postMessage({
-      room,
-      message: line
-    })
+    await postMessage({ room, message: '🟠 Allen toggled High-Vis Protocol. Crowd under control', identity: { avatarId, color } })
   } catch (error) {
     console.error('[handleBotStaffCommand] update failed', {
       senderUuid,
@@ -284,12 +233,7 @@ export async function handleBotStaffCommand (
       error: error?.message || String(error),
       stack: error?.stack
     })
-
-    // Attempt a fallback message with no identity as well
-    await postMessage({
-      room,
-      message: '⚠️ Failed to update bot to staff mode.'
-    })
+    await postMessage({ room, message: 'Failed to update bot profile' })
   }
 }
 
