@@ -248,18 +248,6 @@ export async function handleDinoCommand (senderUuid, room, postMessage) {
     'jurassic-06',
     'jurassic-07'
   ]
-
-  // 🎨 Per-avatar accent color
-  // These are 8-digit RGBA hex strings like you did for cyber.
-  // I chose a "signature" color that fits what you showed:
-  //
-  // jurassic-01: green lizard w/ hot orange frill → warm lava/orange pop
-  // jurassic-02: bright lime triceratops → electric lime
-  // jurassic-03: purple/gray dino in shades → neon violet
-  // jurassic-05: caramel/orange dino w/ cream forehead → golden amber
-  // jurassic-06: stone/brown horned bruiser → bone/ivory horn tone
-  // jurassic-07: bright green baby dino w/ yellow crest → highlighter yellow/crest
-  //
   const COLOR_BY_SLUG = {
     'jurassic-01': '#FF7A1CFF', // fiery orange frill / warning display
     'jurassic-02': '#A6FF00FF', // toxic lime body plates
@@ -269,7 +257,6 @@ export async function handleDinoCommand (senderUuid, room, postMessage) {
     'jurassic-07': '#FFD500FF'  // bright crest yellow on the baby dino
   }
 
-  // 🦴 fallback colors if for some reason we don't have a specific color
   const DINO_COLORS = [
     '#A6FF00FF', // lime
     '#FF7A1CFF', // orange
@@ -279,8 +266,6 @@ export async function handleDinoCommand (senderUuid, room, postMessage) {
     '#FFD500FF'  // crest yellow
   ]
 
-  // 🗣️ Per-avatar announcement line
-  // Tone: fun, a little RP, matches their "look"
   const DINO_LINES = {
     'jurassic-01': '🦖 Frill Lizard deployed. Back up — the warning display means you’re already too close.',
     'jurassic-02': '🦕 Trike Tank online. Horns polished, tail swaying, crowd control engaged.',
@@ -400,7 +385,7 @@ export async function handleTeacupCommand (senderUuid, room, postMessage) {
 export async function handleSpaceBearCommand (senderUuid, room, postMessage) {
   const userToken = userTokenMap[senderUuid]
   if (!userToken) {
-    await postMessage({ room, message: 'Sorry, this command is only available to authorized dino users 🦖.' })
+    await postMessage({ room, message: 'Sorry, this command is only available to authorized users.' })
     return
   }
 
@@ -414,7 +399,7 @@ export async function handleSpaceBearCommand (senderUuid, room, postMessage) {
 export async function handleWalrusCommand (senderUuid, room, postMessage) {
   const userToken = userTokenMap[senderUuid]
   if (!userToken) {
-    await postMessage({ room, message: 'Sorry, this command is only available to authorized dino users 🦖.' })
+    await postMessage({ room, message: 'Sorry, this command is only available to authorized users.' })
     return
   }
 
@@ -428,7 +413,7 @@ export async function handleWalrusCommand (senderUuid, room, postMessage) {
 export async function handleVibesGuyCommand (senderUuid, room, postMessage) {
   const userToken = userTokenMap[senderUuid]
   if (!userToken) {
-    await postMessage({ room, message: 'Sorry, this command is only available to authorized dino users 🦖.' })
+    await postMessage({ room, message: 'Sorry, this command is only available to authorized users.' })
     return
   }
 
@@ -442,7 +427,7 @@ export async function handleVibesGuyCommand (senderUuid, room, postMessage) {
 export async function handleFacesCommand (senderUuid, room, postMessage) {
   const userToken = userTokenMap[senderUuid]
   if (!userToken) {
-    await postMessage({ room, message: 'Sorry, this command is only available to authorized dino users 🦖.' })
+    await postMessage({ room, message: 'Sorry, this command is only available to authorized users.' })
     return
   }
   try {
