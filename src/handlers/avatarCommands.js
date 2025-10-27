@@ -209,14 +209,17 @@ export async function handleBot3Command (room, postMessage, isUserAuthorized, se
   }
 }
 export async function handleBotStaffCommand (room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
-  // Require mod access
+  // Check mod permission
   const isMod = await isUserAuthorized(senderUuid, ttlUserToken)
   if (!isMod) {
-    await postMessage({ room, message: '🛡️ You need to be a moderator to execute this command.' })
+    await postMessage({
+      room,
+      message: '🛡️ You need to be a moderator to execute this command.'
+    })
     return
   }
 
-  // Use the same avatars from /bouncer
+  // Security / staff avatars we rotate between
   const allowedSlugs = [
     'mod-bear-black',
     'mod-bear-orange',
@@ -224,43 +227,68 @@ export async function handleBotStaffCommand (room, postMessage, isUserAuthorized
     'staff'
   ]
 
+  // Accent/chat color to pair with each avatar
   const COLOR_BY_SLUG = {
-    'mod-bear-black':  '#1A1A1AFF',  // deep charcoal / night security
-    'mod-bear-orange': '#FF6A00FF',  // hazard orange / high-vis
-    'staff-bear':      '#FFC300FF',  // golden hair buns
-    'staff':           '#1A1A1AFF'   // black STAFF suit
+    'mod-bear-black':  '#1A1A1AFF',  // blackout / shades
+    'mod-bear-orange': '#FF6A00FF',  // hazard orange / high-vis comms
+    'staff-bear':      '#FFC300FF',  // bright golden buns / security cheer
+    'staff':           '#1A1A1AFF'   // STAFF jumpsuit black
   }
 
+  // Voice lines for each
   const BOT_LINES = {
-    'mod-bear-black':  '🕶️ Allen switched to Security Mode (Black Ops Bear). Access restricted.',
-    'mod-bear-orange': '🟠 Allen toggled High-Vis Protocol. Crowd under control.',
-    'staff-bear':      '💛 Allen is now Staff Bear — friendly face, firm rules.',
-    'staff':           '👔 Allen switched to STAFF uniform — monitoring vibes and volume.'
+    'mod-bear-black':
+      '🕶️ Allen switched to Security Mode (Black Ops Bear). Access restricted.',
+    'mod-bear-orange':
+      '🟠 Allen toggled High-Vis Protocol. Crowd under control.',
+    'staff-bear':
+      '💛 Allen is now Staff Bear — friendly face, firm rules.',
+    'staff':
+      '👔 Allen switched to STAFF uniform — monitoring vibes and volume.'
   }
 
-  // Pick one at random
-  const slug = allowedSlugs[Math.floor(Math.random() * allowedSlugs.length)]
-  const color = COLOR_BY_SLUG[slug] || '#FFFFFF'
-  const line  = BOT_LINES[slug] || '🔒 Security posture engaged.'
+  // Pick one avatar at random
+  const avatarId = allowedSlugs[Math.floor(Math.random() * allowedSlugs.length)]
+  const color = COLOR_BY_SLUG[avatarId] || '#1A1A1AFF'
+  const line = BOT_LINES[avatarId] || '🔒 Allen is now on security detail.'
 
   try {
-    console.log('[botstaff] attempt', { senderUuid, slug, color })
+    console.log('[botstaff] attempt', { senderUuid, avatarId, color })
 
-    await updateUserAvatar(ttlUserToken, slug, color)
-    setChatIdentity({ avatarId: slug, color })
+    // 1. Update the bot user's avatar in TT
+    await updateUserAvatar(ttlUserToken, avatarId, color)
 
-    console.log('[botstaff] success', { slug, color })
+    // 2. Update in-memory identity so future messages come from this avatar/color
+    setChatIdentity({ avatarId, color })
 
-    await postMessage({ room, message: line, identity: { avatarId: slug, color } })
+    console.log('[botstaff] success', { senderUuid, avatarId, color })
+
+    // 3. Announce with that identity. This mirrors /bot3 exactly.
+    await postMessage({
+      room,
+      message: line,
+      identity: { avatarId, color }
+    })
   } catch (error) {
-    console.error('[handleBotStaffCommand] failed', {
+    console.error('[handleBotStaffCommand] update failed', {
       senderUuid,
-      slug,
-      color,
-      error: error?.message || String(error)
+      avatarTried: avatarId,
+      colorTried: color,
+      error: error?.message || String(error),
+      stack: error?.stack
     })
 
-    await postMessage({ room, message: '⚠️ Failed to update bot to staff mode.' })
+    // Fallback announce without identity object to avoid crashing postMessage again
+    try {
+      await postMessage({
+        room,
+        message: '⚠️ Failed to update bot to staff mode.'
+      })
+    } catch (nestedErr) {
+      console.error('[handleBotStaffCommand] secondary postMessage failed', {
+        nestedErr: nestedErr?.message || nestedErr
+      })
+    }
   }
 }
 
