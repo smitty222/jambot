@@ -1,7 +1,9 @@
 // src/libs/queueManager.js
 import db from '../database/db.js'
 
-// No imports from message.js — avoids circular deps
+// QueueManager manages the DJ queue stored in the dj_queue table.
+// It exposes helpers to inspect, join, advance, and leave.
+
 export class QueueManager {
   constructor (getUsernameFn = null) {
     this.getUserNickname =
@@ -9,66 +11,35 @@ export class QueueManager {
   }
 
   async resolveUsername (userId) {
-    // Try injected resolver
+    // Prefer injected resolver (nickname logic from getUserNickname)
     if (this.getUserNickname) {
       try {
         const name = await this.getUserNickname(userId)
         if (name) return name
       } catch (_) {}
     }
-    // Fallback: try users table if it exists
+
+    // Fallback to DB users table
     try {
       const row = db.prepare('SELECT nickname FROM users WHERE uuid = ?').get(userId)
       if (row?.nickname) return row.nickname
     } catch (_) {}
-    // Last resort: echo the id
+
+    // Last resort: just echo UUID
     return userId
   }
 
-  async loadQueue () {
-    const queue = db.prepare(`
-      SELECT userId, username, joinedAt
-      FROM dj_queue
-      ORDER BY id ASC
-    `).all()
-    return { queue, currentIndex: 0 }
-  }
-
-  async saveQueue () {
-    // Not needed with DB-backed queue
-  }
-
-  async joinQueue (userId) {
-    const exists = db.prepare('SELECT 1 FROM dj_queue WHERE userId = ?').get(userId)
-    if (exists) {
-      const user = db.prepare('SELECT username FROM dj_queue WHERE userId = ?').get(userId)
-      return { success: false, username: user?.username || 'Unknown' }
-    }
-
-    const username = await this.resolveUsername(userId)
-
-    db.prepare(`
-      INSERT INTO dj_queue (userId, username, joinedAt)
-      VALUES (?, ?, ?)
-    `).run(userId, username, new Date().toISOString())
-
-    return { success: true, username }
-  }
-
-  async leaveQueue (userId) {
-    const info = db.prepare('DELETE FROM dj_queue WHERE userId = ?').run(userId)
-    return info.changes > 0
-  }
-
+  // Entire queue, oldest first
   async getQueue () {
-    const queue = db.prepare(`
+    const rows = db.prepare(`
       SELECT userId, username, joinedAt
       FROM dj_queue
       ORDER BY id ASC
     `).all()
-    return queue
+    return rows
   }
 
+  // Peek at who's first in line (but do NOT remove)
   async getCurrentUser () {
     const user = db.prepare(`
       SELECT userId, username, joinedAt
@@ -79,27 +50,90 @@ export class QueueManager {
     return user || null
   }
 
-  async advanceQueue () {
-    const current = await this.getCurrentUser()
-    if (!current) return null
-    await this.leaveQueue(current.userId)
-    return await this.getCurrentUser()
+  // Add a user if they're not already queued
+  async joinQueue (userId) {
+    // Are they already in queue?
+    const exists = db.prepare(
+      'SELECT username FROM dj_queue WHERE userId = ? LIMIT 1'
+    ).get(userId)
+
+    if (exists) {
+      return {
+        success: false,
+        username: exists.username || 'Unknown'
+      }
+    }
+
+    const username = await this.resolveUsername(userId)
+
+    db.prepare(`
+      INSERT INTO dj_queue (userId, username, joinedAt)
+      VALUES (?, ?, ?)
+    `).run(userId, username, new Date().toISOString())
+
+    return {
+      success: true,
+      username
+    }
   }
 
+  // Remove ALL rows for a given userId
+  async leaveQueue (userId) {
+    const info = db.prepare(
+      'DELETE FROM dj_queue WHERE userId = ?'
+    ).run(userId)
+    return info.changes > 0
+  }
+
+  // Advance the queue:
+  // - Take the first user in line
+  // - Remove them from dj_queue
+  // - RETURN THAT USER (this is the one we are promoting)
+  async advanceQueue () {
+    const first = db.prepare(`
+      SELECT id, userId, username, joinedAt
+      FROM dj_queue
+      ORDER BY id ASC
+      LIMIT 1
+    `).get()
+
+    if (!first) {
+      return null
+    }
+
+    // delete just that row (id-based delete so we don't accidentally
+    // wipe duplicate entries if they somehow exist)
+    db.prepare(
+      'DELETE FROM dj_queue WHERE id = ?'
+    ).run(first.id)
+
+    return {
+      userId: first.userId,
+      username: first.username,
+      joinedAt: first.joinedAt
+    }
+  }
+
+  // Utility: clear queue
   async clearQueue () {
     db.prepare('DELETE FROM dj_queue').run()
   }
 
+  // Is this user currently first?
   async isUserNext (userId) {
     const current = await this.getCurrentUser()
     return current?.userId === userId
   }
 
+  // If this user is not first anymore, boot them from the queue
   async removeIfNotNext (userId) {
-    const isNext = await this.isUserNext(userId)
-    if (!isNext) {
+    const stillNext = await this.isUserNext(userId)
+    if (!stillNext) {
       await this.leaveQueue(userId)
     }
-    return isNext
+    return stillNext
   }
+
+  // (optional) loadQueue() and saveQueue() not needed with DB,
+  // so I'm leaving them out in this cleaned version.
 }
