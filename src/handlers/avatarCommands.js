@@ -208,7 +208,7 @@ export async function handleBot3Command (room, postMessage, isUserAuthorized, se
     await postMessage({ room, message: 'Failed to update bot profile' })
   }
 }
-export async function handleBot3Command (room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
+export async function handleBotStaffCommand (room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
   const isMod = await isUserAuthorized(senderUuid, ttlUserToken)
   if (!isMod) {
     await postMessage({ room, message: 'You need to be a moderator to execute this command.' })
