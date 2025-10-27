@@ -208,6 +208,61 @@ export async function handleBot3Command (room, postMessage, isUserAuthorized, se
     await postMessage({ room, message: 'Failed to update bot profile' })
   }
 }
+export async function handleBotStaffCommand (room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
+  // Require mod access
+  const isMod = await isUserAuthorized(senderUuid, ttlUserToken)
+  if (!isMod) {
+    await postMessage({ room, message: '🛡️ You need to be a moderator to execute this command.' })
+    return
+  }
+
+  // Use the same avatars from /bouncer
+  const allowedSlugs = [
+    'mod-bear-black',
+    'mod-bear-orange',
+    'staff-bear',
+    'staff'
+  ]
+
+  const COLOR_BY_SLUG = {
+    'mod-bear-black':  '#1A1A1AFF',  // deep charcoal / night security
+    'mod-bear-orange': '#FF6A00FF',  // hazard orange / high-vis
+    'staff-bear':      '#FFC300FF',  // golden hair buns
+    'staff':           '#1A1A1AFF'   // black STAFF suit
+  }
+
+  const BOT_LINES = {
+    'mod-bear-black':  '🕶️ Allen switched to Security Mode (Black Ops Bear). Access restricted.',
+    'mod-bear-orange': '🟠 Allen toggled High-Vis Protocol. Crowd under control.',
+    'staff-bear':      '💛 Allen is now Staff Bear — friendly face, firm rules.',
+    'staff':           '👔 Allen switched to STAFF uniform — monitoring vibes and volume.'
+  }
+
+  // Pick one at random
+  const slug = allowedSlugs[Math.floor(Math.random() * allowedSlugs.length)]
+  const color = COLOR_BY_SLUG[slug] || '#FFFFFF'
+  const line  = BOT_LINES[slug] || '🔒 Security posture engaged.'
+
+  try {
+    console.log('[botstaff] attempt', { senderUuid, slug, color })
+
+    await updateUserAvatar(ttlUserToken, slug, color)
+    setChatIdentity({ avatarId: slug, color })
+
+    console.log('[botstaff] success', { slug, color })
+
+    await postMessage({ room, message: line, identity: { avatarId: slug, color } })
+  } catch (error) {
+    console.error('[handleBotStaffCommand] failed', {
+      senderUuid,
+      slug,
+      color,
+      error: error?.message || String(error)
+    })
+
+    await postMessage({ room, message: '⚠️ Failed to update bot to staff mode.' })
+  }
+}
 
 export async function handleBot1Command (room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
   const isMod = await isUserAuthorized(senderUuid, ttlUserToken)
@@ -515,16 +570,16 @@ export async function handleSpookyCommand (senderUuid, room, postMessage) {
   // - Vampire: blood red
   // - Witch: toxic witch green / hat band color
   const COLOR_BY_SLUG = {
-    'Harvest-08':    '#FF6A00FF', // vivid jack-o-lantern orange glow
-    'Harvest-07':    '#FFB84BFF', // softer harvest pumpkin / candy corn yellow-orange
-    'Harvest-06':    '#FFB84BFF', // straw yellow / autumn hat band orange
-    'Harvest-05':    '#00FF66FF', // cursed neon green eyes
-    'Dj-mummyv1-1':  '#C9C9C9FF', // bandage gray-white w/ spooky purple eye
-    'Dj-mummyv2-1':  '#FFF4CCFF', // warmer bandage + yellow eye
-    'Ghost':         '#FFFFFFFF', // pure spectral white
-    'Dj-vamplife-1': '#B00020FF', // deep blood red
-    'Dj-witchv1-1':  '#32C24DFF', // witch skin toxic green
-    'Dj-witchv2-1':  '#FF7A1CFF'  // orange hat band / warm charm
+    'harvest-08':    '#FF6A00FF', // vivid jack-o-lantern orange glow
+    'harvest-07':    '#FFB84BFF', // softer harvest pumpkin / candy corn yellow-orange
+    'harvest-06':    '#FFB84BFF', // straw yellow / autumn hat band orange
+    'harvest-05':    '#00FF66FF', // cursed neon green eyes
+    'dj-mummyv1-1':  '#C9C9C9FF', // bandage gray-white w/ spooky purple eye
+    'dj-mummyv2-1':  '#FFF4CCFF', // warmer bandage + yellow eye
+    'ghost':         '#FFFFFFFF', // pure spectral white
+    'dj-vamplife-1': '#B00020FF', // deep blood red
+    'dj-witchv1-1':  '#32C24DFF', // witch skin toxic green
+    'dj-witchv2-1':  '#FF7A1CFF'  // orange hat band / warm charm
   }
 
   // 🩸 spooky fallback palette if a slug is missing a mapping
@@ -539,16 +594,16 @@ export async function handleSpookyCommand (senderUuid, room, postMessage) {
   // 👻 Per-avatar chat voice lines
   // Short, punchy, flavor-y. Mentions vibe of each avatar.
   const SPOOKY_LINES = {
-    'Harvest-08':   '🎃 Pumpkin Beast online. The candle’s real, the smile is not.',
-    'Harvest-07':   '🕯️ Harvest Lantern lit. Cozy vibe, suspicious grin.',
-    'Harvest-06':   '🌾 Field Watcher reports in. Stitch-smile, zero heartbeat.',
-    'Harvest-05':   '🌽 Haunted Scarecrow rises — eyes glowing green, birds evacuated.',
-    'Dj-mummyv1-1': '🧻 Ancient Wrap v1 awakened. Do not tug the bandages.',
-    'Dj-mummyv2-1': '🧟‍♂️ Experimental Wrap v2 online. Extra stitches, extra curse.',
-    'Ghost':        '👻 Friendly Ghost materialized. Floating. Watching. Vibing.',
-    'Dj-vamplife-1':'🩸 Vamplife engaged. Pale face, dark night, louder than midnight.',
-    'Dj-witchv1-1': '🧪 Swamp Witch enters the booth — cauldron bass only.',
-    'Dj-witchv2-1': '🧹 Midnight Witch glides in. Hat sharp, spell sharper.'
+    'harvest-08':   '🎃 Pumpkin Beast online. The candle’s real, the smile is not.',
+    'harvest-07':   '🕯️ Harvest Lantern lit. Cozy vibe, suspicious grin.',
+    'harvest-06':   '🌾 Field Watcher reports in. Stitch-smile, zero heartbeat.',
+    'harvest-05':   '🌽 Haunted Scarecrow rises — eyes glowing green, birds evacuated.',
+    'dj-mummyv1-1': '🧻 Ancient Wrap v1 awakened. Do not tug the bandages.',
+    'dj-mummyv2-1': '🧟‍♂️ Experimental Wrap v2 online. Extra stitches, extra curse.',
+    'ghost':        '👻 Friendly Ghost materialized. Floating. Watching. Vibing.',
+    'dj-vamplife-1':'🩸 Vamplife engaged. Pale face, dark night, louder than midnight.',
+    'dj-witchv1-1': '🧪 Swamp Witch enters the booth — cauldron bass only.',
+    'dj-witchv2-1': '🧹 Midnight Witch glides in. Hat sharp, spell sharper.'
   }
 
   // Grab only these avatars from inventory

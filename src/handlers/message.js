@@ -41,7 +41,7 @@ import {
   handleBlackjackBet, handleHit, handleStand, handleDouble, handleSurrender, handleSplit,
   getFullTableView, getPhase
 } from '../games/blackjack/blackJack.js'
-import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand, handleRandomCyberCommand, handleVibesGuyCommand, handleFacesCommand, handleDoDoCommand, handleFlowerPowerCommand, handleDumDumCommand, handleRandomCosmicCommand, handleRandomLovableCommand, handleBot3Command, handleAnonCommand, handleGhostCommand, handleTeacupCommand, handleBouncerCommand, handleSpookyCommand, handleRecordGuyCommand, handleJukeboxCommand } from './avatarCommands.js'
+import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand, handleRandomCyberCommand, handleVibesGuyCommand, handleFacesCommand, handleDoDoCommand, handleFlowerPowerCommand, handleDumDumCommand, handleRandomCosmicCommand, handleRandomLovableCommand, handleBot3Command, handleAnonCommand, handleGhostCommand, handleTeacupCommand, handleBouncerCommand, handleSpookyCommand, handleRecordGuyCommand, handleJukeboxCommand, handleBotStaffCommand } from './avatarCommands.js'
 import { markUser, getMarkedUser } from '../utils/removalQueue.js'
 import { extractUserFromText, isLotteryQuestion } from '../database/dblotteryquestionparser.js'
 import { askMagic8Ball } from './magic8Ball.js'
@@ -2013,6 +2013,8 @@ if (/^\/(hit|stand|double|surrender|split)\b/i.test(txt) && getPhase(ctx) === 'a
     await handleBot2Command(payload.sender, room, postMessage)
   } else if (payload.message.startsWith('/bot3')) {
     await handleBot3Command(payload.sender, room, postMessage)
+  } else if (payload.message.startsWith('/botstaff')) {
+    await handleBotStaffCommand(payload.sender, room, postMessage)
   }
 
   /// /////////////////////// USER AVATAR UPDATES //////////////////////////
