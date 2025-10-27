@@ -7,7 +7,7 @@ const userTokenMap = {
   '210141ad-6b01-4665-84dc-e47ea7c27dcb': process.env.SMITTY_USER_TOKEN,
   '92302b7d-ae5e-466f-975b-d3fee461f13f': process.env.CAM_USER_TOKEN,
   'fd2f1b47-b1d4-4100-8f88-6e56aa82e13f': process.env.GAB_USER_TOKEN,
-  'f16e58bf-fe05-4fe9-8226-87dfba103bea': process.env.ALEX_USER_TOKEN,
+  'a122488b-d9ec-4d2f-97bf-9d9472d299a0': process.env.ALEX_USER_TOKEN,
   
 }
 
