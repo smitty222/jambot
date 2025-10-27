@@ -43,7 +43,7 @@ const customWelcomeMessages = {
   '554d0d38-0b7b-45d8-9f18-20b4f5689e70': 'Busterrrrrrrrr Douglassssssss {nickname}! In the house!', // P Eacho
   'fd2f1b47-b1d4-4100-8f88-6e56aa82e13f': 'Our favorite groupie has arrived! Welcome {nickname}!', // Gab
   'f3b152a3-b29b-41b8-88b1-dea4d9b952aa': '🌵 From the mysterious deserts of Arizona... emerging once again — it’s the long-lost legend of the aux cord himself! Welcome back, {nickname}!',//sish
-  'a122488b-d9ec-4d2f-97bf-9d9472d299a0': 'Hey tall guy {nickname}!'//alex
+  'a122488b-d9ec-4d2f-97bf-9d9472d299a0': 'Hey tall guy {nickname}'//alex
 
 }
 
