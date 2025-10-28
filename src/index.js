@@ -1,20 +1,19 @@
 // src/index.js
 import 'dotenv/config'
 import express from 'express'
+import cron from 'node-cron'
+import { spawn } from 'node:child_process'
+
+import db from './database/db.js'
 import { Bot, getCurrentDJUUIDs } from './libs/bot.js'
 import { updateCurrentUsers } from './utils/currentUsers.js'
 import { fetchCurrentUsers } from './utils/API.js'
 import * as themeStorage from './utils/themeManager.js'
 import { setThemes } from './utils/roomThemes.js'
-// Import database instance for health check
-import db from './database/db.js'
 
-// ──────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────
 // Scheduled publisher (cron → runs tools/publish-site-data.mjs)
-// ──────────────────────────────────────────────────────────────
-import cron from 'node-cron'
-import { spawn } from 'node:child_process'
-
+// ──────────────────────────────────────────────
 function startSitePublisherCron () {
   if (process.env.ENABLE_SITE_PUBLISH_CRON !== '1') {
     console.log('[publish-cron] disabled (set ENABLE_SITE_PUBLISH_CRON=1 to enable)')
@@ -26,22 +25,18 @@ function startSitePublisherCron () {
   const SCRIPT = process.env.PUBLISH_SCRIPT || 'tools/publish-site-data.mjs'
   const RUN_ON_BOOT = process.env.PUBLISH_RUN_ON_BOOT === '1'
 
-  // Only pass what the script needs; inherits everything else from process.env
   const PUB_ENV = {
-    API_BASE: process.env.API_BASE,                 // e.g., https://jamflow-site-api.jamflowbot.workers.dev
-    PUBLISH_TOKEN: process.env.PUBLISH_TOKEN,       // set via secrets
+    API_BASE: process.env.API_BASE,
+    PUBLISH_TOKEN: process.env.PUBLISH_TOKEN,
     DB_PATH: process.env.DB_PATH || '/data/app.db',
     PUBLISH_STATE_FILE: process.env.PUBLISH_STATE_FILE || '/data/.publish-state.json',
     LOG_LEVEL: process.env.LOG_LEVEL || 'info'
   }
 
-  // Track whether a run is in progress and the time of the last run. This
-  // debounces the cron so overlapping invocations are skipped and a
-  // minimum interval is enforced (protects against Fly restarts or
-  // scheduling glitches). See suggestions for idempotent publisher.
   let running = false
   let lastRunAt = 0
   const MIN_INTERVAL_MS = 60_000
+
   const runOnce = () => {
     const now = Date.now()
     if (running || (now - lastRunAt) < MIN_INTERVAL_MS) {
@@ -71,13 +66,14 @@ function startSitePublisherCron () {
   if (RUN_ON_BOOT) runOnce()
 }
 
-// ──────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────
 // App / Bot bootstrap
-// ──────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────
 const app = express()
 
 const roomBot = new Bot(process.env.JOIN_ROOM)
 
+// start up the bot (connect websocket, etc.)
 const startupTasks = async () => {
   try {
     await roomBot.connect()
@@ -94,13 +90,13 @@ const startupTasks = async () => {
     console.error('Error during bot startup:', error.message)
   }
 }
-
 startupTasks()
 
+// load cached themes into memory
 const savedThemes = themeStorage.loadThemes()
 setThemes(savedThemes)
 
-// --- Adaptive poll loop (replaces setInterval) ---
+// adaptive poll loop for chat + DMs
 const BASE_MS = 900
 const STEP_MS = 300
 const MAX_BACKOFF_STEPS = 4 // up to ~ +1200ms
@@ -122,9 +118,9 @@ async function pollLoop () {
     setTimeout(pollLoop, delay)
   }
 }
+pollLoop()
 
-pollLoop() // start
-
+// routes
 app.get('/', (req, res) => {
   res.send('Jamflow bot is alive and running!')
 })
@@ -138,37 +134,37 @@ app.get('/health', (req, res) => {
       okDb = false
     }
 
-    // We report status but we don't fail the health check if socket isn't live yet.
     const status = {
-      ok: okDb,                         // DB readable?
+      ok: okDb,
       socketConnected: roomBot?.socket?.connected === true,
       uptime: process.uptime()
     }
 
-    // If DB is completely dead, yeah, 503 makes sense.
     if (!okDb) {
       res.status(503).json(status)
       return
     }
 
-    // Otherwise we say 200 so Fly will keep the machine.
     res.status(200).json(status)
   } catch (e) {
-    // Worst case, still say 200 so Fly doesn't murder us during boot.
     res.status(200).json({ ok: true, degraded: true })
   }
 })
+
 app.get('/heartbeat', (req, res) => {
-  // lightweight OK signal for Fly keep-alive logic
   res.status(200).send('beat')
 })
 
-
-// Default to 8080 (Fly internal_port); override with PORT if set
+// ⬇️ THIS PART IS IMPORTANT ⬇️
+// We MUST define `port` and call `app.listen` BEFORE we run the async IIFE.
+// We MUST NOT reassign `app` after this point.
 const port = Number(process.env.PORT || 8080)
-app.listen(port, '0.0.0.0', () => console.log(`Listening on ${port}`))
+const server = app.listen(port, '0.0.0.0', () => {
+  console.log(`Listening on ${port}`)
+})
 
-(async () => {
+// defer DB init / seeding so a bad migration can't kill boot
+;(async () => {
   try {
     await import('./database/initdb.js')
     await import('./database/seedavatars.js')
@@ -178,26 +174,21 @@ app.listen(port, '0.0.0.0', () => console.log(`Listening on ${port}`))
   }
 })()
 
-
-// Start the scheduled publisher after server boot so logs are visible
+// start the cron publisher AFTER we're already listening
 startSitePublisherCron()
 
-// ──────────────────────────────────────────────────────────────
-// Graceful shutdown
-// ──────────────────────────────────────────────────────────────
-// Capture SIGINT and SIGTERM to close the socket connection and
-// database cleanly. Without this, abrupt process termination could
-// corrupt the WAL or leave sockets open. See suggestions for reliability.
+// graceful shutdown
 function shutdown () {
   try {
-    // Close the bot's socket if it exists
     roomBot?.socket?.close?.()
   } catch {}
   try {
-    // Dynamically import the db module to avoid circular deps
     import('./database/db.js').then(({ default: database }) => {
       try { database?.close?.() } catch {}
     })
+  } catch {}
+  try {
+    server?.close?.()
   } catch {}
   process.exit(0)
 }
