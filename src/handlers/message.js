@@ -41,7 +41,7 @@ import {
   handleBlackjackBet, handleHit, handleStand, handleDouble, handleSurrender, handleSplit,
   getFullTableView, getPhase
 } from '../games/blackjack/blackJack.js'
-import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand, handleRandomCyberCommand, handleVibesGuyCommand, handleFacesCommand, handleDoDoCommand, handleFlowerPowerCommand, handleDumDumCommand, handleRandomCosmicCommand, handleRandomLovableCommand, handleBot3Command, handleAnonCommand, handleGhostCommand, handleTeacupCommand, handleBouncerCommand, handleSpookyCommand, handleRecordGuyCommand, handleJukeboxCommand } from './avatarCommands.js'
+import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand, handleRandomCyberCommand, handleVibesGuyCommand, handleFacesCommand, handleDoDoCommand, handleFlowerPowerCommand, handleDumDumCommand, handleRandomCosmicCommand, handleRandomLovableCommand, handleBot3Command, handleAnonCommand, handleGhostCommand, handleTeacupCommand, handleBouncerCommand, handleSpookyCommand, handleRecordGuyCommand, handleJukeboxCommand, handleBotSpookyCommand } from './avatarCommands.js'
 import { markUser, getMarkedUser } from '../utils/removalQueue.js'
 import { extractUserFromText, isLotteryQuestion } from '../database/dblotteryquestionparser.js'
 import { askMagic8Ball } from './magic8Ball.js'
@@ -1993,27 +1993,106 @@ if (/^\/(hit|stand|double|surrender|split)\b/i.test(txt) && getPhase(ctx) === 'a
 }
 
   /// /////////////////////// BOT AVATAR UPDATES //////////////////////////
-  else if (payload.message.startsWith('/botrandom')) {
-    await handleBotRandomAvatarCommand(payload.sender, room, postMessage)
-  } else if (payload.message.startsWith('/botdino')) {
-    await handleBotDinoCommand(payload.sender, room, postMessage)
-  } else if (payload.message.startsWith('/botduck')) {
-    await handleBotDuckCommand(payload.sender, room, postMessage)
-  } else if (payload.message.startsWith('/botalien')) {
-    await handleBotAlienCommand(payload.sender, room, postMessage)
-  } else if (payload.message.startsWith('/botalien2')) {
-    await handleBotAlien2Command(payload.sender, room, postMessage)
-  } else if (payload.message.startsWith('/botwalrus')) {
-    await handleBotWalrusCommand(payload.sender, room, postMessage)
-  } else if (payload.message.startsWith('/botpenguin')) {
-    await handleBotPenguinCommand(payload.sender, room, postMessage)
-  } else if (payload.message.startsWith('/bot1')) {
-    await handleBot1Command(payload.sender, room, postMessage)
-  } else if (payload.message.startsWith('/bot2')) {
-    await handleBot2Command(payload.sender, room, postMessage)
-  } else if (payload.message.startsWith('/bot3')) {
-    await handleBot3Command(payload.sender, room, postMessage)
-  }
+  /// /////////////////////// BOT AVATAR UPDATES //////////////////////////
+else if (payload.message.startsWith('/botrandom')) {
+  // signature: (room, postMessage, ttlUserToken)
+  await handleBotRandomAvatarCommand(
+    room,
+    postMessage,
+    ttlUserToken
+  )
+
+} else if (payload.message.startsWith('/botdino')) {
+  // signature: (room, postMessage, isUserAuthorized, senderUuid, ttlUserToken)
+  await handleBotDinoCommand(
+    room,
+    postMessage,
+    isUserAuthorized,
+    payload.sender,
+    ttlUserToken
+  )
+
+} else if (payload.message.startsWith('/botduck')) {
+  await handleBotDuckCommand(
+    room,
+    postMessage,
+    isUserAuthorized,
+    payload.sender,
+    ttlUserToken
+  )
+
+} else if (payload.message.startsWith('/botalien')) {
+  await handleBotAlienCommand(
+    room,
+    postMessage,
+    isUserAuthorized,
+    payload.sender,
+    ttlUserToken
+  )
+
+} else if (payload.message.startsWith('/botalien2')) {
+  await handleBotAlien2Command(
+    room,
+    postMessage,
+    isUserAuthorized,
+    payload.sender,
+    ttlUserToken
+  )
+
+} else if (payload.message.startsWith('/botwalrus')) {
+  await handleBotWalrusCommand(
+    room,
+    postMessage,
+    isUserAuthorized,
+    payload.sender,
+    ttlUserToken
+  )
+
+} else if (payload.message.startsWith('/botpenguin')) {
+  await handleBotPenguinCommand(
+    room,
+    postMessage,
+    isUserAuthorized,
+    payload.sender,
+    ttlUserToken
+  )
+
+} else if (payload.message.startsWith('/bot1')) {
+  await handleBot1Command(
+    room,
+    postMessage,
+    isUserAuthorized,
+    payload.sender,
+    ttlUserToken
+  )
+
+} else if (payload.message.startsWith('/bot2')) {
+  await handleBot2Command(
+    room,
+    postMessage,
+    isUserAuthorized,
+    payload.sender,
+    ttlUserToken
+  )
+
+} else if (payload.message.startsWith('/bot3')) {
+  await handleBot3Command(
+    room,
+    postMessage,
+    isUserAuthorized,
+    payload.sender,
+    ttlUserToken
+  )
+
+} else if (payload.message.startsWith('/botspooky')) {
+  await handleBotSpookyCommand(
+    room,
+    postMessage,
+    isUserAuthorized,
+    payload.sender,
+    ttlUserToken
+  )
+}
 
   /// /////////////////////// USER AVATAR UPDATES //////////////////////////
 

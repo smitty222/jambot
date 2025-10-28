@@ -209,6 +209,154 @@ export async function handleBot3Command (room, postMessage, isUserAuthorized, se
     await postMessage({ room, message: 'Failed to update bot profile' })
   }
 }
+export async function handleBotSpookyCommand (
+  room,
+  postMessage,
+  isUserAuthorized,
+  senderUuid,
+  ttlUserToken
+) {
+  const isMod = await isUserAuthorized(senderUuid, ttlUserToken)
+  if (!isMod) {
+    await postMessage({
+      room,
+      message: 'You need to be a moderator to execute this command. 🦇'
+    })
+    return
+  }
+
+  const allowedSlugs = [
+    'harvest-08',
+    'harvest-07',
+    'harvest-06',
+    'harvest-05',
+    'dj-mummyv1-1',
+    'dj-mummyv2-1',
+    'ghost',
+    'dj-vamplife-1',
+    'dj-witchv1-1',
+    'dj-witchv2-1',
+    'dj-malezombie-1',
+    'dj-femalezombie-1'
+  ]
+
+  const COLOR_BY_SLUG = {
+    'harvest-08':    '#FF6A00FF',
+    'harvest-07':    '#FFB84BFF',
+    'harvest-06':    '#FFB84BFF',
+    'harvest-05':    '#00FF66FF',
+    'dj-mummyv1-1':  '#C9C9C9FF',
+    'dj-mummyv2-1':  '#FFF4CCFF',
+    'ghost':         '#FFFFFFFF',
+    'dj-vamplife-1': '#B00020FF',
+    'dj-witchv1-1':  '#32C24DFF',
+    'dj-witchv2-1':  '#FF7A1CFF',
+    'dj-malezombie-1':   '#7FBF3FFF',
+    'dj-femalezombie-1': '#8BD1A2FF'
+  }
+
+  const SPOOKY_COLORS = [
+    '#FF6A00FF',
+    '#00FF66FF',
+    '#FFFFFFFF',
+    '#B00020FF',
+    '#C9C9C9FF'
+  ]
+
+  const SPOOKY_LINES = {
+    'harvest-08':   '🎃 Pumpkin Beast online. The candle’s real, the smile is not.',
+    'harvest-07':   '🕯️ Harvest Lantern lit. Cozy vibe, suspicious grin.',
+    'harvest-06':   '🌾 Field Watcher reports in. Stitch-smile, zero heartbeat.',
+    'harvest-05':   '🌽 Haunted Scarecrow rises — eyes glowing green, birds evacuated.',
+    'dj-mummyv1-1': '🧻 Ancient Wrap v1 awakened. Do not tug the bandages.',
+    'dj-mummyv2-1': '🧟‍♂️ Experimental Wrap v2 online. Extra stitches, extra curse.',
+    'ghost':        '👻 Friendly Ghost materialized. Floating. Watching. Vibing.',
+    'dj-vamplife-1':'🩸 Vamplife engaged. Pale face, dark night, louder than midnight.',
+    'dj-witchv1-1': '🧪 Swamp Witch enters the booth — cauldron bass only.',
+    'dj-witchv2-1': '🧹 Midnight Witch glides in. Hat sharp, spell sharper.',
+    'dj-malezombie-1':   '🧟‍♂️ Male Zombie staggers into the booth — smell of bass and decay.',
+    'dj-femalezombie-1': '🧟‍♀️ Undead Diva awakens — beats fresher than her complexion.'
+  }
+
+  const filtered = getAvatarsBySlugs(allowedSlugs)
+
+  if (!filtered || filtered.length === 0) {
+    await postMessage({
+      room,
+      message: 'No spooky avatars found in the allowed set 🪦'
+    })
+    return
+  }
+
+  const chosen = filtered[Math.floor(Math.random() * filtered.length)]
+  const slug = chosen?.slug
+
+  if (!slug) {
+    console.warn('[botSpooky] No slug on selected avatar object:', chosen)
+    await postMessage({
+      room,
+      message: 'No spooky avatar available right now 😬'
+    })
+    return
+  }
+
+  const color =
+    COLOR_BY_SLUG[slug] ||
+    SPOOKY_COLORS[Math.floor(Math.random() * SPOOKY_COLORS.length)]
+
+  const line =
+    SPOOKY_LINES[slug] ||
+    `🦇 ${slugToTitle(slug)} has taken control of the booth.`
+
+  console.log('[botSpooky] attempt', {
+    senderUuid,
+    slug,
+    color,
+    title: slugToTitle(slug)
+  })
+
+  try {
+    // 1) update bot avatar platform-side
+    await updateUserAvatar(ttlUserToken, slug, color)
+
+    // 2) sync live chat identity for immediate visual consistency
+    setChatIdentity({ avatarId: slug, color })
+
+    console.log('[botSpooky] success', {
+      senderUuid,
+      slug,
+      color
+    })
+
+    // 3) announce using that identity override so message shows as spooky bot
+    await postMessage({
+      room,
+      message: line,
+      identity: { avatarId: slug, color }
+    })
+  } catch (error) {
+    console.error('[handleBotSpookyCommand] update failed', {
+      senderUuid,
+      slugTried: slug,
+      colorTried: color,
+      error: error?.message || String(error),
+      stack: error?.stack
+    })
+
+    await postMessage({
+      room,
+      message: 'Failed to update bot spooky avatar 😞'
+    })
+  }
+
+  function slugToTitle (s) {
+    return s
+      .replace(/-/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase())
+  }
+}
+
+
 
 export async function handleBot1Command (room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
   const isMod = await isUserAuthorized(senderUuid, ttlUserToken)
@@ -504,17 +652,11 @@ export async function handleSpookyCommand (senderUuid, room, postMessage) {
     'ghost',
     'dj-vamplife-1',
     'dj-witchv1-1',
-    'dj-witchv2-1'
+    'dj-witchv2-1',
+    'dj-malezombie-1',    
+  'dj-femalezombie-1'   
   ]
 
-  // 🔮 Per-avatar accent / chat color (8-digit RGBA hex)
-  // Try to match their strongest highlight color:
-  // - Pumpkins: hot pumpkin orange / molten candy-glow
-  // - Scarecrows: haunted green vs straw/gold
-  // - Mummies: undead bandage ivory vs cursed purple/yellow eye
-  // - Ghost: pale ectoplasm white
-  // - Vampire: blood red
-  // - Witch: toxic witch green / hat band color
   const COLOR_BY_SLUG = {
     'harvest-08':    '#FF6A00FF', // vivid jack-o-lantern orange glow
     'harvest-07':    '#FFB84BFF', // softer harvest pumpkin / candy corn yellow-orange
@@ -525,7 +667,9 @@ export async function handleSpookyCommand (senderUuid, room, postMessage) {
     'ghost':         '#FFFFFFFF', // pure spectral white
     'dj-vamplife-1': '#B00020FF', // deep blood red
     'dj-witchv1-1':  '#32C24DFF', // witch skin toxic green
-    'dj-witchv2-1':  '#FF7A1CFF'  // orange hat band / warm charm
+    'dj-witchv2-1':  '#FF7A1CFF',  // orange hat band / warm charm
+    'dj-malezombie-1':   '#7FBF3FFF',  // sickly green skin tone
+    'dj-femalezombie-1': '#8BD1A2FF'   // pale mint undead hue
   }
 
   // 🩸 spooky fallback palette if a slug is missing a mapping
@@ -549,7 +693,9 @@ export async function handleSpookyCommand (senderUuid, room, postMessage) {
     'ghost':        '👻 Friendly Ghost materialized. Floating. Watching. Vibing.',
     'dj-vamplife-1':'🩸 Vamplife engaged. Pale face, dark night, louder than midnight.',
     'dj-witchv1-1': '🧪 Swamp Witch enters the booth — cauldron bass only.',
-    'dj-witchv2-1': '🧹 Midnight Witch glides in. Hat sharp, spell sharper.'
+    'dj-witchv2-1': '🧹 Midnight Witch glides in. Hat sharp, spell sharper.',
+    'dj-malezombie-1':   '🧟‍♂️ Male Zombie staggers into the booth — smell of bass and decay.',
+    'dj-femalezombie-1': '🧟‍♀️ Undead Diva awakens — beats fresher than her complexion.'
   }
 
   // Grab only these avatars from inventory
