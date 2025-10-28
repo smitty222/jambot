@@ -160,6 +160,11 @@ app.get('/health', (req, res) => {
     res.status(200).json({ ok: true, degraded: true })
   }
 })
+app.get('/heartbeat', (req, res) => {
+  // lightweight OK signal for Fly keep-alive logic
+  res.status(200).send('beat')
+})
+
 
 // Default to 8080 (Fly internal_port); override with PORT if set
 const port = Number(process.env.PORT || 8080)

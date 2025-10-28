@@ -31,21 +31,13 @@ import { getMarkedUser, unmarkUser } from '../utils/removalQueue.js'
 // Node built-in modules for persisting DM cursors
 import fs from 'fs'
 import path from 'path'
-// Keep a handle on the usersToBeRemoved map from the message handler.
-// This state indicates DJs that should be removed after their song finishes.
-// TODO: extract this into a dedicated module to fully eliminate
-// dependencies on the message handler.
-// Import the DJ removal map from the dedicated module.  This avoids
-// importing the entire message handler and eliminates a circular
-// dependency.  See src/utils/usersToBeRemoved.js for details.
+import http from 'http'
 import { usersToBeRemoved } from '../utils/usersToBeRemoved.js'
 import { logCurrentSong, updateLastPlayed } from '../database/dbroomstatsmanager.js'
 import * as themeManager from '../utils/themeManager.js'
 import { announceNowPlaying } from '../utils/announceNowPlaying.js'
 import { scheduleLetterChallenge, scoreLetterChallenge, parseDurationToMs } from '../handlers/songNameGame.js'
-import { addTrackedUser } from '../utils/trackedUsers.js'
 import { saveCurrentState } from '../database/dbcurrent.js'
-import { askQuestion } from './ai.js'
 import db from '../database/db.js'
 
 // ───────────────────────────────────────────────────────────
@@ -306,6 +298,30 @@ const deriveDmPeer = (m, hintedPeer) => {
   const cid = m?.conversationId || m?.conversation_id
   const fromCid = peerFromConversationId(cid, COMETCHAT_BOT_UID)
   return fromCid || receiver || sender || null
+}
+
+function sendHeartbeat(port = process.env.PORT || 8080) {
+  return new Promise((resolve) => {
+    const req = http.request(
+      {
+        host: '127.0.0.1',
+        port,
+        path: '/heartbeat',
+        method: 'GET',
+        timeout: 2000
+      },
+      (res) => {
+        // We don't care about body; we just want the 200.
+        res.resume()
+        resolve()
+      }
+    )
+    req.on('error', () => {
+      // If it fails (race condition during boot/shutdown), that's fine.
+      resolve()
+    })
+    req.end()
+  })
 }
 
 // ───────────────────────────────────────────────────────────
@@ -836,6 +852,7 @@ export class Bot {
           unmarkUser()
         }
         await songPayment()
+        sendHeartbeat().catch(() => {})
         try {
           await scoreLetterChallenge(this)
           scheduleLetterChallenge(this)
