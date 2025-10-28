@@ -1,8 +1,7 @@
 app = "jamflowbot-allen-v4"
 primary_region = "iad"
 
-# We don't want Fly to spin up a brand new machine during deploys
-# (which would double cost while the old one is still running).
+# Don't create a 2nd machine during deploys (saves cost / avoids split brain)
 [deploy]
   strategy = "immediate"
 
@@ -25,31 +24,27 @@ primary_region = "iad"
   # ── Logging level for the bot ────────────────────────────
   LOG_LEVEL = "info"
 
-# HTTP service definition. This is how Fly decides:
-# - how to health check us
-# - how to wake us back up
-# - when it's allowed to spin us down
+# HTTP service definition. This tells Fly:
+# - what port to route to
+# - how to health check
+# - and (critically) NOT to autosuspend
 [http_service]
-  # IMPORTANT: this MUST match whatever port your tiny health server
-  # (the /health endpoint) is actually listening on in Node.
-  # If your bot currently listens on 8080, leave 8080.
-  # If you change your bot to listen on 3000, update this to 3000.
+  # Must match the port your Express app.listen() is using
   internal_port = 8080
 
   force_https = true
 
-  # Let Fly cold-start the machine on first request.
+  # If machine is down for some reason, Fly can cold-start it on demand.
   auto_start_machines = true
 
-  # Let Fly stop the machine when idle so we don't pay 24/7.
-  auto_stop_machines = true
+  # >>> OPTION A BEGINS HERE <<<
+  # We DO NOT allow Fly to auto-stop this machine.
+  auto_stop_machines = "off"
 
-  # This is the critical money-saver:
-  # 0 means it's allowed to fully go to sleep. (You had 1 before,
-  # which forces 24/7 runtime.)
-  min_machines_running = 0
+  # Keep 1 machine warm at all times.
+  min_machines_running = 1
 
-  # Health check so Fly knows we're actually alive after cold start.
+  # Health check so Fly knows we're good and doesn't keep restarting us.
   [[http_service.checks]]
     interval = "10s"
     timeout = "2s"
@@ -57,18 +52,12 @@ primary_region = "iad"
     path = "/health"
     grace_period = "10s"
 
-# Persistent volume mount.
-# 'source' MUST match the actual Fly volume name.
-# Yours was jamflowbot_data, and we saw that volume attached.
+# Attach the volume for persistent DB/etc.
 [[mounts]]
   source = "jamflowbot_data"
   destination = "/data"
 
-# VM sizing: we explicitly pin memory so the bot doesn't OOM on boot.
-# You were on shared-cpu-1x:256MB which was crashing.
-# We bump to 1024mb. This costs more *while running*, but we're now
-# allowed to sleep (min_machines_running=0 + auto_stop_machines=true),
-# so you only "pay" when it's actually awake.
+# VM resources. This matches what you're currently scaled to.
 [[vm]]
   memory = "1024mb"
   cpu_kind = "shared"
