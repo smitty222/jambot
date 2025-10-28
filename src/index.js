@@ -1,7 +1,5 @@
 // src/index.js
 import 'dotenv/config'
-import './database/initdb.js'
-import './database/seedavatars.js'
 import express from 'express'
 import { Bot, getCurrentDJUUIDs } from './libs/bot.js'
 import { updateCurrentUsers } from './utils/currentUsers.js'
@@ -169,6 +167,17 @@ app.get('/heartbeat', (req, res) => {
 // Default to 8080 (Fly internal_port); override with PORT if set
 const port = Number(process.env.PORT || 8080)
 app.listen(port, '0.0.0.0', () => console.log(`Listening on ${port}`))
+
+(async () => {
+  try {
+    await import('./database/initdb.js')
+    await import('./database/seedavatars.js')
+    console.log('[db-init] completed')
+  } catch (e) {
+    console.error('[db-init] failed (non-fatal):', e?.message || e)
+  }
+})()
+
 
 // Start the scheduled publisher after server boot so logs are visible
 startSitePublisherCron()
