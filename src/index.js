@@ -131,23 +131,33 @@ app.get('/', (req, res) => {
   res.send('Jamflow bot is alive and running!')
 })
 
-// Health check route — returns 200 when the bot's socket is connected
-// and 503 otherwise. Errors during check default to a healthy response.
 app.get('/health', (req, res) => {
   try {
-    const okSocket = roomBot?.socket?.connected === true
-    // Verify that the database can be read with a simple query. If this
-    // fails it likely indicates DB corruption or unavailability.
     let okDb = true
     try {
       db.prepare('SELECT 1').get()
     } catch (e) {
       okDb = false
     }
-    const ok = okSocket && okDb
-    res.status(ok ? 200 : 503).send(ok ? 'OK' : 'DEGRADED')
+
+    // We report status but we don't fail the health check if socket isn't live yet.
+    const status = {
+      ok: okDb,                         // DB readable?
+      socketConnected: roomBot?.socket?.connected === true,
+      uptime: process.uptime()
+    }
+
+    // If DB is completely dead, yeah, 503 makes sense.
+    if (!okDb) {
+      res.status(503).json(status)
+      return
+    }
+
+    // Otherwise we say 200 so Fly will keep the machine.
+    res.status(200).json(status)
   } catch (e) {
-    res.status(200).send('OK')
+    // Worst case, still say 200 so Fly doesn't murder us during boot.
+    res.status(200).json({ ok: true, degraded: true })
   }
 })
 
