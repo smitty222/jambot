@@ -64,6 +64,7 @@ import { handleDirectMessage } from './dmHandler.js'
 import { getCurrentState } from '../database/dbcurrent.js'
 import { usersToBeRemoved } from '../utils/usersToBeRemoved.js'
 import { parseTipAmount, randomTipGif, splitEvenly, naturalJoin, getSenderNickname } from '../utils/helpers.js'
+import { handleBuyHorse } from '../games/horserace/horseManager.js'
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
 export const /* deprecated_roomThemes */roomThemes = {}

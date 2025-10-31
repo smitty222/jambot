@@ -13,10 +13,7 @@ const HORSE_TIERS = {
   champion: { price: 15000, oddsRange: [2.5, 5.0], volatilityRange: [0.5, 1.5], careerLength: [18, 24], emoji: '🐉' }
 }
 
-const NAME_PREFIXES = ['Star','Night','Silver','Thunder','Lucky','Crimson','Rocket','River','Ghost','Blue']
-const NAME_SUFFIXES = [' Dancer',' Arrow',' Spirit',' Runner',' Blaze',' Mirage',' Glory',' Wind',' Monarch',' Clover']
-
-const fmt = n => n.toLocaleString('en-US')
+const fmt = n => Number(n || 0).toLocaleString('en-US')
 
 function randomInRange (min, max, decimals = 1) {
   return parseFloat((Math.random() * (max - min) + min).toFixed(decimals))
@@ -25,10 +22,12 @@ function randomInt (min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min
 }
 
+const NAME_PREFIXES = ['Star','Night','Silver','Thunder','Lucky','Crimson','Rocket','River','Ghost','Blue']
+const NAME_SUFFIXES = [' Dancer',' Arrow',' Spirit',' Runner',' Blaze',' Mirage',' Glory',' Wind',' Monarch',' Clover']
 function generateHorseName (existing) {
   const syll = ['ra','in','do','ver','la','mi','ko','zi','ta','shi','na','qu','fo','rum','lux','tor','vin','sol','mer','kai']
   for (let i = 0; i < 1000; i++) {
-    const useTable = Math.random() < 0.8 && NAME_PREFIXES.length && NAME_SUFFIXES.length
+    const useTable = Math.random() < 0.8
     const name = useTable
       ? NAME_PREFIXES[Math.floor(Math.random()*NAME_PREFIXES.length)]
         + NAME_SUFFIXES[Math.floor(Math.random()*NAME_SUFFIXES.length)]
@@ -41,13 +40,14 @@ function generateHorseName (existing) {
 }
 
 function horseShopMessage () {
-  const lines = [
+  const b = HORSE_TIERS.basic, e = HORSE_TIERS.elite, c = HORSE_TIERS.champion
+  return [
     '🏁 **Horse Shop** — buy a racehorse and enter our races!',
     '',
     '**Tiers & Prices:**',
-    `${HORSE_TIERS.basic.emoji} *Basic* — **$${fmt(HORSE_TIERS.basic.price)}** • Base odds ~ ${HORSE_TIERS.basic.oddsRange[0]}–${HORSE_TIERS.basic.oddsRange[1]} • Career: ${HORSE_TIERS.basic.careerLength[0]}–${HORSE_TIERS.basic.careerLength[1]} races`,
-    `${HORSE_TIERS.elite.emoji} *Elite* — **$${fmt(HORSE_TIERS.elite.price)}** • Base odds ~ ${HORSE_TIERS.elite.oddsRange[0]}–${HORSE_TIERS.elite.oddsRange[1]} • Career: ${HORSE_TIERS.elite.careerLength[0]}–${HORSE_TIERS.elite.careerLength[1]} races`,
-    `${HORSE_TIERS.champion.emoji} *Champion* — **$${fmt(HORSE_TIERS.champion.price)}** • Base odds ~ ${HORSE_TIERS.champion.oddsRange[0]}–${HORSE_TIERS.champion.oddsRange[1]} • Career: ${HORSE_TIERS.champion.careerLength[0]}–${HORSE_TIERS.champion.careerLength[1]} races`,
+    `${b.emoji} *Basic* — **$${fmt(b.price)}** • Base odds ~ ${b.oddsRange[0]}–${b.oddsRange[1]} • Career: ${b.careerLength[0]}–${b.careerLength[1]} races`,
+    `${e.emoji} *Elite* — **$${fmt(e.price)}** • Base odds ~ ${e.oddsRange[0]}–${e.oddsRange[1]} • Career: ${e.careerLength[0]}–${e.careerLength[1]} races`,
+    `${c.emoji} *Champion* — **$${fmt(c.price)}** • Base odds ~ ${c.oddsRange[0]}–${c.oddsRange[1]} • Career: ${c.careerLength[0]}–${c.careerLength[1]} races`,
     '',
     '**How to buy:**',
     '• `/buyhorse basic`',
@@ -55,76 +55,68 @@ function horseShopMessage () {
     '• `/buyhorse champion`',
     '',
     '_Tip: Lower odds = stronger favorite; volatility affects how much odds swing between races._'
-  ]
-  return lines.join('\n')
+  ].join('\n')
 }
 
-export class HorseManager {
-  async handleBuyHorse (ctx) {
-    // Defensive: ensure we only respond to /buyhorse or /horseshop
-    const text = (ctx.message || '').trim()
-    if (!/^\/(buyhorse|horseshop)\b/i.test(text)) return
+// THIS is what your router calls:
+// in message.js you already have: if (payload.message.startsWith('/buyhorse')) return handleBuyHorse(payload)
+export async function handleBuyHorse (payload) {
+  const room = payload.room || ROOM
+  const text = (payload.message || '').trim()
+  const userId = payload.sender
+  const nick = (await getUserNickname(userId)) || 'Someone'
 
-    const userId = ctx.sender
-    const nick = (await getUserNickname(userId)) || 'Someone'
-
-    // If no tier given (or user asked for help), show the shop
-    const match = text.match(/^\/buyhorse\s*(\w+)?/i)
-    const tierKey = match?.[1]?.toLowerCase()
-    if (!tierKey || tierKey === 'help' || tierKey === 'shop') {
-      return postMessage({ room: ROOM, message: horseShopMessage() })
-    }
-
-    const tier = HORSE_TIERS[tierKey]
-    if (!tier) {
-      return postMessage({ room: ROOM, message: `❗ Unknown tier \`${tierKey}\`. Try \`/buyhorse\` for options.` })
-    }
-
-    const balance = await getUserWallet(userId)
-    if (typeof balance !== 'number') {
-      return postMessage({ room: ROOM, message: `⚠️ ${nick}, I couldn’t read your wallet. Try again shortly.` })
-    }
-    if (balance < tier.price) {
-      return postMessage({
-        room: ROOM,
-        message: `❗ ${nick}, you need **$${fmt(tier.price)}** but you only have **$${fmt(balance)}**.`
-      })
-    }
-
-    const paid = await removeFromUserWallet(userId, tier.price)
-    if (!paid) {
-      return postMessage({ room: ROOM, message: `❗ ${nick}, payment failed. Your balance remains **$${fmt(balance)}**.` })
-    }
-
-    const allHorses = await getAllHorses()
-    const existing = allHorses.map(h => h.name)
-    const name = generateHorseName(existing)
-
-    const [minOdd, maxOdd] = tier.oddsRange
-    const baseOdds = randomInt(Math.ceil(minOdd * 2), Math.floor(maxOdd * 2)) / 2
-    const volatility = randomInRange(...tier.volatilityRange)
-    const careerLength = randomInt(...tier.careerLength)
-
-    await insertHorse({
-      name,
-      baseOdds,
-      volatility,
-      wins: 0,
-      racesParticipated: 0,
-      careerLength,
-      owner: nick,
-      ownerId: userId,
-      tier: tierKey,
-      emoji: tier.emoji,
-      price: tier.price,
-      retired: false
-    })
-
-    return postMessage({
-      room: ROOM,
-      message: `${tier.emoji} ${nick} bought a **${tierKey.toUpperCase()}** horse: **${name}**! Base odds: ${formatOdds(baseOdds)} (volatility ~ ${volatility}x)`
-    })
+  // If no tier provided, or user typed /buyhorse help/shop → show the shop
+  const match = text.match(/^\/buyhorse\s*(\w+)?/i)
+  const tierKey = match?.[1]?.toLowerCase()
+  if (!tierKey || tierKey === 'help' || tierKey === 'shop') {
+    return postMessage({ room, message: horseShopMessage() })
   }
-}
 
-export const horseManager = new HorseManager()
+  const tier = HORSE_TIERS[tierKey]
+  if (!tier) {
+    return postMessage({ room, message: `❗ Unknown tier \`${tierKey}\`. Try \`/buyhorse\` for options.` })
+  }
+
+  const balance = await getUserWallet(userId)
+  if (typeof balance !== 'number') {
+    return postMessage({ room, message: `⚠️ ${nick}, I couldn’t read your wallet. Try again shortly.` })
+  }
+  if (balance < tier.price) {
+    return postMessage({ room, message: `❗ ${nick}, you need **$${fmt(tier.price)}** but you only have **$${fmt(balance)}**.` })
+  }
+
+  const paid = await removeFromUserWallet(userId, tier.price)
+  if (!paid) {
+    return postMessage({ room, message: `❗ ${nick}, payment failed. Your balance remains **$${fmt(balance)}**.` })
+  }
+
+  const allHorses = await getAllHorses()
+  const existing = allHorses.map(h => h.name)
+
+  const [minOdd, maxOdd] = tier.oddsRange
+  const baseOdds = randomInt(Math.ceil(minOdd * 2), Math.floor(maxOdd * 2)) / 2
+  const volatility = randomInRange(...tier.volatilityRange)
+  const careerLength = randomInt(...tier.careerLength)
+  const name = generateHorseName(existing)
+
+  await insertHorse({
+    name,
+    baseOdds,
+    volatility,
+    wins: 0,
+    racesParticipated: 0,
+    careerLength,
+    owner: nick,
+    ownerId: userId,
+    tier: tierKey,
+    emoji: tier.emoji,
+    price: tier.price,
+    retired: false
+  })
+
+  return postMessage({
+    room,
+    message: `${tier.emoji} ${nick} bought a **${tierKey.toUpperCase()}** horse: **${name}**! Base odds: ${formatOdds(baseOdds)} (volatility ~ ${volatility}x)`
+  })
+}
