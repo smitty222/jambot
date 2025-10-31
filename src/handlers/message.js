@@ -958,8 +958,8 @@ Please refresh your page for the queue to update`
     }
     const amount = parseTipAmount(rawAmountStr)
     // Enforce minimum and maximum allowed amounts
-    if (!Number.isFinite(amount) || amount <= 0 || amount > 1000) {
-      await postMessage({ room, message: 'Tip amount must be between 0 and 1000 dollars.' })
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 10000) {
+      await postMessage({ room, message: 'Tip amount must be between 0 and 10000 dollars.' })
       return
     }
 
