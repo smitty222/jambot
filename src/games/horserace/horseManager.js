@@ -10,7 +10,7 @@ const ROOM = process.env.ROOM_UUID
 const HORSE_TIERS = {
   basic:    { price: 2000,  oddsRange: [6.0, 9.0], volatilityRange: [1.5, 2.5], careerLength: [8, 12],  emoji: '🐴' },
   elite:    { price: 7000,  oddsRange: [4.0, 7.0], volatilityRange: [1.0, 2.0], careerLength: [12, 18], emoji: '🐎' },
-  champion: { price: 15000, oddsRange: [2.5, 5.0], volatilityRange: [0.5, 1.5], careerLength: [18, 24], emoji: '🐉' }
+  champion: { price: 15, oddsRange: [2.5, 5.0], volatilityRange: [0.5, 1.5], careerLength: [18, 24], emoji: '🐉' }
 }
 
 const fmt = n => Number(n || 0).toLocaleString('en-US')
