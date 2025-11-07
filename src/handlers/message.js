@@ -65,6 +65,7 @@ import { getCurrentState } from '../database/dbcurrent.js'
 import { usersToBeRemoved } from '../utils/usersToBeRemoved.js'
 import { parseTipAmount, randomTipGif, splitEvenly, naturalJoin, getSenderNickname } from '../utils/helpers.js'
 import { handleBuyHorse } from '../games/horserace/horseManager.js'
+import { handleAddMoneyCommand } from './addMoney.js'
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
 export const /* deprecated_roomThemes */roomThemes = {}
@@ -1015,6 +1016,52 @@ Please refresh your page for the queue to update`
   } catch (error) {
     console.error('Error handling /tip command:', error)
     await postMessage({ room, message: 'An error occurred processing the tip.' })
+  }
+
+
+  } else if (payload.message.startsWith('/addmoney')) {
+  const sender = payload.sender
+  const parts = payload.message.trim().split(/\s+/)
+  const roomId = room // usually comes from payload or your existing scope
+
+  // Only allow in main chat and only from you
+  if (roomId !== process.env.ROOM_UUID) return
+  if (sender !== process.env.CHAT_OWNER_ID) {
+    await postMessage({ room, message: '⛔ /addmoney is restricted.' })
+    return
+  }
+
+  if (parts.length < 3) {
+    await postMessage({ room, message: 'Usage: /addmoney <@User> <amount>' })
+    return
+  }
+
+  const whoRaw = parts[1]
+  const amountRaw = parts[2]
+  const match = /<@uid:([\w-]+)>/i.exec(whoRaw)
+  const userUuid = match?.[1]
+  const amount = Number(amountRaw)
+
+  if (!userUuid || !Number.isFinite(amount) || amount <= 0) {
+    await postMessage({
+      room,
+      message: 'Usage: /addmoney <@User> <amount> (use a proper tag + positive number)'
+    })
+    return
+  }
+
+  try {
+    const { addDollarsByUUID } = await import('../database/dbwalletmanager.js')
+    await addDollarsByUUID(userUuid, amount)
+    await postMessage({
+      room,
+      message: `💸 Admin credited $${amount} to <@uid:${userUuid}>`
+    })
+  } catch (err) {
+    await postMessage({
+      room,
+      message: `❌ Failed to add money: ${err?.message || err}`
+    })
   }
 
   } else if (payload.message.startsWith('/games')) {

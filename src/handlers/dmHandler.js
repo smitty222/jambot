@@ -95,8 +95,7 @@ export async function handleDirectMessage (payload) {
           '• /balance — show your wallet',
           '',
           'Admin-only:',
-          '• /say <message> — post in the room',
-          '• /addmoney <@User|uuid> <amount> — credit wallet'
+          '• /say <message> — post in the room'
         ].join('\n')
       )
       return
@@ -131,31 +130,6 @@ export async function handleDirectMessage (payload) {
       }
       await postMessage({ room: process.env.ROOM_UUID, message: args })
       await sendAuthenticatedDM(sender, '✅ Posted to room.')
-      return
-    }
-
-    if (cmd === 'addmoney') {
-      if (!admin) {
-        await sendAuthenticatedDM(sender, '⛔ You’re not allowed to use /addmoney.')
-        return
-      }
-      const [whoRaw, amountRaw] = args.split(/\s+/, 2)
-      const userUuid = parseUidFromMention(whoRaw)
-      const amount = Number(amountRaw)
-      if (!userUuid || !Number.isFinite(amount) || amount <= 0) {
-        await sendAuthenticatedDM(sender, 'Usage: /addmoney <@User|uuid> <amount>')
-        return
-      }
-      try {
-        await addDollarsByUUID(userUuid, amount)
-        await sendAuthenticatedDM(sender, `✅ Added $${amount} to <@uid:${userUuid}>.`)
-        await postMessage({
-          room: process.env.ROOM_UUID,
-          message: `💸 Admin credited $${amount} to <@uid:${userUuid}>`
-        })
-      } catch (e) {
-        await sendAuthenticatedDM(sender, `❌ Failed to add money: ${e?.message || e}`)
-      }
       return
     }
 
