@@ -1911,19 +1911,17 @@ Please refresh your page for the queue to update`
       room,
       message: infoMessage
     })
-  } else if (payload.message.startsWith('/jackpot')) {
-  // Get the current jackpot value
-    const jackpotValue = getJackpotValue()
+} else if (payload.message.startsWith('/jackpot')) {
+  const jackpotValue = getJackpotValue()
 
-    // Round the jackpot value to two decimal places
-    const roundedJackpotValue = jackpotValue.toFixed(1)
+  // Round to whole dollars and format with commas
+  const formattedJackpot = Math.round(jackpotValue).toLocaleString('en-US')
 
-    // Send the jackpot value as a message
-    await postMessage({
-      room,
-      message: `🎰 The current progressive jackpot is: $${roundedJackpotValue}!`
-    })
-  }
+  await postMessage({
+    room,
+    message: `🎰 The current progressive jackpot is: $${formattedJackpot}!`
+  })
+}
 
   /// ////////////////// BLACKJACK /////////////////////////
 
