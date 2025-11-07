@@ -36,6 +36,7 @@ import * as themeManager from '../utils/themeManager.js'
 import { announceNowPlaying } from '../utils/announceNowPlaying.js'
 import { scheduleLetterChallenge, scoreLetterChallenge, parseDurationToMs } from '../handlers/songNameGame.js'
 import { saveCurrentState } from '../database/dbcurrent.js'
+import { handleSongChainPlay } from '../games/songChainGame/songChainGame.js'
 import db from '../database/db.js'
 
 // ───────────────────────────────────────────────────────────
@@ -924,6 +925,13 @@ export class Bot {
 
         await songPayment()
         sendHeartbeat().catch(() => {})
+
+        // 🔡 Song Chain game (auto-runs only when theme includes "song chain")
+        try {
+          await handleSongChainPlay(this)
+        } catch (err) {
+          logger.error('[SongChain] handleSongChainPlay error:', err)
+        }
 
         try {
           await scoreLetterChallenge(this)
