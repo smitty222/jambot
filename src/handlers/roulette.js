@@ -1,14 +1,20 @@
 import { postMessage } from '../libs/cometchat.js'
-import { loadWallets } from '../database/dbwalletmanager.js'
-import { getUserNickname } from './message.js'
+import {
+  getUserWallet,
+  addToUserWallet,
+  removeFromUserWallet
+} from '../database/dbwalletmanager.js'
+import { getUserNickname } from '../utils/nickname.js' // <- avoid circular import
 
 // Game state
 let rouletteGameActive = false
 const bets = {}
-const defaultWalletSize = 50
 const room = process.env.ROOM_UUID
 
-// Winning number color logic
+// ──────────────────────────────────────────────
+// Helpers
+// ──────────────────────────────────────────────
+
 function getRouletteColor (number) {
   if (number === 0 || number === '00') return 'green'
   const red = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]
@@ -27,27 +33,12 @@ function getDozenRange (dozen) {
   }
 }
 
-function isDirectNumberBet (message) {
-  const cmd = message.split(' ')[0].substring(1)
-  const number = parseInt(cmd, 10)
-  return !isNaN(number) && number >= 0 && number <= 36
-}
+// ──────────────────────────────────────────────
+// Game flow
+// ──────────────────────────────────────────────
 
-async function initializeWallet (user) {
-  try {
-    const wallets = await loadWallets()
-    if (!wallets[user]) {
-      wallets[user] = { balance: defaultWalletSize }
-      return defaultWalletSize
-    }
-    return wallets[user].balance
-  } catch (error) {
-    console.error('Wallet init failed:', error)
-    throw error
-  }
-}
-
-export async function startRouletteGame (payload) {
+export async function startRouletteGame () {
+  if (rouletteGameActive) return
   rouletteGameActive = true
 
   await postMessage({ room, message: '', images: ['https://i.giphy.com/media/qH1jQOvi4WVEvCRvOg/giphy.gif'] })
@@ -55,9 +46,9 @@ export async function startRouletteGame (payload) {
   await postMessage({ room, message: '', images: ['https://imgur.com/IyFZlzj.jpg'] })
   await postMessage({ room, message: 'Place your bets! Betting closes in 90 seconds.' })
 
-  await new Promise(res => setTimeout(res, 75000))
+  await new Promise(res => setTimeout(res, 75_000))
   await postMessage({ room, message: '⌛ 15 seconds left to place bets!' })
-  await new Promise(res => setTimeout(res, 15000))
+  await new Promise(res => setTimeout(res, 15_000))
 
   await postMessage({ room, message: '', images: ['https://i.giphy.com/media/qNCtzhsWCc7q4D2FB5/giphy.gif'] })
   await closeBets()
@@ -65,36 +56,39 @@ export async function startRouletteGame (payload) {
 
 async function closeBets () {
   if (!rouletteGameActive) return
-  await postMessage({ room, message: '🛑 Betting is now closed!' })
 
+  await postMessage({ room, message: '🛑 Betting is now closed!' })
   await new Promise(res => setTimeout(res, 2000))
 
-  let betsMessage = '📋 Bets placed:\n'
-  for (const [user, userBets] of Object.entries(bets)) {
-    const nickname = await getUserNickname(user)
-    betsMessage += `${nickname}:\n`
-    betsMessage += userBets.map(bet => {
-      if (bet.type === 'number') return `  - Number ${bet.number} ($${bet.amount})`
-      if (bet.type === 'dozen') return `  - Dozen ${bet.dozen} ($${bet.amount})`
-      return `  - ${bet.type} ($${bet.amount})`
-    }).join('\n') + '\n'
+  if (!Object.keys(bets).length) {
+    await postMessage({ room, message: 'No bets were placed. Spinning anyway for fun 🎡' })
+  } else {
+    let betsMessage = '📋 Bets placed:\n'
+    for (const [user, userBets] of Object.entries(bets)) {
+      const nickname = await getUserNickname(user)
+      betsMessage += `${nickname}:\n`
+      betsMessage += userBets.map(bet => {
+        if (bet.type === 'number') return `  - Number ${bet.number} ($${bet.amount})`
+        if (bet.type === 'dozen') return `  - Dozen ${bet.dozen} ($${bet.amount})`
+        return `  - ${bet.type} ($${bet.amount})`
+      }).join('\n') + '\n'
+    }
+    await postMessage({ room, message: betsMessage })
   }
 
-  await postMessage({ room, message: betsMessage })
   await new Promise(res => setTimeout(res, 5000))
   await drawWinningNumber()
 }
 
 async function drawWinningNumber () {
+  // 0–36 plus 37 = "00"
   const numbers = [...Array(37).keys(), 37]
   const index = Math.floor(Math.random() * numbers.length)
   const number = numbers[index]
-  const value = number === 37 ? '00' : number
+  const value = (number === 37) ? '00' : number
   const color = getRouletteColor(value)
 
   await postMessage({ room, message: `🎯 The wheel landed on ${value} (${color})!` })
-
-  const wallets = await loadWallets()
 
   for (const [user, userBets] of Object.entries(bets)) {
     let totalWinnings = 0
@@ -120,7 +114,7 @@ async function drawWinningNumber () {
           if (number >= 1 && number <= 18) totalWinnings += amt * 2
           break
         case 'number':
-          if (bet.number === number) totalWinnings += amt * 36
+          if (bet.number === number || (bet.number === 0 && value === '00')) totalWinnings += amt * 36
           break
         case 'dozen':
           if (getDozenRange(bet.dozen).includes(number)) totalWinnings += amt * 3
@@ -131,76 +125,105 @@ async function drawWinningNumber () {
     const nickname = await getUserNickname(user)
 
     if (totalWinnings > 0) {
-      wallets[user].balance += totalWinnings
+      await addToUserWallet(user, totalWinnings)
       await postMessage({ room, message: `💰 ${nickname} won $${totalWinnings}!` })
-    } else {
+    } else if (userBets.length) {
       await postMessage({ room, message: `😢 ${nickname} did not win this round.` })
     }
   }
 
+  // Reset state
   Object.keys(bets).forEach(k => delete bets[k])
   rouletteGameActive = false
 }
 
+// ──────────────────────────────────────────────
+// Bet handler
+// ──────────────────────────────────────────────
+
 export async function handleRouletteBet (payload) {
+  if (!rouletteGameActive) return
+
   const user = payload.sender
   const nickname = await getUserNickname(user)
-  const parts = payload.message.trim().split(' ')
-  const cmd = parts[0].substring(1).toLowerCase()
-  const amt = parseFloat(parts.at(-1))
+  const raw = String(payload.message || '').trim()
 
-  if (isNaN(amt) || amt <= 0) {
+  if (!raw.startsWith('/')) return
+
+  const parts = raw.split(/\s+/)
+  if (parts.length < 2) {
+    return postMessage({ room, message: `${nickname}, usage: /<bet> <amount>` })
+  }
+
+  const cmdToken = parts[0].substring(1).toLowerCase() // e.g. "red", "17", "number", "dozen"
+  const amt = Number(parts[parts.length - 1])
+
+  if (!Number.isFinite(amt) || amt <= 0) {
     return postMessage({ room, message: `${nickname}, please enter a valid bet amount.` })
   }
 
-  const wallets = await loadWallets()
-  if (!wallets[user]) wallets[user] = { balance: defaultWalletSize }
-  if (wallets[user].balance < amt) {
-    return postMessage({ room, message: `${nickname}, insufficient funds.` })
+  // Resolve bet type
+  const directNum = Number(cmdToken)
+  let bet = null
+
+  if (Number.isInteger(directNum) && directNum >= 0 && directNum <= 36) {
+    // `/17 50`
+    bet = { type: 'number', number: directNum, amount: amt }
+  } else if (cmdToken === 'number' && parts.length >= 3) {
+    // `/number 17 50`
+    const n = Number(parts[1])
+    if (Number.isInteger(n) && n >= 0 && n <= 36) {
+      bet = { type: 'number', number: n, amount: amt }
+    }
+  } else if (cmdToken === 'dozen' && parts.length >= 3) {
+    // `/dozen 2 50`
+    const d = Number(parts[1])
+    if ([1, 2, 3].includes(d)) {
+      bet = { type: 'dozen', dozen: d, amount: amt }
+    }
+  } else if (['red', 'black', 'green', 'odd', 'even', 'high', 'low'].includes(cmdToken)) {
+    // `/red 50`, `/odd 25`, etc.
+    bet = { type: cmdToken, amount: amt }
   }
 
-  wallets[user].balance -= amt
+  if (!bet) {
+    return postMessage({
+      room,
+      message: `${nickname}, invalid bet. Examples:\n` +
+        '• `/red 50`\n' +
+        '• `/17 25`\n' +
+        '• `/number 7 25`\n' +
+        '• `/dozen 2 50`'
+    })
+  }
+
+  // Check & debit balance from real wallet
+  const balance = await getUserWallet(user)
+  if (balance < amt) {
+    return postMessage({ room, message: `${nickname}, insufficient funds. Balance: $${balance}.` })
+  }
+
+  const ok = await removeFromUserWallet(user, amt)
+  if (!ok) {
+    return postMessage({ room, message: `${nickname}, failed to place bet (wallet issue).` })
+  }
 
   if (!bets[user]) bets[user] = []
-
-  const isNumber = !isNaN(cmd) && parseInt(cmd) >= 0 && parseInt(cmd) <= 36
-  const bet = isNumber
-    ? { type: 'number', number: parseInt(cmd), amount: amt }
-    : cmd.startsWith('number') && parts.length >= 3
-      ? { type: 'number', number: parseInt(parts[1]), amount: amt }
-      : cmd.startsWith('dozen') && parts.length >= 3
-        ? { type: 'dozen', dozen: parseInt(parts[1]), amount: amt }
-        : { type: cmd, amount: amt }
-
   bets[user].push(bet)
+
+  const betLabel =
+    bet.type === 'number'
+      ? `Number ${bet.number}`
+      : bet.type === 'dozen'
+        ? `Dozen ${bet.dozen}`
+        : bet.type
 
   await postMessage({
     room,
-    message: `${nickname} placed $${amt} on ${bet.type}${bet.number !== undefined ? ` ${bet.number}` : bet.dozen ? ` Dozen ${bet.dozen}` : ''}.`
+    message: `${nickname} placed $${amt} on ${betLabel}.`
   })
 }
 
-export async function handleBalanceCommand (payload) {
-  const user = payload.sender
-  const nickname = await getUserNickname(user)
-  const balance = await initializeWallet(user)
-  await postMessage({ room, message: `${nickname}, your balance is $${balance.toLocaleString()}.` })
-}
+// ──────────────────────────────────────────────
 
-export async function showAllBets () {
-  const summary = await Promise.all(Object.entries(bets).map(async ([user, userBets]) => {
-    const name = await getUserNickname(user)
-    const betList = userBets.map(b => {
-      if (b.type === 'number') return `${b.number} ($${b.amount})`
-      if (b.type === 'dozen') return `Dozen ${b.dozen} ($${b.amount})`
-      return `${b.type} ($${b.amount})`
-    }).join(', ')
-    return `${name}: ${betList}`
-  }))
-
-  await postMessage({ room, message: '🎰 Current Bets:\n' + summary.join('\n') })
-}
-
-export {
-  rouletteGameActive
-}
+export { rouletteGameActive }

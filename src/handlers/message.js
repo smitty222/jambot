@@ -1677,69 +1677,7 @@ Please refresh your page for the queue to update`
   }
   /// //////////////////// VIRTUAL CASINO ////////////////////////
 
-  /// //////////////////// ROULETTE ///////////////////////////////
-
-  // Helper to detect if message is a direct number bet like "/7 10"
-  function isDirectNumberBet (message) {
-    const command = message.trim().split(' ')[0].substring(1)
-    const number = parseInt(command, 10)
-    return !isNaN(number) && number >= 0 && number <= 36
-  }
-
-  // Start roulette game
-  if (payload.message.startsWith('/roulette start')) {
-    if (!rouletteGameActive) {
-      await startRouletteGame(payload)
-    } else {
-      await postMessage({
-        room,
-        message: '🎰 A roulette game is already active! Please wait for it to finish.'
-      })
-    }
-
-    // Roulette instructions
-  } else if (payload.message.startsWith('/roulette')) {
-    await postMessage({
-      room,
-      message:
-      '🎡 Welcome to Roulette! Use `/roulette start` to begin.\n\n' +
-      '🎯 Place bets using:\n' +
-      '- `/red <amount>` or `/black <amount>`\n' +
-      '- `/odd <amount>` or `/even <amount>`\n' +
-      '- `/high <amount>` or `/low <amount>`\n' +
-      '- `/number <number> <amount>` or `/<number> <amount>`\n' +
-      '- `/dozen <1|2|3> <amount>`\n\n' +
-      '💰 Use `/balance` to check your wallet.\n' +
-      '🧾 Use `/bets` to see all current bets.'
-    })
-
-    // Show all bets
-  } else if (payload.message.startsWith('/bets') && rouletteGameActive) {
-    await showAllBets()
-
-    // Check wallet balance
-  } else if (payload.message.startsWith('/balance')) {
-    await handleBalanceCommand(payload)
-
-    // Handle bets (color, number, dozen, direct number)
-  } else if (
-    rouletteGameActive &&
-  (
-    payload.message.startsWith('/red') ||
-    payload.message.startsWith('/black') ||
-    payload.message.startsWith('/green') ||
-    payload.message.startsWith('/odd') ||
-    payload.message.startsWith('/even') ||
-    payload.message.startsWith('/high') ||
-    payload.message.startsWith('/low') ||
-    payload.message.startsWith('/number') ||
-    payload.message.startsWith('/dozen') ||
-    isDirectNumberBet(payload.message)
-  )
-  ) {
-    await handleRouletteBet(payload)
-  }
-
+  
   /// //////////////////////// Wallet Stuff ////////////////////////////////////
 
   if (payload.message.startsWith('/balance')) {

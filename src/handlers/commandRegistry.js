@@ -80,22 +80,65 @@ const commandRegistry = {
     const response = await handleSlotsCommand(userUUID, betAmount)
     await postMessage({ room, message: response })
   },
-  // 🕹️ Roulette: `/roulette`
-  roulette: async ({ payload }) => {
-    if (rouletteGameActive) {
-      await postMessage({ room: payload.room ?? process.env.ROOM_UUID, message: 'Roulette game already in progress!' })
+  // 🎡 Roulette help + start:
+  // `/roulette` → instructions
+  // `/roulette start` → start game (if not already running)
+  roulette: async ({ payload, room, args }) => {
+    const trimmed = (args || '').trim()
+
+    if (/^start\b/i.test(trimmed)) {
+      if (rouletteGameActive) {
+        await postMessage({
+          room,
+          message: '🎰 A roulette game is already active! Please wait for it to finish.'
+        })
+        return
+      }
+      await startRouletteGame(payload)
       return
     }
-    await startRouletteGame(payload)
+
+    // Default: show instructions
+    await postMessage({
+      room,
+      message:
+        '🎡 Welcome to Roulette! Use `/roulette start` to begin.\n\n' +
+        '🎯 Place bets using:\n' +
+        '- `/red <amount>` or `/black <amount>`\n' +
+        '- `/odd <amount>` or `/even <amount>`\n' +
+        '- `/high <amount>` or `/low <amount>`\n' +
+        '- `/number <number> <amount>` or `/<number> <amount>`\n' +
+        '- `/dozen <1|2|3> <amount>`\n\n' +
+        '💰 Use `/balance` to check your wallet.\n' +
+        '🧾 Use `/bets` to see all current bets.'
+    })
   },
-  // 💰 Roulette bet: `/bet <type|number> <amount>`
-  bet: async ({ payload }) => {
-    await handleRouletteBet(payload)
+
+  // 🧾 Show all bets: `/bets` (only if active)
+  bets: async ({ room }) => {
+    if (!rouletteGameActive) {
+      await postMessage({ room, message: 'No active roulette game.' })
+      return
+    }
+    await showAllBets()
   },
-  // 🧮 Balance: `/balance`
+
+  // 💰 Roulette wallet: `/balance`
   balance: async ({ payload }) => {
     await handleBalanceCommand(payload)
   },
+
+  // 🎲 Roulette bet shorthands:
+  // These all delegate to handleRouletteBet, which parses the message itself.
+  red: async ({ payload }) => { if (rouletteGameActive) await handleRouletteBet(payload) },
+  black: async ({ payload }) => { if (rouletteGameActive) await handleRouletteBet(payload) },
+  green: async ({ payload }) => { if (rouletteGameActive) await handleRouletteBet(payload) },
+  odd: async ({ payload }) => { if (rouletteGameActive) await handleRouletteBet(payload) },
+  even: async ({ payload }) => { if (rouletteGameActive) await handleRouletteBet(payload) },
+  high: async ({ payload }) => { if (rouletteGameActive) await handleRouletteBet(payload) },
+  low: async ({ payload }) => { if (rouletteGameActive) await handleRouletteBet(payload) },
+  number: async ({ payload }) => { if (rouletteGameActive) await handleRouletteBet(payload) },
+  dozen: async ({ payload }) => { if (rouletteGameActive) await handleRouletteBet(payload) },
 
   // 🎱 Lottery: `/lottery`
   // Show a fun GIF and then start the lottery game. This mirrors the
@@ -365,10 +408,26 @@ const commandRegistry = {
  */
 export async function dispatchCommand (txt, payload, room) {
   if (!txt || txt[0] !== '/') return false
+
   const parts = txt.trim().substring(1).split(/\s+/)
   const cmd = (parts[0] || '').toLowerCase()
+
+  // 🎯 Special case: direct number bets like `/17 25` when roulette is active
+  if (/^\d+$/.test(cmd) && rouletteGameActive) {
+    try {
+      await handleRouletteBet(payload)
+    } catch (err) {
+      logger.error('[Dispatcher] Error executing numeric roulette bet:', err?.message || err)
+      try {
+        await postMessage({ room, message: '⚠️ Error processing roulette bet.' })
+      } catch { /* ignore */ }
+    }
+    return true
+  }
+
   const handler = commandRegistry[cmd]
   if (!handler) return false
+
   try {
     await handler({ payload, room, args: parts.slice(1).join(' ') })
   } catch (err) {
@@ -379,3 +438,4 @@ export async function dispatchCommand (txt, payload, room) {
   }
   return true
 }
+
