@@ -12,7 +12,21 @@ import * as themeStorage from './utils/themeManager.js'
 import { setThemes } from './utils/roomThemes.js'
 
 // ──────────────────────────────────────────────
-// Scheduled publisher (cron → runs tools/publish-site-data.mjs)
+// Global crash guards (so failures show in logs)
+// ──────────────────────────────────────────────
+process.on('unhandledRejection', (reason, p) => {
+  console.error('[fatal] UNHANDLED_REJECTION', { reason, p })
+})
+
+process.on('uncaughtException', (err) => {
+  console.error('[fatal] UNCAUGHT_EXCEPTION', err)
+})
+
+// small helper
+const delay = (ms) => new Promise(res => setTimeout(res, ms))
+
+// ──────────────────────────────────────────────
+// Scheduled publisher (unchanged, just logs)
 // ──────────────────────────────────────────────
 function startSitePublisherCron () {
   if (process.env.ENABLE_SITE_PUBLISH_CRON !== '1') {
@@ -21,7 +35,7 @@ function startSitePublisherCron () {
   }
 
   const TZ = process.env.PUBLISH_TZ || 'America/New_York'
-  const CRON = process.env.PUBLISH_CRON || '0 9,13,17 * * *' // 09:00, 13:00, 17:00 (TZ)
+  const CRON = process.env.PUBLISH_CRON || '0 9,13,17 * * *'
   const SCRIPT = process.env.PUBLISH_SCRIPT || 'tools/publish-site-data.mjs'
   const RUN_ON_BOOT = process.env.PUBLISH_RUN_ON_BOOT === '1'
 
@@ -70,24 +84,26 @@ function startSitePublisherCron () {
 // App / Bot bootstrap
 // ──────────────────────────────────────────────
 const app = express()
-
 const roomBot = new Bot(process.env.JOIN_ROOM)
 
-// start up the bot (connect websocket, etc.)
+// one-time startup tasks (non-fatal)
 const startupTasks = async () => {
   try {
+    // initial connect handled via ensureBotConnected below,
+    // but call once here to avoid startup delay
     await roomBot.connect()
     roomBot.configureListeners()
+    console.log('[bot] initial connect + listeners configured')
 
     const currentUsers = await fetchCurrentUsers()
-    console.log('Current Room Users', currentUsers)
+    console.log('[bot] Current Room Users', currentUsers)
 
     const currentDJs = getCurrentDJUUIDs(roomBot.state)
-    console.log('Current DJs', currentDJs)
+    console.log('[bot] Current DJs', currentDJs)
 
     updateCurrentUsers(currentUsers)
   } catch (error) {
-    console.error('Error during bot startup:', error.message)
+    console.error('[bot] Error during startupTasks:', error)
   }
 }
 startupTasks()
@@ -96,7 +112,39 @@ startupTasks()
 const savedThemes = themeStorage.loadThemes()
 setThemes(savedThemes)
 
-// adaptive poll loop for chat + DMs
+// ──────────────────────────────────────────────
+// Self-healing connection helper
+// ──────────────────────────────────────────────
+let lastConnectAttempt = 0
+const RECONNECT_MIN_INTERVAL = 10_000 // ms
+
+async function ensureBotConnected () {
+  // If socket API differs, tweak this check to your Bot implementation
+  const connected = roomBot?.socket?.connected === true
+
+  if (connected) return
+
+  const now = Date.now()
+  if (now - lastConnectAttempt < RECONNECT_MIN_INTERVAL) {
+    // avoid hammering reconnects
+    return
+  }
+  lastConnectAttempt = now
+
+  console.warn('[bot] socket not connected; attempting reconnect...')
+  try {
+    await roomBot.connect()
+    // IMPORTANT: configureListeners must be idempotent or internally guard
+    roomBot.configureListeners()
+    console.log('[bot] reconnect successful, listeners re-attached')
+  } catch (err) {
+    console.error('[bot] reconnect failed:', err)
+  }
+}
+
+// ──────────────────────────────────────────────
+// Adaptive poll loop for chat + DMs (with reconnect)
+// ──────────────────────────────────────────────
 const BASE_MS = 900
 const STEP_MS = 300
 const MAX_BACKOFF_STEPS = 4 // up to ~ +1200ms
@@ -108,19 +156,33 @@ function jitter (ms) {
 
 async function pollLoop () {
   try {
+    await ensureBotConnected()
     await roomBot.processNewMessages()
   } catch (e) {
-    console.error('pollLoop error:', e)
+    console.error('[bot] pollLoop error:', e)
   } finally {
     const empty = roomBot._emptyPolls || 0
     const backoffSteps = Math.min(empty, MAX_BACKOFF_STEPS)
-    const delay = jitter(BASE_MS + backoffSteps * STEP_MS)
-    setTimeout(pollLoop, delay)
+    const delayMs = jitter(BASE_MS + backoffSteps * STEP_MS)
+    setTimeout(pollLoop, delayMs)
   }
 }
 pollLoop()
 
-// routes
+// ──────────────────────────────────────────────
+// Heartbeat for observability
+// ──────────────────────────────────────────────
+setInterval(() => {
+  const connected = roomBot?.socket?.connected === true
+  console.log('[heartbeat]', {
+    connected,
+    uptime: Number(process.uptime().toFixed(0))
+  })
+}, 60_000)
+
+// ──────────────────────────────────────────────
+// Routes
+// ──────────────────────────────────────────────
 app.get('/', (req, res) => {
   res.send('Jamflow bot is alive and running!')
 })
@@ -155,9 +217,9 @@ app.get('/heartbeat', (req, res) => {
   res.status(200).send('beat')
 })
 
-// ⬇️ THIS PART IS IMPORTANT ⬇️
-// We MUST define `port` and call `app.listen` BEFORE we run the async IIFE.
-// We MUST NOT reassign `app` after this point.
+// ──────────────────────────────────────────────
+// HTTP + DB init + cron
+// ──────────────────────────────────────────────
 const port = Number(process.env.PORT || 8080)
 const server = app.listen(port, '0.0.0.0', () => {
   console.log(`Listening on ${port}`)
@@ -174,10 +236,11 @@ const server = app.listen(port, '0.0.0.0', () => {
   }
 })()
 
-// start the cron publisher AFTER we're already listening
 startSitePublisherCron()
 
-// graceful shutdown
+// ──────────────────────────────────────────────
+// Graceful shutdown
+// ──────────────────────────────────────────────
 function shutdown () {
   try {
     roomBot?.socket?.close?.()
