@@ -102,9 +102,6 @@ async function connectBotOnce (label = 'connect') {
     console.log(`[bot] ${label}: connecting...`)
     await roomBot.connect()
 
-    // IMPORTANT: configureListeners must be idempotent or internally guarded.
-    roomBot.configureListeners()
-
     botConnected = true
     console.log('[bot] connect OK, listeners attached')
   } catch (err) {
