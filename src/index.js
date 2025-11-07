@@ -12,8 +12,8 @@ import * as themeStorage from './utils/themeManager.js'
 import { setThemes } from './utils/roomThemes.js'
 
 // ──────────────────────────────────────────────
-// Global crash guards (so failures show in logs)
-// ──────────────────────────────────────────────
+// Global crash guards
+// ─────────────────────────────────────────────-
 process.on('unhandledRejection', (reason, p) => {
   console.error('[fatal] UNHANDLED_REJECTION', { reason, p })
 })
@@ -22,12 +22,11 @@ process.on('uncaughtException', (err) => {
   console.error('[fatal] UNCAUGHT_EXCEPTION', err)
 })
 
-// small helper
 const delay = (ms) => new Promise(res => setTimeout(res, ms))
 
 // ──────────────────────────────────────────────
-// Scheduled publisher (unchanged, just logs)
-// ──────────────────────────────────────────────
+// Scheduled publisher (same as you had)
+// ─────────────────────────────────────────────-
 function startSitePublisherCron () {
   if (process.env.ENABLE_SITE_PUBLISH_CRON !== '1') {
     console.log('[publish-cron] disabled (set ENABLE_SITE_PUBLISH_CRON=1 to enable)')
@@ -82,84 +81,88 @@ function startSitePublisherCron () {
 
 // ──────────────────────────────────────────────
 // App / Bot bootstrap
-// ──────────────────────────────────────────────
+// ─────────────────────────────────────────────-
 const app = express()
 const roomBot = new Bot(process.env.JOIN_ROOM)
 
-// one-time startup tasks (non-fatal)
-const startupTasks = async () => {
-  try {
-    // initial connect handled via ensureBotConnected below,
-    // but call once here to avoid startup delay
-    await roomBot.connect()
-    roomBot.configureListeners()
-    console.log('[bot] initial connect + listeners configured')
-
-    const currentUsers = await fetchCurrentUsers()
-    console.log('[bot] Current Room Users', currentUsers)
-
-    const currentDJs = getCurrentDJUUIDs(roomBot.state)
-    console.log('[bot] Current DJs', currentDJs)
-
-    updateCurrentUsers(currentUsers)
-  } catch (error) {
-    console.error('[bot] Error during startupTasks:', error)
-  }
-}
-startupTasks()
-
-// load cached themes into memory
-const savedThemes = themeStorage.loadThemes()
-setThemes(savedThemes)
-
-// ──────────────────────────────────────────────
-// Self-healing connection helper
-// ──────────────────────────────────────────────
+// We maintain our own idea of "connected"
+let botConnected = false
 let lastConnectAttempt = 0
 const RECONNECT_MIN_INTERVAL = 10_000 // ms
 
-async function ensureBotConnected () {
-  // If socket API differs, tweak this check to your Bot implementation
-  const connected = roomBot?.socket?.connected === true
-
-  if (connected) return
-
+async function connectBotOnce (label = 'connect') {
   const now = Date.now()
-  if (now - lastConnectAttempt < RECONNECT_MIN_INTERVAL) {
-    // avoid hammering reconnects
+  if (now - lastConnectAttempt < RECONNECT_MIN_INTERVAL && !botConnected) {
+    // avoid hammering when offline
     return
   }
   lastConnectAttempt = now
 
-  console.warn('[bot] socket not connected; attempting reconnect...')
   try {
+    console.log(`[bot] ${label}: connecting...`)
     await roomBot.connect()
-    // IMPORTANT: configureListeners must be idempotent or internally guard
+
+    // IMPORTANT: configureListeners must be idempotent or internally guarded.
     roomBot.configureListeners()
-    console.log('[bot] reconnect successful, listeners re-attached')
+
+    botConnected = true
+    console.log('[bot] connect OK, listeners attached')
   } catch (err) {
-    console.error('[bot] reconnect failed:', err)
+    botConnected = false
+    console.error('[bot] connect FAILED:', err)
   }
 }
 
+// One-time startup tasks that assume bot will (eventually) be connected
+;(async () => {
+  await connectBotOnce('initial')
+
+  try {
+    const currentUsers = await fetchCurrentUsers()
+    console.log('[bot] Current Room Users', currentUsers)
+    updateCurrentUsers(currentUsers)
+
+    const currentDJs = getCurrentDJUUIDs(roomBot.state)
+    console.log('[bot] Current DJs', currentDJs)
+  } catch (err) {
+    console.error('[bot] startupTasks fetch error (non-fatal):', err)
+  }
+})()
+
+// Load cached themes
+const savedThemes = themeStorage.loadThemes()
+setThemes(savedThemes)
+
 // ──────────────────────────────────────────────
-// Adaptive poll loop for chat + DMs (with reconnect)
-// ──────────────────────────────────────────────
+// Adaptive poll loop + self-healing reconnect
+// ─────────────────────────────────────────────-
 const BASE_MS = 900
 const STEP_MS = 300
-const MAX_BACKOFF_STEPS = 4 // up to ~ +1200ms
+const MAX_BACKOFF_STEPS = 4
 
 function jitter (ms) {
-  const delta = Math.floor(ms * 0.15) // ±15%
+  const delta = Math.floor(ms * 0.15)
   return ms + (Math.floor(Math.random() * (2 * delta + 1)) - delta)
 }
 
 async function pollLoop () {
   try {
-    await ensureBotConnected()
+    if (!botConnected) {
+      await connectBotOnce('reconnect')
+    }
+
+    // If still not connected, just wait for next tick
+    if (!botConnected) {
+      return
+    }
+
     await roomBot.processNewMessages()
   } catch (e) {
     console.error('[bot] pollLoop error:', e)
+
+    // If processNewMessages blows up with something connection-y,
+    // mark disconnected so we try to reconnect on next tick.
+    botConnected = false
   } finally {
     const empty = roomBot._emptyPolls || 0
     const backoffSteps = Math.min(empty, MAX_BACKOFF_STEPS)
@@ -170,19 +173,18 @@ async function pollLoop () {
 pollLoop()
 
 // ──────────────────────────────────────────────
-// Heartbeat for observability
-// ──────────────────────────────────────────────
+// Heartbeat (now based on our flag)
+// ─────────────────────────────────────────────-
 setInterval(() => {
-  const connected = roomBot?.socket?.connected === true
   console.log('[heartbeat]', {
-    connected,
+    connected: botConnected,
     uptime: Number(process.uptime().toFixed(0))
   })
 }, 60_000)
 
 // ──────────────────────────────────────────────
 // Routes
-// ──────────────────────────────────────────────
+// ─────────────────────────────────────────────-
 app.get('/', (req, res) => {
   res.send('Jamflow bot is alive and running!')
 })
@@ -198,7 +200,7 @@ app.get('/health', (req, res) => {
 
     const status = {
       ok: okDb,
-      socketConnected: roomBot?.socket?.connected === true,
+      connected: botConnected,
       uptime: process.uptime()
     }
 
@@ -219,13 +221,12 @@ app.get('/heartbeat', (req, res) => {
 
 // ──────────────────────────────────────────────
 // HTTP + DB init + cron
-// ──────────────────────────────────────────────
+// ─────────────────────────────────────────────-
 const port = Number(process.env.PORT || 8080)
 const server = app.listen(port, '0.0.0.0', () => {
   console.log(`Listening on ${port}`)
 })
 
-// defer DB init / seeding so a bad migration can't kill boot
 ;(async () => {
   try {
     await import('./database/initdb.js')
@@ -240,7 +241,7 @@ startSitePublisherCron()
 
 // ──────────────────────────────────────────────
 // Graceful shutdown
-// ──────────────────────────────────────────────
+// ─────────────────────────────────────────────-
 function shutdown () {
   try {
     roomBot?.socket?.close?.()
