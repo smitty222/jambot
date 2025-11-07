@@ -1026,7 +1026,7 @@ Please refresh your page for the queue to update`
 
   // Only allow in main chat and only from you
   if (roomId !== process.env.ROOM_UUID) return
-  if (sender !== process.env.CHAT_OWNER_ID) {
+  if (sender !== process.env.SMITTY_UUID) {
     await postMessage({ room, message: '⛔ /addmoney is restricted.' })
     return
   }
