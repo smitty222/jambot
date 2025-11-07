@@ -13,8 +13,6 @@ import { handleSlotsCommand } from './slots.js'
 import {
   startRouletteGame,
   handleRouletteBet,
-  handleBalanceCommand,
-  showAllBets,
   rouletteGameActive
 } from './roulette.js'
 
@@ -120,12 +118,6 @@ const commandRegistry = {
       await postMessage({ room, message: 'No active roulette game.' })
       return
     }
-    await showAllBets()
-  },
-
-  // 💰 Roulette wallet: `/balance`
-  balance: async ({ payload }) => {
-    await handleBalanceCommand(payload)
   },
 
   // 🎲 Roulette bet shorthands:

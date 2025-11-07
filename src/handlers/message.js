@@ -19,13 +19,6 @@ import { getCurrentDJ, getCurrentDJUUIDs } from '../libs/bot.js'
 import { readRecentSongs } from '../database/dbrecentsongsmanager.js'
 import { addTracksToPlaylist, removeTrackFromPlaylist } from '../utils/playlistUpdate.js'
 import {
-  startRouletteGame,
-  handleRouletteBet,
-  handleBalanceCommand,
-  showAllBets,
-  rouletteGameActive
-} from './roulette.js'
-import {
   getBalanceByNickname,
   getNicknamesFromWallets,
   addDollarsByUUID,
