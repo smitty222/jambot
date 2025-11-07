@@ -164,7 +164,7 @@ export async function handleHorseBet (ctx) {
 
   const txt = String(ctx.message || '')
   const sender = ctx.sender
-  const m = txt.match(/^\/horse(\d+)\s+(\d+)\b/i)
+  const m = txt.match(/^\/horse\s*(\d+)\s+(\d+)\b/i)
   if (!m) return
 
   const idx = parseInt(m[1], 10) - 1
