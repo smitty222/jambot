@@ -28,7 +28,7 @@ import {
   transferTip,
   addOrUpdateUser
 } from '../database/dbwalletmanager.js'
-import { getJackpotValue, handleSlotsCommand } from './slots.js'
+import { getJackpotValue, handleSlotsCommand, formatBalance} from './slots.js'
 import {
   openBetting, joinTable, leaveTable,
   handleBlackjackBet, handleHit, handleStand, handleDouble, handleSurrender, handleSplit,
