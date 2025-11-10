@@ -1,6 +1,6 @@
 import db from './db.js'
 // Import helpers for normalising song information and fuzzy matching.
-import { buildNormKey, isFuzzyMatch } from './normalizeSong.js'
+import { buildNormKey, isFuzzyMatch } from './normalizesong.js'
 
 // Helper to compute a canonical key for songs. We prefer using the
 // provided songId if present; otherwise fall back to a lowercased
