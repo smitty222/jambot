@@ -1,8 +1,8 @@
 // src/handlers/songChainGame.js
 
-import { postMessage } from '../libs/cometchat.js'
-import { getCurrentDJUUIDs } from '../libs/bot.js'
-import { getTheme } from '../utils/themeManager.js'
+import { postMessage } from '../../libs/cometchat.js'
+import { getCurrentDJUUIDs } from '../../libs/bot.js'
+import { getTheme } from '../../utils/themeManager.js'
 
 // ───────────────────────────────────────────────────────────
 // In-memory state (swap to DB later if you want persistence)

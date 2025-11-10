@@ -1,5 +1,8 @@
 // src/index.js
+// Load environment variables from .env and validate required configuration
 import 'dotenv/config'
+import { validateConfig } from './config.js'
+import { logger } from './utils/logging.js'
 import express from 'express'
 import cron from 'node-cron'
 import { spawn } from 'node:child_process'
@@ -14,12 +17,17 @@ import { setThemes } from './utils/roomThemes.js'
 // ──────────────────────────────────────────────
 // Global crash guards
 // ─────────────────────────────────────────────-
+
+// Early configuration validation.  If any required env vars are missing,
+// validateConfig() will throw here and prevent the bot from starting up
+// silently with undefined behaviour.
+validateConfig()
 process.on('unhandledRejection', (reason, p) => {
-  console.error('[fatal] UNHANDLED_REJECTION', { reason, p })
+  logger.error('[fatal] UNHANDLED_REJECTION', { reason, promise: p })
 })
 
 process.on('uncaughtException', (err) => {
-  console.error('[fatal] UNCAUGHT_EXCEPTION', err)
+  logger.error('[fatal] UNCAUGHT_EXCEPTION', err)
 })
 
 const delay = (ms) => new Promise(res => setTimeout(res, ms))
@@ -29,7 +37,7 @@ const delay = (ms) => new Promise(res => setTimeout(res, ms))
 // ─────────────────────────────────────────────-
 function startSitePublisherCron () {
   if (process.env.ENABLE_SITE_PUBLISH_CRON !== '1') {
-    console.log('[publish-cron] disabled (set ENABLE_SITE_PUBLISH_CRON=1 to enable)')
+    logger.info('[publish-cron] disabled (set ENABLE_SITE_PUBLISH_CRON=1 to enable)')
     return
   }
 
@@ -53,28 +61,28 @@ function startSitePublisherCron () {
   const runOnce = () => {
     const now = Date.now()
     if (running || (now - lastRunAt) < MIN_INTERVAL_MS) {
-      console.log('[publish-cron] skipped (in progress or too soon)')
+      logger.info('[publish-cron] skipped (in progress or too soon)')
       return
     }
     running = true
     lastRunAt = now
-    console.log(`[publish-cron] start: node ${SCRIPT}`)
+    logger.info(`[publish-cron] start: node ${SCRIPT}`)
     const child = spawn('node', [SCRIPT], {
       stdio: 'inherit',
       env: { ...process.env, ...PUB_ENV }
     })
     child.on('exit', (code) => {
-      console.log(`[publish-cron] finished with code ${code}`)
+      logger.info(`[publish-cron] finished with code ${code}`)
       running = false
     })
     child.on('error', (err) => {
-      console.error('[publish-cron] spawn error:', err)
+      logger.error('[publish-cron] spawn error:', err)
       running = false
     })
   }
 
   cron.schedule(CRON, runOnce, { timezone: TZ })
-  console.log(`[publish-cron] scheduled "${CRON}" (TZ=${TZ}); script=${SCRIPT}`)
+  logger.info(`[publish-cron] scheduled "${CRON}" (TZ=${TZ}); script=${SCRIPT}`)
 
   if (RUN_ON_BOOT) runOnce()
 }
@@ -99,14 +107,14 @@ async function connectBotOnce (label = 'connect') {
   lastConnectAttempt = now
 
   try {
-    console.log(`[bot] ${label}: connecting...`)
+    logger.info(`[bot] ${label}: connecting...`)
     await roomBot.connect()
 
     botConnected = true
-    console.log('[bot] connect OK, listeners attached')
+    logger.info('[bot] connect OK, listeners attached')
   } catch (err) {
     botConnected = false
-    console.error('[bot] connect FAILED:', err)
+    logger.error('[bot] connect FAILED:', err)
   }
 }
 
@@ -116,13 +124,13 @@ async function connectBotOnce (label = 'connect') {
 
   try {
     const currentUsers = await fetchCurrentUsers()
-    console.log('[bot] Current Room Users', currentUsers)
+    logger.info('[bot] Current Room Users', currentUsers)
     updateCurrentUsers(currentUsers)
 
     const currentDJs = getCurrentDJUUIDs(roomBot.state)
-    console.log('[bot] Current DJs', currentDJs)
+    logger.info('[bot] Current DJs', currentDJs)
   } catch (err) {
-    console.error('[bot] startupTasks fetch error (non-fatal):', err)
+    logger.error('[bot] startupTasks fetch error (non-fatal):', err)
   }
 })()
 
@@ -155,7 +163,7 @@ async function pollLoop () {
 
     await roomBot.processNewMessages()
   } catch (e) {
-    console.error('[bot] pollLoop error:', e)
+    logger.error('[bot] pollLoop error:', e)
 
     // If processNewMessages blows up with something connection-y,
     // mark disconnected so we try to reconnect on next tick.
@@ -173,7 +181,7 @@ pollLoop()
 // Heartbeat (now based on our flag)
 // ─────────────────────────────────────────────-
 setInterval(() => {
-  console.log('[heartbeat]', {
+  logger.info('[heartbeat]', {
     connected: botConnected,
     uptime: Number(process.uptime().toFixed(0))
   })
@@ -208,7 +216,11 @@ app.get('/health', (req, res) => {
 
     res.status(200).json(status)
   } catch (e) {
-    res.status(200).json({ ok: true, degraded: true })
+    // If an unexpected error bubbles up here, surface it clearly. A
+    // 200+degraded status makes it hard for monitoring to detect real
+    // failures, so instead return a 500 and include a small error message.
+    logger.error('[health] endpoint error:', e)
+    res.status(500).json({ ok: false, error: String(e?.message || e) })
   }
 })
 
@@ -221,16 +233,16 @@ app.get('/heartbeat', (req, res) => {
 // ─────────────────────────────────────────────-
 const port = Number(process.env.PORT || 8080)
 const server = app.listen(port, '0.0.0.0', () => {
-  console.log(`Listening on ${port}`)
+  logger.info(`Listening on ${port}`)
 })
 
 ;(async () => {
   try {
     await import('./database/initdb.js')
     await import('./database/seedavatars.js')
-    console.log('[db-init] completed')
+    logger.info('[db-init] completed')
   } catch (e) {
-    console.error('[db-init] failed (non-fatal):', e?.message || e)
+    logger.error('[db-init] failed (non-fatal):', e?.message || e)
   }
 })()
 

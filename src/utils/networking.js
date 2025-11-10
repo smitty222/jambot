@@ -1,5 +1,10 @@
 // src/utils/networking.js
-import fetch from 'node-fetch'
+// Use the native fetch implementation provided by modern versions of Node.js.
+// Avoid a hard dependency on node-fetch so that unit tests can run without
+// installing external packages.  When run in environments like browsers or
+// older Node versions without fetch, set global.fetch yourself or install
+// node-fetch as a dependency.
+const fetch = globalThis.fetch
 import https from 'https'
 import http from 'http'
 

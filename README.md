@@ -1,63 +1,82 @@
-# Turntable Live Artist Bot
-This is a bot that will join a hangout of your choosing as a fan of a specified artist and will answer questions asked directly to it and give some details about songs played by that artist.
+# Jambot
 
-## Running locally
-Clone the source and run `npm install`. In developement you can run use `npm run dev` where the nodemon will automatically reestart your project on any changes.
+Jambot is a feature‑rich chat bot for [Turntable Live](https://tt.live/) rooms. It grew out of a simple “artist fan bot” and now powers a full suite of interactive games, queue management, AI chat blurbs, theme and avatar controls and even publishes its own website with room stats. If you're looking for a lively companion to hang out with your community, Jambot might be what you need.
 
-### Redis
-You'll need a loacal instance of redis running. Please use [this guide](https://redis.io/docs/getting-started/).
+Unlike the early prototypes that shipped a single artist‐focused flow, this repository contains the modern code base used by the bot running in production. It's powered by Node 20, SQLite, Redis (optional) and various third‑party APIs such as Spotify, CometChat and Google's Gemini. The bot listens to room events over the Turntable Live socket, reacts to slash commands, stores state in a local database and periodically publishes data for a simple stat site.
 
-### Configuring variables
-There are a number of varaibles needed to run this project and connect to the TTL Hangout. For help getting any of these values, please connect to the Turntable LIVE discord [here](https://discord.com/channels/812448637425680394/1006608336092938381/1007358948267008052)
-```
-NODE_ENV=development
-LOG_LEVEL=debug
+> **Heads‑up:** Runtime database files (e.g. `app.db`, `.publish-state.json`, `jackpot.json`) are *not* tracked in git. The schema is created on the fly from `src/database/initdb.js` and seeded by `src/database/seedavatars.js`. See [Database & runtime data](#database--runtime-data) for details.
 
-REDIS_HOST=localhost
+## Features
 
-CHAT_TOKEN=
-CHAT_USER_ID=
-CHAT_REPLY_ID=
-CHAT_API_KEY=
-CHAT_AVATAR_ID=
-CHAT_NAME=
-CHAT_COLOUR=
+Jambot packs a lot of functionality. Here's a non‑exhaustive overview:
 
-ROOM_UUID=
-TTL_USER_TOKEN=
-BARD_COOKIE=
-OPENAI_API_KEY=
+- **AI chat blurbs:** Integrates with Google Gemini and OpenAI to generate playful descriptions of the current song/artist and answer questions when addressed.  You can configure model order and rate limits via environment variables.
+- **Games:** A suite of mini‑games keeps the chat lively.  The bot supports a lottery with stats and a progressive jackpot, slots, trivia rounds, blackjack with join/bet logic, roulette, horse racing (including race entry, betting, horse ownership and stats), craps, a song chain game and more.  Games share a common wallet stored in SQLite.
+- **Queue management:** Users can join or leave the DJ queue, advance when the current DJ leaves and view their position. The queue persists across restarts in the `dj_queue` table.
+- **Theme & room design:** Moderators can set themes (e.g. Albums, Covers, Rock, Country, Rap, Name Game) that influence which songs are allowed. There are also commands to swap room backdrops between classic, ferry, barn, theater, festival, stadium and yacht designs.
+- **Avatar commands:** A large catalogue of avatars are available for both the bot and users. Slash commands allow switching between dinos, ducks, aliens, penguins, walruses, cosmic characters and more. Random avatars keep things fresh.
+- **Now‑playing blurbs:** The bot can announce the currently playing song with varying tones (neutral, playful, crate digger, hype, classy, chart bot, DJ tech, vibe).  These blurbs can be toggled on/off and configured by mods.
+- **Tips & wallets:** A simple wallet system lets users tip one another, place bets on games, accrue winnings and check their balances.  Winnings are persisted and can be transferred via `/tip` commands.
+- **Site publisher:** A cron job (disabled by default) runs `tools/publish-site-data.mjs` at scheduled intervals, publishing JSON snapshots of commands, database stats and top songs to a remote site.  See `src/scheduler/sitePublisher.js` for details.
 
-FAVOURITE_ARTIST=
-MERCH_RESPONSE_KEYWORDS=
-MERCH_MESSAGE=
-MERCH_MESSAGE_RANDOM=
-MERCH_MESSAGE_RANDOM_SONG_COUNT=
-ANNOUNCE_SONG_DETAILS_COUNT=
+## Getting started
+
+### Installation
+
+```sh
+git clone https://github.com/smitty222/jambot.git
+cd jambot
+npm install
 ```
 
-`CHAT_TOKEN` should be the auth token provided when setting up your commet chat bot.  
-`CHAT_USER_ID` & `CHAT_REPLY_ID` are the two IDs that will be associated with your bot via commet chat - these are used to prevent the bot talking to itself.  
-`CHAT_API_KEY` is the key to allow connection to the TTL comet chat instance.  
-`CHAT_AVATAR_ID` is the avatar that the bot should use within chat - the options availabe can be obtained via request on Discord.  
-`CHAT_NAME` is the name your bot should label itself with (also used to respond to mentions).  
-`CHAT_COLOUR` is the font colour to use for the bots namke in sent messages.  
-`ROOM_UUID` is the UUID for the room you will be accessing (can be obtained from [here](https://rooms.prod.tt.fm/api/#/Rooms%20data/getRoom)).  
-`TTL_USER_TOKEN` Is your JWT to access TTL (you can grab this from any netwrok requests made via your browser).  
-`BARD_COOKIE` is used for the connection to the Bard API - please see [the package documentation](https://www.npmjs.com/package/bard-ai) to obtain this value.  
-`OPENAI_API_KEY` as a fallback to Bard, the service can also use OpenAI. Please create an account and get an access key [here](https://openai.com/).  
-`FAVOURITE_ARTIST` is the artist name that will be used to form the bot's personality and to know which songs to respond to automatically.  
-`MERCH_RESPONSE_KEYWORDS` this can be a comma separated list of keywords that the bot should respond to with the following;  
-`MERCH_MESSAGE` The message to respond when trigger, as above.  
-`MERCH_MESSAGE_RANDOM` A random version of the merch message that will trigger on a set number of plays of songs by the favourite artist.  
-`MERCH_MESSAGE_RANDOM_SONG_COUNT` How many songs to play before sending the above message.  
-`ANNOUNCE_SONG_DETAILS_COUNT` How many songs by the favourite artist should play before telling the user about the current song.
+To run the bot locally in development mode, create a `.env` file with your secrets and execute:
 
-### Testing & Linting
-The project uses [standard.js](https://standardjs.com/) for linting and [mocha.js](https://mochajs.org/) for testing with [istanbul / nyc](https://istanbul.js.org/) for coverage reporting.  
-These will all run using `npm test`, but you can also take advantadge of standard.js' ability to fix simple errors using `npm run lint:fix`.  
-This project also takes advantadge of Github actions to run tests when code is pushed up to a branch.  
-**(NOTE: most functionality is not yet covered by tests)**
+```sh
+npm run dev
+```
 
-## Running in production
-A `Dockerfile` is included should you wish to containerise to run in production.# turntablebot
+This will start the bot with nodemon so it automatically restarts on file changes.  For production, build your own container image using the provided `Dockerfile` or deploy to Fly.io with `fly.toml`.
+
+### Configuration
+
+Jambot relies on many environment variables to talk to external services. A sample `.env.clean` file is provided with placeholders and comments. At minimum you'll need:
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `CHAT_API_KEY` | ✔️ | CometChat App ID for the Turntable Live chat API |
+| `CHAT_TOKEN` | ✔️ | CometChat auth token for your bot user |
+| `CHAT_USER_ID` | ✔️ | The UUID of your bot (prevents it from replying to itself) |
+| `ROOM_UUID` | ✔️ | Target room ID to join |
+| `TTL_USER_TOKEN` | ✔️ | JWT used to authenticate against Turntable Live sockets |
+| `GEMINI_API_KEY`/`OPENAI_API_KEY` | optional | API keys for generating AI blurbs |
+
+Other variables configure optional features: Spotify credentials (`SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `SPOTIFY_REFRESH_TOKEN`), Genius and Last.fm tokens, odds API key for sports bets, site publishing schedule and many tunables controlling game timers, AI rate limits, logging and more.  See `src/config.js` for the full list and default values.  All required variables are validated at startup; missing secrets will cause the bot to exit with a helpful message.
+
+### Commands
+
+Slash commands trigger most of Jambot’s functionality. Commands are grouped roughly into:
+
+- **Games:** `/lottery`, `/slots <amount>`, `/blackjack`, `/roulette`, `/horserace`, `/trivia`, `/craps` and various bets/actions such as `/hit`, `/stand`, `/horse1 50`, etc.
+- **Fun & gifs:** `/dance`, `/party`, `/beer`, `/props`, `/burp`, `/cheers`, `/dog`, `/fart`, `/shred`, `/tomatoes` and many more.
+- **Money:** `/balance`, `/bankroll`, `/getwallet`, `/tip <amount>` and the progressive `/jackpot`.
+- **Reviews & stats:** `/songreview <1–10>`, `/albumreview <1–10>`, `/rating`, `/topsongs`, `/topalbums`, `/mytopalbums`, `/stats`, `/topliked`.
+- **Room & theme management:** `/room <classic|ferry|barn|yacht|festival|stadium|theater>`, `/settheme <Albums|Covers|Rock|Country|Rap|Name Game>`, `/removetheme`.
+- **Bot toggles:** `/status`, `/bopon`/`/bopoff`, `/autodjon`/`/autodjoff`, `/songstatson`/`off`, `/greeton`/`off`, `/infoon`/`/infooff`, `/infotone <tone>`.
+
+The full list of commands is generated at runtime and can be published to your site via the scheduler. Inspect `tools/publish-site-data.mjs` for details.
+
+## Database & runtime data
+
+Jambot persists state in a SQLite database (`app.db`) and a handful of JSON snapshot files under `src/data/`. These files are **not** version controlled — they are listed in `.gitignore` so you don't accidentally commit your production wallets or jackpots. When the bot starts it runs migrations defined in `src/database/initdb.js` to create tables such as `users`, `dj_queue`, `lottery_stats` and `jackpot`, then seeds avatars via `src/database/seedavatars.js`. Feel free to inspect these scripts if you wish to understand the schema or run your own migrations.
+
+When deploying to Docker or Fly.io you should mount a persistent volume at `/data` to ensure the database and publish state survive restarts. See `fly.toml` for an example of how to do this.
+
+## Contributing & maintenance
+
+- **Code style:** This project uses [JavaScript Standard Style](https://standardjs.com/). Run `npm run lint` to check for issues and `npm run lint:fix` to automatically format your changes. A CI job will enforce linting on pull requests.
+- **Testing:** Mocha and Chai are configured with [`nyc`](https://istanbul.js.org/) for coverage. To run tests execute `npm test`. At present the test suite is small; contributions are welcome! See `test/` for examples.
+- **Architecture:** Core logic lives in `src/handlers/message.js`, which routes incoming chat messages to individual command handlers. Over time we recommend refactoring toward a plugin‑style architecture where each command is its own module under `src/commands/` or `src/games/` to reduce complexity and avoid circular dependencies.
+
+## License
+
+MIT — see the [LICENSE](./LICENSE) file for details.

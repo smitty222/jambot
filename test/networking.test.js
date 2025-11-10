@@ -1,8 +1,7 @@
+import test from 'node:test'
+import assert from 'node:assert'
 import { buildUrl } from '../src/utils/networking.js'
-import { expect } from 'chai'
 
-describe('networking', function () {
-  it('should return an info logging function', () => {
-    expect(buildUrl).to.be.a('function')
-  })
+test('buildUrl is a function', () => {
+  assert.strictEqual(typeof buildUrl, 'function')
 })
