@@ -10,7 +10,6 @@
 # Icon must end with two \r
 Icon
 
-
 # Thumbnails
 ._*
 
@@ -131,7 +130,6 @@ dist
 # Gatsby files
 .cache/
 # Comment in the public line in if your project uses Gatsby and not Next.js
-# https://nextjs.org/blog/next-9-1#public-directory-support
 # public
 
 # vuepress build output
@@ -201,3 +199,25 @@ dist
 
 # End of https://www.toptal.com/developers/gitignore/api/macos,node,visualstudiocode
 
+
+### Jambot runtime & secrets ###
+# SQLite / Redis / other local databases
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.rdb
+
+# Runtime state files
+.publish-state.json
+jackpot.json
+
+# Local env / deploy configs
+fly.env
+
+# Cloudflare Wrangler local state
+.wrangler/
+
+# Misc
+*.log
+npm-debug.log*
