@@ -80,7 +80,7 @@ function calculateRTP (winMultiplier, betAmount, rtp = 0.96) {
   return expectedPayout
 }
 
-function formatBalance (balance) {
+export function formatBalance (balance) {
   const rounded = Math.round(balance)
   return rounded > 999 ? rounded.toLocaleString() : rounded.toString()
 }
