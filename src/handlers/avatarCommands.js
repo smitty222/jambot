@@ -967,6 +967,83 @@ export async function handleFacesCommand (senderUuid, room, postMessage) {
     await postMessage({ room, message: 'Something went wrong transforming you into a smiley face' })
   }
 }
+export async function handleAlienCommand (senderUuid, room, postMessage) {
+  const userToken = userTokenMap[senderUuid]
+  if (!userToken) {
+    await postMessage({ room, message: 'Sorry, this command is only available to authorized users.' })
+    return
+  }
+  try {
+    await updateUserAvatar(userToken, 'season-0001-underground-thehuman', '#39FF14')
+    await postMessage({ room, message: 'ET Phone Home! 👽' })
+  } catch (error) {
+    await postMessage({ room, message: 'Something went wrong transforming you into an alien' })
+  }
+}
+export async function handleAlien2Command (senderUuid, room, postMessage) {
+  const userToken = userTokenMap[senderUuid]
+  if (!userToken) {
+    await postMessage({ room, message: 'Sorry, this command is only available to authorized users.' })
+    return
+  }
+  try {
+    await updateUserAvatar(userToken, 'stadiumseason-01', '#39FF14')
+    await postMessage({ room, message: 'ET Phone Home! 👽' })
+  } catch (error) {
+    await postMessage({ room, message: 'Something went wrong transforming you into an alien' })
+  }
+}
+export async function handleRoyCommand(senderUuid, room, postMessage) {
+  const userToken = userTokenMap[senderUuid]
+  if (!userToken) {
+    await postMessage({
+      room,
+      message: 'Sorry, this command is only available to authorized users.'
+    })
+    return
+  }
+
+  const slug = 'dj-roy-1'
+  const color = '#E5D47FFF' // toxic pale-yellow mask tone
+
+  const line = '☣️ The Roy Protocol is active — mask on, beats hazardous.'
+
+  console.log('[roy] attempt', {
+    senderUuid,
+    slug,
+    color
+  })
+
+  try {
+    await updateUserAvatar(userToken, slug, color)
+
+    console.log('[roy] success', {
+      senderUuid,
+      slug,
+      color
+    })
+
+    await postMessage({
+      room,
+      message: line
+    })
+
+  } catch (error) {
+    console.error('[handleRoyCommand] update failed', {
+      senderUuid,
+      slug,
+      colorTried: color,
+      error: error?.message || String(error),
+      stack: error?.stack
+    })
+
+    await postMessage({
+      room,
+      message: 'Failed to equip Roy avatar 😞'
+    })
+  }
+}
+
 export async function handleDoDoCommand (senderUuid, room, postMessage) {
   const userToken = userTokenMap[senderUuid]
   if (!userToken) {
