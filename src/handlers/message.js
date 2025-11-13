@@ -2077,10 +2077,10 @@ else if (payload.message.startsWith('/botrandom')) {
     await handleDinoCommand(payload.sender, room, postMessage)
   } else if (payload.message.startsWith('/teacup')) {
     await handleTeacupCommand(payload.sender, room, postMessage)
-  } else if (payload.message.startsWith('/alien')) {
-    await handleAlienCommand(payload.sender, room, postMessage)
   } else if (payload.message.startsWith('/alien2')) {
     await handleAlien2Command(payload.sender, room, postMessage)
+  } else if (payload.message.startsWith('/alien')) {
+    await handleAlienCommand(payload.sender, room, postMessage)
   } else if (payload.message.startsWith('/roy')) {
     await handleRoyCommand(payload.sender, room, postMessage)
   } else if (payload.message.startsWith('/spooky')) {
