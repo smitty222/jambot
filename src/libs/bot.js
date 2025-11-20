@@ -255,6 +255,52 @@ const COMETCHAT_BOT_UID = process.env.BOT_USER_UUID || process.env.CHAT_USER_ID
 const DM_CURSOR_FILE =
   process.env.DM_CURSOR_FILE || path.join(process.cwd(), 'src/data/dm_since.json')
 
+// Persisted last message IDs
+const LAST_MESSAGE_FILE =
+  process.env.LAST_MESSAGE_FILE || path.join(process.cwd(), 'src/data/lastMessageIDs.json')
+
+/**
+ * Load persisted lastMessageIDs from disk.
+ * Returns an object or null on failure.
+ */
+function loadLastMessageIDs () {
+  try {
+    const txt = fs.readFileSync(LAST_MESSAGE_FILE, 'utf-8')
+    const obj = JSON.parse(txt)
+    return (obj && typeof obj === 'object') ? obj : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Persist lastMessageIDs to disk.
+ * Errors are logged but not thrown.
+ * @param {Object} ids
+ */
+function saveLastMessageIDs (ids) {
+  try {
+    fs.writeFileSync(LAST_MESSAGE_FILE, JSON.stringify(ids, null, 2))
+  } catch (e) {
+    logger.warn('[bot] failed to persist last message IDs', { err: e?.message || e })
+  }
+}
+
+/**
+ * Wrap a promise with a timeout. If the timeout elapses before the promise
+ * resolves, the returned promise rejects with a timeout Error.
+ * @param {Promise} promise
+ * @param {number} ms
+ * @returns {Promise}
+ */
+function withTimeout (promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('timeout after ' + ms + 'ms')), ms)
+    )
+  ])
+}
 function loadDmCursors () {
   try {
     const txt = fs.readFileSync(DM_CURSOR_FILE, 'utf-8')
@@ -342,9 +388,13 @@ export class Bot {
     this.tokenRole = process.env.TOKEN_ROLE
     this.userUUID = process.env.BOT_USER_UUID
 
-    this.lastMessageIDs = {
-      room: startTimeStamp,
-      dm: startTimeStamp
+    // Initialize lastMessageIDs.  If a persisted state exists on disk, load it.
+    {
+      const persistedIds = loadLastMessageIDs()
+      this.lastMessageIDs = persistedIds || {
+        room: startTimeStamp,
+        dm: startTimeStamp
+      }
     }
 
     this.currentTheme = themeManager.getTheme(this.roomUUID) || ''
@@ -580,8 +630,17 @@ export class Bot {
     try {
       // GROUP
       {
+        // Fetch new group messages with a timeout.  If the fetch times out
+        // or errors, treat it as returning no messages so the poll loop can
+        // continue without stalling.
         const sinceSec = toSec(this.lastMessageIDs.room)
-        const raw = await getMessages(this.roomUUID, sinceSec, 'group')
+        let raw
+        try {
+          raw = await withTimeout(getMessages(this.roomUUID, sinceSec, 'group'), 900)
+        } catch (err) {
+          logger.error('Group message fetch timeout or error', { err })
+          raw = []
+        }
         const msgs = safeNormalize(raw)
         let maxSec = sinceSec
         let processed = 0
@@ -611,7 +670,11 @@ export class Bot {
             logger.error('processNewMessages[group] per-message error', { err })
           }
         }
-        if (maxSec !== sinceSec) this.lastMessageIDs.room = maxSec
+        if (maxSec !== sinceSec) {
+          this.lastMessageIDs.room = maxSec
+          // Persist updated room cursor to disk
+          saveLastMessageIDs(this.lastMessageIDs)
+        }
       }
 
       // DMs
@@ -629,9 +692,19 @@ export class Bot {
           for (const p of peers) {
             sinceByPeer[p] = toSec(this._dmSinceByPeer[p] ?? globalSince)
           }
-
-          const { maxTsByPeer, flat } =
-            await getDirectMessagesForPeers([...peers], sinceByPeer, globalSince)
+          // Fetch new direct messages for peers with a timeout.  If the fetch
+          // times out or errors, treat as no messages.
+          let dmFetchResult = { maxTsByPeer: {}, flat: [] }
+          try {
+            dmFetchResult = await withTimeout(
+              getDirectMessagesForPeers([...peers], sinceByPeer, globalSince),
+              5000
+            )
+          } catch (err) {
+            logger.error('DM fetch timeout or error', { err })
+            dmFetchResult = { maxTsByPeer: {}, flat: [] }
+          }
+          const { maxTsByPeer, flat } = dmFetchResult
 
           rawMessages = Array.isArray(flat) ? flat : []
           if (rawMessages.length > 1) {
@@ -651,7 +724,7 @@ export class Bot {
           }
         } else {
           try {
-            const arr = await getMessages(undefined, globalSince, 'user')
+            const arr = await withTimeout(getMessages(undefined, globalSince, 'user'), 5000)
             rawMessages = Array.isArray(arr) ? arr : normalizeMessages(arr)
           } catch (e) {
             logger.error('DM poll (broad inbox) error', { e })
@@ -730,6 +803,8 @@ export class Bot {
 
         if (maxGlobal !== globalSince) {
           this.lastMessageIDs.dm = maxGlobal
+          // Persist updated DM cursor to disk
+          saveLastMessageIDs(this.lastMessageIDs)
         }
 
         saveDmCursors(this._dmSinceByPeer)
