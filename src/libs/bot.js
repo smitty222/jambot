@@ -658,14 +658,18 @@ export class Bot {
 
             this.addDMPeer(sender)
 
-            await handlers.message(
-              { message: text, sender, receiverType: 'group' },
-              this.roomUUID,
-              this.state,
-              this
-            )
-            processed++
-            await this._cooperativeYieldIfNeeded(processed, batchSize)
+                // Schedule message handling asynchronously so that long-running commands
+                // do not block the poll loop.
+                handlers.message(
+                  { message: text, sender, receiverType: 'group' },
+                  this.roomUUID,
+                  this.state,
+                  this
+                ).catch((err) => {
+                  logger.error('processNewMessages[group] handler error', { err })
+                })
+                processed++
+                await this._cooperativeYieldIfNeeded(processed, batchSize)
           } catch (err) {
             logger.error('processNewMessages[group] per-message error', { err })
           }
@@ -788,11 +792,14 @@ export class Bot {
             }
 
             const senderName = 'Unknown'
-            await handlers.message(
-              { message: text, sender: peerUid, senderName, receiverType: 'user' },
-              peerUid,
-              this.state
-            )
+                // Schedule DM handling asynchronously to avoid blocking on slow commands.
+                handlers.message(
+                  { message: text, sender: peerUid, senderName, receiverType: 'user' },
+                  peerUid,
+                  this.state
+                ).catch((err) => {
+                  logger.error('processNewMessages[user] handler error', { err })
+                })
 
             processed++
             await this._cooperativeYieldIfNeeded(processed, batchSize)
