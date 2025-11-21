@@ -162,6 +162,7 @@ export async function handleBotPenguinCommand (room, postMessage, isUserAuthoriz
   }
 }
 
+
 export async function handleBot2Command (room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
   const isMod = await isUserAuthorized(senderUuid, ttlUserToken)
   if (!isMod) {
@@ -180,6 +181,124 @@ export async function handleBot2Command (room, postMessage, isUserAuthorized, se
     await postMessage({ room, message: 'Failed to update bot profile' })
   }
 }
+
+export async function handleBotStaffCommand(
+  room,
+  postMessage,
+  isUserAuthorized,
+  senderUuid,
+  ttlUserToken
+) {
+  const isMod = await isUserAuthorized(senderUuid, ttlUserToken)
+  if (!isMod) {
+    await postMessage({
+      room,
+      message: '🚫 You need to be a moderator to execute this command.'
+    })
+    return
+  }
+
+  const allowedSlugs = [
+    'mod-bear-black',
+    'mod-bear-orange',
+    'staff-bear',
+    'staff'
+  ]
+
+  const COLOR_BY_SLUG = {
+    'mod-bear-black': '#1A1A1AFF',
+    'mod-bear-orange': '#FF6A00FF',
+    'staff-bear': '#FFC300FF',
+    'staff': '#1A1A1AFF'
+  }
+
+  const BOUNCER_COLORS = [
+    '#1A1A1AFF',
+    '#FF6A00FF',
+    '#FFC300FF'
+  ]
+
+  const BOUNCER_LINES = {
+    'mod-bear-black':
+      '🕶️ Black Ops Bot on duty. If your name’s not on the list, you’re not on the stage.',
+    'mod-bear-orange':
+      '🟠 Floor Security Bot online. Badge visible, attitude checked, behave in the booth.',
+    'staff-bear':
+      '💛 Staff Bear Bot reporting in — cute face, zero tolerance.',
+    'staff':
+      '👔 Venue Staff Bot present. Keep the energy up and the drama down.'
+  }
+
+  const filtered = getAvatarsBySlugs(allowedSlugs)
+
+  if (!filtered || filtered.length === 0) {
+    await postMessage({
+      room,
+      message: 'No security avatars are available right now. 🔒'
+    })
+    return
+  }
+
+  const chosen = filtered[Math.floor(Math.random() * filtered.length)]
+  const slug = chosen?.slug
+
+  if (!slug) {
+    console.warn('[botstaff] No slug on selected avatar object:', chosen)
+    await postMessage({
+      room,
+      message: 'Could not equip security mode 😬'
+    })
+    return
+  }
+
+  const color =
+    COLOR_BY_SLUG[slug] ||
+    BOUNCER_COLORS[Math.floor(Math.random() * BOUNCER_COLORS.length)]
+
+  const line =
+    BOUNCER_LINES[slug] ||
+    `🕶️ ${slugToTitle(slug)} Bot on patrol. Respect the booth.`
+
+  console.log('[botstaff] attempt', {
+    senderUuid,
+    slug,
+    color,
+    title: slugToTitle(slug)
+  })
+
+  try {
+    await updateUserAvatar(ttlUserToken, slug, color)
+    setChatIdentity({ avatarId: slug, color })
+
+    console.log('[botstaff] success', { senderUuid, slug, color })
+
+    await postMessage({
+      room,
+      message: line,
+      identity: { avatarId: slug, color }
+    })
+  } catch (error) {
+    console.error('[handleBotStaffCommand] update failed', {
+      senderUuid,
+      slugTried: slug,
+      colorTried: color,
+      error: error?.message || String(error),
+      stack: error?.stack
+    })
+
+    await postMessage({
+      room,
+      message: 'Avatar update failed. Security bot is temporarily offline 😞'
+    })
+  }
+
+  function slugToTitle(s) {
+    return s
+      .replace(/-/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase())
+  }
+}
+
 
 export async function handleBot3Command (room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
   const isMod = await isUserAuthorized(senderUuid, ttlUserToken)
@@ -776,6 +895,57 @@ export async function handleSpookyCommand (senderUuid, room, postMessage) {
       .replace(/\b\w/g, c => c.toUpperCase())
   }
 }
+
+export async function handleGrimehouseCommand(senderUuid, room, postMessage) {
+  const userToken = userTokenMap[senderUuid]
+  if (!userToken) {
+    await postMessage({
+      room,
+      message: 'Sorry, this command is only available to authorized users.'
+    })
+    return
+  }
+
+  const slug = 'dj-grimehouse-1'
+  const color = '#EDEDEDFF' // chrome/white visor glow
+
+  const line = '🎧🕶️ Grimehouse unlocked — mask up, bass down, vibes heavy.'
+
+  console.log('[grimehouse] attempt', {
+    senderUuid,
+    slug,
+    color
+  })
+
+  try {
+    await updateUserAvatar(userToken, slug, color)
+
+    console.log('[grimehouse] success', {
+      senderUuid,
+      slug,
+      color
+    })
+
+    await postMessage({
+      room,
+      message: line
+    })
+  } catch (error) {
+    console.error('[handleGrimehouseCommand] update failed', {
+      senderUuid,
+      slug,
+      colorTried: color,
+      error: error?.message || String(error),
+      stack: error?.stack
+    })
+
+    await postMessage({
+      room,
+      message: 'Failed to equip Grimehouse avatar 😞'
+    })
+  }
+}
+
 export async function handleRecordGuyCommand (senderUuid, room, postMessage) {
   const userToken = userTokenMap[senderUuid]
   if (!userToken) {
@@ -839,7 +1009,7 @@ export async function handleJukeboxCommand (senderUuid, room, postMessage) {
     return
   }
 
-  const slug = 'dj-jukebox-1'
+  const slug = 'dj-jukbox-1'
 
   // Color: neon safety yellow body with red "JukBox" text.
   // We’ll choose the highlighter yellow for chat color.
