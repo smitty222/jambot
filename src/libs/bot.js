@@ -409,6 +409,17 @@ export class Bot {
     this.autoDJ = false
     this.audioStatsEnabled = true
 
+    // ───────────────────────────────────────────────────────────
+    // Discover DJ mode state
+    // When enabled, the bot will draw songs from specified Spotify playlists
+    // instead of the default recommendation logic.  Songs are queued from
+    // the provided playlists, deduplicated across lists, and a history is
+    // maintained to avoid repeats.  See enableDiscoverDJ()/disableDiscoverDJ().
+    this.discoverMode = false
+    this.discoverPlaylists = []
+    this.discoverSongQueue = []
+    this.discoverHistory = new Set()
+
     this.currentSong = {
       trackName: 'Unknown',
       spotifyTrackId: '',
@@ -577,9 +588,27 @@ export class Bot {
   }
 
   async generateSongPayload () {
-    const spotifyTrackId = await getPopularSpotifyTrackID()
+    // Generate the next song payload.  If discover mode is active, attempt
+    // to fetch the next track from the discover queue.  Otherwise fall back
+    // to the popular track recommendation.  If the queue is exhausted, we
+    // still fall back to the default recommendation so the bot never
+    // stalls.
+    let spotifyTrackId
+    if (this.discoverMode) {
+      try {
+        spotifyTrackId = this.getNextDiscoverSongId()
+      } catch (e) {
+        spotifyTrackId = null
+      }
+      if (!spotifyTrackId) {
+        // If discover mode runs out of songs, fall back to popular track
+        spotifyTrackId = await getPopularSpotifyTrackID()
+      }
+    } else {
+      spotifyTrackId = await getPopularSpotifyTrackID()
+    }
     if (!spotifyTrackId) {
-      throw new Error('No popular Spotify track ID found.')
+      throw new Error('No Spotify track ID found.')
     }
     const songData = await fetchSongData(spotifyTrackId)
     if (!songData || !songData.id) {
@@ -1067,8 +1096,19 @@ export class Bot {
       const currentDJs = getCurrentDJUUIDs(this.state)
       if (currentDJs.includes(userUuid)) return false
 
-      const spotifyTrackId = await getPopularSpotifyTrackID()
-      if (!spotifyTrackId) throw new Error('No popular Spotify track ID found.')
+      // Determine the initial track for the DJ.  If discover mode is active,
+      // pull from the discover queue; otherwise use a recommended popular track.
+      let spotifyTrackId
+      if (this.discoverMode) {
+        spotifyTrackId = this.getNextDiscoverSongId()
+        // If discover mode has no more songs, fall back to the popular track
+        if (!spotifyTrackId) {
+          spotifyTrackId = await getPopularSpotifyTrackID()
+        }
+      } else {
+        spotifyTrackId = await getPopularSpotifyTrackID()
+      }
+      if (!spotifyTrackId) throw new Error('No Spotify track ID found.')
 
       const songData = await fetchSongData(spotifyTrackId)
       if (!songData || !songData.id) throw new Error('Invalid song data received.')
@@ -1103,6 +1143,81 @@ export class Bot {
       logger.error('Error adding DJ:', error)
       return false
     }
+  }
+
+  /**
+   * Enable discover DJ mode.  When enabled, the bot will play songs from the
+   * provided Spotify playlists sequentially without repeats.  Pass either a
+   * comma‑delimited string or an array of playlist IDs.  If omitted, the
+   * environment variable DISCOVER_PLAYLIST_IDS will be used if defined.
+   *
+   * @param {string|string[]} playlists - playlist IDs to pull tracks from
+   */
+  async enableDiscoverDJ (playlists) {
+    // normalise playlist IDs from input or environment
+    let ids = []
+    if (Array.isArray(playlists) && playlists.length > 0) {
+      // Only use provided array if it has at least one playlist ID.  An empty
+      // array indicates that no explicit playlists were supplied in the command.
+      ids = playlists
+    } else if (typeof playlists === 'string' && playlists.trim()) {
+      ids = playlists.split(',')
+    } else if (process.env.DISCOVER_PLAYLIST_IDS) {
+      ids = String(process.env.DISCOVER_PLAYLIST_IDS).split(',')
+    }
+    this.discoverPlaylists = ids.map((id) => String(id).trim()).filter(Boolean)
+    this.discoverMode = this.discoverPlaylists.length > 0
+    this.discoverSongQueue = []
+    this.discoverHistory = new Set()
+    if (!this.discoverMode) return
+    // fetch tracks from each playlist and deduplicate
+    const trackIds = new Set()
+    for (const pid of this.discoverPlaylists) {
+      try {
+        const tracks = await fetchSpotifyPlaylistTracks(pid)
+        if (Array.isArray(tracks)) {
+          for (const item of tracks) {
+            // Spotify playlist API returns an object with a nested track
+            const tid = item?.track?.id || item?.id
+            if (tid) {
+              trackIds.add(tid)
+            }
+          }
+        }
+      } catch (err) {
+        logger.error('Error fetching discover playlist tracks', { pid, err: err?.message || err })
+      }
+    }
+    // assign the queue; maintain insertion order
+    this.discoverSongQueue = Array.from(trackIds)
+  }
+
+  /**
+   * Disable discover DJ mode and clear any cached state.
+   */
+  disableDiscoverDJ () {
+    this.discoverMode = false
+    this.discoverPlaylists = []
+    this.discoverSongQueue = []
+    this.discoverHistory = new Set()
+  }
+
+  /**
+   * Retrieve the next song ID from the discover queue, skipping songs that have
+   * already been played.  Returns null if no eligible songs remain.
+   *
+   * @returns {string|null} The next Spotify track ID or null if exhausted.
+   */
+  getNextDiscoverSongId () {
+    while (this.discoverSongQueue.length > 0) {
+      const id = this.discoverSongQueue.shift()
+      // Avoid repeats across history and recently played songs
+      if (!this.discoverHistory.has(id) && !this.recentSpotifyTrackIds.includes(id)) {
+        this.discoverHistory.add(id)
+        return id
+      }
+    }
+    return null
   }
 
   async removeDJ (userUuid) {

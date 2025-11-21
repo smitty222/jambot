@@ -1006,6 +1006,76 @@ export function getUserToken (userId) {
   return token
 }
 
+/*
+ * Return the Spotify user ID associated with a given TT.fm user UUID.
+ *
+ * Similar to getUserToken(), this map must be maintained by the bot
+ * operator.  A Spotify user ID is required when searching a user's
+ * playlists via the Spotify Web API.  Without it, /searchplaylist and
+ * /qplaylist commands will return an error.  To find a user's Spotify
+ * ID, visit their Spotify profile (or call the `me` endpoint with an
+ * OAuth token) and copy the string after `user/` in the URL.  Then
+ * populate the map below.
+ */
+export function getSpotifyUserId (userId) {
+  const spotifyUserMap = {
+    '072b0bb3-518e-4422-97fd-13dc53e8ae7e': 'ishirey45',
+    '210141ad-6b01-4665-84dc-e47ea7c27dcb': '1251330663',
+    '92302b7d-ae5e-466f-975b-d3fee461f13f': '12167509208'
+  }
+  return spotifyUserMap[userId]
+}
+
+/**
+ * Fetch playlists owned or followed by the specified Spotify user.
+ *
+ * A Spotify user ID is required; it can be retrieved via getSpotifyUserId().
+ * This function returns an array of playlist objects with at least
+ * { id, name, tracks: { total } }.  Playlists are fetched in pages of 50
+ * until all items are collected.  Any API error results in an empty
+ * array being returned.
+ *
+ * @param {string} spotifyUserId – the Spotify user ID
+ * @returns {Promise<Array>} – list of playlist objects
+ */
+export async function getUserPlaylists (spotifyUserId) {
+  if (!spotifyUserId) return []
+  const playlists = []
+  let url = `https://api.spotify.com/v1/users/${encodeURIComponent(spotifyUserId)}/playlists?limit=50`
+  while (url) {
+    const { ok, data } = await spotifyRequest(url)
+    if (!ok) break
+    const items = data?.items || []
+    if (items.length) playlists.push(...items)
+    url = data?.next || null
+  }
+  return playlists
+}
+
+/**
+ * Retrieve all tracks from a given Spotify playlist.  The Spotify API
+ * returns playlist items that wrap the track object; this helper
+ * extracts only the track objects.  If no items are returned or
+ * an error occurs, an empty array is returned.
+ *
+ * Note: for public playlists, a client-credentials token is sufficient.
+ * Private playlists require the appropriate OAuth scopes on the token.
+ *
+ * @param {string} playlistId – the Spotify playlist ID
+ * @returns {Promise<Array>} – list of track objects
+ */
+export async function getPlaylistTracks (playlistId) {
+  if (!playlistId) return []
+  const items = await fetchSpotifyPlaylistTracks(playlistId)
+  if (!items || !items.length) return []
+  const tracks = []
+  for (const item of items) {
+    const track = item?.track || null
+    if (track && track.id) tracks.push(track)
+  }
+  return tracks
+}
+
 /* Legacy export kept */
 export async function fetchRecentArtists (limit = 5) {
   const url = withQuery('https://api.spotify.com/v1/me/top/artists', { limit })

@@ -3,7 +3,7 @@ import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
 import { askQuestion, setCurrentSong } from '../libs/ai.js'
 import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, displayTriviaInfo } from '../handlers/triviaCommands.js'
 import { logger } from '../utils/logging.js'
-import { getAlbumsByArtist, getAlbumTracks, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSongData, updateRoomInfo, isUserOwner, searchSpotify, getMLBScores, getNHLScores, getNBAScores, getSimilarTracks, getTopChartTracks, addSongsToCrate, getUserToken, clearUserQueueCrate, getUserQueueCrateId, getRandomDogImage } from '../utils/API.js'
+import { getAlbumsByArtist, getAlbumTracks, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSongData, updateRoomInfo, isUserOwner, searchSpotify, getMLBScores, getNHLScores, getNBAScores, getSimilarTracks, getTopChartTracks, addSongsToCrate, getUserToken, clearUserQueueCrate, getUserQueueCrateId, getRandomDogImage, getSpotifyUserId, getUserPlaylists, getPlaylistTracks } from '../utils/API.js'
 import { handleLotteryCommand, handleLotteryNumber, handleTopLotteryStatsCommand, handleSingleNumberQuery, handleLotteryCheck, LotteryGameActive, getLotteryWinners } from '../database/dblotterymanager.js'
 import { formatMention } from '../utils/names.js'
 import { enableSongStats, disableSongStats, isSongStatsEnabled, saveSongReview, getAverageRating } from '../utils/voteCounts.js'
@@ -346,8 +346,20 @@ if (
 
     if (question.includes('dj with us') || question.includes('dj with me')) {
       await postMessage({ room, message: "Let's get it" })
-      await roomBot.enableAutoDJ()
-      await roomBot.addDJ(true)
+      // Engage auto-discover DJ when users ask the bot to DJ with them
+      {
+        const discoverIdsEnv = process.env.DISCOVER_PLAYLIST_IDS || ''
+        let discoverIds = discoverIdsEnv.split(',').map((s) => s.trim()).filter(Boolean)
+        if (discoverIds.length === 0) {
+          discoverIds = [
+            '37i9dQZF1DX4JAvHpjipBk',
+            '37i9dQZF1DX5trt9i14X7j',
+            '37i9dQZF1DWVqfgj8NZEp1'
+          ]
+        }
+        roomBot.enableDiscoverMode(discoverIds)
+        await roomBot.addDJ(true)
+      }
       return
     }
 
@@ -528,6 +540,102 @@ if (
       room,
       message: `<@uid:${payload.sender}> I sent you a private message`
     })
+  } else if (payload.message.startsWith('/searchplaylist')) {
+    const user = payload.sender;
+    const spotifyUserId = getSpotifyUserId(user);
+    if (!spotifyUserId) {
+      await postMessage({
+        room,
+        message: '🔍 *Spotify user ID not found*\n\nWe don\'t have a Spotify user ID associated with your account.  Ask an admin to update the mapping for your TT.fm UUID so you can use /searchplaylist.'
+      });
+      return;
+    }
+    try {
+      const playlists = await getUserPlaylists(spotifyUserId);
+      if (!playlists || playlists.length === 0) {
+        await postMessage({
+          room,
+          message: `❌ *No playlists found for your Spotify account \`${spotifyUserId}\`.*`
+        });
+        return;
+      }
+      const playlistList = playlists.map((pl, index) => {
+        return `\`${index + 1}.\` *${pl.name}* — \`ID: ${pl.id}\``;
+      }).join('\n');
+      await sendDirectMessage(user, `📃 Playlists for your Spotify account:\n${playlistList}`);
+      await postMessage({
+        room,
+        message: `<@uid:${user}> I sent you a private message`
+      });
+    } catch (error) {
+      logger.error('Error fetching user playlists', { err: error });
+      await postMessage({
+        room,
+        message: `❌ *Failed to fetch your playlists*\n\`${error.message}\``
+      });
+    }
+  } else if (payload.message.startsWith('/qplaylist')) {
+    const playlistId = payload.message.split(' ')[1]?.trim();
+    if (!playlistId) {
+      await postMessage({
+        room,
+        message: '⚠️ *Missing Playlist ID*\n\nPlease provide a valid Spotify playlist ID.  \nExample: \`/qplaylist 37i9dQZF1DXcBWIGoYBM5M\`'
+      });
+      return;
+    }
+    const token = getUserToken(payload.sender);
+    if (!token) {
+      await postMessage({
+        room,
+        message: '🔐 *Spotify account not linked*\n\nWe couldn\'t find your access token.  \nPlease contact an admin to link your account to use this command.'
+      });
+      return;
+    }
+    try {
+      await postMessage({
+        room,
+        message: '📁 *Clearing your current queue...*\n📡 Fetching playlist from Spotify...'
+      });
+      await clearUserQueueCrate(payload.sender);
+      const crateInfo = await getUserQueueCrateId(payload.sender);
+      const crateId = crateInfo?.crateUuid;
+      if (!crateId) {
+        await postMessage({
+          room,
+          message: '❌ *Failed to retrieve your queue ID. Please try again later.*'
+        });
+        return;
+      }
+      const tracks = await getPlaylistTracks(playlistId);
+      if (!tracks || tracks.length === 0) {
+        await postMessage({
+          room,
+          message: `❌ *No tracks found for playlist \`${playlistId}\`.*`
+        });
+        return;
+      }
+      const formattedTracks = tracks.map(track => ({
+        musicProvider: 'spotify',
+        songId: track.id,
+        artistName: Array.isArray(track.artists) ? track.artists.map(a => a.name).join(', ') : '',
+        trackName: track.name,
+        duration: Math.floor((track.duration_ms || 0) / 1000),
+        explicit: track.explicit,
+        isrc: track.external_ids?.isrc || '',
+        playbackToken: '',
+        genre: ''
+      }));
+      await addSongsToCrate(crateId, formattedTracks, true, token);
+      await postMessage({
+        room,
+        message: `✅ *Playlist Queued!*\n\n🎵 Added *${formattedTracks.length} track(s)* from playlist \`${playlistId}\` to your queue.  \nPlease refresh your page for the queue to update`
+      });
+    } catch (error) {
+      await postMessage({
+        room,
+        message: `❌ *Something went wrong while queuing your playlist*  \n\`${error.message}\``
+      });
+    }
   } else if (payload.message.startsWith('/qalbum')) {
     const albumId = payload.message.split(' ')[1]?.trim()
 
@@ -1173,12 +1281,62 @@ Please refresh your page for the queue to update`
       const option = args[1] // Check if 'auto' was provided
 
       if (option === 'auto') {
-        await roomBot.enableAutoDJ()
-        console.log('Auto DJ enabled')
-
-        // Now add the bot as DJ
-        await roomBot.addDJ(true)
-        console.log('Added Auto DJ')
+        /*
+         * Modified auto-DJ behaviour: instead of relying on AI
+         * recommendations, the bot will operate in "discover" mode.
+         * This mode selects each song at random from a curated set
+         * of Spotify playlists and avoids repeats until the entire
+         * pool has been exhausted.  Playlist IDs should be supplied
+         * via the DISCOVER_PLAYLIST_IDS environment variable as
+         * comma-separated values.  A fallback set of example IDs
+         * is provided below.  Once discover mode is configured,
+         * add the bot as a DJ on stage.
+         */
+        {
+          const discoverIdsEnv = process.env.DISCOVER_PLAYLIST_IDS || ''
+          let discoverIds = discoverIdsEnv.split(',').map((s) => s.trim()).filter(Boolean)
+          if (discoverIds.length === 0) {
+            discoverIds = [
+              '37i9dQZF1DX4JAvHpjipBk',
+              '37i9dQZF1DX5trt9i14X7j',
+              '37i9dQZF1DWVqfgj8NZEp1'
+            ]
+          }
+          // Enable discover mode on the bot instance
+          roomBot.enableDiscoverMode(discoverIds)
+          // Add the bot as a DJ.  The argument `true` is preserved for
+          // compatibility with legacy implementations but is ignored in
+          // the current Bot implementation.
+          await roomBot.addDJ(true)
+          await postMessage({
+            room: process.env.ROOM_UUID,
+            message: `🎶 *Auto‑discover DJ added!*\n\nThe bot will now play tracks from ${discoverIds.length} curated playlist(s) and avoid repeats.`
+          })
+        }
+      } else if (option === 'discover') {
+        /*
+         * /addDJ discover is now an alias for the auto-discover mode.  It
+         * enables discover mode using the same playlist IDs as in the
+         * auto path and adds the bot as a DJ.  The bot will stream
+         * random tracks from the configured playlists without repeats.
+         */
+        {
+          const discoverIdsEnv = process.env.DISCOVER_PLAYLIST_IDS || ''
+          let discoverIds = discoverIdsEnv.split(',').map((s) => s.trim()).filter(Boolean)
+          if (discoverIds.length === 0) {
+            discoverIds = [
+              '37i9dQZF1DX4JAvHpjipBk',
+              '37i9dQZF1DX5trt9i14X7j',
+              '37i9dQZF1DWVqfgj8NZEp1'
+            ]
+          }
+          roomBot.enableDiscoverMode(discoverIds)
+          await roomBot.addDJ()
+          await postMessage({
+            room: process.env.ROOM_UUID,
+            message: `🎶 *Discover DJ added!*\n\nThe bot will now play tracks from ${discoverIds.length} curated playlist(s) and avoid repeats.`
+          })
+        }
       } else {
         await roomBot.addDJ()
         // console.log('DJ added normally');
