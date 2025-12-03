@@ -1252,6 +1252,7 @@ export class Bot {
         const tracks = await fetchSpotifyPlaylistTracks(pid)
         if (Array.isArray(tracks)) {
           for (const item of tracks) {
+            console.log(tracks.length)
             // Spotify playlist API returns an object with a nested track
             const tid = item?.track?.id || item?.id
             if (tid) {
