@@ -1248,24 +1248,21 @@ export class Bot {
     // fetch tracks from each playlist and deduplicate
     const trackIds = new Set()
     for (const pid of this.discoverPlaylists) {
-      try {
-        const tracks = await fetchSpotifyPlaylistTracks(pid)
-        if (Array.isArray(tracks)) {
-          for (const item of tracks) {
-            console.log(tracks.length)
-            // Spotify playlist API returns an object with a nested track
-            const tid = item?.track?.id || item?.id
-            if (tid) {
-              trackIds.add(tid)
-            }
-          }
-        }
-      } catch (err) {
-        logger.error('Error fetching discover playlist tracks', { pid, err: err?.message || err })
+  try {
+    const tracks = await fetchSpotifyPlaylistTracks(pid);
+    console.log(`Loaded ${tracks.length} items from playlist ${pid}`);
+    if (Array.isArray(tracks)) {
+      for (const item of tracks) {
+        const tid = item?.track?.id || item?.id;
+        if (tid) trackIds.add(tid);
       }
     }
-    // assign the queue; maintain insertion order
-    this.discoverSongQueue = Array.from(trackIds)
+  } catch (err) {
+    logger.error('Error fetching discover playlist tracks', { pid, err: err?.message || err });
+  }
+}
+this.discoverSongQueue = Array.from(trackIds);
+console.log(`Discover queue now contains ${this.discoverSongQueue.length} unique track IDs`);
   }
 
   /**
