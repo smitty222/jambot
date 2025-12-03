@@ -4551,42 +4551,7 @@
     "isAvailableForCurrentUser": false
   },
   {
-    "frontBodyUrl": "https://merch-storage.prod.tt.fm/avatars/dj-spacebear-1/front-body.svg",
-    "backBodyUrl": "https://merch-storage.prod.tt.fm/avatars/dj-spacebear-1/back-body.svg",
-    "frontHeadUrl": "https://merch-storage.prod.tt.fm/avatars/dj-spacebear-1/front-head.svg",
-    "backHeadUrl": "https://merch-storage.prod.tt.fm/avatars/dj-spacebear-1/back-head.svg",
-    "frontBodyPngUrl": "https://merch-storage.prod.tt.fm/avatars/png/dj-spacebear-1/front-body.png",
-    "backBodyPngUrl": "https://merch-storage.prod.tt.fm/avatars/png/dj-spacebear-1/back-body.png",
-    "frontHeadPngUrl": "https://merch-storage.prod.tt.fm/avatars/png/dj-spacebear-1/front-head.png",
-    "backHeadPngUrl": "https://merch-storage.prod.tt.fm/avatars/png/dj-spacebear-1/back-head.png",
-    "customFaceUrl": null,
-    "slug": "dj-spacebear-1",
-    "avatarStatus": "PRIVATE",
-    "hasCustomFace": false,
-    "rankingValue": null,
-    "seasonId": null,
-    "hasSmallBody": true,
-    "discordOnly": false,
-    "isAvailableForCurrentUser": false
-  },
-  {
-    "frontBodyUrl": "https://merch-storage.prod.tt.fm/avatars/dj-spacebear-1/front-body.svg",
-    "backBodyUrl": "https://merch-storage.prod.tt.fm/avatars/dj-spacebear-1/back-body.svg",
-    "frontHeadUrl": "https://merch-storage.prod.tt.fm/avatars/dj-spacebear-1/front-head.svg",
-    "backHeadUrl": "https://merch-storage.prod.tt.fm/avatars/dj-spacebear-1/back-head.svg",
-    "frontBodyPngUrl": "https://merch-storage.prod.tt.fm/avatars/png/dj-spacebear-1/front-body.png",
-    "backBodyPngUrl": "https://merch-storage.prod.tt.fm/avatars/png/dj-spacebear-1/back-body.png",
-    "frontHeadPngUrl": "https://merch-storage.prod.tt.fm/avatars/png/dj-spacebear-1/front-head.png",
-    "backHeadPngUrl": "https://merch-storage.prod.tt.fm/avatars/png/dj-spacebear-1/back-head.png",
-    "customFaceUrl": null,
-    "slug": "dj-spacebear-1",
-    "avatarStatus": "PRIVATE",
-    "hasCustomFace": false,
-    "rankingValue": null,
-    "seasonId": null,
-    "hasSmallBody": true,
-    "discordOnly": false,
-    "isAvailableForCurrentUser": false
+    "slug": "dj-spacebear-1"
   },
   {
     "frontBodyUrl": "https://merch-storage.prod.tt.fm/avatars/dj-tatum-1/front-body.svg",
@@ -6110,23 +6075,7 @@
     "isAvailableForCurrentUser": false
   },
   {
-    "frontBodyUrl": "https://merch-storage.prod.tt.fm/avatars/staff-bear/front-body.svg",
-    "backBodyUrl": "https://merch-storage.prod.tt.fm/avatars/staff-bear/back-body.svg",
-    "frontHeadUrl": "https://merch-storage.prod.tt.fm/avatars/staff-bear/front-head.svg",
-    "backHeadUrl": "https://merch-storage.prod.tt.fm/avatars/staff-bear/back-head.svg",
-    "frontBodyPngUrl": "https://merch-storage.prod.tt.fm/avatars/png/staff-bear/front-body.png",
-    "backBodyPngUrl": "https://merch-storage.prod.tt.fm/avatars/png/staff-bear/back-body.png",
-    "frontHeadPngUrl": "https://merch-storage.prod.tt.fm/avatars/png/staff-bear/front-head.png",
-    "backHeadPngUrl": "https://merch-storage.prod.tt.fm/avatars/png/staff-bear/back-head.png",
-    "customFaceUrl": null,
-    "slug": "staff-bear",
-    "avatarStatus": "PRIVATE",
-    "hasCustomFace": false,
-    "rankingValue": null,
-    "seasonId": null,
-    "hasSmallBody": true,
-    "discordOnly": false,
-    "isAvailableForCurrentUser": false
+    "slug": "staff-bear"
   },
   {
     "frontBodyUrl": "https://merch-storage.prod.tt.fm/avatars/timarbury-01/front-body.svg",

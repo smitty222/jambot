@@ -34,7 +34,7 @@ import {
   handleBlackjackBet, handleHit, handleStand, handleDouble, handleSurrender, handleSplit,
   getFullTableView, getPhase
 } from '../games/blackjack/blackJack.js'
-import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand, handleRandomCyberCommand, handleVibesGuyCommand, handleFacesCommand, handleDoDoCommand, handleFlowerPowerCommand, handleDumDumCommand, handleRandomCosmicCommand, handleRandomLovableCommand, handleBot3Command, handleAnonCommand, handleGhostCommand, handleTeacupCommand, handleBouncerCommand, handleSpookyCommand, handleRecordGuyCommand, handleJukeboxCommand, handleBotSpookyCommand, handleAlienCommand, handleAlien2Command, handleRoyCommand, handleGrimehouseCommand, handleBotStaffCommand } from './avatarCommands.js'
+import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand, handleRandomCyberCommand, handleVibesGuyCommand, handleFacesCommand, handleDoDoCommand, handleFlowerPowerCommand, handleDumDumCommand, handleRandomCosmicCommand, handleRandomLovableCommand, handleBot3Command, handleAnonCommand, handleGhostCommand, handleTeacupCommand, handleBouncerCommand, handleSpookyCommand, handleRecordGuyCommand, handleJukeboxCommand, handleBotSpookyCommand, handleAlienCommand, handleAlien2Command, handleRoyCommand, handleGrimehouseCommand, handleBotStaffCommand, handleBearPartyCommand } from './avatarCommands.js'
 import { markUser, getMarkedUser } from '../utils/removalQueue.js'
 import { extractUserFromText, isLotteryQuestion } from '../database/dblotteryquestionparser.js'
 import { askMagic8Ball } from './magic8Ball.js'
@@ -2286,6 +2286,8 @@ else if (payload.message.startsWith('/botrandom')) {
     await handleRandomLovableCommand(payload.sender, room, postMessage)
   } else if (payload.message.startsWith('/grime')) {
     await handleGrimehouseCommand(payload.sender, room, postMessage)
+   } else if (payload.message.startsWith('/bearparty' || '/bear')) {
+    await handleBearPartyCommand(payload.sender, room, postMessage)
   } else if (payload.message.startsWith('/randomavatar')) {
     await handleRandomAvatarCommand(payload.sender, room, postMessage)
   }

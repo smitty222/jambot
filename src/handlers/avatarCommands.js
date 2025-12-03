@@ -1624,3 +1624,137 @@ export async function handleRandomLovableCommand (senderUuid, room, postMessage)
     return s.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
   }
 }
+export async function handleBearPartyCommand(senderUuid, room, postMessage) {
+  const userToken = userTokenMap[senderUuid]
+  if (!userToken) {
+    await postMessage({
+      room,
+      message: 'Sorry, this command is only available to authorized users 🐻.'
+    })
+    return
+  }
+
+  // 🧸 Allowed Bear Party avatars (now includes "19" and "20")
+  const allowedSlugs = [
+    'mod-bear-black',
+    'mod-bear-orange',
+    'staff-bear',
+    'dj-spacebear-1',
+    'cyber-bear-visor',
+    'cyber-bear-angry',
+    'cosmic-alien-bear',
+    'cosmic-galactic-bear',
+    '19', // NEW — black bear w/ red eyes
+    '20'  // NEW — yellow bear
+  ]
+
+  // 🎨 Color mappings per-bear
+  const COLOR_BY_SLUG = {
+    'mod-bear-black': '#1A1A1AFF',
+    'mod-bear-orange': '#FF6A00FF',
+    'staff-bear': '#FFC300FF',
+    'dj-spacebear-1': '#8DE2FFFF',
+    'cyber-bear-visor': '#16E7E4FF',
+    'cyber-bear-angry': '#8AFF64FF',
+    'cosmic-alien-bear': '#54E38BFF',
+    'cosmic-galactic-bear': '#B6E3FFFF',
+
+    // NEW SLUGS:
+    '19': '#FF1A1AFF',  // red-eye glow against dark bear
+    '20': '#FFD500FF'   // bright honey-yellow bear
+  }
+
+  // fallback palette
+  const BEAR_COLORS = [
+    '#FFD54FFF',
+    '#FF6A00FF',
+    '#8DE2FFFF',
+    '#16E7E4FF',
+    '#8AFF64FF',
+    '#54E38BFF',
+    '#FF1A1AFF',
+    '#FFD500FF'
+  ]
+
+  // 🗣️ Bear party chat lines
+  const BEAR_LINES = {
+    'mod-bear-black': '🕶️ Midnight Bear enters — mysterious, cool, and judging your playlist.',
+    'mod-bear-orange': '🟠 Orange Alert Bear crashes the party — high visibility, higher vibes.',
+    'staff-bear': '💛 Staff Bear arrives — adorable… but enforcing the party rules.',
+    'dj-spacebear-1': '🚀 Spacebear descends from orbit — gravitational bangers inbound.',
+    'cyber-bear-visor': '🔷 Cyber Visor Bear uploaded — scanning frequencies for fun.',
+    'cyber-bear-angry': '💢 Angry Cyber Bear online — the bass better behave.',
+    'cosmic-alien-bear': '👽 Alien Bear beams in — abducting all weak beats.',
+    'cosmic-galactic-bear': '🌌 Galactic Bear materializes — entire star systems feeling the groove.',
+
+    // NEW SLUGS:
+    '19': '🐻‍🔥 Red-Eyed Shadow Bear emerges — watching… always.',
+    '20': '💛 Honey Glow Bear arrives — sweet vibes, sticky bass.'
+  }
+
+  const filtered = getAvatarsBySlugs(allowedSlugs)
+
+  if (!filtered || filtered.length === 0) {
+    await postMessage({
+      room,
+      message: 'No bear party avatars found 🐻🥲'
+    })
+    return
+  }
+
+  const chosen = filtered[Math.floor(Math.random() * filtered.length)]
+  const slug = chosen?.slug
+
+  if (!slug) {
+    await postMessage({
+      room,
+      message: 'No bear party avatar available right now 😬'
+    })
+    return
+  }
+
+  const color =
+    COLOR_BY_SLUG[slug] ||
+    BEAR_COLORS[Math.floor(Math.random() * BEAR_COLORS.length)]
+
+  const line =
+    BEAR_LINES[slug] ||
+    `🐻 ${slugToTitle(slug)} joins the Bear Party!`
+
+  console.log('[bearparty] attempt', {
+    senderUuid,
+    slug,
+    color
+  })
+
+  try {
+    await updateUserAvatar(userToken, slug, color)
+
+    console.log('[bearparty] success', { senderUuid, slug, color })
+
+    await postMessage({
+      room,
+      message: line
+    })
+  } catch (error) {
+    console.error('[handleBearPartyCommand] update failed', {
+      senderUuid,
+      slug,
+      colorTried: color,
+      error: error?.message || String(error),
+      stack: error?.stack
+    })
+
+    await postMessage({
+      room,
+      message: 'Failed to equip Bear Party avatar 😞'
+    })
+  }
+
+  function slugToTitle(s) {
+    return s
+      .replace(/-/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase())
+  }
+}
+
