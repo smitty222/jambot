@@ -1146,6 +1146,81 @@ export class Bot {
   }
 
   /**
+   * Add the bot as a DJ using a track selected from the default playlist.
+   *
+   * When invoked, this method chooses a random song from the Spotify
+   * playlist defined by the DEFAULT_PLAYLIST_ID environment variable,
+   * looks up detailed metadata for that track, and then sends the
+   * addDj action to the server.  This allows the bot to start DJing
+   * from a curated playlist instead of relying on theme‑based or
+   * AI recommendations.  If no default playlist is configured, or if
+   * no tracks are available, an error will be logged and the call
+   * will return false.
+   *
+   * @param {string} [userUuid] - optional user UUID to add as DJ; if
+   * omitted the caller must ensure the bot's own UUID is implied.
+   * @param {string} [tokenRole='DJ'] - role token for the addDj action
+   * @returns {Promise<boolean>} true if the DJ was added successfully
+   */
+  async addDJFromDefaultPlaylist (userUuid, tokenRole = 'DJ') {
+    try {
+      const currentDJs = getCurrentDJUUIDs(this.state)
+      if (currentDJs.includes(userUuid)) return false
+
+      const playlistId = process.env.DEFAULT_PLAYLIST_ID
+      if (!playlistId) {
+        throw new Error('DEFAULT_PLAYLIST_ID is not set.')
+      }
+      const tracks = await fetchSpotifyPlaylistTracks(playlistId)
+      if (!Array.isArray(tracks) || tracks.length === 0) {
+        throw new Error('No tracks found in the default playlist.')
+      }
+      // Select a random track.  Spotify playlists returned via the
+      // API may include items with nested track objects.  Prefer the
+      // nested track ID when available.
+      const randomItem = tracks[Math.floor(Math.random() * tracks.length)]
+      const trackId = randomItem?.track?.id || randomItem?.id
+      if (!trackId) {
+        throw new Error('Invalid track object encountered; missing id.')
+      }
+      const songData = await fetchSongData(trackId)
+      if (!songData || !songData.id) {
+        throw new Error('Invalid song data received for default playlist track.')
+      }
+      const songPayload = {
+        songId: songData.id,
+        trackName: songData.trackName,
+        artistName: songData.artistName,
+        duration: songData.duration,
+        isrc: songData.isrc || '',
+        explicit: songData.explicit || false,
+        genre: songData.genre || '',
+        links: songData.links || {},
+        musicProviders: songData.musicProviders || {},
+        thumbnails: songData.thumbnails || {},
+        playbackToken: songData.playbackToken || null,
+        album: songData.album || {},
+        artist: songData.artist || {},
+        status: songData.status || 'PENDING_UPLOAD',
+        updatedAt: songData.updatedAt
+      }
+      if (!this.socket) {
+        throw new Error('SocketClient not initialized.')
+      }
+      await this.socket.action('addDj', {
+        roomUuid: process.env.ROOM_UUID,
+        userUuid,
+        song: songPayload,
+        tokenRole
+      })
+      return true
+    } catch (error) {
+      logger.error('Error adding DJ from default playlist:', error)
+      return false
+    }
+  }
+
+  /**
    * Enable discover DJ mode.  When enabled, the bot will play songs from the
    * provided Spotify playlists sequentially without repeats.  Pass either a
    * comma‑delimited string or an array of playlist IDs.  If omitted, the

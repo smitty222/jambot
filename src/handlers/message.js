@@ -91,7 +91,9 @@ function buildModSheet () {
     '- /removetheme',
 
     '--- Bot DJ Lineup ---',
-    '- /addDJ   (Bot DJs from AI recommendations)',
+    '- /addDJ   (Bot DJs from the default playlist)',
+    '- /addDJ auto (Bot DJs from AI recommendations)',
+    '- /addDJ discover (Bot DJs from discover playlists)',
     '- /removeDJ',
 
     '--- Bot Toggles ---',
@@ -357,8 +359,14 @@ if (
             '37i9dQZF1DWVqfgj8NZEp1'
           ]
         }
-        roomBot.enableDiscoverMode(discoverIds)
-        await roomBot.addDJ(true)
+        // Use discover DJ mode when invited to DJ with users.  Enable
+        // discover mode on the bot and add the bot to the DJ lineup.  The
+        // enableDiscoverDJ method initializes the playlist queue, and
+        // addDJ() will draw from that queue.
+        if (typeof roomBot.enableDiscoverDJ === 'function') {
+          await roomBot.enableDiscoverDJ(discoverIds)
+        }
+        await roomBot.addDJ()
       }
       return
     }
@@ -1277,69 +1285,62 @@ Please refresh your page for the queue to update`
     }
   } else if (payload.message.startsWith('/addDJ')) {
     try {
-      const args = payload.message.split(' ')
-      const option = args[1] // Check if 'auto' was provided
+      // Split by whitespace and normalise the option to lowercase.  If no
+      // second argument is provided, option will be an empty string.
+      const args = payload.message.trim().split(/\s+/)
+      const option = (args[1] || '').toLowerCase()
 
       if (option === 'auto') {
-        /*
-         * Modified auto-DJ behaviour: instead of relying on AI
-         * recommendations, the bot will operate in "discover" mode.
-         * This mode selects each song at random from a curated set
-         * of Spotify playlists and avoids repeats until the entire
-         * pool has been exhausted.  Playlist IDs should be supplied
-         * via the DISCOVER_PLAYLIST_IDS environment variable as
-         * comma-separated values.  A fallback set of example IDs
-         * is provided below.  Once discover mode is configured,
-         * add the bot as a DJ on stage.
-         */
-        {
-          const discoverIdsEnv = process.env.DISCOVER_PLAYLIST_IDS || ''
-          let discoverIds = discoverIdsEnv.split(',').map((s) => s.trim()).filter(Boolean)
-          if (discoverIds.length === 0) {
-            discoverIds = [
-              '37i9dQZF1DX4JAvHpjipBk',
-              '37i9dQZF1DX5trt9i14X7j',
-              '37i9dQZF1DWVqfgj8NZEp1'
-            ]
+        // Auto DJ: use AI/popular recommendation logic.  Ensure discover
+        // mode is disabled so that addDJ falls back to recommendation
+        // selection instead of playlist‑based logic.
+        try {
+          if (typeof roomBot.disableDiscoverDJ === 'function') {
+            roomBot.disableDiscoverDJ()
           }
-          // Enable discover mode on the bot instance
-          roomBot.enableDiscoverMode(discoverIds)
-          // Add the bot as a DJ.  The argument `true` is preserved for
-          // compatibility with legacy implementations but is ignored in
-          // the current Bot implementation.
-          await roomBot.addDJ(true)
-          await postMessage({
-            room: process.env.ROOM_UUID,
-            message: `🎶 *Auto‑discover DJ added!*\n\nThe bot will now play tracks from ${discoverIds.length} curated playlist(s) and avoid repeats.`
-          })
-        }
-      } else if (option === 'discover') {
-        /*
-         * /addDJ discover is now an alias for the auto-discover mode.  It
-         * enables discover mode using the same playlist IDs as in the
-         * auto path and adds the bot as a DJ.  The bot will stream
-         * random tracks from the configured playlists without repeats.
-         */
-        {
-          const discoverIdsEnv = process.env.DISCOVER_PLAYLIST_IDS || ''
-          let discoverIds = discoverIdsEnv.split(',').map((s) => s.trim()).filter(Boolean)
-          if (discoverIds.length === 0) {
-            discoverIds = [
-              '37i9dQZF1DX4JAvHpjipBk',
-              '37i9dQZF1DX5trt9i14X7j',
-              '37i9dQZF1DWVqfgj8NZEp1'
-            ]
-          }
-          roomBot.enableDiscoverMode(discoverIds)
           await roomBot.addDJ()
           await postMessage({
             room: process.env.ROOM_UUID,
-            message: `🎶 *Discover DJ added!*\n\nThe bot will now play tracks from ${discoverIds.length} curated playlist(s) and avoid repeats.`
+            message: '🎵 *Auto DJ added!*\n\nThe bot will now play AI‑recommended songs.'
           })
+        } catch (error) {
+          console.error('Error adding auto DJ:', error)
         }
-      } else {
+      } else if (option === 'discover') {
+        // Discover DJ: pull songs from configured playlists.  Load
+        // playlist IDs from environment or use a fallback set.
+        const discoverIdsEnv = process.env.DISCOVER_PLAYLIST_IDS || ''
+        let discoverIds = discoverIdsEnv.split(',').map((s) => s.trim()).filter(Boolean)
+        if (discoverIds.length === 0) {
+          discoverIds = [
+            '37i9dQZF1DX4JAvHpjipBk',
+            '37i9dQZF1DX5trt9i14X7j',
+            '37i9dQZF1DWVqfgj8NZEp1'
+          ]
+        }
+        // Enable discover mode using the correct API.
+        if (typeof roomBot.enableDiscoverDJ === 'function') {
+          await roomBot.enableDiscoverDJ(discoverIds)
+        }
         await roomBot.addDJ()
-        // console.log('DJ added normally');
+        await postMessage({
+          room: process.env.ROOM_UUID,
+          message: `🎶 *Discover DJ added!*\n\nThe bot will now play tracks from ${discoverIds.length} curated playlist(s) and avoid repeats.`
+        })
+      } else {
+        // Default behaviour: use the default playlist from the environment.
+        try {
+          if (typeof roomBot.disableDiscoverDJ === 'function') {
+            roomBot.disableDiscoverDJ()
+          }
+          await roomBot.addDJFromDefaultPlaylist()
+          await postMessage({
+            room: process.env.ROOM_UUID,
+            message: '🎧 *DJ added from default playlist!*\n\nThe bot will now play songs from the configured default playlist.'
+          })
+        } catch (error) {
+          console.error('Error adding DJ from default playlist:', error)
+        }
       }
     } catch (error) {
       console.error('Error adding DJ:', error)
