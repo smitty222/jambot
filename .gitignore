@@ -221,3 +221,6 @@ fly.env
 # Misc
 *.log
 npm-debug.log*
+
+
+fly.env
