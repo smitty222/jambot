@@ -34,13 +34,18 @@ const TEXT_MODELS_DEFAULT = (
   .map(s => s.trim())
   .filter(Boolean)
 
-// Image-capable models (unchanged)
+// Image-capable models — prefer free-tier multimodal Flash models
 const IMAGE_MODEL_PRIMARY =
-  process.env.IMAGE_MODEL_PRIMARY || 'gemini-2.5-flash-image-preview'
+  process.env.IMAGE_MODEL_PRIMARY || 'gemini-2.5-flash'
+
 const IMAGE_MODEL_FALLBACKS = (
   process.env.IMAGE_MODEL_FALLBACKS ||
-  'gemini-2.0-flash-preview-image-generation'
-).split(',').map(s => s.trim()).filter(Boolean)
+  'gemini-2.0-flash,gemini-2.5-flash-lite'
+)
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean)
+
 const IMAGE_MODELS = [IMAGE_MODEL_PRIMARY, ...IMAGE_MODEL_FALLBACKS]
 
 // ───────────────────────────────────────────────────────────
@@ -227,7 +232,7 @@ function getRateState(modelNorm) {
   if (st.minute.startTs !== minKey) { st.minute.startTs = minKey; st.minute.count = 0; st.minute.tokens = 0 }
   // roll day window
   const dayKey = todayKey()
-  if (st.day.date !== dayKey) { st.day.date = dayKey; st.day.count = 0 }
+  if (st.day.date !== dayKey) { st.day.date = todayKey(); st.day.count = 0 }
   return st
 }
 
@@ -438,7 +443,21 @@ async function generateTextWithRetries (prompt, {
 // ───────────────────────────────────────────────────────────
 async function generateImageWithFallback (prompt) {
   let lastErr
-  for (const modelId of IMAGE_MODELS) {
+
+  // Filter IMAGE_MODELS to ones this key can actually see, if possible
+  let modelsToTry = [...IMAGE_MODELS]
+  try {
+    const available = await listModelsAvailable()
+    if (available.length) {
+      const availSet = new Set(available.map(normalizeModelName))
+      const filtered = IMAGE_MODELS.filter(m => availSet.has(normalizeModelName(m)))
+      if (filtered.length) modelsToTry = filtered
+    }
+  } catch {
+    // if listModelsAvailable fails, just fall back to IMAGE_MODELS
+  }
+
+  for (const modelId of modelsToTry) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${GEMINI_API_KEY}`
     const body = {
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -449,7 +468,11 @@ async function generateImageWithFallback (prompt) {
       info('[image request]', { modelId, promptLen: String(prompt || '').length })
       if (isDebug) console.debug('[image prompt preview]', preview(prompt, 280))
 
-      const res = await fetchWithTimeout(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, AI_IMAGE_TIMEOUT_MS)
+      const res = await fetchWithTimeout(
+        url,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
+        AI_IMAGE_TIMEOUT_MS
+      )
       const rawText = await res.text()
       let data = {}; try { data = JSON.parse(rawText) } catch {}
 
@@ -458,9 +481,18 @@ async function generateImageWithFallback (prompt) {
         const e = new Error(`Gemini image API error ${res.status}: ${message}`)
         e.status = res.status
 
-        if (res.status === 400 && /only supports text output/i.test(message)) { console.warn('[image model-mismatch]', { modelId, status: res.status }); lastErr = e; continue }
-        if (isTransientAiError(e)) { console.warn('[image transient error]', { modelId, status: res.status }); lastErr = e; continue }
-        console.error('[image fatal http]', { modelId, status: res.status, message }); throw e
+        if (res.status === 400 && /only supports text output/i.test(message)) {
+          console.warn('[image model-mismatch]', { modelId, status: res.status })
+          lastErr = e
+          continue
+        }
+        if (isTransientAiError(e)) {
+          console.warn('[image transient error]', { modelId, status: res.status })
+          lastErr = e
+          continue
+        }
+        console.error('[image fatal http]', { modelId, status: res.status, message })
+        throw e
       }
 
       const cand = data.candidates?.[0]
@@ -480,13 +512,21 @@ async function generateImageWithFallback (prompt) {
         return { text: safeText, imageBase64: base64Image, dataUri, modelId }
       }
 
-      console.warn('[image no-image-returned]', { modelId }); lastErr = new Error('NO_IMAGE_RETURNED'); continue
+      console.warn('[image no-image-returned]', { modelId })
+      lastErr = new Error('NO_IMAGE_RETURNED')
+      continue
     } catch (err) {
-      if (isTransientAiError(err)) { console.warn('[image transient catch]', { modelId, msg: err.message }); lastErr = err; continue }
-      else { console.error('[image fatal]', { modelId, msg: err.message }); throw err }
+      if (isTransientAiError(err)) {
+        console.warn('[image transient catch]', { modelId, msg: err.message })
+        lastErr = err
+        continue
+      } else {
+        console.error('[image fatal]', { modelId, msg: err.message })
+        throw err
+      }
     }
   }
-  console.error('[image failed all models]', { tried: IMAGE_MODELS, last: lastErr?.message })
+  console.error('[image failed all models]', { tried: modelsToTry, last: lastErr?.message })
   return { text: 'Sorry, I couldn’t create an image this time.', imageBase64: null, dataUri: null, modelId: null }
 }
 
