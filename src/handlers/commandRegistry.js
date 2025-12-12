@@ -501,4 +501,3 @@ export async function dispatchCommand (txt, payload, room) {
   }
   return true
 }
-
