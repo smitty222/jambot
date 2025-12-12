@@ -10,7 +10,6 @@ import { getTheme } from '../../utils/themeManager.js'
 
 let lastSong = null // { title, artist, dj }
 const userScores = {}
-const userStreaks = {}
 let totalValidLinks = 0
 let totalBrokenChains = 0
 
@@ -40,34 +39,59 @@ function tokenize (text) {
     .filter(Boolean)
 }
 
+/**
+ * Returns:
+ * - valid: at least one shared word between prev (title/artist) and curr (title/artist)
+ * - matches: unique shared words
+ * - titleMatch: true if at least one shared word appears in BOTH titles
+ * - titleMatchCounts: { [word]: countInCurrTitle } for shared words that appear in curr title
+ */
 function getLinkDetails (prev, curr) {
-  if (!prev) return { valid: false, matches: [], titleMatch: false }
+  if (!prev) return { valid: false, matches: [], titleMatch: false, titleMatchCounts: {} }
 
   const prevTitleWords = new Set(tokenize(prev.title))
   const prevArtistWords = new Set(tokenize(prev.artist))
-  const currTitleWords = tokenize(curr.title)
-  const currArtistWords = tokenize(curr.artist)
+
+  const currTitleTokens = tokenize(curr.title)
+  const currArtistTokens = tokenize(curr.artist)
+
+  // Count occurrences of each normalized word in CURRENT title
+  const currTitleCounts = {}
+  for (const w of currTitleTokens) {
+    currTitleCounts[w] = (currTitleCounts[w] || 0) + 1
+  }
 
   const matches = new Set()
   let titleMatch = false
+  const titleMatchCounts = {}
 
-  for (const w of currTitleWords) {
+  // Title words: if they match prev title OR prev artist, they're a valid link
+  for (const w of currTitleTokens) {
     if (prevTitleWords.has(w) || prevArtistWords.has(w)) {
       matches.add(w)
+      // Title-to-title?
       if (prevTitleWords.has(w)) titleMatch = true
     }
   }
-  for (const w of currArtistWords) {
+
+  // Artist words can also link
+  for (const w of currArtistTokens) {
     if (prevTitleWords.has(w) || prevArtistWords.has(w)) {
       matches.add(w)
     }
+  }
+
+  // For shared words, record how many times they appeared in CURRENT title
+  for (const w of matches) {
+    if (currTitleCounts[w]) titleMatchCounts[w] = currTitleCounts[w]
   }
 
   const matchList = Array.from(matches)
   return {
     valid: matchList.length > 0,
     matches: matchList,
-    titleMatch
+    titleMatch,
+    titleMatchCounts
   }
 }
 
@@ -140,11 +164,10 @@ export async function handleSongChainPlay (bot) {
     }
 
     // Compare with last song
-    const { valid, matches, titleMatch } = getLinkDetails(lastSong, curr)
+    const { valid, matches, titleMatch, titleMatchCounts } = getLinkDetails(lastSong, curr)
 
     if (!valid) {
       totalBrokenChains++
-      userStreaks[djUUID] = 0
 
       await postMessage({
         room: bot.roomUUID,
@@ -158,23 +181,45 @@ export async function handleSongChainPlay (bot) {
       return
     }
 
-    // Scoring
-    let score = 1
-    const breakdown = [`+1 for shared word(s): ${matches.join(', ')}`]
+    // ───────────────────────────────────────────────────────
+    // Scoring (NO streak points)
+    //
+    // 1) +1 per occurrence of any linked word in CURRENT SONG TITLE
+    //    e.g. "happy days happy plays" = happy appears twice => +2 for happy
+    // 2) +1 bonus if there are 2+ UNIQUE linked words
+    // 3) +1 bonus if at least one linked word is title-to-title
+    // ───────────────────────────────────────────────────────
+
+    let score = 0
+    const breakdown = []
+
+    // +1 per occurrence in title
+    const perWordLines = []
+    for (const w of matches) {
+      const countInTitle = titleMatchCounts[w] || 0
+      if (countInTitle > 0) {
+        score += countInTitle
+        perWordLines.push(`${w} ×${countInTitle}`)
+      }
+    }
+
+    // If link came only via artist words (no linked word appears in title),
+    // still give at least +1 so links via artist aren't "0 points".
+    if (score === 0) {
+      score = 1
+      breakdown.push(`+1 for linked word(s) via artist/title match: ${matches.join(', ')}`)
+    } else {
+      breakdown.push(`+${score} for repeated linked word(s) in title: ${perWordLines.join(', ')}`)
+    }
 
     if (matches.length > 1) {
       score += 1
-      breakdown.push('+1 for multiple matching words')
+      breakdown.push('+1 for multiple UNIQUE matching words')
     }
+
     if (titleMatch) {
       score += 1
       breakdown.push('+1 for title-to-title match')
-    }
-
-    userStreaks[djUUID] = (userStreaks[djUUID] || 0) + 1
-    if (userStreaks[djUUID] > 1) {
-      score += 1
-      breakdown.push(`+1 streak bonus (${userStreaks[djUUID]} in a row)`)
     }
 
     userScores[djUUID] = (userScores[djUUID] || 0) + score
@@ -208,7 +253,6 @@ export async function handleSongChainLeaderboardCommand (roomUUID) {
 export function resetSongChainState () {
   lastSong = null
   Object.keys(userScores).forEach(k => delete userScores[k])
-  Object.keys(userStreaks).forEach(k => delete userStreaks[k])
   totalValidLinks = 0
   totalBrokenChains = 0
 }

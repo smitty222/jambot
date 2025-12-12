@@ -1,5 +1,8 @@
 // src/utils/API.js
 import { buildUrl, makeRequest } from './networking.js'
+import { addOrUpdateUser } from '../database/dbwalletmanager.js'
+
+const MENTION_RE = /^<@uid:[^>]+>$/
 
 /* ────────────────────────────────────────────────────────────────
  * Config & Constants
@@ -73,11 +76,12 @@ function singleFlight (key, fn) {
 
 function ttHeaders (extra = {}) {
   return {
-    Authorization: `Bearer ${cfg.userToken}`,
+    Authorization: `Bearer ${cfg.userToken}`, // TTL_USER_TOKEN
     accept: 'application/json',
     ...extra
   }
 }
+
 
 function withQuery (url, q) {
   const u = new URL(url)
@@ -577,7 +581,7 @@ export async function fetchUserData (userUUIDs) {
     if (!ok) throw new Error(`Failed to fetch user data: ${error || 'unknown'}`)
 
     const fetched = (Array.isArray(data) ? data : [])
-      .map(e => e.userProfile)
+      .map(e => e.userProfile ?? e)
       .filter(p => p && p.uuid)
     // Populate the cache and the result list.
     for (const profile of fetched) {
@@ -589,6 +593,59 @@ export async function fetchUserData (userUUIDs) {
   }
   return profiles
 }
+export async function fetchUserProfileByUuid (uuid) {
+  if (!uuid) throw new Error('No UUID provided')
+
+  const cached = userProfileCache.get(uuid)
+  if (cached?.nickname && !MENTION_RE.test(cached.nickname)) {
+    return cached
+  }
+
+  const endpoint = `${cfg.ttGateway}/api/user-service/profile/${encodeURIComponent(uuid)}`
+  const { ok, data, error } = await makeRequest(endpoint, {
+    headers: ttHeaders()
+  })
+
+  if (!ok) throw new Error(`Failed to fetch profile: ${error || 'unknown'}`)
+
+  if (data?.nickname) {
+    userProfileCache.set(uuid, data)
+  }
+
+  return data
+}
+
+
+
+export async function getUserNicknameByUuid (uuid) {
+  if (!uuid) return null
+
+  // 1) API lookup (authoritative)
+  try {
+    const profile = await fetchUserProfileByUuid(uuid)
+    const nick = profile?.nickname?.trim()
+
+    if (nick && !MENTION_RE.test(nick)) {
+      try { await addOrUpdateUser(uuid, nick) } catch {}
+      return nick
+    }
+  } catch {}
+
+  // 2) DB fallback
+  try {
+    const row = db.prepare(
+      'SELECT nickname FROM users WHERE uuid = ?'
+    ).get(uuid)
+
+    if (row?.nickname && !MENTION_RE.test(row.nickname)) {
+      return row.nickname
+    }
+  } catch {}
+
+  // 3) Absolute fallback
+  return uuid
+}
+
 
 
 

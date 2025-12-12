@@ -16,15 +16,14 @@ import { PHASES } from './crapsState.js'
 import db from '../../database/db.js'
 import { getSenderNickname } from '../../utils/helpers.js'
 import { getDisplayName, sanitizeNickname } from '../../utils/names.js'
+import { getUserNicknameByUuid } from '../../utils/API.js'
 
 /* ───────────────────────── Records (DB) ───────────────────────── */
 
 async function persistRecord (room, rolls, shooterId) {
   try {
-    const rawMention = await getSenderNickname(shooterId).catch(() => null)
-    const clean = sanitizeNickname(rawMention)
     await addOrUpdateUser(shooterId, clean)
-    const shooterNickname = clean || getDisplayName(shooterId)
+    const shooterNickname = await getUserNicknameByUuid(shooterId)
 
     db.prepare(`
       INSERT INTO craps_records (roomId, maxRolls, shooterId, shooterNickname, achievedAt)
