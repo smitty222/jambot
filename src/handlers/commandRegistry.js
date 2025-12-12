@@ -54,6 +54,11 @@ import {
 // User authorization helper to restrict bot avatar changes
 import { isUserAuthorized } from '../utils/API.js'
 
+// Album list management functions.  These helpers read and write a simple JSON
+// file at the project root to keep track of albums that should be queued.  The
+// list is updated via the /albumadd and /albumremove commands.
+import { addAlbum, removeAlbum } from '../utils/albumlistManager.js'
+
 
 // ---------------------------------------------------------------------------
 // Command registry
@@ -131,6 +136,72 @@ const commandRegistry = {
   low: async ({ payload }) => { if (rouletteGameActive) await handleRouletteBet(payload) },
   number: async ({ payload }) => { if (rouletteGameActive) await handleRouletteBet(payload) },
   dozen: async ({ payload }) => { if (rouletteGameActive) await handleRouletteBet(payload) },
+
+  // 📀 Add an album to the remembered list.
+  // Usage: `/albumadd <album name>`
+  albumadd: async ({ payload, room, args }) => {
+    const albumName = (args || '').trim()
+    if (!albumName) {
+      await postMessage({
+        room,
+        message: 'Please specify an album name. Usage: `/albumadd <album name>`'
+      })
+      return
+    }
+    try {
+      const added = await addAlbum(albumName)
+      if (added) {
+        await postMessage({
+          room,
+          message: `✅ Album "${albumName}" added to the remembered list.`
+        })
+      } else {
+        await postMessage({
+          room,
+          message: `ℹ️ Album "${albumName}" is already on the list.`
+        })
+      }
+    } catch (err) {
+      logger.error('[albumadd] Error updating album list:', err?.message || err)
+      await postMessage({
+        room,
+        message: '❌ Failed to add album to the list.'
+      })
+    }
+  },
+
+  // 📀 Remove an album from the remembered list.
+  // Usage: `/albumremove <album name>`
+  albumremove: async ({ payload, room, args }) => {
+    const albumName = (args || '').trim()
+    if (!albumName) {
+      await postMessage({
+        room,
+        message: 'Please specify an album name. Usage: `/albumremove <album name>`'
+      })
+      return
+    }
+    try {
+      const removed = await removeAlbum(albumName)
+      if (removed) {
+        await postMessage({
+          room,
+          message: `🗑️ Album "${albumName}" removed from the remembered list.`
+        })
+      } else {
+        await postMessage({
+          room,
+          message: `❔ Album "${albumName}" was not found in the list.`
+        })
+      }
+    } catch (err) {
+      logger.error('[albumremove] Error updating album list:', err?.message || err)
+      await postMessage({
+        room,
+        message: '❌ Failed to remove album from the list.'
+      })
+    }
+  },
 
   // 🎱 Lottery: `/lottery`
   // Show a fun GIF and then start the lottery game. This mirrors the

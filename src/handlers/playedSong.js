@@ -7,6 +7,10 @@ import { askQuestion } from '../libs/ai.js'
 import { getUserNickname } from '../utils/nickname.js'
 import { QueueManager } from '../utils/queueManager.js'
 
+// Manage the persistent album list.  When an album is played during an album
+// theme, we'll remove it from the saved list if present.
+import { removeAlbum } from '../utils/albumlistManager.js'
+
 // DB handles
 import db from '../database/db.js'
 
@@ -137,6 +141,20 @@ const handleAlbumTheme = async (_payload) => {
 💿 Track: ${reliableTrackNumber} of ${trackCount}  
 📊 Progress: ${progressBar}`
       })
+
+      // Remove this album from the saved album list if it exists.  This helps
+      // prevent replaying the same album on subsequent album Mondays.
+      try {
+        const removed = await removeAlbum(albumName)
+        if (removed) {
+          await postMessage({
+            room,
+            message: `✅ Album "${albumName}" has been removed from the saved list since it's now playing.`
+          })
+        }
+      } catch (err) {
+        console.error('[AlbumTheme] Failed to remove album from list:', err?.message || err)
+      }
     }
 
     // 🌓 Midpoint
