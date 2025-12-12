@@ -1757,4 +1757,96 @@ export async function handleBearPartyCommand(senderUuid, room, postMessage) {
       .replace(/\b\w/g, c => c.toUpperCase())
   }
 }
+export async function handleWinterCommand (senderUuid, room, postMessage) {
+  const userToken = userTokenMap[senderUuid]
+  if (!userToken) {
+    await postMessage({
+      room,
+      message: 'Sorry, this command is only available to authorized users ❄️.'
+    })
+    return
+  }
+
+  const allowedSlugs = [
+    'winter-01',
+    'winter-02',
+    'winter-03',
+    'winter-04',
+    'winter-05',
+    'winter-06',
+    'winter-07',
+    'winter-08',
+    'winter2-01',
+    'winter2-02',
+    'winter2-03',
+    'winter2-04',
+    'winter2-05',
+    'winter2-06',
+    'winter2-07',
+    'winter2-08'
+  ]
+
+  // ❄️ Winter-y fallback colors (opaque 8-digit hex)
+  const WINTER_COLORS = [
+    '#E6F7FFFF', // icy white-blue
+    '#B3E5FFFF', // frost cyan
+    '#8DE2FFFF', // winter sky
+    '#C7CEEAFF', // cool lavender
+    '#DDEBFFFF', // powder blue
+    '#A7D2CBFF', // cold mint
+    '#F0F8FFFF', // alice blue
+    '#FFFFFFFF'  // snow white
+  ]
+
+  const filtered = getAvatarsBySlugs(allowedSlugs)
+
+  if (!filtered || filtered.length === 0) {
+    await postMessage({
+      room,
+      message: 'No winter avatars found in the allowed set ☃️'
+    })
+    return
+  }
+
+  const chosen = filtered[Math.floor(Math.random() * filtered.length)]
+  const slug = chosen?.slug
+
+  if (!slug) {
+    console.warn('[winter] No slug on selected avatar object:', chosen)
+    await postMessage({
+      room,
+      message: 'No winter avatar available right now 😬'
+    })
+    return
+  }
+
+  const color = WINTER_COLORS[Math.floor(Math.random() * WINTER_COLORS.length)]
+
+  console.log('[winter] attempt', { senderUuid, slug, color })
+
+  try {
+    await updateUserAvatar(userToken, slug, color)
+
+    console.log('[winter] success', { senderUuid, slug, color })
+
+    await postMessage({
+      room,
+      message: '❄️ Winter avatar equipped!'
+    })
+  } catch (error) {
+    console.error('[handleWinterCommand] update failed', {
+      senderUuid,
+      slugTried: slug,
+      colorTried: color,
+      error: error?.message || String(error),
+      stack: error?.stack
+    })
+
+    await postMessage({
+      room,
+      message: 'Failed to equip winter avatar 😞'
+    })
+  }
+}
+
 
