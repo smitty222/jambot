@@ -57,7 +57,11 @@ import { isUserAuthorized } from '../utils/API.js'
 // Album list management functions.  These helpers read and write a simple JSON
 // file at the project root to keep track of albums that should be queued.  The
 // list is updated via the /albumadd and /albumremove commands.
-import { addAlbum, removeAlbum } from '../utils/albumlistManager.js'
+// Pull in album list helpers.  In addition to adding and removing, we can
+// query the current list of queued albums so users can see what is in the
+// rotation.  getAlbumList returns an array of album names (lower‑cased) or
+// an empty array if none have been queued yet.
+import { addAlbum, removeAlbum, getAlbumList } from '../utils/albumlistManager.js'
 
 
 // ---------------------------------------------------------------------------
@@ -199,6 +203,39 @@ const commandRegistry = {
       await postMessage({
         room,
         message: '❌ Failed to remove album from the list.'
+      })
+    }
+  },
+
+  // 📃 Show the current album queue.  Users can call `/albumlist` to see
+  // what albums have been added via `/albumadd` and have not yet been
+  // automatically removed after playing.  The list is displayed as a
+  // bullet‑pointed set of album names, or a friendly message if the list
+  // is empty.
+  // Usage: `/albumlist`
+  albumlist: async ({ payload, room }) => {
+    try {
+      const albums = await getAlbumList()
+      // When no albums are saved, provide an informative response.
+      if (!albums || albums.length === 0) {
+        await postMessage({
+          room,
+          message: '📭 There are no albums currently queued. Use `/albumadd <album name>` to add one!'
+        })
+        return
+      }
+      // Format each album with a bullet for readability.  Preserve the order
+      // they were added to the list.
+      const list = albums.map((a) => `• ${a}`).join('\n')
+      await postMessage({
+        room,
+        message: `📀 Albums in the queue:\n${list}`
+      })
+    } catch (err) {
+      logger.error('[albumlist] Error reading album list:', err?.message || err)
+      await postMessage({
+        room,
+        message: '❌ Failed to fetch the album list.'
       })
     }
   },
@@ -501,3 +538,4 @@ export async function dispatchCommand (txt, payload, room) {
   }
   return true
 }
+
