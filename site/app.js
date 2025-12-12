@@ -390,7 +390,18 @@ async function refreshGames() {
     if (!Array.isArray(rec) || rec.length === 0) {
       container.innerHTML = `<div class="muted small">No record yet.</div>`;
     } else {
-      const r = rec[0];
+      // Sort by max rolls descending and by achieved date descending to ensure we take
+      // the highest and most recent record.  Some rooms may have multiple records.
+      const sortedRec = Array.isArray(rec) ? [...rec].sort((a, b) => {
+        const aRolls = Number(a.maxRolls ?? a.max_rolls ?? 0);
+        const bRolls = Number(b.maxRolls ?? b.max_rolls ?? 0);
+        if (bRolls !== aRolls) return bRolls - aRolls;
+        // fallback: compare achieved timestamps (desc)
+        const aDate = new Date(a.achievedAt || a.achieved_at || 0);
+        const bDate = new Date(b.achievedAt || b.achieved_at || 0);
+        return bDate - aDate;
+      }) : rec;
+      const r = Array.isArray(sortedRec) ? sortedRec[0] : sortedRec;
       // Build a richer card: highlight max rolls and shooter
       const maxRolls = Number(r.maxRolls ?? r.max_rolls ?? 0);
       const shooter  = r.shooterNickname || r.shooter || "—";
@@ -419,9 +430,18 @@ async function refreshGames() {
     if (!Array.isArray(winners) || winners.length === 0) {
       container.innerHTML = `<div class="muted small">No winners yet.</div>`;
     } else {
-      // Show up to 10 winners in a responsive grid
-      const html = winners.slice(0, 10).map(w => {
-        const name = escapeHtml(w.nickname || "—");
+      // Sort winners so that the most recent appear first.  Each row from the
+      // API includes a timestamp field; fall back to other common names.  Then
+      // build a card for each winner, using displayName when available to
+      // display a human‑friendly name.  We no longer slice the list, so all
+      // winners will be displayed.
+      const sorted = [...winners].sort((a, b) => {
+        const aTime = new Date(a.timestamp || a.time || a.createdAt || 0);
+        const bTime = new Date(b.timestamp || b.time || b.createdAt || 0);
+        return bTime - aTime;
+      });
+      const html = sorted.map(w => {
+        const name = escapeHtml(w.displayName || w.nickname || "—");
         const amt  = escapeHtml(String(w.amountWon ?? w.amount_won ?? ""));
         return `
           <div class="winner-card">
@@ -429,7 +449,7 @@ async function refreshGames() {
             <div class="winner-amount">$${amt}</div>
           </div>`;
       }).join("");
-      container.innerHTML = `<div class="winners-grid">${html}</div>`;
+      container.innerHTML = `<div class="winners-grid winners-scroll">${html}</div>`;
     }
   } catch (e) {
     const container = els.gamesLotteryWinners;

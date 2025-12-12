@@ -221,19 +221,19 @@ button:focus-visible, .input:focus-visible, a:focus-visible{
   border-color: var(--border);
   color: var(--text);
 }
-/* 1–2: low (green) */
+/* 1â€“2: low (green) */
 .ball.bin-1{
   background: linear-gradient(180deg, #ecfdf5, #bbf7d0);
   border-color: color-mix(in hsl, var(--border) 60%, #16a34a 40%);
   color:#064e3b;
 }
-/* 3–5: medium (yellow) */
+/* 3â€“5: medium (yellow) */
 .ball.bin-2{
   background: linear-gradient(180deg, #fefce8, #fef9c3);
   border-color: color-mix(in hsl, var(--border) 60%, #eab308 40%);
   color:#713f12;
 }
-/* 6–9: high (orange) */
+/* 6â€“9: high (orange) */
 .ball.bin-3{
   background: linear-gradient(180deg, #ffedd5, #fdba74);
   border-color: color-mix(in hsl, var(--border) 60%, #ea580c 40%);
@@ -294,6 +294,15 @@ button:focus-visible, .input:focus-visible, a:focus-visible{
   display:grid;
   grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   gap:12px;
+}
+
+/* Allow the list of lottery winners to scroll if it grows too long.  The
+   `winners-scroll` class is applied on the container by app.js. */
+.winners-scroll{
+  max-height: 300px;
+  overflow-y: auto;
+  /* Add a small right padding so the scrollbar doesnâ€™t cover content */
+  padding-right: 4px;
 }
 .winner-card{
   background: var(--bg-elev);
