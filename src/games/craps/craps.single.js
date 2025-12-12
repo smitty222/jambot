@@ -116,6 +116,11 @@ function freshState () {
     // Place bets: num -> { uuid: amt }
     place: { 4:{}, 5:{}, 6:{}, 8:{}, 9:{}, 10:{} },
 
+    // Track net profit/loss per user for this round.  Keys are user UUIDs and
+    // values are numbers (positive for winnings, negative for losses).  This
+    // object is reset each round and summarised at the end.
+    roundResults: Object.create(null),
+
     timers: { join: null, bet: null }
   }
 }
@@ -142,6 +147,13 @@ function resetAllBets (st) {
   st.comePoint = Object.create(null)
   st.dontComePoint = Object.create(null)
   st.place = { 4:{}, 5:{}, 6:{}, 8:{}, 9:{}, 10:{} }
+}
+
+// Record a net change for a player's wallet in this round.  Positive amounts
+// indicate winnings relative to the stake, negative amounts indicate losses.
+function addRoundResult (st, uuid, amount) {
+  if (!uuid) return
+  st.roundResults[uuid] = (st.roundResults[uuid] || 0) + amount
 }
 function clearTimers (st) {
   for (const k of ['join','bet']) {
@@ -215,6 +227,8 @@ async function openJoinWindow (room, starterUuid) {
   st.point = null
   st.rollCount = 0
   resetAllBets(st)
+  // Reset round results when a new round begins
+  st.roundResults = Object.create(null)
 
   // ⬇️ auto-join the user who started the round
   if (starterUuid) await autoSeat(st, starterUuid, room)
@@ -310,6 +324,23 @@ async function endRound (room, reason, { returnUnresolvedSideBets = false } = {}
   }
 
   clearTimers(st)
+  // Summarise round results for each player.  We present the net win/loss for
+  // everyone seated in this round.  Positive values are winnings, negative
+  // values are losses relative to the bets placed.
+  const results = st.roundResults || {}
+  const names = Object.keys(results)
+  if (names.length) {
+    const lines = names.map(u => {
+      const amt = results[u] || 0
+      const prefix = amt >= 0 ? '+$' : '-$'
+      const val = Math.abs(amt).toFixed(2)
+      return `${mention(u)} ${prefix}${val}`
+    })
+    await say(room, `Round totals:\n${lines.join('\n')}`)
+  }
+  // Reset round results for the next game
+  st.roundResults = Object.create(null)
+
   await say(room, `Type **/craps** to open a new table.`)
 }
 
@@ -556,9 +587,19 @@ async function shooterRoll (user, room) {
 async function settlePass (st, room, outcome) {
   const lines = []
   for (const [u, amt] of Object.entries(st.pass)) {
-    if (outcome === 'win')      { await addToUserWallet(u, amt * 2); lines.push(`${mention(u)} +$${amt}`) }
-    else if (outcome === 'push'){ await addToUserWallet(u, amt);     lines.push(`${mention(u)} push ($${amt})`) }
-    else                        { lines.push(`${mention(u)} -$${amt}`) }
+    if (outcome === 'win') {
+      await addToUserWallet(u, amt * 2)
+      lines.push(`${mention(u)} +$${amt}`)
+      addRoundResult(st, u, amt) // net profit equals stake
+    } else if (outcome === 'push') {
+      await addToUserWallet(u, amt)
+      lines.push(`${mention(u)} push ($${amt})`)
+      // push returns stake; net change is zero
+    } else {
+      // losing pass bet: stake already removed, no payout
+      lines.push(`${mention(u)} -$${amt}`)
+      addRoundResult(st, u, -amt)
+    }
   }
   st.pass = Object.create(null)
   if (lines.length) await say(room, `Pass line results:\n${lines.join('\n')}`)
@@ -566,9 +607,18 @@ async function settlePass (st, room, outcome) {
 async function settleDontPass (st, room, outcome) {
   const lines = []
   for (const [u, amt] of Object.entries(st.dontPass)) {
-    if (outcome === 'win')      { await addToUserWallet(u, amt * 2); lines.push(`${mention(u)} +$${amt}`) }
-    else if (outcome === 'push'){ await addToUserWallet(u, amt);     lines.push(`${mention(u)} push ($${amt})`) }
-    else                        { lines.push(`${mention(u)} -$${amt}`) }
+    if (outcome === 'win') {
+      await addToUserWallet(u, amt * 2)
+      lines.push(`${mention(u)} +$${amt}`)
+      addRoundResult(st, u, amt)
+    } else if (outcome === 'push') {
+      await addToUserWallet(u, amt)
+      lines.push(`${mention(u)} push ($${amt})`)
+      // push returns stake
+    } else {
+      lines.push(`${mention(u)} -$${amt}`)
+      addRoundResult(st, u, -amt)
+    }
   }
   st.dontPass = Object.create(null)
   if (lines.length) await say(room, `Don't Pass results:\n${lines.join('\n')}`)
@@ -579,26 +629,41 @@ async function resolveComeWaiting (total, st, room) {
   const dontLines = []
   for (const [u, amt] of Object.entries(st.comeWaiting)) {
     if (total === 7 || total === 11) {
-      await addToUserWallet(u, amt * 2); comeLines.push(`${mention(u)} COMe +$${amt}`)
+      await addToUserWallet(u, amt * 2)
+      comeLines.push(`${mention(u)} COMe +$${amt}`)
+      addRoundResult(st, u, amt)
     } else if ([2,3,12].includes(total)) {
-      if (total === 12) { await addToUserWallet(u, amt); comeLines.push(`${mention(u)} COMe push ($${amt})`) }
-      else { comeLines.push(`${mention(u)} COMe -$${amt}`) }
+      if (total === 12) {
+        await addToUserWallet(u, amt)
+        comeLines.push(`${mention(u)} COMe push ($${amt})`)
+        // push: net 0
+      } else {
+        comeLines.push(`${mention(u)} COMe -$${amt}`)
+        addRoundResult(st, u, -amt)
+      }
     } else {
       st.comePoint[u] = { num: total, amt }
       comeLines.push(`${mention(u)} COMe moves to **${total}** ($${amt})`)
+      // stake moves to point; no net change yet
     }
     delete st.comeWaiting[u]
   }
   for (const [u, amt] of Object.entries(st.dontComeWaiting)) {
     if ([2,3].includes(total)) {
-      await addToUserWallet(u, amt * 2); dontLines.push(`${mention(u)} Don’t COMe +$${amt}`)
+      await addToUserWallet(u, amt * 2)
+      dontLines.push(`${mention(u)} Don’t COMe +$${amt}`)
+      addRoundResult(st, u, amt)
     } else if (total === 12) {
-      await addToUserWallet(u, amt); dontLines.push(`${mention(u)} Don’t COMe push ($${amt})`)
+      await addToUserWallet(u, amt)
+      dontLines.push(`${mention(u)} Don’t COMe push ($${amt})`)
+      // push
     } else if (total === 7 || total === 11) {
       dontLines.push(`${mention(u)} Don’t COMe -$${amt}`)
+      addRoundResult(st, u, -amt)
     } else {
       st.dontComePoint[u] = { num: total, amt }
       dontLines.push(`${mention(u)} Don’t COMe set **against ${total}** ($${amt})`)
+      // moves to point; no net
     }
     delete st.dontComeWaiting[u]
   }
@@ -611,12 +676,28 @@ async function resolveComePoints (total, st, room) {
   const loseLines = []
 
   for (const [u, o] of Object.entries(st.comePoint)) {
-    if (total === o.num) { await addToUserWallet(u, o.amt * 2); winLines.push(`${mention(u)} COMe on ${o.num} +$${o.amt}`); delete st.comePoint[u] }
-    else if (total === 7) { loseLines.push(`${mention(u)} COMe on ${o.num} -$${o.amt}`); delete st.comePoint[u] }
+    if (total === o.num) {
+      await addToUserWallet(u, o.amt * 2)
+      winLines.push(`${mention(u)} COMe on ${o.num} +$${o.amt}`)
+      addRoundResult(st, u, o.amt)
+      delete st.comePoint[u]
+    } else if (total === 7) {
+      loseLines.push(`${mention(u)} COMe on ${o.num} -$${o.amt}`)
+      addRoundResult(st, u, -o.amt)
+      delete st.comePoint[u]
+    }
   }
   for (const [u, o] of Object.entries(st.dontComePoint)) {
-    if (total === 7) { await addToUserWallet(u, o.amt * 2); winLines.push(`${mention(u)} Don’t COMe vs ${o.num} +$${o.amt}`); delete st.dontComePoint[u] }
-    else if (total === o.num) { loseLines.push(`${mention(u)} Don’t COMe vs ${o.num} -$${o.amt}`); delete st.dontComePoint[u] }
+    if (total === 7) {
+      await addToUserWallet(u, o.amt * 2)
+      winLines.push(`${mention(u)} Don’t COMe vs ${o.num} +$${o.amt}`)
+      addRoundResult(st, u, o.amt)
+      delete st.dontComePoint[u]
+    } else if (total === o.num) {
+      loseLines.push(`${mention(u)} Don’t COMe vs ${o.num} -$${o.amt}`)
+      addRoundResult(st, u, -o.amt)
+      delete st.dontComePoint[u]
+    }
   }
   if (winLines.length)  await say(room, winLines.join('\n'))
   if (loseLines.length) await say(room, loseLines.join('\n'))
@@ -637,7 +718,11 @@ async function resolvePlace (total, st, room) {
     const lines = []
     for (const [u, amt] of Object.entries(book)) {
       const profit = placeProfit(total, amt)
-      if (profit > 0) { await addToUserWallet(u, profit); lines.push(`${mention(u)} place ${total} win → +$${profit.toFixed(2)}`) }
+      if (profit > 0) {
+        await addToUserWallet(u, profit)
+        lines.push(`${mention(u)} place ${total} win → +$${profit.toFixed(2)}`)
+        addRoundResult(st, u, profit)
+      }
     }
     if (lines.length) await say(room, lines.join('\n'))
   }
