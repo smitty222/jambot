@@ -1,25 +1,23 @@
 // src/games/craps/craps.single.js
-// Craps with blackjack-style windows + first-class bet commands.
-// Commands:
-//   /craps             -> if idle: opens JOIN; else shows table
-//   /craps start       -> opens JOIN (resets table + hand)
-//   /craps join        -> join during join window
-//   /craps table, /craps help, /craps bets
-//   /roll              -> shooter roll (alias works without /craps)
-//   /pass <amt>, /dontpass <amt>
-//   /come <amt>, /dontcome <amt>            (POINT only)
-//   /place <4|5|6|8|9|10> <amt>             (POINT only)
-//   /removeplace <4|5|6|8|9|10>
-//   /bets              -> shows ONLY your bets (alias of /craps bets)
-//
-// Env (optional): CRAPS_MIN_BET, CRAPS_MAX_BET, CRAPS_JOIN_SECS, CRAPS_BET_SECS
+// Craps with blackjack-style windows + shooter hands.
+// Improvements:
+//  - Hand ends only on seven-out (shooter rotates then).
+//  - After a hand ends, open a JOIN window so others can join.
+//  - After betting closes, shooter has a roll timer (default 45s). If they don’t roll, skip them for this round.
 
 import { postMessage } from '../../libs/cometchat.js'
-import { addToUserWallet, removeFromUserWallet, getUserWallet, addOrUpdateUser } from '../../database/dbwalletmanager.js'
+import {
+  addToUserWallet,
+  removeFromUserWallet,
+  getUserWallet,
+  addOrUpdateUser
+} from '../../database/dbwalletmanager.js'
 import { PHASES } from './crapsState.js'
 import db from '../../database/db.js'
 import { getSenderNickname } from '../../utils/helpers.js'
 import { getDisplayName, sanitizeNickname } from '../../utils/names.js'
+
+/* ───────────────────────── Records (DB) ───────────────────────── */
 
 async function persistRecord (room, rolls, shooterId) {
   try {
@@ -50,73 +48,104 @@ async function persistRecord (room, rolls, shooterId) {
   }
 }
 
-const ROOM_DEFAULT = (typeof process !== 'undefined' && process.env && process.env.ROOM_UUID) || ''
+function loadRoomRecordIntoState (room, st) {
+  try {
+    const row = db.prepare(`
+      SELECT maxRolls, shooterId
+      FROM craps_records
+      WHERE roomId = ?
+    `).get(room)
+    if (row && Number(row.maxRolls) > 0) {
+      st.record = { rolls: Number(row.maxRolls), shooter: row.shooterId || null }
+    }
+  } catch {
+    // ignore
+  }
+}
+
+/* ───────────────────────── Constants ───────────────────────── */
+
+const ROOM_DEFAULT = process.env.ROOM_UUID || ''
+if (!ROOM_DEFAULT) console.warn('[craps] ROOM_UUID not set — room state may reset unexpectedly.')
+
 const mention = (uuid) => `<@uid:${uuid}>`
 
 const MIN_BET   = Number(process.env.CRAPS_MIN_BET ?? 5)
 const MAX_BET   = Number(process.env.CRAPS_MAX_BET ?? 10000)
 const JOIN_SECS = Number(process.env.CRAPS_JOIN_SECS ?? 30)
 const BET_SECS  = Number(process.env.CRAPS_BET_SECS  ?? 30)
+const ROLL_SECS = Number(process.env.CRAPS_ROLL_SECS ?? 45)
 
-const PLACES = [4,5,6,8,9,10]
+const PLACES = [4, 5, 6, 8, 9, 10]
 
-// ──────────────────────────────────────────────
-// Per-room table state
-// ──────────────────────────────────────────────
+/* ───────────────────────── State ───────────────────────── */
+
 const TABLES = new Map()
+
 function S (room) {
   const key = room || ROOM_DEFAULT
-  if (!TABLES.has(key)) TABLES.set(key, freshState())
+  if (!TABLES.has(key)) {
+    const st = freshState()
+    TABLES.set(key, st)
+    loadRoomRecordIntoState(key, st)
+  }
   return TABLES.get(key)
 }
+
 function freshState () {
   return {
     phase: PHASES.IDLE,
+
     tableUsers: [],
     shooterIdx: 0,
-    point: null,
 
-    // "Hand" roll count: resets when a new shooter hand begins,
-    // ends only on seven-out (or table cancellation).
-    rollCount: 0,
+    point: null,
+    rollCount: 0, // rolls in the current hand (until seven-out)
 
     record: { rolls: 0, shooter: null },
 
-    // Per-hand net results (reset each new hand, summarized on seven-out)
     roundResults: Object.create(null),
 
-    // Line bets
     pass: Object.create(null),
     dontPass: Object.create(null),
 
-    // Come/Don't Come
     comeWaiting: Object.create(null),
     dontComeWaiting: Object.create(null),
     comePoint: Object.create(null),      // uuid -> { num, amt }
     dontComePoint: Object.create(null),
 
-    // Place bets: num -> { uuid: amt }
     place: { 4:{}, 5:{}, 6:{}, 8:{}, 9:{}, 10:{} },
 
-    timers: { join: null, bet: null }
+    timers: { join: null, bet: null, roll: null }
   }
 }
 
-async function autoSeat (st, uuid, room) {
-  if (!uuid) return
-  if (!st.tableUsers.includes(uuid)) {
-    st.tableUsers.push(uuid)
-    await say(room, `🪑 ${mention(uuid)} sits at the table.`)
-  }
-}
+/* ───────────────────────── Helpers ───────────────────────── */
 
-async function say (room, message) { await postMessage({ room, message }) }
+async function say (room, message) {
+  await postMessage({ room, message })
+}
 
 const d = () => 1 + Math.floor(Math.random() * 6)
-function dice () { const a = d(), b = d(); return [a,b,a+b] }
+function dice () {
+  const a = d(), b = d()
+  return [a, b, a + b]
+}
 
-function shooterUuid (st) { return st.tableUsers[st.shooterIdx] || null }
-function isShooter (uuid, st) { return shooterUuid(st) === uuid }
+function shooterUuid (st) {
+  return st.tableUsers[st.shooterIdx] || null
+}
+
+function isShooter (uuid, st) {
+  return shooterUuid(st) === uuid
+}
+
+function clearTimers (st) {
+  for (const k of ['join','bet','roll']) {
+    const t = st.timers[k]
+    if (t) { clearTimeout(t); st.timers[k] = null }
+  }
+}
 
 function resetAllBets (st) {
   st.pass = Object.create(null)
@@ -127,12 +156,6 @@ function resetAllBets (st) {
   st.dontComePoint = Object.create(null)
   st.place = { 4:{}, 5:{}, 6:{}, 8:{}, 9:{}, 10:{} }
 }
-function clearTimers (st) {
-  for (const k of ['join','bet']) {
-    const t = st.timers[k]
-    if (t) { clearTimeout(t); st.timers[k] = null }
-  }
-}
 
 function fmtMoney (n) {
   const num = Number(n)
@@ -142,16 +165,11 @@ function fmtMoney (n) {
   return `$${v}`
 }
 
-// Accumulate a player's net result for the current hand.
-function addRoundResult (st, uuid, amount) {
-  if (!uuid || !Number.isFinite(amount) || amount === 0) return
-  const prev = st.roundResults[uuid] || 0
-  st.roundResults[uuid] = prev + amount
+function addRoundResult (st, uuid, amt) {
+  if (!uuid || !Number.isFinite(amt) || amt === 0) return
+  st.roundResults[uuid] = (st.roundResults[uuid] || 0) + amt
 }
 
-// ──────────────────────────────────────────────
-// Views
-// ──────────────────────────────────────────────
 function lineBetsSummary (st) {
   const show = (book, label) => {
     const items = Object.entries(book).map(([u,a]) => `${mention(u)} ${fmtMoney(a)}`)
@@ -160,94 +178,17 @@ function lineBetsSummary (st) {
   return [show(st.pass,'Pass'), show(st.dontPass,"Don't Pass")].filter(Boolean).join('\n') || 'No line bets.'
 }
 
-function sideBetsSummary (st) {
-  const lines = []
+/* ───────────────────────── Join / Betting / Roll timer ───────────────────────── */
 
-  const cw = Object.entries(st.comeWaiting).map(([u,a]) => `${mention(u)} ${fmtMoney(a)}`)
-  if (cw.length) lines.push(`Come (waiting): ${cw.join(', ')}`)
-
-  const dcw = Object.entries(st.dontComeWaiting).map(([u,a]) => `${mention(u)} ${fmtMoney(a)}`)
-  if (dcw.length) lines.push(`Don't Come (waiting): ${dcw.join(', ')}`)
-
-  const cp = Object.entries(st.comePoint).map(([u,o]) => `${mention(u)} ${fmtMoney(o.amt)} on ${o.num}`)
-  if (cp.length) lines.push(`Come points: ${cp.join(', ')}`)
-
-  const dcp = Object.entries(st.dontComePoint).map(([u,o]) => `${mention(u)} ${fmtMoney(o.amt)} against ${o.num}`)
-  if (dcp.length) lines.push(`Don't Come points: ${dcp.join(', ')}`)
-
-  const placeLines = []
-  for (const n of PLACES) {
-    const book = st.place[n]
-    const items = Object.entries(book).map(([u,a]) => `${mention(u)} ${fmtMoney(a)}`)
-    if (items.length) placeLines.push(`${n}: ${items.join(', ')}`)
+async function autoSeat (st, uuid, room) {
+  if (!uuid) return
+  if (!st.tableUsers.includes(uuid)) {
+    st.tableUsers.push(uuid)
+    await say(room, `🪑 ${mention(uuid)} sits at the table.`)
   }
-  if (placeLines.length) lines.push(`Place bets:\n${placeLines.join('\n')}`)
-
-  return lines.join('\n') || 'No side bets.'
 }
 
-function tableView (room) {
-  const st = S(room)
-  const shooter = shooterUuid(st)
-  const seats = st.tableUsers.map(u => `${u === shooter ? '🎯' : '•'} ${mention(u)}`).join('\n')
-  const lines = [
-    `Phase: ${st.phase}`,
-    st.point ? `Point: ${st.point}` : `Point: —`,
-    `Rolls this hand: ${st.rollCount}`,
-    `Record: ${st.record.rolls} roll(s) ${st.record.shooter ? `by ${mention(st.record.shooter)}` : ''}`,
-    ``,
-    `Line Bets:`,
-    lineBetsSummary(st),
-    ``,
-    `Other Bets:`,
-    sideBetsSummary(st),
-    ``,
-    `Seats:`,
-    seats || 'No one seated.'
-  ]
-  return lines.join('\n')
-}
-
-function userBetsView (room, uuid) {
-  const st = S(room)
-  const lines = []
-  const p = st.pass[uuid]
-  const dp = st.dontPass[uuid]
-  if (p) lines.push(`Pass: ${fmtMoney(p)}`)
-  if (dp) lines.push(`Don't Pass: ${fmtMoney(dp)}`)
-
-  const cw = st.comeWaiting[uuid]
-  const dcw = st.dontComeWaiting[uuid]
-  if (cw) lines.push(`Come (waiting): ${fmtMoney(cw)}`)
-  if (dcw) lines.push(`Don't Come (waiting): ${fmtMoney(dcw)}`)
-
-  const cp = st.comePoint[uuid]
-  const dcp = st.dontComePoint[uuid]
-  if (cp) lines.push(`Come on ${cp.num}: ${fmtMoney(cp.amt)}`)
-  if (dcp) lines.push(`Don't Come vs ${dcp.num}: ${fmtMoney(dcp.amt)}`)
-
-  const places = []
-  for (const n of PLACES) {
-    const amt = st.place[n]?.[uuid]
-    if (amt) places.push(`${n}: ${fmtMoney(amt)}`)
-  }
-  if (places.length) lines.push(`Place: ${places.join(', ')}`)
-
-  const net = st.roundResults?.[uuid]
-  if (Number.isFinite(net) && net !== 0) {
-    const sign = net > 0 ? '+' : '-'
-    lines.push(`Net this hand: ${sign}${fmtMoney(Math.abs(net))}`)
-  } else if (net === 0) {
-    lines.push(`Net this hand: $0`)
-  }
-
-  if (!lines.length) return `No active bets for ${mention(uuid)}.`
-  return `**Your bets (${mention(uuid)})**\n` + lines.map(l => `• ${l}`).join('\n')
-}
-
-// ──────────────────────────────────────────────
-// Windows: JOIN → BETTING
-// ──────────────────────────────────────────────
+// Full reset table (new session)
 async function openJoinWindow (room, starterUuid) {
   const st = S(room)
   clearTimers(st)
@@ -255,18 +196,43 @@ async function openJoinWindow (room, starterUuid) {
   st.phase = PHASES.JOIN
   st.point = null
   st.rollCount = 0
+  st.roundResults = Object.create(null)
   resetAllBets(st)
 
-  // Reset per-hand tracking including net results
-  st.roundResults = Object.create(null)
-
+  // (Re)seat the starter automatically
   if (starterUuid) await autoSeat(st, starterUuid, room)
 
   await say(
     room,
     `🎲 **Craps** table is open for **${JOIN_SECS}s**!\n` +
-    `Type **/craps join** to take a seat. After joining, you’ll have a window to place ` +
-    `**/pass <amount>** or **/dontpass <amount>** before the come-out roll.`
+    `Type **/craps join** to take a seat. Then place **/pass <amt>** or **/dontpass <amt>** during betting.`
+  )
+
+  st.timers.join = setTimeout(async () => {
+    st.timers.join = null
+    await closeJoinOpenBetting(room)
+  }, JOIN_SECS * 1000)
+}
+
+// Inter-hand join (keep seated players, allow others to join)
+async function openInterHandJoin (room) {
+  const st = S(room)
+  clearTimers(st)
+
+  st.phase = PHASES.JOIN
+  st.point = null
+  st.rollCount = 0
+  st.roundResults = Object.create(null)
+  resetAllBets(st)
+
+  const shooter = shooterUuid(st)
+  const seated = st.tableUsers.length ? st.tableUsers.map(mention).join(', ') : '—'
+
+  await say(
+    room,
+    `🧾 Hand over. Next shooter will be ${shooter ? mention(shooter) : '—'}.\n` +
+    `🪑 **Join window open** for **${JOIN_SECS}s** (current seats: ${seated}).\n` +
+    `Type **/craps join** to sit. Betting opens when join closes.`
   )
 
   st.timers.join = setTimeout(async () => {
@@ -277,122 +243,107 @@ async function openJoinWindow (room, starterUuid) {
 
 async function closeJoinOpenBetting (room) {
   const st = S(room)
-  if (st.tableUsers.length === 0) {
+  if (!st.tableUsers.length) {
     st.phase = PHASES.IDLE
     await say(room, `⏱️ Join closed — nobody seated. Table closed.`)
     return
   }
 
-  const seats = st.tableUsers.map(u => mention(u)).join(', ')
+  const seats = st.tableUsers.map(mention).join(', ')
   await say(room, `⏱️ Join closed. Players seated: ${seats}`)
 
-  await openBettingWindow(room, { requireLineBets: true })
-}
-
-async function openBettingWindow (room, { requireLineBets = true } = {}) {
-  const st = S(room)
-  clearTimers(st)
   st.phase = PHASES.BETTING
-
   await say(room, `💰 **Betting open** for **${BET_SECS}s**.\nPlace **/pass <amt>** or **/dontpass <amt>**.`)
 
   st.timers.bet = setTimeout(async () => {
     st.timers.bet = null
-    await closeBettingBeginComeOut(room, { requireLineBets })
+    await closeBettingBeginComeOut(room)
   }, BET_SECS * 1000)
 }
 
-async function closeBettingBeginComeOut (room, { requireLineBets = true } = {}) {
+async function closeBettingBeginComeOut (room) {
   const st = S(room)
-  const anyLine = Object.keys(st.pass).length || Object.keys(st.dontPass).length
 
-  if (requireLineBets && !anyLine) {
+  const anyLine = Object.keys(st.pass).length || Object.keys(st.dontPass).length
+  if (!anyLine) {
+    // Keep it simple: if nobody bet the line, cancel this attempt and reopen join quickly
     st.phase = PHASES.IDLE
-    await say(room, `No valid bets. Table closed.`)
+    await say(room, `No valid line bets. Table closed.`)
     return
   }
 
-  // Announce all line bets ONCE (clean)
-  if (anyLine) {
-    await say(room, `📋 **Line bets locked:**\n${lineBetsSummary(st)}`)
-  } else {
-    await say(room, `📋 No line bets placed — shooter can still roll.`)
-  }
+  await say(room, `📋 **Line bets locked:**\n${lineBetsSummary(st)}`)
 
   st.phase = PHASES.COME_OUT
   st.point = null
 
   const sh = shooterUuid(st)
-  await say(room, `🎯 Shooter: ${mention(sh)} — **/roll** when ready.`)
+  await say(
+    room,
+    `🎯 Shooter: ${mention(sh)} — you have **${ROLL_SECS}s** to **/roll**.`
+  )
+
+  startRollTimer(room)
 }
 
-// ──────────────────────────────────────────────
-// Hand control
-// ──────────────────────────────────────────────
-function nextShooter (st) {
-  if (st.tableUsers.length === 0) return
-  st.shooterIdx = (st.shooterIdx + 1) % st.tableUsers.length
-}
-
-async function endHand (room, reason) {
+function startRollTimer (room) {
   const st = S(room)
-  st.phase = PHASES.ROUND_END
+  if (st.timers.roll) clearTimeout(st.timers.roll)
+  st.timers.roll = setTimeout(async () => {
+    st.timers.roll = null
+    await handleShooterNoRollTimeout(room)
+  }, ROLL_SECS * 1000)
+}
 
-  const shooter = shooterUuid(st)
-  await say(room, reason ? `🧾 Hand over — ${reason}` : `🧾 Hand over.`)
-
-  // Summarise net results for the hand
-  const rrKeys = Object.keys(st.roundResults || {})
-  if (rrKeys.length) {
-    const totals = []
-    for (const u of rrKeys) {
-      const amt = st.roundResults[u]
-      const sign = amt >= 0 ? '+' : '-'
-      totals.push(`${mention(u)} ${sign}${fmtMoney(Math.abs(amt))}`)
-    }
-    await say(room, `Hand totals:\n${totals.join('\n')}`)
+function stopRollTimer (room) {
+  const st = S(room)
+  if (st.timers.roll) {
+    clearTimeout(st.timers.roll)
+    st.timers.roll = null
   }
+}
 
-  // Record check (longest hand = most rolls before seven-out)
-  if (st.rollCount > st.record.rolls) {
-    st.record = { rolls: st.rollCount, shooter: shooter || null }
-    await say(
-      room,
-      `🏆 New record: ${st.record.rolls} roll(s) by ${st.record.shooter ? mention(st.record.shooter) : '—'}`
-    )
-    if (st.record.shooter) {
-      await persistRecord(room, st.record.rolls, st.record.shooter)
-    }
-  }
+async function handleShooterNoRollTimeout (room) {
+  const st = S(room)
+  // Only enforce if we're still waiting for first roll of this round
+  if (st.phase !== PHASES.COME_OUT) return
+  if (st.rollCount > 0) return
 
-  // Prep next hand: rotate shooter, reset per-hand tracking, keep seats
-  if (st.tableUsers.length === 0) {
+  const sh = shooterUuid(st)
+  if (!sh) {
     st.phase = PHASES.IDLE
-    st.point = null
-    st.rollCount = 0
+    await say(room, `Shooter missing — table closed.`)
+    return
+  }
+
+  // “Assume the original shooter is not playing this round”
+  // We remove them from seats; they can rejoin next join window.
+  const idx = st.tableUsers.indexOf(sh)
+  if (idx !== -1) st.tableUsers.splice(idx, 1)
+
+  // Fix shooterIdx after removal
+  if (st.shooterIdx >= st.tableUsers.length) st.shooterIdx = 0
+
+  await say(
+    room,
+    `⏱️ ${mention(sh)} didn’t roll in time — skipping them for this round.\n` +
+    `They can rejoin later with **/craps join**.`
+  )
+
+  // If table empty now, close it. Otherwise open an inter-hand join for next shooter.
+  if (!st.tableUsers.length) {
+    st.phase = PHASES.IDLE
     resetAllBets(st)
-    st.roundResults = Object.create(null)
-    clearTimers(st)
     await say(room, `No players seated. Type **/craps** to open a new table.`)
     return
   }
 
-  nextShooter(st)
-  st.point = null
-  st.rollCount = 0
-  st.roundResults = Object.create(null)
-
-  // Clear ALL bets for next hand (simple + clean). Players re-bet each hand.
-  resetAllBets(st)
-
-  clearTimers(st)
-  await say(room, `🔄 Next shooter: ${mention(shooterUuid(st))}`)
-  await openBettingWindow(room, { requireLineBets: false })
+  // Next shooter is whoever is now at shooterIdx (already adjusted)
+  await openInterHandJoin(room)
 }
 
-// ──────────────────────────────────────────────
-// Bets
-// ──────────────────────────────────────────────
+/* ───────────────────────── Bets ───────────────────────── */
+
 async function placeLineBet (kind, user, amount, room) {
   const st = S(room)
   const amt = Number(amount || 0)
@@ -406,13 +357,8 @@ async function placeLineBet (kind, user, amount, room) {
     return
   }
 
-  // Allow line bets during the betting window OR during COME_OUT (before roll).
-  if (![PHASES.BETTING, PHASES.COME_OUT].includes(st.phase)) {
-    await say(room, `${mention(user)} you may place Pass/Don't Pass only before the point is established.`)
-    return
-  }
-  if (st.phase === PHASES.COME_OUT && st.point) {
-    await say(room, `${mention(user)} point is already set — line bets are locked until the next come-out.`)
+  if (st.phase !== PHASES.BETTING) {
+    await say(room, `${mention(user)} Pass/Don't Pass bets are only during the betting window.`)
     return
   }
 
@@ -528,23 +474,25 @@ async function removePlaceBet (num, user, room) {
   await say(room, `↩️ ${mention(user)} removed place ${n}, returned ${fmtMoney(amt)}.`)
 }
 
-// ──────────────────────────────────────────────
-// Payout helpers
-// ──────────────────────────────────────────────
+/* ───────────────────────── Payout helpers ───────────────────────── */
+
 function placeProfit (num, amt) {
-  if (num === 4 || num === 10) return amt * (9/5)
-  if (num === 5 || num === 9)  return amt * (7/5)
-  if (num === 6 || num === 8)  return amt * (7/6)
+  if (num === 4 || num === 10) return amt * (9 / 5)
+  if (num === 5 || num === 9) return amt * (7 / 5)
+  if (num === 6 || num === 8) return amt * (7 / 6)
   return 0
 }
 
-// ──────────────────────────────────────────────
-// Rolling + resolution (single recap block)
-// ──────────────────────────────────────────────
+/* ───────────────────────── Rolling + recap block ───────────────────────── */
+
 async function shooterRoll (user, room) {
   const st = S(room)
+
   if (!isShooter(user, st)) { await say(room, `${mention(user)} only the shooter may roll.`); return }
   if (![PHASES.COME_OUT, PHASES.POINT].includes(st.phase)) { await say(room, `Not a rolling phase.`); return }
+
+  // Shooter rolled — stop the “must roll” timer (only applies before first roll)
+  stopRollTimer(room)
 
   const [d1, d2, total] = dice()
   st.rollCount++
@@ -553,7 +501,6 @@ async function shooterRoll (user, room) {
   recap.push(`🎲 **Roll:** **${d1} + ${d2} = ${total}**${st.point ? `  _(point is ${st.point})_` : ''}`)
 
   if (st.phase === PHASES.COME_OUT) {
-    // Come-out decisions resolve line bets, but do NOT end the hand.
     if (total === 7 || total === 11) {
       const passLines = await settlePass(st, 'win')
       const dpLines = await settleDontPass(st, 'lose')
@@ -563,14 +510,14 @@ async function shooterRoll (user, room) {
       if (dpLines.length) res.push(`**Don't Pass:**\n${dpLines.join('\n')}`)
       if (res.length) recap.push(`📌 **Resolutions:**\n${res.join('\n')}`)
 
-      recap.push(`✅ Come-out **${total}** (natural). New come-out — place **/pass** or **/dontpass**, then shooter **/roll**.`)
+      recap.push(`✅ Come-out **${total}** (natural). New come-out — join next hand only on seven-out.`)
       st.point = null
       st.phase = PHASES.COME_OUT
       await say(room, recap.join('\n'))
       return
     }
 
-    if ([2,3,12].includes(total)) {
+    if ([2, 3, 12].includes(total)) {
       const passLines = await settlePass(st, 'lose')
       const dpLines = await settleDontPass(st, total === 12 ? 'push' : 'win')
 
@@ -579,14 +526,13 @@ async function shooterRoll (user, room) {
       if (dpLines.length) res.push(`**Don't Pass:**\n${dpLines.join('\n')}`)
       if (res.length) recap.push(`📌 **Resolutions:**\n${res.join('\n')}`)
 
-      recap.push(`💥 Come-out craps **${total}**. New come-out — place **/pass** or **/dontpass**, then shooter **/roll**.`)
+      recap.push(`💥 Come-out craps **${total}**. New come-out — join next hand only on seven-out.`)
       st.point = null
       st.phase = PHASES.COME_OUT
       await say(room, recap.join('\n'))
       return
     }
 
-    // Point established
     st.point = total
     st.phase = PHASES.POINT
     recap.push(`🟢 **Point established:** **${st.point}**`)
@@ -615,10 +561,9 @@ async function shooterRoll (user, room) {
     if (dpLines.length) lineRes.push(`**Don't Pass:**\n${dpLines.join('\n')}`)
     if (lineRes.length) recap.push(`🎯 **Point hit:**\n${lineRes.join('\n')}`)
 
-    // SHOOTER HAND CONTINUES: back to come-out, same shooter
     st.point = null
     st.phase = PHASES.COME_OUT
-    recap.push(`✅ Point made! **Same shooter** — new come-out. Place **/pass** or **/dontpass**, then **/roll**.`)
+    recap.push(`✅ Point made! **Same shooter** — new come-out.`)
     await say(room, recap.join('\n'))
     return
   }
@@ -637,10 +582,11 @@ async function shooterRoll (user, room) {
     return
   }
 
-  // Otherwise: point stays on
   recap.push(`⏭️ Point stays **${st.point}**. Shooter **/roll** when ready.`)
   await say(room, recap.join('\n'))
 }
+
+/* ───────────────────────── Settlements / Resolutions (return lines) ───────────────────────── */
 
 async function settlePass (st, outcome) {
   const lines = []
@@ -688,7 +634,7 @@ async function resolveComeWaiting (total, st) {
       await addToUserWallet(u, amt * 2)
       addRoundResult(st, u, amt)
       lines.push(`${mention(u)} COME **+${fmtMoney(amt)}**`)
-    } else if ([2,3,12].includes(total)) {
+    } else if ([2, 3, 12].includes(total)) {
       if (total === 12) {
         await addToUserWallet(u, amt)
         lines.push(`${mention(u)} COME push (${fmtMoney(amt)})`)
@@ -704,7 +650,7 @@ async function resolveComeWaiting (total, st) {
   }
 
   for (const [u, amt] of Object.entries(st.dontComeWaiting)) {
-    if ([2,3].includes(total)) {
+    if ([2, 3].includes(total)) {
       await addToUserWallet(u, amt * 2)
       addRoundResult(st, u, amt)
       lines.push(`${mention(u)} DON'T COME **+${fmtMoney(amt)}**`)
@@ -786,9 +732,53 @@ async function resolvePlace (total, st) {
   return lines
 }
 
-// ──────────────────────────────────────────────
-// Table mgmt
-// ──────────────────────────────────────────────
+/* ───────────────────────── Hand End (seven-out only) ───────────────────────── */
+
+function nextShooter (st) {
+  if (!st.tableUsers.length) return
+  st.shooterIdx = (st.shooterIdx + 1) % st.tableUsers.length
+}
+
+async function endHand (room, reason) {
+  const st = S(room)
+  const shooter = shooterUuid(st)
+
+  await say(room, reason ? `🧾 Hand over — ${reason}` : `🧾 Hand over.`)
+
+  // Totals for the hand
+  const rrKeys = Object.keys(st.roundResults || {})
+  if (rrKeys.length) {
+    const totals = rrKeys.map(u => {
+      const amt = st.roundResults[u]
+      const sign = amt >= 0 ? '+' : '-'
+      return `${mention(u)} ${sign}${fmtMoney(Math.abs(amt))}`
+    })
+    await say(room, `Hand totals:\n${totals.join('\n')}`)
+  }
+
+  // Record check
+  if (st.rollCount > st.record.rolls) {
+    st.record = { rolls: st.rollCount, shooter: shooter || null }
+    await say(room, `🏆 New record: ${st.record.rolls} roll(s) by ${shooter ? mention(shooter) : '—'}`)
+    if (shooter) await persistRecord(room, st.record.rolls, shooter)
+  }
+
+  // Rotate shooter for next hand
+  nextShooter(st)
+
+  // Reset hand state, keep seats
+  st.point = null
+  st.rollCount = 0
+  st.roundResults = Object.create(null)
+  resetAllBets(st)
+  stopRollTimer(room)
+
+  // Open a JOIN window so others can join before next betting
+  await openInterHandJoin(room)
+}
+
+/* ───────────────────────── Table mgmt / Bets view ───────────────────────── */
+
 async function joinTable (user, room) {
   const st = S(room)
   if (!st.tableUsers.includes(user)) {
@@ -797,19 +787,30 @@ async function joinTable (user, room) {
   }
 }
 
-async function leaveTable (user, room) {
+function userBetsView (room, uuid) {
   const st = S(room)
-  const i = st.tableUsers.indexOf(user)
-  if (i !== -1) {
-    st.tableUsers.splice(i, 1)
-    if (st.shooterIdx >= st.tableUsers.length) st.shooterIdx = 0
-    await say(room, `👋 ${mention(user)} left the table.`)
+  const lines = []
+
+  if (st.pass[uuid]) lines.push(`Pass: ${fmtMoney(st.pass[uuid])}`)
+  if (st.dontPass[uuid]) lines.push(`Don't Pass: ${fmtMoney(st.dontPass[uuid])}`)
+  if (st.comeWaiting[uuid]) lines.push(`Come (waiting): ${fmtMoney(st.comeWaiting[uuid])}`)
+  if (st.dontComeWaiting[uuid]) lines.push(`Don't Come (waiting): ${fmtMoney(st.dontComeWaiting[uuid])}`)
+  if (st.comePoint[uuid]) lines.push(`Come on ${st.comePoint[uuid].num}: ${fmtMoney(st.comePoint[uuid].amt)}`)
+  if (st.dontComePoint[uuid]) lines.push(`Don't Come vs ${st.dontComePoint[uuid].num}: ${fmtMoney(st.dontComePoint[uuid].amt)}`)
+
+  const places = []
+  for (const n of PLACES) {
+    const amt = st.place[n]?.[uuid]
+    if (amt) places.push(`${n}: ${fmtMoney(amt)}`)
   }
+  if (places.length) lines.push(`Place: ${places.join(', ')}`)
+
+  if (!lines.length) return `No active bets for ${mention(uuid)}.`
+  return `**Your bets (${mention(uuid)})**\n` + lines.map(l => `• ${l}`).join('\n')
 }
 
-// ──────────────────────────────────────────────
-// Router (supports both /craps … and top-level bet aliases)
-// ─────────────────────────────────────────────-
+/* ───────────────────────── Router ───────────────────────── */
+
 export async function routeCrapsMessage (payload) {
   const raw = (payload.message || '').trim()
   const room = payload.room || ROOM_DEFAULT
@@ -817,7 +818,7 @@ export async function routeCrapsMessage (payload) {
   const uuid = sender?.uuid || sender?.uid || sender?.id || sender
   const low = raw.toLowerCase()
 
-  // Top-level: /bets
+  // Top-level /bets
   if (/^\/bets\b/i.test(low)) {
     await postMessage({ room, message: userBetsView(room, uuid) })
     return true
@@ -835,7 +836,7 @@ export async function routeCrapsMessage (payload) {
   if (alias) {
     const cmd = alias[1]
     const parts = raw.split(/\s+/)
-    parts.shift() // drop /cmd
+    parts.shift()
     switch (cmd) {
       case 'pass':       await placeLineBet('pass', uuid, parts[0], room); return true
       case 'dontpass':   await placeLineBet('dont', uuid, parts[0], room); return true
@@ -843,19 +844,13 @@ export async function routeCrapsMessage (payload) {
       case 'dontcome':   await placeComeBet('dontcome', uuid, parts[0], room); return true
       case 'place': {
         const [num, amt] = parts
-        if (!num || !amt) {
-          await postMessage({ room, message: `Usage: /place <4|5|6|8|9|10> <amount>` })
-          return true
-        }
+        if (!num || !amt) { await postMessage({ room, message: `Usage: /place <4|5|6|8|9|10> <amount>` }); return true }
         await placePlaceBet(Number(num), uuid, amt, room)
         return true
       }
       case 'removeplace': {
         const [num] = parts
-        if (!num) {
-          await postMessage({ room, message: `Usage: /removeplace <4|5|6|8|9|10>` })
-          return true
-        }
+        if (!num) { await postMessage({ room, message: `Usage: /removeplace <4|5|6|8|9|10>` }); return true }
         await removePlaceBet(Number(num), uuid, room)
         return true
       }
@@ -863,18 +858,17 @@ export async function routeCrapsMessage (payload) {
     }
   }
 
-  // If it's not /craps, we’re done
   if (!/^\/craps\b/i.test(raw)) return false
 
   const parts = raw.split(/\s+/); parts.shift()
   const sub = (parts.shift() || '').toLowerCase()
 
   switch (sub) {
-    case '': { // bare /craps
+    case '': {
       if (S(room).phase === PHASES.IDLE) {
         await openJoinWindow(room, uuid)
       } else {
-        await postMessage({ room, message: tableView(room) + `\n\nUse **/craps start** to reset/open a new table when idle.` })
+        await postMessage({ room, message: `Craps is running. Use **/craps join** during join windows, or **/craps bets** to see your bets.` })
       }
       return true
     }
@@ -884,15 +878,8 @@ export async function routeCrapsMessage (payload) {
       return true
 
     case 'join':
-      if (S(room).phase !== PHASES.JOIN) {
-        await postMessage({ room, message: `You can only join during the join window.` })
-        return true
-      }
+      if (S(room).phase !== PHASES.JOIN) { await postMessage({ room, message: `You can only join during the join window.` }); return true }
       await joinTable(uuid, room)
-      return true
-
-    case 'table':
-      await postMessage({ room, message: tableView(room) })
       return true
 
     case 'bets':
@@ -904,27 +891,21 @@ export async function routeCrapsMessage (payload) {
       await postMessage({
         room,
         message: `**Craps Instructions**
+Join during join windows, bet Pass/Don't Pass during betting, then the shooter rolls.
 
-Craps is played with a rotating shooter. You join the table, place bets, then the shooter rolls.
+**Commands**
+/craps — start if idle
+/craps start — reset & open join
+/craps join — sit during join
+/pass <amt>, /dontpass <amt> — line bets (betting window)
+/roll — shooter rolls (must roll within ${ROLL_SECS}s after betting closes)
+/come <amt>, /dontcome <amt> — point phase
+/place <num> <amt>, /removeplace <num> — point phase
+/bets or /craps bets — show only your bets
 
-**Line bets (before a point is established):**
-• **/pass <amount>** — win on **7 or 11** on come-out; lose on **2, 3, 12**; otherwise a **point** is set and you win if the point repeats before a 7.
-• **/dontpass <amount>** — win on **2 or 3**; push on **12**; lose on **7 or 11**; after point, you win if a **7** comes before the point.
-
-**After a point is set (POINT phase):**
-• **/come <amount>** — wins on **7/11**, loses on **2/3/12**, otherwise moves to the rolled number (your personal point) and wins if it repeats before a 7.
-• **/dontcome <amount>** — wins on **2/3**, pushes on **12**, loses on **7/11**, otherwise sets “against” a number and wins if 7 comes before that number.
-• **/place <4|5|6|8|9|10> <amount>** — win if that number hits before a 7 (standard place odds).
-• **/removeplace <number>** — remove an active place bet and get your stake back.
-
-**Commands:**
-/craps — start a new game (if idle) or show the current table
-/craps start — reset and open a new join window
-/craps join — join during the join window
-/craps bets — show only your bets (or use **/bets**)
-/roll — shooter rolls the dice
-
-Flow: join → betting → come-out → point → (point made returns to come-out; seven-out ends the hand and rotates shooter).`
+**Flow**
+join → betting → come-out → point
+Point made returns to come-out (same shooter). Seven-out ends the hand, rotates shooter, and opens a new join window.`
       })
       return true
 
