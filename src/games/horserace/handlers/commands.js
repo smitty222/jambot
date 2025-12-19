@@ -62,7 +62,8 @@ async function postGif (type, caption = '') {
 
 // ── Race flow timing ───────────────────────────────────────────────────
 const ENTRY_MS = 30_000
-const BET_MS = 30_000
+// Increase the betting period to give players more time to place their wagers
+const BET_MS = 45_000
 
 // ── Post-time countdown ────────────────────────────────────────────────
 async function postCountdown (n = 5) {
@@ -415,31 +416,37 @@ bus.on('raceFinished', async ({ winnerIdx, raceState, payouts, ownerBonus, finis
   const marginCells = blocks(raceState[winnerIdx].progress - runnerUp.progress, finishDistance)
   const isPhotoFinish = marginCells <= 1
 
-  // 1) Post the final board first (no commentary line yet — we’ll time it)
-  await postMessage({
-    room: ROOM,
-    message: ['```', header, track, '```'].join('\n')
-  })
-
-  // 2) Suspense flow
+  // Display and suspense ordering:
+  // If it's a photo finish (very close margin), show the photo finish GIF first to build suspense,
+  // then reveal the final board and commentary. Otherwise post the board, commentary and finish GIF
+  // in the original order.
   if (isPhotoFinish) {
-    // GIF first…
+    // Photo finish: GIF comes first
     await postGif('photoFinish')
-
-    // …then a short suspense delay…
+    // Wait before revealing the outcome
     await new Promise(r => setTimeout(r, PHOTO_SUSPENSE_MS))
-
-    // …then the reveal line
-    const finaleLine = makeFinalCommentary(raceState, winnerIdx, finishDistance) // "📸 Photo finish! ..."
-    if (finaleLine) {
-      await postMessage({ room: ROOM, message: finaleLine })
-    }
-  } else {
-    // Non-photo: commentary first, then finish GIF
+    // Now show the final board
+    await postMessage({
+      room: ROOM,
+      message: ['```', header, track, '```'].join('\n')
+    })
+    // Reveal commentary line after the board
     const finaleLine = makeFinalCommentary(raceState, winnerIdx, finishDistance)
     if (finaleLine) {
       await postMessage({ room: ROOM, message: finaleLine })
     }
+  } else {
+    // Non-photo finish: board first
+    await postMessage({
+      room: ROOM,
+      message: ['```', header, track, '```'].join('\n')
+    })
+    // Then commentary
+    const finaleLine = makeFinalCommentary(raceState, winnerIdx, finishDistance)
+    if (finaleLine) {
+      await postMessage({ room: ROOM, message: finaleLine })
+    }
+    // And finally the finish GIF
     await postGif('finish')
   }
 

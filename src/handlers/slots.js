@@ -105,7 +105,7 @@ async function playSlots (userUUID, betSize = 1, paylines = 1) {
     await removeFromUserWallet(userUUID, totalBet)
 
     let currentJackpot = getJackpotValue()
-    const jackpotIncrement = totalBet * 0.05
+    const jackpotIncrement = totalBet * 0.15
     currentJackpot += jackpotIncrement
     updateJackpotValue(currentJackpot)
 
