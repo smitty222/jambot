@@ -6,6 +6,8 @@
 //  - After betting closes, shooter has a roll timer (default 45s). If they don’t roll, skip them for this round.
 //  - FIX: If shooter times out BEFORE FIRST ROLL, do NOT wipe bets. Pass shooter (keep bets alive).
 //         If only one player times out before first roll, end game and REFUND all bets.
+//  - FIX: When point is made, open a come-out BETTING window again (Pass/Don't Pass), same shooter.
+//  - FIX: Come-point / Don't-come-point / Place bets remain active on come-out rolls too.
 
 import { postMessage } from '../../libs/cometchat.js'
 import {
@@ -189,6 +191,21 @@ function lineBetsSummary (st) {
   return [show(st.pass,'Pass'), show(st.dontPass,"Don't Pass")].filter(Boolean).join('\n') || 'No line bets.'
 }
 
+// NEW: detect whether ANY bets exist (so we can allow “no line bet” come-outs)
+function hasAnyBets (st) {
+  const hasObj = (o) => o && Object.keys(o).length > 0
+  const hasPlace = PLACES.some(n => hasObj(st.place?.[n]))
+  return (
+    hasObj(st.pass) ||
+    hasObj(st.dontPass) ||
+    hasObj(st.comeWaiting) ||
+    hasObj(st.dontComeWaiting) ||
+    hasObj(st.comePoint) ||
+    hasObj(st.dontComePoint) ||
+    hasPlace
+  )
+}
+
 // NEW: Refund EVERYTHING currently held in state (used when round ends before any roll)
 async function refundAllBets (st) {
   // line
@@ -306,26 +323,52 @@ async function closeJoinOpenBetting (room) {
   }, BET_SECS * 1000)
 }
 
+// NEW: open a come-out betting window again (same shooter; does NOT reset other bets)
+async function openComeOutBetting (room, reasonLine = '') {
+  const st = S(room)
+
+  // stop any current roll/bet timers
+  if (st.timers.bet) { clearTimeout(st.timers.bet); st.timers.bet = null }
+  if (st.timers.roll) { clearTimeout(st.timers.roll); st.timers.roll = null }
+
+  st.phase = PHASES.BETTING
+  st.point = null
+
+  const prefix = reasonLine ? `${reasonLine}\n` : ''
+  await say(
+    room,
+    `${prefix}💰 **Come-out betting open** for **${BET_SECS}s**.\n` +
+    `Place **/pass <amt>** or **/dontpass <amt>**. (Other bets stay working.)`
+  )
+
+  st.timers.bet = setTimeout(async () => {
+    st.timers.bet = null
+    await closeBettingBeginComeOut(room)
+  }, BET_SECS * 1000)
+}
+
 async function closeBettingBeginComeOut (room) {
   const st = S(room)
 
-  const anyLine = Object.keys(st.pass).length || Object.keys(st.dontPass).length
-  if (!anyLine) {
+  // If literally nobody has ANY bets working, end it.
+  if (!hasAnyBets(st)) {
     st.phase = PHASES.IDLE
-    await say(room, `No valid line bets. Table closed.`)
+    await say(room, `No active bets. Table closed.`)
     return
   }
 
-  await say(room, `📋 **Line bets locked:**\n${lineBetsSummary(st)}`)
+  const anyLine = Object.keys(st.pass).length || Object.keys(st.dontPass).length
+  if (anyLine) {
+    await say(room, `📋 **Line bets locked:**\n${lineBetsSummary(st)}`)
+  } else {
+    await say(room, `📋 No Pass/Don't Pass bets this come-out.`)
+  }
 
   st.phase = PHASES.COME_OUT
   st.point = null
 
   const sh = shooterUuid(st)
-  await say(
-    room,
-    `🎯 Shooter: ${mention(sh)} — you have **${ROLL_SECS}s** to **/roll**.`
-  )
+  await say(room, `🎯 Shooter: ${mention(sh)} — you have **${ROLL_SECS}s** to **/roll**.`)
 
   startRollTimer(room)
 }
@@ -571,6 +614,14 @@ async function shooterRoll (user, room) {
   recap.push(`🎲 **Roll:** **${d1} + ${d2} = ${total}**${st.point ? `  _(point is ${st.point})_` : ''}`)
 
   if (st.phase === PHASES.COME_OUT) {
+    // IMPORTANT: Come-point / Don't-come-point / Place bets are still working on come-out rolls.
+    const comePointLines = await resolveComePoints(total, st)
+    const placeLines = await resolvePlace(total, st)
+    const otherRes = []
+    if (comePointLines.length) otherRes.push(comePointLines.join('\n'))
+    if (placeLines.length) otherRes.push(placeLines.join('\n'))
+    if (otherRes.length) recap.push(`📌 **Other bets:**\n${otherRes.join('\n')}`)
+
     if (total === 7 || total === 11) {
       const passLines = await settlePass(st, 'win')
       const dpLines = await settleDontPass(st, 'lose')
@@ -580,10 +631,9 @@ async function shooterRoll (user, room) {
       if (dpLines.length) res.push(`**Don't Pass:**\n${dpLines.join('\n')}`)
       if (res.length) recap.push(`📌 **Resolutions:**\n${res.join('\n')}`)
 
-      recap.push(`✅ Come-out **${total}** (natural). New come-out — join next hand only on seven-out.`)
-      st.point = null
-      st.phase = PHASES.COME_OUT
       await say(room, recap.join('\n'))
+      st.point = null
+      await openComeOutBetting(room, `✅ Come-out **${total}** (natural). Same shooter — new come-out.`)
       return
     }
 
@@ -596,10 +646,9 @@ async function shooterRoll (user, room) {
       if (dpLines.length) res.push(`**Don't Pass:**\n${dpLines.join('\n')}`)
       if (res.length) recap.push(`📌 **Resolutions:**\n${res.join('\n')}`)
 
-      recap.push(`💥 Come-out craps **${total}**. New come-out — join next hand only on seven-out.`)
-      st.point = null
-      st.phase = PHASES.COME_OUT
       await say(room, recap.join('\n'))
+      st.point = null
+      await openComeOutBetting(room, `💥 Come-out craps **${total}**. Same shooter — new come-out.`)
       return
     }
 
@@ -632,9 +681,8 @@ async function shooterRoll (user, room) {
     if (lineRes.length) recap.push(`🎯 **Point hit:**\n${lineRes.join('\n')}`)
 
     st.point = null
-    st.phase = PHASES.COME_OUT
-    recap.push(`✅ Point made! **Same shooter** — new come-out.`)
     await say(room, recap.join('\n'))
+    await openComeOutBetting(room, `✅ Point made! **Same shooter** — come-out is next.`)
     return
   }
 
@@ -975,7 +1023,8 @@ Join during join windows, bet Pass/Don't Pass during betting, then the shooter r
 
 **Flow**
 join → betting → come-out → point
-Point made returns to come-out (same shooter). Seven-out ends the hand, rotates shooter, and opens a new join window.
+When the point is made, the same shooter continues and a new come-out betting window opens for Pass/Don't Pass.
+Seven-out ends the hand, rotates shooter, and opens a new join window.
 
 **Timeout rule**
 If the shooter fails to roll before the first roll of a round:
