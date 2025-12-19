@@ -56,14 +56,13 @@ import {
 import { isUserAuthorized } from '../utils/API.js'
 
 // Album list management functions.  These helpers read and write a simple JSON
-// file at the project root to keep track of albums that should be queued.  The
-// list is updated via the /albumadd and /albumremove commands.
+// file at the project root to keep track of albums that should be queued.
+// The list is updated via the /albumadd and /albumremove commands.
 // Pull in album list helpers.  In addition to adding and removing, we can
 // query the current list of queued albums so users can see what is in the
 // rotation.  getAlbumList returns an array of album names (lower‑cased) or
 // an empty array if none have been queued yet.
 import { addAlbum, removeAlbum, getAlbumList } from '../utils/albumlistManager.js'
-
 
 // ---------------------------------------------------------------------------
 // Command registry
@@ -88,6 +87,7 @@ const commandRegistry = {
     const response = await handleSlotsCommand(userUUID, betAmount)
     await postMessage({ room, message: response })
   },
+
   // 🎡 Roulette help + start:
   // `/roulette` → instructions
   // `/roulette start` → start game (if not already running)
@@ -407,6 +407,11 @@ const commandRegistry = {
     }
   },
 
+  // 🪙 Crypto commands: `/crypto ...`
+  crypto: async ({ payload, room, args }) => {
+    await handleCryptoCommand({ payload, room, args })
+  },
+
   // -----------------------------------------------------------------------
   // Avatar commands
   // These handlers update the bot's appearance or change a user's avatar.
@@ -539,15 +544,3 @@ export async function dispatchCommand (txt, payload, room) {
   }
   return true
 }
- /**
-   * Crypto investing commands.
-   * `/crypto help` – usage instructions
-   * `/crypto quote btc` – spot price
-   * `/crypto buy btc 100` – buy for USD
-   * `/crypto sell btc 50` – sell for USD
-   * `/crypto portfolio` – show holdings
-   */
-  crypto: async ({ payload, room, args }) => {
-    await handleCryptoCommand({ payload, room, args })
-  }
-

@@ -14,6 +14,7 @@ import {
   addPosition,
   reducePosition,
   getPositions,
+  getPosition,
   recordTrade
 } from '../database/dbcrypto.js'
 import {
