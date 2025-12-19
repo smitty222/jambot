@@ -32,6 +32,14 @@ import {
   COIN_ALIASES
 } from '../utils/cryptoPrice.js'
 
+// Format a crypto quantity with commas and up to 6 decimals
+function formatQty (amount) {
+  return Number(amount).toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 6
+  })
+}
+
 // Format a cash amount to two decimal places and thousands separators. Returns
 // a string like "1,234.56" or "0.00".
 function formatUsd (amount) {
@@ -45,8 +53,8 @@ function buildHelpMessage () {
     'Use the `/crypto` command to manage your paper crypto portfolio.\n\n' +
     '*Commands:*\n' +
     '`/crypto price <symbol>` – Show the current USD price for a coin (e.g. btc, eth).\n' +
-    '`/crypto buy <symbol> <usdAmount>` – Buy a coin using USD from your wallet balance.\n' +
-    '`/crypto sell <symbol> <usdAmount>` – Sell a coin for USD (sells proportionally by value).\n' +
+    '`/crypto buy <symbol> <Amount>` – Buy a coin using cash from your wallet balance.\n' +
+    '`/crypto sell <symbol> <Amount>` – Sell a coin for cash (sells proportionally by value).\n' +
     '`/crypto portfolio` – Show your current crypto holdings and cash.\n' +
     '`/crypto help` – Show this help message.\n\n' +
     'Supported symbols include: ' + Object.keys(COIN_ALIASES).filter((k, i, arr) => arr.indexOf(k) === i).join(', ') + '.\n' +
@@ -82,7 +90,7 @@ export async function handleCryptoCommand ({ payload, room, args }) {
         return
       }
       const price = await getCryptoPrice(coinId)
-      await postMessage({ room, message: `The current price of *${coinInput.toUpperCase()}* is $${formatUsd(price)} USD.` })
+      await postMessage({ room, message: `The current price of *${coinInput.toUpperCase()}* is $${formatUsd(price)}.` })
       return
     }
     if (sub === 'portfolio') {
@@ -103,7 +111,7 @@ export async function handleCryptoCommand ({ payload, room, args }) {
         const price = priceMap[pos.coinId] || 0
         const value = pos.quantity * price
         totalValue += value
-        return `${pos.symbol.toUpperCase()}: ${pos.quantity.toFixed(6)} (avg $${formatUsd(pos.avgCostUsd)}) – worth $${formatUsd(value)}`
+        return `${pos.symbol.toUpperCase()}: ${formatQty(pos.quantity)} (avg $${formatUsd(pos.avgCostUsd)}) – worth $${formatUsd(value)}`
       })
       lines.push(`\nWallet cash: $${formatUsd(cash)}`)
       lines.push(`Total Net Worth: $${formatUsd(totalValue)}`)
@@ -112,7 +120,7 @@ export async function handleCryptoCommand ({ payload, room, args }) {
     }
     if (sub === 'buy') {
       if (parts.length < 3) {
-        await postMessage({ room, message: 'Usage: `/crypto buy <symbol> <usdAmount>`' })
+        await postMessage({ room, message: 'Usage: `/crypto buy <symbol> <Amount>`' })
         return
       }
       const coinInput = parts[1]
@@ -123,7 +131,7 @@ export async function handleCryptoCommand ({ payload, room, args }) {
       }
       const usdAmount = parseFloat(parts[2])
       if (!Number.isFinite(usdAmount) || usdAmount <= 0) {
-        await postMessage({ room, message: 'Please provide a positive USD amount to invest.' })
+        await postMessage({ room, message: 'Please provide a positive cash amount to invest.' })
         return
       }
       // Check available cash from the user’s wallet
@@ -149,7 +157,7 @@ export async function handleCryptoCommand ({ payload, room, args }) {
     }
     if (sub === 'sell') {
       if (parts.length < 3) {
-        await postMessage({ room, message: 'Usage: `/crypto sell <symbol> <usdAmount>`' })
+        await postMessage({ room, message: 'Usage: `/crypto sell <symbol> <Amount>`' })
         return
       }
       const coinInput = parts[1]
@@ -160,7 +168,7 @@ export async function handleCryptoCommand ({ payload, room, args }) {
       }
       const usdAmount = parseFloat(parts[2])
       if (!Number.isFinite(usdAmount) || usdAmount <= 0) {
-        await postMessage({ room, message: 'Please provide a positive USD amount to sell.' })
+        await postMessage({ room, message: 'Please provide a positive cash amount to sell.' })
         return
       }
       const position = getPosition(userId, coinId)

@@ -27,7 +27,6 @@ export const COIN_ALIASES = {
   maticnetwork: 'matic-network',
   xrp: 'ripple',
   ripple: 'ripple',
-  pepe: 'pepe',
 }
 
 // Resolve an input symbol or id to a CoinGecko id. Returns null when the
