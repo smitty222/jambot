@@ -8,15 +8,24 @@
 
 import { postMessage } from '../libs/cometchat.js'
 import {
-  ensureCryptoAccount,
-  getCryptoCash,
-  updateCryptoCash,
+  // Crypto-specific helpers for positions and trade history. We still store
+  // positions and trades in the crypto tables, but cash is handled via the
+  // general user wallet (dbwalletmanager) instead of a separate crypto account.
   addPosition,
   reducePosition,
   getPositions,
   getPosition,
   recordTrade
 } from '../database/dbcrypto.js'
+import {
+  // Wallet helpers for reading and updating a user's cash balance. These
+  // functions operate on the shared wallet used by other games (slots,
+  // roulette, etc.), so crypto purchases and sales draw from and deposit
+  // into the same pot.
+  getUserWallet,
+  addToUserWallet,
+  removeFromUserWallet
+} from '../database/dbwalletmanager.js'
 import {
   resolveCoinId,
   getCryptoPrice,
@@ -36,7 +45,7 @@ function buildHelpMessage () {
     'Use the `/crypto` command to manage your paper crypto portfolio.\n\n' +
     '*Commands:*\n' +
     '`/crypto quote <symbol>` – Show the current USD price for a coin (e.g. btc, eth).\n' +
-    '`/crypto buy <symbol> <usdAmount>` – Buy a coin using USD from your crypto cash balance.\n' +
+    '`/crypto buy <symbol> <usdAmount>` – Buy a coin using USD from your wallet balance.\n' +
     '`/crypto sell <symbol> <usdAmount>` – Sell a coin for USD (sells proportionally by value).\n' +
     '`/crypto portfolio` – Show your current crypto holdings and cash.\n' +
     '`/crypto help` – Show this help message.\n\n' +
@@ -77,8 +86,8 @@ export async function handleCryptoCommand ({ payload, room, args }) {
       return
     }
     if (sub === 'portfolio') {
-      ensureCryptoAccount(userId)
-      const cash = getCryptoCash(userId)
+      // Use the general wallet for cash rather than a separate crypto cash
+      const cash = getUserWallet(userId)
       const positions = getPositions(userId)
       if (!positions.length) {
         await postMessage({ room, message: `💼 Your crypto portfolio is empty. Cash balance: $${formatUsd(cash)}.` })
@@ -96,7 +105,7 @@ export async function handleCryptoCommand ({ payload, room, args }) {
         totalValue += value
         return `${pos.symbol.toUpperCase()}: ${pos.quantity.toFixed(6)} (avg $${formatUsd(pos.avgCostUsd)}) – worth $${formatUsd(value)}`
       })
-      lines.push(`\nCrypto cash: $${formatUsd(cash)}`)
+      lines.push(`\nWallet cash: $${formatUsd(cash)}`)
       lines.push(`Total portfolio value: $${formatUsd(totalValue)}`)
       await postMessage({ room, message: lines.join('\n') })
       return
@@ -117,17 +126,22 @@ export async function handleCryptoCommand ({ payload, room, args }) {
         await postMessage({ room, message: 'Please provide a positive USD amount to invest.' })
         return
       }
-      // Check available cash
-      const cash = getCryptoCash(userId)
+      // Check available cash from the user’s wallet
+      const cash = getUserWallet(userId)
       if (cash < usdAmount) {
-        await postMessage({ room, message: `Insufficient crypto cash. Available: $${formatUsd(cash)}` })
+        await postMessage({ room, message: `Insufficient funds. Available wallet balance: $${formatUsd(cash)}` })
         return
       }
       // Fetch current price and calculate quantity
       const price = await getCryptoPrice(coinId)
       const qty = usdAmount / price
-      // Update DB: debit cash, add position, record trade
-      updateCryptoCash(userId, -usdAmount)
+      // Debit wallet; if removal fails return an error
+      const removed = removeFromUserWallet(userId, usdAmount)
+      if (!removed) {
+        await postMessage({ room, message: `Insufficient funds. Available wallet balance: $${formatUsd(getUserWallet(userId))}` })
+        return
+      }
+      // Add position and record trade
       addPosition(userId, coinId, coinInput.toLowerCase(), qty, price)
       recordTrade(userId, coinId, 'BUY', qty, price)
       await postMessage({ room, message: `✅ Bought ${qty.toFixed(6)} ${coinInput.toUpperCase()} @ $${formatUsd(price)} for $${formatUsd(usdAmount)}.` })
@@ -162,9 +176,9 @@ export async function handleCryptoCommand ({ payload, room, args }) {
       }
       // Determine quantity to sell
       const qtyToSell = usdAmount / price
-      // Update DB: reduce position, credit cash, record trade
+      // Update DB: reduce position, credit wallet, record trade
       reducePosition(userId, coinId, qtyToSell)
-      updateCryptoCash(userId, usdAmount)
+      await addToUserWallet(userId, usdAmount)
       recordTrade(userId, coinId, 'SELL', qtyToSell, price)
       await postMessage({ room, message: `✅ Sold ${qtyToSell.toFixed(6)} ${coinInput.toUpperCase()} @ $${formatUsd(price)} for $${formatUsd(usdAmount)}.` })
       return
