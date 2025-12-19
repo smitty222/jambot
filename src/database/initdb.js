@@ -459,3 +459,36 @@ try {
 } catch (e) {
   console.warn('⚠️ Could not merge wallets into users:', e?.message || e)
 }
+// ─── Crypto investing tables ──────────────────────────────────────────────
+// These tables support a paper crypto investing game. Users maintain a
+// separate cash balance for crypto transactions (crypto_accounts), a list of
+// positions aggregated by coin (crypto_positions) and a trade ledger
+// (crypto_trades). See src/database/dbcrypto.js for helper functions.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS crypto_accounts (
+    userId TEXT PRIMARY KEY,
+    cashUsd REAL DEFAULT 0
+  )
+`)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS crypto_positions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    userId TEXT NOT NULL,
+    coinId TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    quantity REAL NOT NULL,
+    avgCostUsd REAL NOT NULL,
+    UNIQUE(userId, coinId)
+  )
+`)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS crypto_trades (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    userId TEXT NOT NULL,
+    coinId TEXT NOT NULL,
+    side TEXT NOT NULL,
+    quantity REAL NOT NULL,
+    priceUsd REAL NOT NULL,
+    timestamp TEXT DEFAULT CURRENT_TIMESTAMP
+  )
+`)

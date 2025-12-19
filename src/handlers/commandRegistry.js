@@ -10,6 +10,7 @@ import { logger } from '../utils/logging.js'
 
 // Game and feature handlers
 import { handleSlotsCommand } from './slots.js'
+import { handleCryptoCommand } from './crypto.js'
 import {
   startRouletteGame,
   handleRouletteBet,
@@ -538,4 +539,15 @@ export async function dispatchCommand (txt, payload, room) {
   }
   return true
 }
+ /**
+   * Crypto investing commands.
+   * `/crypto help` – usage instructions
+   * `/crypto quote btc` – spot price
+   * `/crypto buy btc 100` – buy for USD
+   * `/crypto sell btc 50` – sell for USD
+   * `/crypto portfolio` – show holdings
+   */
+  crypto: async ({ payload, room, args }) => {
+    await handleCryptoCommand({ payload, room, args })
+  }
 
