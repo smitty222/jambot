@@ -4,6 +4,8 @@
 //  - Hand ends only on seven-out (shooter rotates then).
 //  - After a hand ends, open a JOIN window so others can join.
 //  - After betting closes, shooter has a roll timer (default 45s). If they don’t roll, skip them for this round.
+//  - FIX: If shooter times out BEFORE FIRST ROLL, do NOT wipe bets. Pass shooter (keep bets alive).
+//         If only one player times out before first roll, end game and REFUND all bets.
 
 import { postMessage } from '../../libs/cometchat.js'
 import {
@@ -21,10 +23,20 @@ import { getUserNicknameByUuid } from '../../utils/API.js'
 /* ───────────────────────── Records (DB) ───────────────────────── */
 
 async function persistRecord (room, rolls, shooterId) {
+  // NOTE: this file previously referenced `clean` (undefined). Fixing safely here.
+  let shooterNickname = shooterId
   try {
-    await addOrUpdateUser(shooterId, clean)
-    const shooterNickname = await getUserNicknameByUuid(shooterId)
+    shooterNickname = await getUserNicknameByUuid(shooterId)
+  } catch {}
+  const cleanNick = sanitizeNickname(shooterNickname || shooterId) || shooterId
 
+  try {
+    await addOrUpdateUser(shooterId, cleanNick)
+  } catch {
+    // ignore addOrUpdateUser failures; record insert still works
+  }
+
+  try {
     db.prepare(`
       INSERT INTO craps_records (roomId, maxRolls, shooterId, shooterNickname, achievedAt)
       VALUES (?, ?, ?, ?, datetime('now'))
@@ -33,7 +45,7 @@ async function persistRecord (room, rolls, shooterId) {
         shooterId = excluded.shooterId,
         shooterNickname = excluded.shooterNickname,
         achievedAt = excluded.achievedAt
-    `).run(room, rolls, shooterId, shooterNickname)
+    `).run(room, rolls, shooterId, shooterNickname || shooterId)
   } catch {
     db.prepare(`
       INSERT INTO craps_records (roomId, maxRolls, shooterId, shooterNickname, achievedAt)
@@ -177,6 +189,40 @@ function lineBetsSummary (st) {
   return [show(st.pass,'Pass'), show(st.dontPass,"Don't Pass")].filter(Boolean).join('\n') || 'No line bets.'
 }
 
+// NEW: Refund EVERYTHING currently held in state (used when round ends before any roll)
+async function refundAllBets (st) {
+  // line
+  for (const [u, amt] of Object.entries(st.pass)) {
+    await addToUserWallet(u, amt)
+  }
+  for (const [u, amt] of Object.entries(st.dontPass)) {
+    await addToUserWallet(u, amt)
+  }
+
+  // come/dont come waiting + point
+  for (const [u, amt] of Object.entries(st.comeWaiting)) {
+    await addToUserWallet(u, amt)
+  }
+  for (const [u, amt] of Object.entries(st.dontComeWaiting)) {
+    await addToUserWallet(u, amt)
+  }
+  for (const [u, o] of Object.entries(st.comePoint)) {
+    if (o?.amt) await addToUserWallet(u, o.amt)
+  }
+  for (const [u, o] of Object.entries(st.dontComePoint)) {
+    if (o?.amt) await addToUserWallet(u, o.amt)
+  }
+
+  // place
+  for (const n of PLACES) {
+    for (const [u, amt] of Object.entries(st.place[n] || {})) {
+      await addToUserWallet(u, amt)
+    }
+  }
+
+  resetAllBets(st)
+}
+
 /* ───────────────────────── Join / Betting / Roll timer ───────────────────────── */
 
 async function autoSeat (st, uuid, room) {
@@ -265,7 +311,6 @@ async function closeBettingBeginComeOut (room) {
 
   const anyLine = Object.keys(st.pass).length || Object.keys(st.dontPass).length
   if (!anyLine) {
-    // Keep it simple: if nobody bet the line, cancel this attempt and reopen join quickly
     st.phase = PHASES.IDLE
     await say(room, `No valid line bets. Table closed.`)
     return
@@ -302,8 +347,10 @@ function stopRollTimer (room) {
   }
 }
 
+// FIXED: timeout should pass shooter (keep bets) OR refund if solo player
 async function handleShooterNoRollTimeout (room) {
   const st = S(room)
+
   // Only enforce if we're still waiting for first roll of this round
   if (st.phase !== PHASES.COME_OUT) return
   if (st.rollCount > 0) return
@@ -315,30 +362,54 @@ async function handleShooterNoRollTimeout (room) {
     return
   }
 
-  // “Assume the original shooter is not playing this round”
-  // We remove them from seats; they can rejoin next join window.
+  // If ONLY one player is seated, end and refund all bets (no roll happened)
+  if (st.tableUsers.length === 1) {
+    await say(
+      room,
+      `⏱️ ${mention(sh)} didn’t roll in time.\n` +
+      `Since you’re the only player seated and no roll happened, the round is cancelled and **all bets are refunded**.`
+    )
+    await refundAllBets(st)
+    stopRollTimer(room)
+    clearTimers(st)
+    st.phase = PHASES.IDLE
+    st.point = null
+    st.rollCount = 0
+    st.roundResults = Object.create(null)
+    await say(room, `Table closed. Type **/craps** to start again.`)
+    return
+  }
+
+  // 2+ players: skip this shooter for the current round but KEEP BETS ALIVE.
+  // Remove them from the seat rotation for this round attempt; they can rejoin later.
   const idx = st.tableUsers.indexOf(sh)
   if (idx !== -1) st.tableUsers.splice(idx, 1)
 
   // Fix shooterIdx after removal
   if (st.shooterIdx >= st.tableUsers.length) st.shooterIdx = 0
 
-  await say(
-    room,
-    `⏱️ ${mention(sh)} didn’t roll in time — skipping them for this round.\n` +
-    `They can rejoin later with **/craps join**.`
-  )
-
-  // If table empty now, close it. Otherwise open an inter-hand join for next shooter.
+  // If something weird happened and table is empty now, refund (no roll) and close.
   if (!st.tableUsers.length) {
+    await say(room, `No players seated. Cancelling round and refunding bets.`)
+    await refundAllBets(st)
     st.phase = PHASES.IDLE
-    resetAllBets(st)
-    await say(room, `No players seated. Type **/craps** to open a new table.`)
+    await say(room, `Type **/craps** to open a new table.`)
     return
   }
 
-  // Next shooter is whoever is now at shooterIdx (already adjusted)
-  await openInterHandJoin(room)
+  const next = shooterUuid(st)
+
+  await say(
+    room,
+    `⏱️ ${mention(sh)} didn’t roll in time — **passing the dice** to the next shooter.\n` +
+    `✅ **All existing bets stay working.**\n` +
+    `🎯 Next shooter: ${mention(next)} — you have **${ROLL_SECS}s** to **/roll**.`
+  )
+
+  // Stay in COME_OUT, point stays null, bets remain locked, restart timer for new shooter
+  st.phase = PHASES.COME_OUT
+  st.point = null
+  startRollTimer(room)
 }
 
 /* ───────────────────────── Bets ───────────────────────── */
@@ -904,7 +975,12 @@ Join during join windows, bet Pass/Don't Pass during betting, then the shooter r
 
 **Flow**
 join → betting → come-out → point
-Point made returns to come-out (same shooter). Seven-out ends the hand, rotates shooter, and opens a new join window.`
+Point made returns to come-out (same shooter). Seven-out ends the hand, rotates shooter, and opens a new join window.
+
+**Timeout rule**
+If the shooter fails to roll before the first roll of a round:
+- With 2+ seated players: dice passes to the next shooter and bets stay working.
+- With 1 seated player: round cancels and bets are refunded.`
       })
       return true
 

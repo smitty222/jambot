@@ -1848,5 +1848,108 @@ export async function handleWinterCommand (senderUuid, room, postMessage) {
     })
   }
 }
+export async function handleBotWinterCommand (
+  room,
+  postMessage,
+  isUserAuthorized,
+  senderUuid,
+  ttlUserToken
+) {
+  const isMod = await isUserAuthorized(senderUuid, ttlUserToken)
+  if (!isMod) {
+    await postMessage({
+      room,
+      message: '🚫 You need to be a moderator to execute this command. ❄️'
+    })
+    return
+  }
+
+  const allowedSlugs = [
+    'winter-01',
+    'winter-02',
+    'winter-03',
+    'winter-04',
+    'winter-05',
+    'winter-06',
+    'winter-07',
+    'winter-08',
+    'winter2-01',
+    'winter2-02',
+    'winter2-03',
+    'winter2-04',
+    'winter2-05',
+    'winter2-06',
+    'winter2-07',
+    'winter2-08'
+  ]
+
+  // ❄️ Winter-y colors (opaque 8-digit hex)
+  const WINTER_COLORS = [
+    '#E6F7FFFF', // icy white-blue
+    '#B3E5FFFF', // frost cyan
+    '#8DE2FFFF', // winter sky
+    '#C7CEEAFF', // cool lavender
+    '#DDEBFFFF', // powder blue
+    '#A7D2CBFF', // cold mint
+    '#F0F8FFFF', // alice blue
+    '#FFFFFFFF'  // snow white
+  ]
+
+  const filtered = getAvatarsBySlugs(allowedSlugs)
+
+  if (!filtered || filtered.length === 0) {
+    await postMessage({
+      room,
+      message: 'No winter avatars found in the allowed set ☃️'
+    })
+    return
+  }
+
+  const chosen = filtered[Math.floor(Math.random() * filtered.length)]
+  const slug = chosen?.slug
+
+  if (!slug) {
+    console.warn('[botwinter] No slug on selected avatar object:', chosen)
+    await postMessage({
+      room,
+      message: 'No winter avatar available right now 😬'
+    })
+    return
+  }
+
+  const color = WINTER_COLORS[Math.floor(Math.random() * WINTER_COLORS.length)]
+
+  console.log('[botwinter] attempt', { senderUuid, slug, color })
+
+  try {
+    // 1) update bot avatar on platform
+    await updateUserAvatar(ttlUserToken, slug, color)
+
+    // 2) update live chat identity so the bot looks changed immediately
+    setChatIdentity({ avatarId: slug, color })
+
+    console.log('[botwinter] success', { senderUuid, slug, color })
+
+    // 3) announce with identity override for immediate visual
+    await postMessage({
+      room,
+      message: '❄️ Bot winter avatar equipped!',
+      identity: { avatarId: slug, color }
+    })
+  } catch (error) {
+    console.error('[handleBotWinterCommand] update failed', {
+      senderUuid,
+      slugTried: slug,
+      colorTried: color,
+      error: error?.message || String(error),
+      stack: error?.stack
+    })
+
+    await postMessage({
+      room,
+      message: 'Failed to equip bot winter avatar 😞'
+    })
+  }
+}
 
 
