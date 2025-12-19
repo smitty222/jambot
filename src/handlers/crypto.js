@@ -44,7 +44,7 @@ function buildHelpMessage () {
     '💰 *Crypto Investing Commands*\n' +
     'Use the `/crypto` command to manage your paper crypto portfolio.\n\n' +
     '*Commands:*\n' +
-    '`/crypto quote <symbol>` – Show the current USD price for a coin (e.g. btc, eth).\n' +
+    '`/crypto price <symbol>` – Show the current USD price for a coin (e.g. btc, eth).\n' +
     '`/crypto buy <symbol> <usdAmount>` – Buy a coin using USD from your wallet balance.\n' +
     '`/crypto sell <symbol> <usdAmount>` – Sell a coin for USD (sells proportionally by value).\n' +
     '`/crypto portfolio` – Show your current crypto holdings and cash.\n' +
@@ -70,9 +70,9 @@ export async function handleCryptoCommand ({ payload, room, args }) {
       await postMessage({ room, message: buildHelpMessage() })
       return
     }
-    if (sub === 'quote') {
+    if (sub === 'price') {
       if (parts.length < 2) {
-        await postMessage({ room, message: 'Please specify a coin symbol. Example: `/crypto quote btc`' })
+        await postMessage({ room, message: 'Please specify a coin symbol. Example: `/crypto price btc`' })
         return
       }
       const coinInput = parts[1]
@@ -106,7 +106,7 @@ export async function handleCryptoCommand ({ payload, room, args }) {
         return `${pos.symbol.toUpperCase()}: ${pos.quantity.toFixed(6)} (avg $${formatUsd(pos.avgCostUsd)}) – worth $${formatUsd(value)}`
       })
       lines.push(`\nWallet cash: $${formatUsd(cash)}`)
-      lines.push(`Total portfolio value: $${formatUsd(totalValue)}`)
+      lines.push(`Total Net Worth: $${formatUsd(totalValue)}`)
       await postMessage({ room, message: lines.join('\n') })
       return
     }

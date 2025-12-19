@@ -25,10 +25,9 @@ export const COIN_ALIASES = {
   matic: 'matic-network',
   polygon: 'matic-network',
   maticnetwork: 'matic-network',
-  usdt: 'tether',
-  tether: 'tether',
-  usdc: 'usd-coin',
-  'usd-coin': 'usd-coin'
+  xrp: 'ripple',
+  ripple: 'ripple',
+  pepe: 'pepe',
 }
 
 // Resolve an input symbol or id to a CoinGecko id. Returns null when the
