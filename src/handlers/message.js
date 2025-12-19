@@ -177,7 +177,9 @@ export default async (payload, room, state, roomBot) => {
   }
 
   // C) Place a bet
-  if (typeof payload.message === 'string' && /^\/horse\d+\s+\d+/.test(payload.message)) {
+  // Allow both "/horse[number] [amount]" and "/horse [number] [amount]" forms.
+  // The optional whitespace after `/horse` lets users type `/horse2 100` or `/horse 2 100`.
+  if (typeof payload.message === 'string' && /^\/horse\s*\d+\s+\d+/.test(payload.message)) {
     console.log('▶ dispatch → handleHorseBet')
     await handleHorseBet(payload)
     return
