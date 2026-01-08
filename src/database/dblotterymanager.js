@@ -162,13 +162,19 @@ async function drawWinningNumber() {
 }
 
 // ✅ Get winners list from DB
-export function getLotteryWinners(limit = 20) {
-  // Fetch each winner with both the display name and mention. We
-  // prefer the displayName stored on lottery_winners, then the
-  // displayname from users, and finally fall back to the UUID.
+export function getLotteryWinners (limit = 20) {
+  /*
+   * Fetch the latest lottery winners. We attempt to use the stored
+   * displayName from the lottery_winners table first; if that is blank
+   * we fall back to the current nickname stored in the users table. We
+   * avoid referencing a non‑existent `u.displayname` column (which
+   * caused errors in the original implementation) by selecting
+   * `u.nickname` instead. Finally, if neither a display name nor
+   * nickname is available, we use the userId itself.
+   */
   const rows = db.prepare(`
     SELECT lw.userId,
-           COALESCE(NULLIF(lw.displayName, ''), NULLIF(u.displayname, ''), lw.userId) AS displayName,
+           COALESCE(NULLIF(lw.displayName, ''), NULLIF(u.nickname, ''), lw.userId) AS displayName,
            lw.winningNumber,
            lw.amountWon,
            lw.timestamp
@@ -178,21 +184,18 @@ export function getLotteryWinners(limit = 20) {
     LIMIT ?
   `).all(limit)
 
-  // Map rows into objects used by both the website and chat.
-  // NOTE: We include a 'date' alias for compatibility with the legacy /lottowinners handler.
-  return rows.map(row => ({
-    userId: row.userId,
-    // The display name used on the site. Fallback to the UUID when no name is available.
-    displayName: row.displayName || row.userId,
-    // Compose the mention string via formatMention so it always has
-    // the correct syntax for chat messages.
-    mention: formatMention(row.userId),
-    winningNumber: row.winningNumber,
-    amountWon: row.amountWon,
-    timestamp: row.timestamp,
-    // Legacy alias expected by message.js
-    date: row.timestamp
-  }))
+  return rows.map(row => {
+    const displayName = row.displayName && row.displayName.trim() !== '' ? row.displayName : row.userId
+    return {
+      userId: row.userId,
+      displayName,
+      mention: formatMention(row.userId),
+      winningNumber: row.winningNumber,
+      amountWon: row.amountWon,
+      timestamp: row.timestamp,
+      date: row.timestamp
+    }
+  })
 }
 
 // ✅ Top drawn numbers
