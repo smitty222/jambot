@@ -538,3 +538,22 @@ export async function handleTopHorsesCommand (ctx) {
   const lines = top.map((h, i) => _fmtLine(h, i))
   await postMessage({ room, message: '```\n' + [' Top Horses by Wins', ...lines].join('\n') + '\n```' })
 }
+
+// ── Help command ─────────────────────────────────────────────────────────
+// Responds to `/horsehelp` with a summary of available horse race commands.
+export async function handleHorseHelpCommand (ctx) {
+  const room = ctx?.room || ROOM
+  const helpLines = [
+    ' **Horse Race Commands**',
+    '',
+    '/buyhorse <tier> – Purchase a new horse. Tiers include champion, elite, pro, rookie and amateur.',
+    '/myhorses – List your owned horses with their race counts, wins and career limits.',
+    '/horsestats [name] – Show detailed stats for a specific horse by name, or view leaderboards when no name is given.',
+    '/tophorses – See the top user‑owned horses ranked by wins and win percentage.',
+    '/horse <number> <amount> – Place a bet on a horse during the betting phase (use the number shown on the race card).',
+    '/horsehelp – Display this help message.',
+    '',
+    'Note: Horses have a finite career limit assigned when purchased. Once a horse reaches this limit, it will automatically retire and cannot enter new races.'
+  ]
+  await postMessage({ room, message: '```\n' + helpLines.join('\n') + '\n```' })
+}

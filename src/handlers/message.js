@@ -45,7 +45,7 @@ import { handleThemeCommand } from '../database/dbtheme.js'
 import { getUserSongReviews } from '../database/dbroomstatsmanager.js'
 import { fetchOddsForSport, formatOddsMessage } from '../utils/sportsBetAPI.js'
 import { saveOddsForSport, getOddsForSport } from '../utils/bettingOdds.js'
-import { startHorseRace, handleHorseBet, isWaitingForEntries, handleHorseEntryAttempt, handleHorseStatsCommand, handleTopHorsesCommand, handleMyHorsesCommand } from '../games/horserace/handlers/commands.js'
+import { startHorseRace, handleHorseBet, isWaitingForEntries, handleHorseEntryAttempt,handleHorseHelpCommand, handleHorseStatsCommand, handleTopHorsesCommand, handleMyHorsesCommand } from '../games/horserace/handlers/commands.js'
 import { QueueManager } from '../utils/queueManager.js'
 import db from '../database/db.js'
 import { handleAddAvatarCommand } from './addAvatar.js'
@@ -188,9 +188,9 @@ export default async (payload, room, state, roomBot) => {
   // D) Other horse commands
   if (typeof payload.message === 'string' && payload.message.startsWith('/buyhorse')) return handleBuyHorse(payload)
   if (typeof payload.message === 'string' && payload.message.startsWith('/myhorses')) return handleMyHorsesCommand(payload)
-  //if (typeof payload.message === 'string' && payload.message.startsWith('/horsehelp')) { await handleHorseHelpCommand(payload); return }
-  //if (typeof payload.message === 'string' && payload.message.startsWith('/horserules')) { await handleHorseHelpCommand(payload); return }
-  //if (typeof payload.message === 'string' && payload.message.startsWith('/horseinfo')) { await handleHorseHelpCommand(payload); return }
+  if (typeof payload.message === 'string' && payload.message.startsWith('/horsehelp')) { await handleHorseHelpCommand(payload); return }
+  if (typeof payload.message === 'string' && payload.message.startsWith('/horserules')) { await handleHorseHelpCommand(payload); return }
+  if (typeof payload.message === 'string' && payload.message.startsWith('/horseinfo')) { await handleHorseHelpCommand(payload); return }
   if (typeof payload.message === 'string' && payload.message.startsWith('/horsestats')) { await handleHorseStatsCommand(payload); return }
   if (typeof payload.message === 'string' && payload.message.startsWith('/tophorses')) return handleTopHorsesCommand(payload)
 

@@ -46,20 +46,20 @@ db.exec(`
   );
 `)
 
-function generateRandomNumber (min, max) {
+function generateRandomNumber(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min
 }
 
 // ✅ Start the lottery game
-export async function handleLotteryCommand (payload) {
+export async function handleLotteryCommand(payload) {
   LotteryGameActive = true
   const room = process.env.ROOM_UUID
 
-  await postMessage({ room, message: '🎰 LOTTERY BALL TIME!' })
-  await postMessage({ room, message: `Send a number 1–100 to play! 💸 Entry: $${cost}` })
+  await postMessage({ room, message: '🎱 LOTTERY BALL TIME!' })
+  await postMessage({ room, message: `Send a number 1–100 to play!  Entry: $${cost}` })
 
   setTimeout(() => {
-    postMessage({ room, message: '🎲 Drawing in 15 seconds! Get your pick in!' })
+    postMessage({ room, message: '🔔 Drawing in 15 seconds! Get your pick in!' })
   }, 15000)
 
   setTimeout(() => {
@@ -70,7 +70,7 @@ export async function handleLotteryCommand (payload) {
 }
 
 // ✅ Player picks a number
-export async function handleLotteryNumber (payload) {
+export async function handleLotteryNumber(payload) {
   if (!LotteryGameActive) return
 
   const number = parseInt(payload.message)
@@ -98,11 +98,11 @@ export async function handleLotteryNumber (payload) {
   }
 
   lotteryEntries[userId] = number
-  await postMessage({ room, message: `${nickname} entered with #${number}. Good luck! 💸` })
+  await postMessage({ room, message: `${nickname} entered with #${number}. Good luck! ` })
 }
 
 // ✅ Draw and process winning number
-async function drawWinningNumber () {
+async function drawWinningNumber() {
   const room = process.env.ROOM_UUID
   const winningNumber = generateRandomNumber(MIN_NUMBER, MAX_NUMBER)
 
@@ -114,8 +114,7 @@ async function drawWinningNumber () {
   `).run(winningNumber)
 
   const winners = Object.entries(lotteryEntries).filter(([_, n]) => n === winningNumber)
-
-  let message = `🎯 The winning number is: **#${winningNumber}**`
+  let message = `🎰 The winning number is: **#${winningNumber}**`
 
   if (winners.length > 0) {
     for (const [userId] of winners) {
@@ -142,10 +141,10 @@ async function drawWinningNumber () {
         VALUES (?, ?, ?, ?, ?)
       `).run(userId, mention, displayName, winningNumber, LOTTERY_WIN_AMOUNT)
       // Compose a message using the mention syntax for the chat
-      message += `\n🎉 ${mention} wins $${LOTTERY_WIN_AMOUNT.toLocaleString()}!`
+      message += `\n ${mention} wins $${LOTTERY_WIN_AMOUNT.toLocaleString()}!`
     }
   } else {
-    message += '\n💀 No winners this round. Try again next time!'
+    message += '\n No winners this round. Try again next time!'
   }
 
   await postMessage({ room, message })
@@ -163,8 +162,7 @@ async function drawWinningNumber () {
 }
 
 // ✅ Get winners list from DB
-// ✅ Get winners list from DB
-export function getLotteryWinners (limit = 20) {
+export function getLotteryWinners(limit = 20) {
   // Fetch each winner with both the display name and mention. We
   // prefer the displayName stored on lottery_winners, then the
   // displayname from users, and finally fall back to the UUID.
@@ -179,22 +177,26 @@ export function getLotteryWinners (limit = 20) {
     ORDER BY datetime(lw.timestamp) ASC
     LIMIT ?
   `).all(limit)
+
+  // Map rows into objects used by both the website and chat.
+  // NOTE: We include a 'date' alias for compatibility with the legacy /lottowinners handler.
   return rows.map(row => ({
     userId: row.userId,
-    // The display name used on the site. Fallback to the UUID when no
-    // name is available.
+    // The display name used on the site. Fallback to the UUID when no name is available.
     displayName: row.displayName || row.userId,
     // Compose the mention string via formatMention so it always has
     // the correct syntax for chat messages.
     mention: formatMention(row.userId),
     winningNumber: row.winningNumber,
     amountWon: row.amountWon,
-    timestamp: row.timestamp
+    timestamp: row.timestamp,
+    // Legacy alias expected by message.js
+    date: row.timestamp
   }))
 }
 
 // ✅ Top drawn numbers
-export function getLotteryNumberStats (limit = 5) {
+export function getLotteryNumberStats(limit = 5) {
   return db.prepare(`
     SELECT * FROM lottery_stats
     ORDER BY count DESC
@@ -203,7 +205,7 @@ export function getLotteryNumberStats (limit = 5) {
 }
 
 // ✅ Handle "/lotto #69"
-export async function handleSingleNumberQuery (room, message) {
+export async function handleSingleNumberQuery(room, message) {
   const match = message.match(/\/lotto\s+#?(\d{1,3})/)
   if (!match) return
 
@@ -215,43 +217,44 @@ export async function handleSingleNumberQuery (room, message) {
   const row = db.prepare('SELECT count FROM lottery_stats WHERE number = ?').get(number)
   const count = row?.count || 0
 
-  const response = count > 0
-    ? `🎯 #${number} has been drawn ${count} time${count === 1 ? '' : 's'}!`
-    : `🤞 #${number} has never been drawn yet.`
+  const response =
+    count > 0
+      ? ` #${number} has been drawn ${count} time${count === 1 ? '' : 's'}!`
+      : ` #${number} has never been drawn yet.`
 
   await postMessage({ room, message: response })
 }
 
 // ✅ Show top stats
-export async function handleTopLotteryStatsCommand (room) {
+export async function handleTopLotteryStatsCommand(room) {
   const stats = getLotteryNumberStats()
   if (!stats.length) {
-    return await postMessage({ room, message: '🎲 No lottery history yet!' })
+    return await postMessage({ room, message: ' No lottery history yet!' })
   }
 
   const message = stats.map(({ number, count }) => `#${number} → ${count}x`).join('\n')
-  await postMessage({ room, message: `🎯 Most drawn numbers:\n${message}` })
+  await postMessage({ room, message: ` Most drawn numbers:\n${message}` })
 }
 
 // ✅ Check if user has won before
-export async function handleLotteryCheck (room, userCandidate) {
-  const user =
-    userCandidate.userId
-      ? userCandidate
-      : findUserIdAndNickname(userCandidate.nickname)
+export async function handleLotteryCheck(room, userCandidate) {
+  const user = userCandidate.userId ? userCandidate : findUserIdAndNickname(userCandidate.nickname)
 
   if (!user) {
     return await postMessage({ room, message: `I don't know anyone named ${userCandidate.nickname}` })
   }
 
-  const hasWon = db.prepare(`
-    SELECT COUNT(*) AS total FROM lottery_winners WHERE userId = ?
-  `).get(user.userId).total > 0
+  const hasWon =
+    db.prepare(
+      `
+        SELECT COUNT(*) AS total FROM lottery_winners WHERE userId = ?
+      `
+    ).get(user.userId).total > 0
 
   if (hasWon) {
     await postMessage({
       room,
-      message: `💥 YES! ${user.nickname} HAS WON THE LOTTERY BEFORE! 💰🔥`
+      message: `✅ YES! ${user.nickname} HAS WON THE LOTTERY BEFORE! 🎉`
     })
   } else {
     await postMessage({ room, message: 'no' })
