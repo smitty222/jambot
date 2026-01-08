@@ -1,5 +1,5 @@
 // src/games/horserace/simulation.js
-// 4-leg race with internal micro-ticks for smooth movement.
+// 4‑leg race with internal micro‑ticks for smooth movement.
 // Slower cadence for drama; final frame nudges winner to the line.
 
 import { bus, safeCall } from './service.js'
@@ -42,7 +42,18 @@ function speedFromOdds (decOdds) {
   return Math.max(0.85, Math.min(1.15, f))
 }
 
+/**
+ * Run a single race.  Takes an array of horse objects and an optional map of
+ * bets keyed by userId.  Emits real‑time progress events via the bus.
+ *
+ * @param {Object} opts.horses Array of horses; each should include
+ *        at least `id`, `name`, `odds`, `racesParticipated`, `wins` and
+ *        `careerLength` properties.
+ * @param {Object} [opts.horseBets] Optional mapping from userId to bet slips.
+ */
 export async function runRace ({ horses, horseBets }) {
+  // Build the internal state used to simulate the race.  Each entry tracks
+  // progress, lastDelta, speed and other per‑race parameters.
   const state = horses.map((h, idx) => ({
     index: idx,
     name: h.name,
@@ -55,6 +66,7 @@ export async function runRace ({ horses, horseBets }) {
     kickBoost: 1.0
   }))
 
+  // Randomly assign late kicks to some horses
   for (const h of state) {
     if (rand() < LATE_KICK_PROB) {
       h.kickLeg = LATE_KICK_LEG
@@ -62,6 +74,7 @@ export async function runRace ({ horses, horseBets }) {
     }
   }
 
+  // Simulate each leg and sub‑tick
   for (let leg = 0; leg < LEGS; leg++) {
     const legWeight = LEG_WEIGHTS[leg] ?? (1 / LEGS)
     const perTickScale = (legWeight * TOTAL_SUBTICKS) / SUBTICKS_PER_LEG
@@ -94,6 +107,7 @@ export async function runRace ({ horses, horseBets }) {
       }
     }
 
+    // Emit progress for each completed leg
     bus.emit('turn', {
       turnIndex: leg,
       raceState: state.map(x => ({ index: x.index, name: x.name, progress: x.progress })),
@@ -103,17 +117,19 @@ export async function runRace ({ horses, horseBets }) {
     await new Promise(r => setTimeout(r, LEG_DELAY_MS))
   }
 
+  // Determine the winner.  If multiple horses are within 1/16th of the leader
+  // the winner is chosen randomly from among them to allow photo‑finishes.
   const maxProg = Math.max(...state.map(h => h.progress))
   const close = state.map((h, i) => ({ i, d: maxProg - h.progress }))
     .filter(x => x.d <= (1 / 16))
     .map(x => x.i)
-
   const winnerIdx = close.length > 1
     ? close[Math.floor(Math.random() * close.length)]
     : state.reduce((m, h, i, arr) => (h.progress >= arr[m].progress ? i : m), 0)
 
   state[winnerIdx].progress = FINISH
 
+  // Payout any winning bets
   const payouts = {}
   for (const [userId, slips] of Object.entries(horseBets || {})) {
     let sum = 0
@@ -129,19 +145,31 @@ export async function runRace ({ horses, horseBets }) {
     }
   }
 
+  // Update horse statistics and automatically retire horses that reach
+  // their career limit.  Each horse record includes a `careerLength` set when
+  // purchased.  When racesParticipated reaches or exceeds this value the
+  // horse is marked retired.
   try {
     for (let i = 0; i < horses.length; i++) {
       const src = horses[i]
       const isWin = i === winnerIdx
-      await safeCall(updateHorseStats, [src.id, {
-        racesParticipated: (src.racesParticipated || 0) + 1,
-        wins: (src.wins || 0) + (isWin ? 1 : 0)
-      }])
+      // Calculate the updated stats
+      const newRaces = (src.racesParticipated || 0) + 1
+      const newWins = (src.wins || 0) + (isWin ? 1 : 0)
+
+      // Prepare update payload
+      const update = { racesParticipated: newRaces, wins: newWins }
+      const limit = Number(src.careerLength)
+      if (Number.isFinite(limit) && newRaces >= limit) {
+        update.retired = true
+      }
+      await safeCall(updateHorseStats, [src.id, update])
     }
   } catch (e) {
     console.warn('[simulation] updateHorseStats failed:', e?.message)
   }
 
+  // Award owner bonus (10% of price) if the winning horse has an owner and a price
   let ownerBonus = null
   const winner = horses[winnerIdx]
   if (winner?.ownerId && Number(winner?.price) > 0) {
@@ -152,6 +180,7 @@ export async function runRace ({ horses, horseBets }) {
     }
   }
 
+  // Emit race finished event
   bus.emit('raceFinished', {
     winnerIdx,
     raceState: state.map(x => ({ index: x.index, name: x.name, progress: x.progress })),
