@@ -5,6 +5,12 @@
 import { bus, safeCall } from './service.js'
 import { addToUserWallet } from '../../database/dbwalletmanager.js'
 import { updateHorseStats } from '../../database/dbhorses.js'
+// Import messaging utilities so we can notify owners when their horse retires.
+import { postMessage } from '../../libs/cometchat.js'
+import { getUserNickname } from '../../utils/nickname.js'
+
+// Room identifier used for posting race and retirement notifications.
+const ROOM = process.env.ROOM_UUID
 
 export const LEGS = 4
 
@@ -160,8 +166,23 @@ export async function runRace ({ horses, horseBets }) {
       // Prepare update payload
       const update = { racesParticipated: newRaces, wins: newWins }
       const limit = Number(src.careerLength)
-      if (Number.isFinite(limit) && newRaces >= limit) {
+      const shouldRetire = Number.isFinite(limit) && newRaces >= limit
+      // If this race hits or exceeds the limit and the horse was not already retired,
+      // mark it retired and notify the owner.
+      if (shouldRetire && !src.retired) {
         update.retired = true
+        // Compose and send a retirement message to the owner
+        if (src.ownerId) {
+          try {
+            const nick = await safeCall(getUserNickname, [src.ownerId]).catch(() => null)
+            const ownerTag = nick || `<@uid:${src.ownerId}>`
+            const message = `🐴 ${ownerTag}, your horse **${src.name}** has reached its career limit (${limit} races) and has retired.`
+            await safeCall(postMessage, [{ room: ROOM, message }])
+          } catch (err) {
+            // Just log; failure to notify should not break the race
+            console.warn('[simulation] failed to notify owner about retirement:', err?.message)
+          }
+        }
       }
       await safeCall(updateHorseStats, [src.id, update])
     }
