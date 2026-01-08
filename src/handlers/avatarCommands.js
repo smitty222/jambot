@@ -1116,12 +1116,24 @@ export async function handleVibesGuyCommand (senderUuid, room, postMessage) {
     await postMessage({ room, message: 'Sorry, this command is only available to authorized users.' })
     return
   }
-
   try {
     await updateUserAvatar(userToken, 'dj-aurision-1', '#FFA500')
     await postMessage({ room, message: 'All time vibes guy is back' })
   } catch (error) {
     await postMessage({ room, message: 'Something went wrong transforming you into a vibes guy' })
+  }
+}
+export async function handleGayCamCommand (senderUuid, room, postMessage) {
+  const userToken = userTokenMap[senderUuid]
+  if (!userToken) {
+    await postMessage({ room, message: 'Sorry, this command is only available to authorized users.' })
+    return
+  }
+  try {
+    await updateUserAvatar(userToken, 'festivalseason-02', '#ff00bbff')
+    await postMessage({ room, message: 'Haaa.........GAYYYYY' })
+  } catch (error) {
+    await postMessage({ room, message: 'Something went wrong transforming you into a gay cam' })
   }
 }
 export async function handleFacesCommand (senderUuid, room, postMessage) {
