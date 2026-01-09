@@ -172,7 +172,7 @@ export async function announceNowPlaying (room) {
     // ── 1) Always build & POST the base line first (no dependencies)
     const title  = safeText(decodeEntities(song.trackName))
     const artist = safeText(decodeEntities(song.artistName))
-    const base = `♫ Now playing: “${title}” by ${artist}`
+    const base = `🎧 Now playing: “${title}” by ${artist}`
     await postWithRetry({ room, message: base })
     log('[NowPlaying][POST][BASE]', JSON.stringify({ track: title, artist }))
 
@@ -215,11 +215,11 @@ export async function announceNowPlaying (room) {
       if (prevCount < 1) {
         lines.push('🆕 First time playing in this room!')
       } else {
-        lines.push(` Played ${totalPlays} time${totalPlays !== 1 ? 's' : ''}`)
+        lines.push(`📈 Played ${totalPlays} time${totalPlays !== 1 ? 's' : ''}`)
         const lp = stats?.lastPlayed
         if (lp) {
           const lastPlayedTime = formatDistanceToNow(new Date(lp), { addSuffix: true })
-          lines.push(` Last played ${lastPlayedTime}`)
+          lines.push(`🗓️ Last played ${lastPlayedTime}`)
         }
       }
 
