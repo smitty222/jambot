@@ -1,162 +1,249 @@
 import { addToUserWallet, getUserWallet, removeFromUserWallet } from '../database/dbwalletmanager.js'
 import db from '../database/db.js'
 
-// Slot machine symbols and payouts
-const symbols = ['🍒', '🍋', '🍊', '🍉', '🔔', '⭐', '💎'] // Slot symbols
+// ───────────────────────────────────────────────────────────
+// Slot machine symbols and payouts (ONE LINE)
+// ───────────────────────────────────────────────────────────
+
+const symbols = ['🍒', '🍋', '🍊', '🍉', '🔔', '⭐', '💎']
+
 const payouts = {
-  '🍒🍒🍒': 5, // 5x the bet for 3 cherries
-  '🍋🍋🍋': 4, // 4x for 3 lemons
-  '🍊🍊🍊': 3, // 3x for 3 oranges
-  '🍉🍉🍉': 6, // 6x for 3 watermelons
-  '🔔🔔🔔': 8, // 8x for 3 bells
-  '⭐⭐⭐': 10, // 10x for 3 stars
-  '💎💎💎': 20 // 20x for 3 diamonds
+  '🍒🍒🍒': 5,
+  '🍋🍋🍋': 4,
+  '🍊🍊🍊': 3,
+  '🍉🍉🍉': 6,
+  '🔔🔔🔔': 8,
+  '⭐⭐⭐': 10,
+  '💎💎💎': 20 // triggers BONUS ROUND
 }
 
-// Payouts for two matching symbols
 const twoMatchPayouts = {
-  '🍒🍒': 2, // 2x for 2 cherries
-  '🍋🍋': 1.5, // 1.5x for 2 lemons
-  '🍊🍊': 1.2, // 1.2x for 2 oranges
-  '🍉🍉': 2.5, // 2.5x for 2 watermelons
-  '🔔🔔': 3, // 3x for 2 bells
-  '⭐⭐': 4, // 4x for 2 stars
-  '💎💎': 5 // 5x for 2 diamonds
+  '🍒🍒': 2,
+  '🍋🍋': 1.5,
+  '🍊🍊': 1.2,
+  '🍉🍉': 2.5,
+  '🔔🔔': 3,
+  '⭐⭐': 4,
+  '💎💎': 5
 }
 
-// Function to simulate a slot spin, randomly picking 3 symbols
+// Economy tuning
+const HOUSE_EDGE = 0.96
+
+// Progressive jackpot
+const JACKPOT_SEED = 100
+const JACKPOT_INCREMENT_RATE = 0.15
+const JACKPOT_CONTRIB_BET_CAP = 5000
+
+// Bonus round tuning
+const BONUS_SPINS_MIN = 3
+const BONUS_SPINS_MAX = 5
+const BONUS_MAX_TOTAL_PERCENT = 80
+
+const BONUS_PERCENT_WEIGHTS = [
+  { pct: 5, w: 26 },
+  { pct: 8, w: 22 },
+  { pct: 10, w: 18 },
+  { pct: 12, w: 14 },
+  { pct: 15, w: 10 },
+  { pct: 20, w: 7 },
+  { pct: 25, w: 3 }
+]
+
+// Bets
+const MIN_BET = 1
+const MAX_BET = 10000
+const DEFAULT_BET = 1
+
+// ───────────────────────────────────────────────────────────
+// Helpers
+// ───────────────────────────────────────────────────────────
+
+function randSymbol () {
+  return symbols[Math.floor(Math.random() * symbols.length)]
+}
+
 function spinSlots () {
-  const result = []
-  for (let i = 0; i < 3; i++) {
-    result.push(symbols[Math.floor(Math.random() * symbols.length)])
-  }
-  return result
+  return [randSymbol(), randSymbol(), randSymbol()]
 }
 
-function getJackpotValue () {
-  const row = db.prepare('SELECT progressiveJackpot FROM jackpot WHERE id = 1').get()
-  return row?.progressiveJackpot || 100
+function randInt (min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min
 }
 
-function updateJackpotValue (newValue) {
-  db.prepare('UPDATE jackpot SET progressiveJackpot = ? WHERE id = 1').run(newValue)
-  console.log(`✅ Jackpot updated in DB: $${newValue}`)
-}
-
-// Function to calculate the multiplier for wins
-function calculateMultiplier (result) {
-  const resultString = result.join('')
-
-  // Check for 3-symbol match
-  if (payouts.hasOwnProperty(resultString)) {
-    if (resultString === '💎💎💎') {
-      return 'jackpot' // Special case for the jackpot
-    }
-    return payouts[resultString]
+function weightedPick (items) {
+  const total = items.reduce((s, it) => s + it.w, 0)
+  let r = Math.random() * total
+  for (const it of items) {
+    r -= it.w
+    if (r <= 0) return it
   }
-
-  // Check for two-symbol match
-  const firstTwoSymbols = result[0] + result[1]
-  const middleTwoSymbols = result[1] + result[2]
-  const firstAndLast = result[0] + result[2]
-
-  if (twoMatchPayouts.hasOwnProperty(firstTwoSymbols)) {
-    return twoMatchPayouts[firstTwoSymbols]
-  }
-  if (twoMatchPayouts.hasOwnProperty(middleTwoSymbols)) {
-    return twoMatchPayouts[middleTwoSymbols]
-  }
-  if (twoMatchPayouts.hasOwnProperty(firstAndLast)) {
-    return twoMatchPayouts[firstAndLast]
-  }
-
-  return 0 // No win
-}
-
-// Function to calculate payout with an RTP adjustment mechanism
-function calculateRTP (winMultiplier, betAmount, rtp = 0.96) {
-  // Expected payout based on RTP
-  const expectedPayout = betAmount * winMultiplier * rtp
-  return expectedPayout
+  return items[items.length - 1]
 }
 
 export function formatBalance (balance) {
-  const rounded = Math.round(balance)
+  const rounded = Math.round(Number(balance) || 0)
   return rounded > 999 ? rounded.toLocaleString() : rounded.toString()
 }
 
-async function playSlots (userUUID, betSize = 1, paylines = 1) {
-  const maxBetSize = 10000
-  const minBetSize = 1
+function formatMoney (amount) {
+  const n = Number(amount) || 0
+  const isWhole = Math.abs(n - Math.round(n)) < 0.00001
+  return isWhole ? formatBalance(n) : n.toFixed(2)
+}
 
-  if (betSize < minBetSize || betSize > maxBetSize) {
-    return `Bet amount must be between $${formatBalance(minBetSize)} and $${formatBalance(maxBetSize)}.`
+// ───────────────────────────────────────────────────────────
+// Jackpot DB helpers
+// ───────────────────────────────────────────────────────────
+
+function getJackpotValue () {
+  const row = db.prepare('SELECT progressiveJackpot FROM jackpot WHERE id = 1').get()
+  return Number(row?.progressiveJackpot || JACKPOT_SEED)
+}
+
+function updateJackpotValue (newValue) {
+  db.prepare('UPDATE jackpot SET progressiveJackpot = ? WHERE id = 1').run(Number(newValue))
+  console.log(`🎰 Jackpot updated: $${newValue}`)
+}
+
+// ───────────────────────────────────────────────────────────
+// Line evaluation
+// ───────────────────────────────────────────────────────────
+
+function evaluateLine (symbolsArr) {
+  const str = symbolsArr.join('')
+
+  if (Object.prototype.hasOwnProperty.call(payouts, str)) {
+    return { multiplier: payouts[str], type: 'TRIPLE' }
+  }
+
+  const pairs = [
+    [symbolsArr[0], symbolsArr[1]],
+    [symbolsArr[1], symbolsArr[2]],
+    [symbolsArr[0], symbolsArr[2]]
+  ]
+
+  for (const [a, b] of pairs) {
+    if (a === b) {
+      const key = a + b
+      if (Object.prototype.hasOwnProperty.call(twoMatchPayouts, key)) {
+        return { multiplier: twoMatchPayouts[key], type: 'PAIR' }
+      }
+    }
+  }
+
+  return { multiplier: 0, type: 'NONE' }
+}
+
+// ───────────────────────────────────────────────────────────
+// Rendering (REEL STRIP – uniform, chat-safe)
+// ───────────────────────────────────────────────────────────
+
+function renderSlot (a, b, c) {
+  return `🎰 SLOTS  ${a} ┃ ${b} ┃ ${c}`
+}
+
+function sparkleIfWin (symbolsArr, didWin) {
+  if (!didWin) return symbolsArr
+  return symbolsArr.map(s => `${s}`)
+}
+
+// ───────────────────────────────────────────────────────────
+// BONUS ROUND
+// ───────────────────────────────────────────────────────────
+
+function runBonusRound (startingJackpot) {
+  const freeSpins = randInt(BONUS_SPINS_MIN, BONUS_SPINS_MAX)
+  let totalPct = 0
+  const lines = []
+
+  for (let i = 1; i <= freeSpins; i++) {
+    const pick = weightedPick(BONUS_PERCENT_WEIGHTS)
+    totalPct += pick.pct
+    lines.push(`  • Free Spin ${i}: +${pick.pct}%`)
+  }
+
+  totalPct = Math.min(totalPct, BONUS_MAX_TOTAL_PERCENT)
+  const jackpotWon = startingJackpot * (totalPct / 100)
+  const remaining = Math.max(JACKPOT_SEED, startingJackpot - jackpotWon)
+
+  lines.unshift(`🎁 BONUS ROUND! ${freeSpins} Free Spins`)
+  lines.push(`🏆 JACKPOT SLICE: ${totalPct}% (+$${formatMoney(jackpotWon)})`)
+
+  return { lines, jackpotWon, remaining }
+}
+
+// ───────────────────────────────────────────────────────────
+// Main game
+// ───────────────────────────────────────────────────────────
+
+async function playSlots (userUUID, betSize = DEFAULT_BET) {
+  const bet = Number(betSize) || 0
+
+  if (bet < MIN_BET || bet > MAX_BET) {
+    return `Bet amount must be between $${formatBalance(MIN_BET)} and $${formatBalance(MAX_BET)}.`
   }
 
   try {
-    let currentBalance = await getUserWallet(userUUID)
-    const formattedBalance = formatBalance(currentBalance)
-
-    const totalBet = betSize * paylines
-    if (betSize <= 0 || totalBet > currentBalance) {
-      return `Invalid bet amount. Your current balance is $${formattedBalance}.`
+    let balance = await getUserWallet(userUUID)
+    if (bet > balance) {
+      return `Invalid bet amount. Your balance is $${formatBalance(balance)}.`
     }
 
-    await removeFromUserWallet(userUUID, totalBet)
+    await removeFromUserWallet(userUUID, bet)
 
-    let currentJackpot = getJackpotValue()
-    const jackpotIncrement = totalBet * 0.15
-    currentJackpot += jackpotIncrement
-    updateJackpotValue(currentJackpot)
+    let jackpot = getJackpotValue()
+    const contribBet = Math.min(bet, JACKPOT_CONTRIB_BET_CAP)
+    const jackpotIncrement = contribBet * JACKPOT_INCREMENT_RATE
+    jackpot += jackpotIncrement
+    updateJackpotValue(jackpot)
 
-    const results = []
-    let winnings = 0
+    const result = spinSlots()
+    const outcome = evaluateLine(result)
 
-    for (let line = 0; line < paylines; line++) {
-      const slotsResult = spinSlots()
-      results.push(slotsResult)
+    let winnings = bet * outcome.multiplier * HOUSE_EDGE
+    let bonusText = ''
+    let jackpotWon = 0
 
-      const multiplier = calculateMultiplier(slotsResult)
-
-      if (multiplier === 'jackpot') {
-        winnings += currentJackpot
-        currentJackpot = 100
-        updateJackpotValue(currentJackpot)
-        console.log(`User ${userUUID} hit the jackpot!`)
-      } else if (multiplier > 0) {
-        winnings += calculateRTP(multiplier, betSize)
-      }
+    if (result.join('') === '💎💎💎') {
+      const bonus = runBonusRound(jackpot)
+      jackpotWon = bonus.jackpotWon
+      winnings += jackpotWon
+      jackpot = bonus.remaining
+      updateJackpotValue(jackpot)
+      bonusText = `\n\n🚨 💎💎💎 BONUS TRIGGERED 💎💎💎 🚨\n${bonus.lines.join('\n')}`
     }
 
     if (winnings > 0) {
       await addToUserWallet(userUUID, winnings)
-      currentBalance = await getUserWallet(userUUID)
-
-      return `____SPIN____\n\n${results.map(r => r.join(' | ')).join('\n')}\n_____________\n\n🎉 You Win $${formatBalance(winnings.toFixed(2))}!\n💰 Current Balance: $${formatBalance(currentBalance)}.`
-    } else {
-      currentBalance = await getUserWallet(userUUID)
-      return `____SPIN____\n\n${results.map(r => r.join(' | ')).join('\n')}\n_____________\n\n😢 You Lose $${formatBalance(totalBet)}.\n💰 Current Balance: $${formatBalance(currentBalance)}.`
     }
-  } catch (error) {
-    console.error('Error while playing slots:', error)
-    return 'An error occurred while playing the slots. Please try again later.'
+
+    balance = await getUserWallet(userUUID)
+
+    const didWin = winnings > 0
+    const display = sparkleIfWin(result, didWin)
+    const header = renderSlot(display[0], display[1], display[2])
+
+    const resultLine = didWin
+      ? `\n\n💥 WIN: +$${formatMoney(winnings)}`
+      : `\n\n— NO WIN —`
+
+    const jackpotLine = `💰 JACKPOT: $${formatMoney(jackpot)}  📈 +$${formatMoney(jackpotIncrement)}`
+    const balanceLine = `🪙 BALANCE: $${formatBalance(balance)}`
+
+    return `${header}${resultLine}${bonusText}\n${jackpotLine}\n${balanceLine}`
+  } catch (err) {
+    console.error('Slots error:', err)
+    return 'An error occurred while playing slots.'
   }
 }
 
-// Simulate progressive jackpot hit with low probability
-function isJackpotHit () {
-  return Math.random() < 0.001 // 0.1% chance to hit jackpot
-}
-
-// Simplified command handler that accepts a bet amount
+// Command handler
 async function handleSlotsCommand (userUUID, betSize) {
-  // Validate betSize
-  if (betSize <= 0) {
-    return 'Please enter a valid bet amount greater than 0.'
-  }
-
-  const message = await playSlots(userUUID, betSize)
-  return message // Return the message to display to the user
+  const raw = betSize == null ? '' : String(betSize).trim()
+  const bet = raw === '' ? DEFAULT_BET : Number(raw)
+  if (!bet || bet <= 0) return 'Please enter a valid bet amount.'
+  return await playSlots(userUUID, bet)
 }
 
 export { playSlots, handleSlotsCommand, getJackpotValue }
