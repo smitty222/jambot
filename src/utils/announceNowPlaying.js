@@ -1,4 +1,5 @@
 // src/handlers/announceNowPlaying.js
+
 import { formatDistanceToNow } from 'date-fns'
 import { getAverageRating } from './voteCounts.js'
 import { postMessage } from '../libs/cometchat.js'
@@ -167,7 +168,7 @@ export async function announceNowPlaying (room) {
     // ── 1) Always build & POST the base line first (no dependencies)
     const title  = safeText(decodeEntities(song.trackName))
     const artist = safeText(decodeEntities(song.artistName))
-    const base = `🎵 Now playing: “${title}” by ${artist}`
+    const base = ` Now playing: “${title}” by ${artist}`
     await postWithRetry({ room, message: base })
     log('[NowPlaying][POST][BASE]', JSON.stringify({ track: title, artist }))
 
@@ -180,9 +181,13 @@ export async function announceNowPlaying (room) {
       const canonTrack = (trackLower && artistLower) ? `${trackLower}|${artistLower}` : null
 
       let stats = null
-      // Prefer room_stats by canonical key; fallback to track|artist
+      // Prefer room_stats by canonical key; fallback to songId column and track|artist
       if (canonId) {
         stats = db.prepare('SELECT playCount, lastPlayed FROM room_stats WHERE canonSongKey = ?').get(canonId)
+        // If no row with canonical key, try matching by songId for backward compatibility
+        if (!stats) {
+          stats = db.prepare('SELECT playCount, lastPlayed FROM room_stats WHERE songId = ?').get(canonId)
+        }
         if (!stats && canonTrack) {
           stats = db.prepare('SELECT playCount, lastPlayed FROM room_stats WHERE canonSongKey = ?').get(canonTrack)
         }
@@ -196,13 +201,13 @@ export async function announceNowPlaying (room) {
       const prevCount = Number(stats?.playCount || 0)
       const totalPlays = prevCount + 1
       if (prevCount < 1) {
-        lines.push('🆕 First time playing in this room!')
+        lines.push(' First time playing in this room!')
       } else {
-        lines.push(`🔁 Played ${totalPlays} time${totalPlays !== 1 ? 's' : ''}`)
+        lines.push(` Played ${totalPlays} time${totalPlays !== 1 ? 's' : ''}`)
         const lp = stats?.lastPlayed
         if (lp) {
           const lastPlayedTime = formatDistanceToNow(new Date(lp), { addSuffix: true })
-          lines.push(`🕒 Last played ${lastPlayedTime}`)
+          lines.push(` Last played ${lastPlayedTime}`)
         }
       }
 

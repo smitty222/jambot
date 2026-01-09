@@ -154,7 +154,7 @@ export function getLotteryWinners (limit = 20) {
            DATE(lw.timestamp) AS date
     FROM lottery_winners lw
     LEFT JOIN users u ON u.uuid = lw.userId
-    ORDER BY datetime(lw.timestamp) ASC
+    ORDER BY datetime(lw.timestamp) DESC
     LIMIT ?
   `).all(limit)
 
