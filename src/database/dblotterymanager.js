@@ -19,32 +19,6 @@ const LOTTERY_WIN_AMOUNT = 100000
 const lotteryEntries = {}
 let LotteryGameActive = false
 
-// ✅ INIT TABLES
-db.exec(`
-  CREATE TABLE IF NOT EXISTS lottery_winners (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    -- UUID of the winner. We use TEXT because Turntable UUIDs are
-    -- strings. This column is NOT NULL because every record must
-    -- reference a user.
-    userId TEXT NOT NULL,
-    -- Raw mention format (<@uid:...>) used when tagging users in chat.
-    nickname TEXT NOT NULL,
-    -- Sanitised display name shown on the website. Always a human‑
-    -- friendly name (e.g. "DJ Stewie") or falls back to the UUID.
-    displayName TEXT NOT NULL,
-    -- The number the user guessed for this drawing. Required.
-    winningNumber INTEGER NOT NULL,
-    -- Amount awarded for this win. Defaults to LOTTERY_WIN_AMOUNT.
-    amountWon INTEGER DEFAULT ${LOTTERY_WIN_AMOUNT},
-    -- Timestamp of the win. Defaults to CURRENT_TIMESTAMP for new rows.
-    timestamp TEXT DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE IF NOT EXISTS lottery_stats (
-    number INTEGER PRIMARY KEY,
-    count INTEGER DEFAULT 0
-  );
-`)
 
 function generateRandomNumber(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min
@@ -177,25 +151,22 @@ export function getLotteryWinners (limit = 20) {
            COALESCE(NULLIF(lw.displayName, ''), NULLIF(u.nickname, ''), lw.userId) AS displayName,
            lw.winningNumber,
            lw.amountWon,
-           lw.timestamp
+           DATE(lw.timestamp) AS date
     FROM lottery_winners lw
     LEFT JOIN users u ON u.uuid = lw.userId
     ORDER BY datetime(lw.timestamp) ASC
     LIMIT ?
   `).all(limit)
 
-  return rows.map(row => {
-    const displayName = row.displayName && row.displayName.trim() !== '' ? row.displayName : row.userId
-    return {
-      userId: row.userId,
-      displayName,
-      mention: formatMention(row.userId),
-      winningNumber: row.winningNumber,
-      amountWon: row.amountWon,
-      timestamp: row.timestamp,
-      date: row.timestamp
-    }
-  })
+  return rows.map(row => ({
+  userId: row.userId,
+  displayName: row.displayName,
+  mention: formatMention(row.userId),
+  winningNumber: row.winningNumber,
+  amountWon: row.amountWon,
+  date: row.date // ← already YYYY-MM-DD
+}))
+
 }
 
 // ✅ Top drawn numbers

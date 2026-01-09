@@ -43,9 +43,9 @@ db.exec(`
     userId TEXT NOT NULL,
     nickname TEXT NOT NULL,
     displayName TEXT NOT NULL,
-    winningNumber INTEGER,
-    amountWon REAL,
-    timestamp TEXT
+    winningNumber INTEGER NOT NULL,
+    amountWon INTEGER DEFAULT 100000,
+    timestamp TEXT DEFAULT CURRENT_TIMESTAMP
   )
 `)
 
