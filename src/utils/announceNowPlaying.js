@@ -4,6 +4,10 @@ import { formatDistanceToNow } from 'date-fns'
 import { getAverageRating } from './voteCounts.js'
 import { postMessage } from '../libs/cometchat.js'
 import { getTheme } from '../utils/themeManager.js'
+// Import normalisation helper to compute canonical song keys. Using the same
+// normalisation logic as dbroomstatsmanager ensures we search the same keys
+// that logCurrentSong() writes to room_stats.
+import { buildNormKey } from '../database/normalizesong.js'
 import db from '../database/db.js'
 import { roomBot } from '../index.js'
 
@@ -168,31 +172,39 @@ export async function announceNowPlaying (room) {
     // ── 1) Always build & POST the base line first (no dependencies)
     const title  = safeText(decodeEntities(song.trackName))
     const artist = safeText(decodeEntities(song.artistName))
-    const base = ` Now playing: “${title}” by ${artist}`
+    const base = `♫ Now playing: “${title}” by ${artist}`
     await postWithRetry({ room, message: base })
     log('[NowPlaying][POST][BASE]', JSON.stringify({ track: title, artist }))
 
     // ── 2) Best-effort: enrich the same message with stats (wrapped, non-fatal)
     try {
-      // Canonical key: prefer songId; otherwise lowercased track|artist
-      const trackLower = String(song.trackName || '').toLowerCase().trim()
-      const artistLower = String(song.artistName || '').toLowerCase().trim()
-      const canonId = song.songId ? String(song.songId) : null
-      const canonTrack = (trackLower && artistLower) ? `${trackLower}|${artistLower}` : null
+      // Canonical and normalised keys: prefer songId; otherwise use the
+      // normalised track|artist key produced by buildNormKey(). Using the
+      // same key derivation as logCurrentSong() allows announceNowPlaying() to
+      // look up the exact row that /stats reports.
+      const { normKey } = buildNormKey(song.trackName, song.artistName)
+      const canonKey = song.songId ? String(song.songId) : normKey
 
       let stats = null
-      // Prefer room_stats by canonical key; fallback to songId column and track|artist
-      if (canonId) {
-        stats = db.prepare('SELECT playCount, lastPlayed FROM room_stats WHERE canonSongKey = ?').get(canonId)
-        // If no row with canonical key, try matching by songId for backward compatibility
-        if (!stats) {
-          stats = db.prepare('SELECT playCount, lastPlayed FROM room_stats WHERE songId = ?').get(canonId)
+      // 1) Try the canonical key on canonSongKey
+      if (canonKey) {
+        stats = db.prepare('SELECT playCount, lastPlayed FROM room_stats WHERE canonSongKey = ?').get(canonKey)
+      }
+      // 2) Fallback to the songId column (older rows may not have canonSongKey set)
+      if (!stats && song.songId) {
+        stats = db.prepare('SELECT playCount, lastPlayed FROM room_stats WHERE songId = ?').get(song.songId)
+      }
+      // 3) Fallback to the normalised key stored in normSongKey (populated by migrations)
+      if (!stats && normKey) {
+        try {
+          stats = db.prepare('SELECT playCount, lastPlayed FROM room_stats WHERE normSongKey = ?').get(normKey)
+        } catch (_) {
+          // If normSongKey column does not exist, skip silently
         }
-        if (!stats && canonTrack) {
-          stats = db.prepare('SELECT playCount, lastPlayed FROM room_stats WHERE canonSongKey = ?').get(canonTrack)
-        }
-      } else if (canonTrack) {
-        stats = db.prepare('SELECT playCount, lastPlayed FROM room_stats WHERE canonSongKey = ?').get(canonTrack)
+      }
+      // 4) Final fallback: match on raw track and artist ignoring case
+      if (!stats) {
+        stats = db.prepare('SELECT playCount, lastPlayed FROM room_stats WHERE LOWER(trackName) = LOWER(?) AND LOWER(artistName) = LOWER(?)').get(song.trackName, song.artistName)
       }
 
       const lines = []
@@ -201,7 +213,7 @@ export async function announceNowPlaying (room) {
       const prevCount = Number(stats?.playCount || 0)
       const totalPlays = prevCount + 1
       if (prevCount < 1) {
-        lines.push(' First time playing in this room!')
+        lines.push('🆕 First time playing in this room!')
       } else {
         lines.push(` Played ${totalPlays} time${totalPlays !== 1 ? 's' : ''}`)
         const lp = stats?.lastPlayed
