@@ -17,6 +17,35 @@ import {
 
 let songStatsEnabled = false
 
+//
+// Exposed toggles for enabling/disabling song stats announcements.
+// Some parts of the bot import enableSongStats(), disableSongStats() and
+// isSongStatsEnabled() from this module. These functions simply toggle
+// the in-memory flag and return its state. Leaving these exports in
+// place preserves backwards compatibility with existing command handlers.
+
+/**
+ * Enable posting song statistics after a song finishes playing.
+ */
+export function enableSongStats () {
+  songStatsEnabled = true
+}
+
+/**
+ * Disable posting song statistics after a song finishes playing.
+ */
+export function disableSongStats () {
+  songStatsEnabled = false
+}
+
+/**
+ * Check whether song statistics posting is enabled.
+ * @returns {boolean}
+ */
+export function isSongStatsEnabled () {
+  return !!songStatsEnabled
+}
+
 // ───────────────────────────────────────────────────────────────
 // Schema helpers (defensive; initDb also handles this)
 // ───────────────────────────────────────────────────────────────
