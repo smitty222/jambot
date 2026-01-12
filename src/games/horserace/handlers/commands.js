@@ -434,13 +434,18 @@ bus.on('turn', async ({ turnIndex, raceState, finishDistance }) => {
 
   const track = renderProgress(displayState, {
     barLength: BAR_CELLS,
-    finishDistance
+    finishDistance,
+    style: BAR_STYLE,
+    ticksEvery: TICKS_EVERY,
+    tickChar: TICK_CHAR,
+    nameWidth: NAME_WIDTH
   })
 
-  // Use commentary helpers to generate flavour text
-  const comment = (turnIndex === LEGS - 1)
-    ? makeFinalCommentary(raceState, rankOrder(raceState)[0], finishDistance)
-    : makeTurnCommentary(turnIndex, raceState, _lastFrame?.raceState, finishDistance, _lastLine)
+  // Use commentary helpers to generate flavour text.
+  // Do not call makeFinalCommentary during the last leg; the actual winner
+  // isn’t determined until the raceFinished event. Always use turn commentary
+  // here and reserve the photo‑finish call for the final standings.
+  const comment = makeTurnCommentary(turnIndex, raceState, _lastFrame?.raceState, finishDistance, _lastLine)
 
   _lastFrame = { raceState, finishDistance }
   _lastLine = comment
@@ -468,8 +473,13 @@ bus.on('raceFinished', async ({ winnerIdx, raceState, payouts, ownerBonus, finis
       finishDistance,
       winnerIndex: winnerIdx,
       ticksEvery: TICKS_EVERY,
-      tickChar: TICK_CHAR
+      tickChar: TICK_CHAR,
+      style: BAR_STYLE,
+      nameWidth: NAME_WIDTH
     })
+
+    // Build a legend of silk colours and names for the final standings.
+    const legend = buildSilkLegend(displayState)
     // Compose final commentary line
     const comment = makeFinalCommentary(raceState, winnerIdx, finishDistance)
     // Build payout messages
@@ -493,6 +503,7 @@ bus.on('raceFinished', async ({ winnerIdx, raceState, payouts, ownerBonus, finis
       ' Final Standings',
       track,
       '```',
+      legend,
       comment
     ]
     if (payoutLines.length > 0) {
