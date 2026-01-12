@@ -1,12 +1,12 @@
 // src/games/horserace/handlers/commands.js
-// Updated horse race command handlers. This version ensures there are always six
-// entries in a race by filling the field with generated “bot” horses when not
-// enough house horses are available. It also adds a listener for the
-// `raceFinished` event to display final results and payout winners.
+// Updated horse race command handlers with enhancements:
+// - Always six horses by filling with named bots.
+// - Distinctive colored “silks” for each entry.
+// - Fun names for bot horses chosen from a list.
+// - Extra race commentary lines for more excitement.
 
 import { postMessage } from '../../../libs/cometchat.js'
-import { getUserWallet, removeFromUserWallet } from
-  '../../../database/dbwalletmanager.js'
+import { getUserWallet, removeFromUserWallet } from '../../../database/dbwalletmanager.js'
 import { getUserNickname } from '../../../utils/nickname.js'
 import { getAllHorses, getUserHorses } from '../../../database/dbhorses.js'
 import { fetchCurrentUsers } from '../../../utils/API.js'
@@ -34,11 +34,47 @@ const CELL_WIDTH = 1
 const GROUP_SIZE = 3
 
 // ── SILKS (colored “jerseys”) ─────────────────────────────────────────
-const SILKS = ['', '', '', '', '', '', '⬛', '⬜', '', '']
+// A palette of colored squares so each horse has a distinct colour.
+const SILKS = ['🟥','🟧','🟨','🟩','🟦','🟪','🟫','⬛','⬜']
 const silk = (i) => SILKS[i % SILKS.length]
 function buildSilkLegend (horses) {
-  return horses.map((h, i) => `${String(i + 1).padStart(2, ' ')} ${silk(i)}
-${h.name}`).join('\n')
+  return horses.map((h, i) => `${String(i + 1).padStart(2, ' ')} ${silk(i)} ${h.name}`).join('\n')
+}
+
+// ── Bot horse names ────────────────────────────────────────────────────
+// A curated list of fun and evocative names for filler “bot” horses.
+const BOT_NAMES = [
+  'Midnight Gallop','Velvet Comet','Thunder’s Echo','Whispering Mirage',
+  'Diamond Sprint','Celestial Hoofbeats','Moonlight Dash','Iron Clover',
+  'Solar Streak','Wild Harmony','Shadowstride','Golden Arc','Silver Thistle',
+  'Crimson Trotter','Dreamcatcher Derby','Jewel Rush','Whirlwind Spark',
+  'Phoenix Stride','Misty Halo','Copper Charge','Royal Drift','Sapphire Gale',
+  'Twilight Racer','Neon Horizon','Aurora’s Hoof','Ghost Rider’s Run',
+  'Storm Petal','Cobalt Star','Lucky Lantern','Firefly Sprint','Mystic Trail',
+  'Ivory Charge','Echo Dancer','Zephyr Hooves','Emerald Racer','Scarlet Halo',
+  'Majestic Bolt','Arctic Comet','Violet Charge','Amber Spirit','Moonbeam Gallop',
+  'Whisperwind','Silver Ember','Golden Compass','Wandering Hoof','Crimson Whisper',
+  'Aurora Sprint','Nightfall Rider','Frozen Glimmer','Radiant Spur','Starforge'
+]
+
+/**
+ * Generate a unique filler horse name that has not been used yet.
+ * It will pick randomly from BOT_NAMES if available, otherwise fall back to generic numbered names.
+ *
+ * @param {Set<string>} existingNames Set of existing horse names.
+ */
+function generateFillerName (existingNames) {
+  const available = BOT_NAMES.filter(n => !existingNames.has(n))
+  if (available.length > 0) {
+    return available[Math.floor(Math.random() * available.length)]
+  }
+  // fallback to generic numbered names
+  let i = 1
+  while (true) {
+    const name = `Filler Horse ${i}`
+    if (!existingNames.has(name)) return name
+    i++
+  }
 }
 
 // ── GIFs (image posts) ────────────────────────────────────────────────
@@ -112,8 +148,7 @@ export async function startHorseRace () {
 
   await safeCall(postMessage, [{
     room: ROOM,
-    message: ` HORSE RACE STARTING! Type your horse’s exact name in the next
- ${ENTRY_MS / 1000}s to enter.`
+    message: ` HORSE RACE STARTING! Type your horse’s exact name in the next ${ENTRY_MS / 1000}s to enter.`
   }])
 
   // show available online owner horses by tier
@@ -213,19 +248,16 @@ async function openBetsPhase () {
     if (bots.length < need) {
       const fillerCount = need - bots.length
       const existingNames = new Set(all.map(h => h.name))
+      // also add names of bots already chosen this race
+      bots.forEach(b => existingNames.add(b.name))
       for (let i = 0; i < fillerCount; i++) {
-        // ensure unique filler names
-        let baseName = `Bot Horse ${i + 1}`
-        let uniqueName = baseName
-        let suffix = 1
-        while (existingNames.has(uniqueName)) {
-          uniqueName = `${baseName}-${suffix++}`
-        }
-        existingNames.add(uniqueName)
+        // Pick a fun and unique name for this bot horse.
+        const fillerName = generateFillerName(existingNames)
+        existingNames.add(fillerName)
         const baseOdds = 3 + Math.random() * 4 // 3.0 – 7.0
         bots.push({
           id: null,
-          name: uniqueName,
+          name: fillerName,
           baseOdds: parseFloat(baseOdds.toFixed(1)),
           volatility: 1.5,
           wins: 0,
@@ -234,7 +266,8 @@ async function openBetsPhase () {
           owner: 'House',
           ownerId: null,
           tier: 'bot',
-          emoji: '',
+          // assign a racehorse emoji to bots to add personality
+          emoji: '🏇',
           price: 0,
           retired: false
         })
@@ -359,6 +392,13 @@ function makeTurnCommentary (legIndex, raceState, prevState, finishDistance, pre
   if (prevOrder[0] !== order[0]) {
     options.push(`️ New leader! **${leader.name}** takes command.`)
   }
+  // Add some extra flavour lines to keep the commentary fresh.
+  options.push(
+    `️ ${phase}: **${leader.name}** and **${second.name}** are neck and neck!`,
+    `️ ${phase}: **${leader.name}** surges, but **${second.name}** isn’t far behind.`,
+    `️ ${phase}: Crowd goes wild as **${leader.name}** pulls ahead!`,
+    `️ ${phase}: **${second.name}** is gaining ground, here we go!`
+  )
   if (!options.length) {
     options.push(`️ ${phase}: **${leader.name}** controls; **${second.name}** poised.`)
   }
@@ -416,7 +456,7 @@ bus.on('turn', async ({ turnIndex, raceState, finishDistance }) => {
   }
 })
 
-// New: show final standings and payouts when the race ends
+// Show final standings and payouts when the race ends
 bus.on('raceFinished', async ({ winnerIdx, raceState, payouts, ownerBonus, finishDistance }) => {
   try {
     // Emit a finish GIF for drama

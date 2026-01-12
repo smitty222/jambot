@@ -13,8 +13,9 @@
 //     retirement handling and owner bonuses — is preserved from the source
 //     version for compatibility.
 //
-// If you modify this file, ensure that any changes remain compatible with the
-// handlers in commands.js which expect to consume progress and finish events.
+// If you modify this file, ensure that any changes remain compatible with 
+// the handlers in commands.js which expect to consume progress and finish 
+// events.
 
 import { bus, safeCall } from './service.js'
 import { addToUserWallet } from '../../database/dbwalletmanager.js'
@@ -54,7 +55,9 @@ const BASELINE_PER_SUBTICK = FINISH / (TOTAL_SUBTICKS + 1)
 function rand () { return Math.random() }
 function randRange (a, b) { return a + (b - a) * rand() }
 function randn (mean = 0, sd = 1) {
-  let u = 0; let v = 0; while (!u) u = Math.random(); while (!v) v = Math.random()
+  let u = 0; let v = 0
+  while (!u) u = Math.random()
+  while (!v) v = Math.random()
   return mean + sd * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v)
 }
 
@@ -64,8 +67,8 @@ function speedFromOdds (decOdds) {
 }
 
 /**
- * Run a single race.  Takes an array of horse objects and an optional map of
- * bets keyed by userId.  Emits real‑time progress events via the bus.
+ * Run a single race.  Takes an array of horse objects and an optional map 
+ * of bets keyed by userId.  Emits real‑time progress events via the bus.
  *
  * @param {Object} opts.horses Array of horses; each should include
  *        at least `id`, `name`, `odds`, `racesParticipated`, `wins` and
@@ -109,8 +112,10 @@ export async function runRace ({ horses, horseBets }) {
         const energy = 1 + ENERGY_AMPLITUDE * Math.cos(2 * Math.PI * (raceFrac + h.wavePhase))
         const kick = (h.kickLeg === leg) ? h.kickBoost : 1.0
 
-        const raw = BASELINE_PER_SUBTICK * perTickScale * h.speed * energy * kick * (1 + randn(0, NOISE_SD))
-        const blended = MOMENTUM_BLEND * h.lastDelta + (1 - MOMENTUM_BLEND) * Math.max(0, raw)
+        const raw = BASELINE_PER_SUBTICK * perTickScale * h.speed * energy *
+          kick * (1 + randn(0, NOISE_SD))
+        const blended = MOMENTUM_BLEND * h.lastDelta + (1 - MOMENTUM_BLEND) *
+          Math.max(0, raw)
 
         const diff = h.progress - avg
         const band = 1 - Math.max(-LEADER_PULL, Math.min(LEADER_PULL, diff * 0.9))
@@ -139,8 +144,8 @@ export async function runRace ({ horses, horseBets }) {
     await new Promise(r => setTimeout(r, LEG_DELAY_MS))
   }
 
-  // Determine the winner.  If multiple horses are within 1/16th of the leader
-  // the winner is chosen randomly from among them to allow photo‑finishes.
+  // Determine the winner.  If multiple horses are within 1/16th of the 
+  // leader the winner is chosen randomly from among them to allow photo‑finishes.
   const maxProg = Math.max(...state.map(h => h.progress))
   const close = state.map((h, i) => ({ i, d: maxProg - h.progress }))
     .filter(x => x.d <= (1 / 16))
@@ -168,8 +173,8 @@ export async function runRace ({ horses, horseBets }) {
   }
 
   // Update horse statistics and automatically retire horses that reach
-  // their career limit.  Each horse record includes a `careerLength` set when
-  // purchased.  When racesParticipated reaches or exceeds this value the
+  // their career limit.  Each horse record includes a `careerLength` set 
+  // when purchased.  When racesParticipated reaches or exceeds this value the
   // horse is marked retired.  For generated filler horses, skip updating
   // stats as they have no database ID.
   try {
@@ -184,8 +189,8 @@ export async function runRace ({ horses, horseBets }) {
       const update = { racesParticipated: newRaces, wins: newWins }
       const limit = Number(src.careerLength)
       const shouldRetire = Number.isFinite(limit) && newRaces >= limit
-      // If this race hits or exceeds the limit and the horse was not already retired,
-      // mark it retired and notify the owner.
+      // If this race hits or exceeds the limit and the horse was not 
+      // already retired, mark it retired and notify the owner.
       if (shouldRetire && !src.retired) {
         update.retired = true
         // Compose and send a retirement message to the owner
