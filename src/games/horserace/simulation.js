@@ -1,11 +1,26 @@
 // src/games/horserace/simulation.js
-// 4‑leg race with internal micro‑ticks for smooth movement.
-// Slower cadence for drama; final frame nudges winner to the line.
+//
+// This module implements the core race simulation for the Jambot horse race
+// game. It closely mirrors the original open‑source implementation but
+// contains a few critical updates:
+//
+//   • When updating horse statistics after a race, filler "bot" horses with
+//     no database ID (id === null or undefined) are skipped.  Without
+//     this guard the original code attempted to call updateHorseStats on
+//     a null id which threw and prevented the payout logic from executing.
+//
+//   • All other logic — including movement calculations, payout of bets,
+//     retirement handling and owner bonuses — is preserved from the source
+//     version for compatibility.
+//
+// If you modify this file, ensure that any changes remain compatible with the
+// handlers in commands.js which expect to consume progress and finish events.
 
 import { bus, safeCall } from './service.js'
 import { addToUserWallet } from '../../database/dbwalletmanager.js'
 import { updateHorseStats } from '../../database/dbhorses.js'
-// Import messaging utilities so we can notify owners when their horse retires.
+// Import messaging utilities so we can notify owners when their horse
+// retires.
 import { postMessage } from '../../libs/cometchat.js'
 import { getUserNickname } from '../../utils/nickname.js'
 
@@ -55,7 +70,8 @@ function speedFromOdds (decOdds) {
  * @param {Object} opts.horses Array of horses; each should include
  *        at least `id`, `name`, `odds`, `racesParticipated`, `wins` and
  *        `careerLength` properties.
- * @param {Object} [opts.horseBets] Optional mapping from userId to bet slips.
+ * @param {Object} [opts.horseBets] Optional mapping from userId to bet
+ * slips.
  */
 export async function runRace ({ horses, horseBets }) {
   // Build the internal state used to simulate the race.  Each entry tracks
@@ -154,7 +170,8 @@ export async function runRace ({ horses, horseBets }) {
   // Update horse statistics and automatically retire horses that reach
   // their career limit.  Each horse record includes a `careerLength` set when
   // purchased.  When racesParticipated reaches or exceeds this value the
-  // horse is marked retired.
+  // horse is marked retired.  For generated filler horses, skip updating
+  // stats as they have no database ID.
   try {
     for (let i = 0; i < horses.length; i++) {
       const src = horses[i]
@@ -176,7 +193,7 @@ export async function runRace ({ horses, horseBets }) {
           try {
             const nick = await safeCall(getUserNickname, [src.ownerId]).catch(() => null)
             const ownerTag = nick || `<@uid:${src.ownerId}>`
-            const message = `🐴 ${ownerTag}, your horse **${src.name}** has reached its career limit (${limit} races) and has retired.`
+            const message = ` ${ownerTag}, your horse **${src.name}** has reached its career limit (${limit} races) and has retired.`
             await safeCall(postMessage, [{ room: ROOM, message }])
           } catch (err) {
             // Just log; failure to notify should not break the race
@@ -184,7 +201,12 @@ export async function runRace ({ horses, horseBets }) {
           }
         }
       }
-      await safeCall(updateHorseStats, [src.id, update])
+      // Only update stats for horses with a valid ID.  Generated bot horses
+      // have id set to null; attempting to update stats for them would
+      // produce an error and interrupt payout processing.
+      if (src?.id) {
+        await safeCall(updateHorseStats, [src.id, update])
+      }
     }
   } catch (e) {
     console.warn('[simulation] updateHorseStats failed:', e?.message)

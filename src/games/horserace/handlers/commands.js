@@ -1,11 +1,12 @@
 // src/games/horserace/handlers/commands.js
-// Using SOLID rail style (compact). Includes SILKS, countdown/bell, and GIFs-as-images.
+// Updated horse race command handlers. This version ensures there are always six
+// entries in a race by filling the field with generated “bot” horses when not
+// enough house horses are available. It also adds a listener for the
+// `raceFinished` event to display final results and payout winners.
 
 import { postMessage } from '../../../libs/cometchat.js'
-import { getUserWallet, removeFromUserWallet } from '../../../database/dbwalletmanager.js'
-// Use the standalone nickname util instead of importing from the
-// monolithic message handler. This avoids pulling in unnecessary code
-// and prevents circular dependencies.
+import { getUserWallet, removeFromUserWallet } from
+  '../../../database/dbwalletmanager.js'
 import { getUserNickname } from '../../../utils/nickname.js'
 import { getAllHorses, getUserHorses } from '../../../database/dbhorses.js'
 import { fetchCurrentUsers } from '../../../utils/API.js'
@@ -36,7 +37,8 @@ const GROUP_SIZE = 3
 const SILKS = ['', '', '', '', '', '', '⬛', '⬜', '', '']
 const silk = (i) => SILKS[i % SILKS.length]
 function buildSilkLegend (horses) {
-  return horses.map((h, i) => `${String(i + 1).padStart(2, ' ')} ${silk(i)} ${h.name}`).join('\n')
+  return horses.map((h, i) => `${String(i + 1).padStart(2, ' ')} ${silk(i)}
+${h.name}`).join('\n')
 }
 
 // ── GIFs (image posts) ────────────────────────────────────────────────
@@ -110,7 +112,8 @@ export async function startHorseRace () {
 
   await safeCall(postMessage, [{
     room: ROOM,
-    message: ` HORSE RACE STARTING! Type your horse’s exact name in the next ${ENTRY_MS / 1000}s to enter.`
+    message: ` HORSE RACE STARTING! Type your horse’s exact name in the next
+ ${ENTRY_MS / 1000}s to enter.`
   }])
 
   // show available online owner horses by tier
@@ -199,14 +202,45 @@ async function openBetsPhase () {
   try {
     isAcceptingEntries = false
 
-    // Choose racers: entered owner horses + fill with bots to up to 6
+    // Choose racers: entered owner horses + fill with bots up to 6.
     const all = await safeCall(getAllHorses)
     const ownerHorses = all.filter(h => entered.has(h.name))
     const need = Math.max(0, 6 - ownerHorses.length)
-    const bots = all
+    let bots = all
       .filter(h => (!h.ownerId || h.ownerId === 'allen') && !h.retired)
       .sort((a, b) => (b.baseOdds || 0) - (a.baseOdds || 0))
-      .slice(0, need)
+    // Generate filler horses if not enough bots are available
+    if (bots.length < need) {
+      const fillerCount = need - bots.length
+      const existingNames = new Set(all.map(h => h.name))
+      for (let i = 0; i < fillerCount; i++) {
+        // ensure unique filler names
+        let baseName = `Bot Horse ${i + 1}`
+        let uniqueName = baseName
+        let suffix = 1
+        while (existingNames.has(uniqueName)) {
+          uniqueName = `${baseName}-${suffix++}`
+        }
+        existingNames.add(uniqueName)
+        const baseOdds = 3 + Math.random() * 4 // 3.0 – 7.0
+        bots.push({
+          id: null,
+          name: uniqueName,
+          baseOdds: parseFloat(baseOdds.toFixed(1)),
+          volatility: 1.5,
+          wins: 0,
+          racesParticipated: 0,
+          careerLength: 0,
+          owner: 'House',
+          ownerId: null,
+          tier: 'bot',
+          emoji: '',
+          price: 0,
+          retired: false
+        })
+      }
+    }
+    bots = bots.slice(0, need)
 
     horses = [...ownerHorses, ...bots].map(h => ({
       ...h,
@@ -347,8 +381,6 @@ let _lastFrame = null
 let _lastLine = ''
 
 bus.on('turn', async ({ turnIndex, raceState, finishDistance }) => {
-  const label = ` Leg ${turnIndex + 1} of ${LEGS}`
-
   // Compute whether the frame changed enough to warrant a redraw.
   const MIN_CELL_CHANGE = 1 / (finishDistance * BAR_CELLS) // about 1 cell
   const prev = _lastFrame?.raceState
@@ -381,6 +413,60 @@ bus.on('turn', async ({ turnIndex, raceState, finishDistance }) => {
       '```',
       comment
     ].join('\n') })
+  }
+})
+
+// New: show final standings and payouts when the race ends
+bus.on('raceFinished', async ({ winnerIdx, raceState, payouts, ownerBonus, finishDistance }) => {
+  try {
+    // Emit a finish GIF for drama
+    await postGif('finish')
+    // Build a display with silks and the final positions
+    const displayState = raceState.map((h, i) => ({ ...h, name: `${silk(i)} ${h.name}` }))
+    const track = renderProgress(displayState, {
+      barLength: BAR_CELLS,
+      finishDistance,
+      winnerIndex: winnerIdx,
+      ticksEvery: TICKS_EVERY,
+      tickChar: TICK_CHAR
+    })
+    // Compose final commentary line
+    const comment = makeFinalCommentary(raceState, winnerIdx, finishDistance)
+    // Build payout messages
+    const payoutLines = []
+    if (payouts && Object.keys(payouts).length > 0) {
+      for (const [userId, amount] of Object.entries(payouts)) {
+        if (!amount) continue
+        const nick = await safeCall(getUserNickname, [userId]).catch(() => null)
+        const name = nick?.replace(/^@/, '') || `<@uid:${userId}>`
+        payoutLines.push(`💵 ${name} wins **$${amount}**`)
+      }
+    }
+    let ownerLine = ''
+    if (ownerBonus && ownerBonus.ownerId && ownerBonus.amount) {
+      const nick = await safeCall(getUserNickname, [ownerBonus.ownerId]).catch(() => null)
+      const name = nick?.replace(/^@/, '') || `<@uid:${ownerBonus.ownerId}>`
+      ownerLine = `🎉 ${name} receives an owner bonus of **$${ownerBonus.amount}**`
+    }
+    const messages = [
+      '```',
+      ' Final Standings',
+      track,
+      '```',
+      comment
+    ]
+    if (payoutLines.length > 0) {
+      messages.push('', ...payoutLines)
+    }
+    if (ownerLine) {
+      messages.push('', ownerLine)
+    }
+    await safeCall(postMessage, [{ room: ROOM, message: messages.join('\n') }])
+  } catch (err) {
+    console.error('[raceFinished] error:', err)
+    await safeCall(postMessage, [{ room: ROOM, message: '❌ Error displaying race results.' }])
+  } finally {
+    cleanup()
   }
 })
 
@@ -434,15 +520,15 @@ export async function handleHorseStatsCommand (ctx) {
   const nameArg = (text.match(/^\/horsestats\s+(.+)/i) || [])[1]
 
   const all = await getAllHorses()
-  const horses = Array.isArray(all) ? all : []
+  const horsesList = Array.isArray(all) ? all : []
 
   if (!nameArg) {
     // Leaderboards
-    const topWins = horses.slice()
+    const topWins = horsesList.slice()
       .sort((a, b) => Number(b?.wins || 0) - Number(a?.wins || 0))
       .slice(0, 10)
 
-    const topPct = horses.slice()
+    const topPct = horsesList.slice()
       .filter(h => Number(h?.racesParticipated || 0) >= 5)
       .sort((a, b) => {
         const ap = Number(a?.wins || 0) / Math.max(1, Number(a?.racesParticipated || 0))
@@ -470,8 +556,8 @@ export async function handleHorseStatsCommand (ctx) {
 
   // Specific horse lookup (case-insensitive, supports partial)
   const needle = nameArg.toLowerCase()
-  const match = horses.find(h => String(h?.name || '').toLowerCase() === needle) ||
-                 horses.find(h => String(h?.name || '').toLowerCase().includes(needle))
+  const match = horsesList.find(h => String(h?.name || '').toLowerCase() === needle) ||
+                 horsesList.find(h => String(h?.name || '').toLowerCase().includes(needle))
 
   if (!match) {
     await postMessage({ room, message: `❗ Couldn’t find a horse named **${nameArg}**.` })
@@ -505,7 +591,7 @@ export async function handleHorseStatsCommand (ctx) {
 export async function handleTopHorsesCommand (ctx) {
   const room = ctx?.room || ROOM
   const all = await getAllHorses()
-  const horses = Array.isArray(all) ? all : []
+  const list = Array.isArray(all) ? all : []
 
   // Allen / house filters
   const allenIds = String(process.env.ALLEN_USER_IDS || process.env.CHAT_USER_ID || '')
@@ -514,7 +600,7 @@ export async function handleTopHorsesCommand (ctx) {
     .filter(Boolean)
 
   // Only user-owned horses (must have ownerId) and not owned by Allen/bot
-  const userHorses = horses.filter(h => {
+  const userHorses = list.filter(h => {
     const owner = h?.ownerId
     if (!owner) return false // exclude house/no-owner
     return !allenIds.includes(String(owner))
