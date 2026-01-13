@@ -782,16 +782,24 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
 }
 
 // Command handler: `/slots` or `/slots 500` or `/slots bonus` or `/slots free`
-async function handleSlotsCommand (userUUID, betSize) {
-  const raw = betSize == null ? '' : String(betSize).trim().toLowerCase()
+async function handleSlotsCommand (userUUID, arg) {
+  const raw = arg == null ? '' : String(arg).trim().toLowerCase()
 
-  if (raw === 'bonus') return await spinBonusOnce(userUUID)
-  if (raw === 'free') return await spinFeatureOnce(userUUID)
+  if (raw === 'bonus') {
+    return await spinBonusOnce(userUUID)
+  }
+
+  if (raw === 'free') {
+    return await spinFeatureOnce(userUUID)
+  }
 
   const bet = raw === '' ? DEFAULT_BET : Number(raw)
-  if (!bet || bet <= 0) return 'Please enter a valid bet amount.'
+  if (!Number.isFinite(bet) || bet <= 0) {
+    return 'Please enter a valid bet amount.'
+  }
 
   return await playSlots(userUUID, bet)
 }
+
 
 export { playSlots, handleSlotsCommand, getJackpotValue }
