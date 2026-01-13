@@ -15,9 +15,19 @@
 //     lowered.  These tweaks make favorites and longshots behave more
 //     reasonably relative to their odds.
 //
-// If you modify this file, ensure that any changes remain compatible with
-// the handlers in commands.js which expect to consume progress and finish
-// events.
+//   • A defensive guard has been added at the start of runRace to ensure
+//     the function exits early if no horses are provided.  This prevents
+//     runtime errors when called with an empty or invalid array.
+//
+//   • The soft‑cap logic has been fixed so that a horse's progress can never
+//     decrease.  In the original implementation, horses near the soft cap
+//     could move backwards; we now clamp the capped value to be at least
+//     the current progress.
+//
+//   • Photo finish logic now uses weighted randomness: when multiple horses
+//     finish within 1/16th of the leader, each horse's chance of winning is
+//     proportional to how close it is to the leader.  This makes photo
+//     finishes feel fairer while still remaining unpredictable.
 
 import { bus, safeCall } from './service.js'
 import { addToUserWallet } from '../../database/dbwalletmanager.js'
@@ -78,6 +88,11 @@ function speedFromOdds (decOdds) {
  *        slips.
  */
 export async function runRace ({ horses, horseBets }) {
+  // Defensive guard: if horses is missing or empty, return early to avoid runtime errors.
+  if (!Array.isArray(horses) || horses.length === 0) {
+    return
+  }
+
   // Build the internal state used to simulate the race.  Each entry tracks
   // progress, lastDelta, speed and other per‑race parameters.
   const state = horses.map((h, idx) => ({
@@ -125,7 +140,11 @@ export async function runRace ({ horses, horseBets }) {
         const isFinalLeg = (leg === LEGS - 1)
         let next = h.progress + delta
         if (!isFinalLeg && next > SOFT_CAP_FRACTION) {
-          next = SOFT_CAP_FRACTION - Math.random() * 0.006
+          // Soft cap prevents early horses from finishing too quickly.
+          // Clamp next progress near the cap but never allow the horse to move backwards.
+          const capTarget = SOFT_CAP_FRACTION - Math.random() * 0.006
+          // next should not be less than current progress to avoid "backwards" bug
+          next = Math.max(h.progress, capTarget)
           delta = Math.max(0, next - h.progress)
         }
 
@@ -145,16 +164,35 @@ export async function runRace ({ horses, horseBets }) {
   }
 
   // Determine the winner.  If multiple horses are within 1/16th of the
-  // leader the winner is chosen randomly from among them to allow
-  // photo‑finishes.
+  // leader the winner is chosen using weighted randomness among them to allow
+  // photo‑finishes.  Closer horses have a higher chance.
   const maxProg = Math.max(...state.map(h => h.progress))
-  const close = state.map((h, i) => ({ i, d: maxProg - h.progress }))
+  // Determine horses within 1/16 of the leader for a potential photo finish.
+  const closers = state.map((h, i) => ({ i, d: maxProg - h.progress }))
     .filter(x => x.d <= (1 / 16))
-    .map(x => x.i)
-  const winnerIdx = close.length > 1
-    ? close[Math.floor(Math.random() * close.length)]
-    : state.reduce((m, h, i, arr) => (h.progress >= arr[m].progress ? i : m), 0)
+  let winnerIdx
+  if (closers.length > 1) {
+    // Weighted randomness by closeness: horses closer to the leader have higher weight.
+    const weights = closers.map(x => 1 / (x.d + 1e-6))
+    const totalWeight = weights.reduce((sum, w) => sum + w, 0)
+    let r = Math.random() * totalWeight
+    // default fallback to the last candidate in case rounding issues occur
+    winnerIdx = closers[closers.length - 1].i
+    for (let j = 0; j < closers.length; j++) {
+      r -= weights[j]
+      if (r <= 0) {
+        winnerIdx = closers[j].i
+        break
+      }
+    }
+  } else if (closers.length === 1) {
+    winnerIdx = closers[0].i
+  } else {
+    // No photo finish: choose the horse with maximum progress
+    winnerIdx = state.reduce((m, h, i, arr) => (h.progress >= arr[m].progress ? i : m), 0)
+  }
 
+  // Ensure the winning horse's progress reaches FINISH
   state[winnerIdx].progress = FINISH
 
   // Payout any winning bets

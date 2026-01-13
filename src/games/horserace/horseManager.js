@@ -7,10 +7,13 @@ import { formatOdds } from './utils/odds.js'
 
 const ROOM = process.env.ROOM_UUID
 
+// Define the available horse tiers.  Prices scale with power: basic < elite < champion.
 const HORSE_TIERS = {
-  basic:    { price: 2000,  oddsRange: [6.0, 9.0], volatilityRange: [1.5, 2.5], careerLength: [8, 12],  emoji: '🐴' },
-  elite:    { price: 7000,  oddsRange: [4.0, 7.0], volatilityRange: [1.0, 2.0], careerLength: [12, 18], emoji: '🐎' },
-  champion: { price: 15, oddsRange: [2.5, 5.0], volatilityRange: [0.5, 1.5], careerLength: [18, 24], emoji: '🐉' }
+  basic:    { price: 2000,  oddsRange: [6.0, 9.0], volatilityRange: [1.5, 2.5], careerLength: [8, 12],  emoji: '' },
+  elite:    { price: 7000,  oddsRange: [4.0, 7.0], volatilityRange: [1.0, 2.0], careerLength: [12, 18], emoji: '' },
+  // Champion horses are top tier. Their price should be significantly higher than basic and elite tiers.
+  // Align the cost with other tiers (2000 for basic, 7000 for elite). Set champion price to 15000.
+  champion: { price: 15000, oddsRange: [2.5, 5.0], volatilityRange: [0.5, 1.5], careerLength: [18, 24], emoji: '' }
 }
 
 const fmt = n => Number(n || 0).toLocaleString('en-US')
@@ -42,7 +45,7 @@ function generateHorseName (existing) {
 function horseShopMessage () {
   const b = HORSE_TIERS.basic, e = HORSE_TIERS.elite, c = HORSE_TIERS.champion
   return [
-    '🏁 **Horse Shop** — buy a racehorse and enter our races!',
+    ' **Horse Shop** — buy a racehorse and enter our races!',
     '',
     '**Tiers & Prices:**',
     `${b.emoji} *Basic* — **$${fmt(b.price)}** • Base odds ~ ${b.oddsRange[0]}–${b.oddsRange[1]} • Career: ${b.careerLength[0]}–${b.careerLength[1]} races`,
