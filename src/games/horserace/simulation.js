@@ -9,23 +9,22 @@
 //     this guard the original code attempted to call updateHorseStats on
 //     a null id which threw and prevented the payout logic from executing.
 //
-//   • All other logic — including movement calculations, payout of bets,
-//     retirement handling and owner bonuses — is preserved from the source
-//     version for compatibility.
+//   • Speed scaling and randomness have been adjusted to improve fairness.
+//     Specifically, the speed formula compresses differences across odds,
+//     late kick probability has been reduced, and noise has been slightly
+//     lowered.  These tweaks make favorites and longshots behave more
+//     reasonably relative to their odds.
 //
-// If you modify this file, ensure that any changes remain compatible with 
-// the handlers in commands.js which expect to consume progress and finish 
+// If you modify this file, ensure that any changes remain compatible with
+// the handlers in commands.js which expect to consume progress and finish
 // events.
 
 import { bus, safeCall } from './service.js'
 import { addToUserWallet } from '../../database/dbwalletmanager.js'
 import { updateHorseStats } from '../../database/dbhorses.js'
-// Import messaging utilities so we can notify owners when their horse
-// retires.
 import { postMessage } from '../../libs/cometchat.js'
 import { getUserNickname } from '../../utils/nickname.js'
 
-// Room identifier used for posting race and retirement notifications.
 const ROOM = process.env.ROOM_UUID
 
 export const LEGS = 4
@@ -38,11 +37,11 @@ const SOFT_CAP_FRACTION = 0.94
 
 // Movement dials
 const MOMENTUM_BLEND = 0.40
-const NOISE_SD = 0.045
+const NOISE_SD = 0.04 // was 0.045
 const LEADER_PULL = 0.09
 const ENERGY_AMPLITUDE = 0.07
 const LANE_BIAS_RANGE = 0.012
-const LATE_KICK_PROB = 0.45
+const LATE_KICK_PROB = 0.40 // was 0.45
 const LATE_KICK_BOOST = [1.08, 1.16]
 const LATE_KICK_LEG = 3
 
@@ -61,20 +60,22 @@ function randn (mean = 0, sd = 1) {
   return mean + sd * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v)
 }
 
+// Adjust speed scaling to compress differences across odds.  Lower odds
+// (favorites) still get a boost but within a narrower band.
 function speedFromOdds (decOdds) {
-  const f = 1.0 + (3.0 - Number(decOdds || 3.0)) * 0.12 // ~0.85..1.15
-  return Math.max(0.85, Math.min(1.15, f))
+  const f = 1.0 + (3.0 - Number(decOdds || 3.0)) * 0.08 // ~0.9..1.1
+  return Math.max(0.9, Math.min(1.1, f))
 }
 
 /**
- * Run a single race.  Takes an array of horse objects and an optional map 
+ * Run a single race.  Takes an array of horse objects and an optional map
  * of bets keyed by userId.  Emits real‑time progress events via the bus.
  *
  * @param {Object} opts.horses Array of horses; each should include
  *        at least `id`, `name`, `odds`, `racesParticipated`, `wins` and
  *        `careerLength` properties.
  * @param {Object} [opts.horseBets] Optional mapping from userId to bet
- * slips.
+ *        slips.
  */
 export async function runRace ({ horses, horseBets }) {
   // Build the internal state used to simulate the race.  Each entry tracks
@@ -114,8 +115,7 @@ export async function runRace ({ horses, horseBets }) {
 
         const raw = BASELINE_PER_SUBTICK * perTickScale * h.speed * energy *
           kick * (1 + randn(0, NOISE_SD))
-        const blended = MOMENTUM_BLEND * h.lastDelta + (1 - MOMENTUM_BLEND) *
-          Math.max(0, raw)
+        const blended = MOMENTUM_BLEND * h.lastDelta + (1 - MOMENTUM_BLEND) * Math.max(0, raw)
 
         const diff = h.progress - avg
         const band = 1 - Math.max(-LEADER_PULL, Math.min(LEADER_PULL, diff * 0.9))
@@ -144,8 +144,9 @@ export async function runRace ({ horses, horseBets }) {
     await new Promise(r => setTimeout(r, LEG_DELAY_MS))
   }
 
-  // Determine the winner.  If multiple horses are within 1/16th of the 
-  // leader the winner is chosen randomly from among them to allow photo‑finishes.
+  // Determine the winner.  If multiple horses are within 1/16th of the
+  // leader the winner is chosen randomly from among them to allow
+  // photo‑finishes.
   const maxProg = Math.max(...state.map(h => h.progress))
   const close = state.map((h, i) => ({ i, d: maxProg - h.progress }))
     .filter(x => x.d <= (1 / 16))
@@ -173,24 +174,18 @@ export async function runRace ({ horses, horseBets }) {
   }
 
   // Update horse statistics and automatically retire horses that reach
-  // their career limit.  Each horse record includes a `careerLength` set 
-  // when purchased.  When racesParticipated reaches or exceeds this value the
-  // horse is marked retired.  For generated filler horses, skip updating
+  // their career limit. For generated filler horses, skip updating
   // stats as they have no database ID.
   try {
     for (let i = 0; i < horses.length; i++) {
       const src = horses[i]
       const isWin = i === winnerIdx
-      // Calculate the updated stats
       const newRaces = (src.racesParticipated || 0) + 1
       const newWins = (src.wins || 0) + (isWin ? 1 : 0)
 
-      // Prepare update payload
       const update = { racesParticipated: newRaces, wins: newWins }
       const limit = Number(src.careerLength)
       const shouldRetire = Number.isFinite(limit) && newRaces >= limit
-      // If this race hits or exceeds the limit and the horse was not 
-      // already retired, mark it retired and notify the owner.
       if (shouldRetire && !src.retired) {
         update.retired = true
         // Compose and send a retirement message to the owner
@@ -201,12 +196,11 @@ export async function runRace ({ horses, horseBets }) {
             const message = ` ${ownerTag}, your horse **${src.name}** has reached its career limit (${limit} races) and has retired.`
             await safeCall(postMessage, [{ room: ROOM, message }])
           } catch (err) {
-            // Just log; failure to notify should not break the race
             console.warn('[simulation] failed to notify owner about retirement:', err?.message)
           }
         }
       }
-      // Only update stats for horses with a valid ID.  Generated bot horses
+      // Only update stats for horses with a valid ID. Generated bot horses
       // have id set to null; attempting to update stats for them would
       // produce an error and interrupt payout processing.
       if (src?.id) {

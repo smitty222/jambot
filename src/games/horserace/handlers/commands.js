@@ -1,8 +1,7 @@
 // src/games/horserace/handlers/commands.js
-// Updated horse race command handlers. This version ensures there are always six
-// entries in a race by filling the field with generated “bot” horses when not
-// enough house horses are available. It also adds a listener for the
-// `raceFinished` event to display final results and payout winners.
+// Updated horse race command handlers with bot-only race support, improved visual
+// presentation, fair odds, and realistic bot names. If no owners enter a horse,
+// house horses automatically fill the field, and the race continues as normal.
 
 import { postMessage } from '../../../libs/cometchat.js'
 import { getUserWallet, removeFromUserWallet } from '../../../database/dbwalletmanager.js'
@@ -18,51 +17,86 @@ import { renderProgress, renderRacecard } from '../utils/progress.js'
 const ROOM = process.env.ROOM_UUID
 
 // ── Display tuning ─────────────────────────────────────────────────────
-const BAR_STYLE = 'solid' // use 'solid' for a continuous track
-const BAR_CELLS = 12 // width of the solid rail
+const BAR_STYLE = 'solid' // continuous track
+const BAR_CELLS = 12 // width of the progress bar
 const NAME_WIDTH = 24
 const TV_MODE = true
-const PHOTO_SUSPENSE_MS = 2500 // pause between GIF and the photo-finish message
+const PHOTO_SUSPENSE_MS = 2500
 
-// solid style ticks (subtle markers inside the bar)
+// Ticks inside the solid rail
 const TICKS_EVERY = 3
-const TICK_CHAR = ':' // subtle colon inside solid rail
-
-// (rail-only knobs kept for future toggling)
-const CELL_WIDTH = 1
-const GROUP_SIZE = 3
+const TICK_CHAR = ':'
 
 // ── SILKS (colored “jerseys”) ─────────────────────────────────────────
-const SILKS = ['', '', '', '', '', '', '⬛', '⬜', '', '']
+// Provide a palette of colored square emojis so each horse (user‑owned or bot)
+// gets a distinct jersey. We cycle through this list for races with more than
+// the available colors.
+const SILKS = [
+  '🟥', // red
+  '🟧', // orange
+  '🟨', // yellow
+  '🟩', // green
+  '🟦', // blue
+  '🟪', // purple
+  '🟫', // brown
+  '⬛', // black
+  '⬜', // white
+  '🔶', // orange diamond
+  '🔷', // blue diamond
+  '🟣'  // violet
+]
 const silk = (i) => SILKS[i % SILKS.length]
+
 function buildSilkLegend (horses) {
   return horses.map((h, i) => `${String(i + 1).padStart(2, ' ')} ${silk(i)} ${h.name}`).join('\n')
 }
 
-// ── GIFs (image posts) ────────────────────────────────────────────────
-const GIFS = {
-  start: [
-    'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExcmk3dnY1b3k3eHE1bHJhaGgwNzB1cTdncTNzY3FiN3hkczhmbTJscyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/SuI4fzUBQzG1H1kEtI/giphy.gif',
-    'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExcmk3dnY1b3k3eHE1bHJhaGgwNzB1cTdncTNzY3FiN3hkczhmbTJscyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/StuM9jJ3nFapMPQbdx/giphy.gif'
-  ],
-  finish: [
-    'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3VpbGhmNHIzdXhwa3ZkbTF2anEybzh1aGw5b3ZlMmxmMTBsbGg4bSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/kmfOkAC6tVJL2tR0vk/giphy.gif'
-  ],
-  photoFinish: [
-    'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExbmg1Z2RzYm9oMjBiOXQwazkyY2hwenF4YmlsZTZkdWp0eDI0aGk0ciZlcD12MV9naWZzX3NlYXJjaCZjdD1n/iD7jBggMvtFQ5BdNpV/giphy.gif'
-  ]
-}
-function pick (arr) { return arr[Math.floor(Math.random() * arr.length)] }
-async function postGif (type, caption = '') {
-  const url = pick(GIFS[type] || [])
-  if (!url) return
-  await postMessage({ room: ROOM, message: '', images: [url] })
-  if (caption) await postMessage({ room: ROOM, message: caption })
+// ── Bot name generator ────────────────────────────────────────────────
+// To make bot horses feel more authentic, we generate names by randomly
+// combining an adjective and a noun. These lists are curated with a
+// race‑appropriate vibe.
+const HORSE_ADJECTIVES = [
+  'Swift', 'Wild', 'Silent', 'Midnight', 'Golden', 'Thundering', 'Rapid',
+  'Lucky', 'Brave', 'Majestic', 'Fierce', 'Clever', 'Mighty', 'Noble',
+  'Radiant', 'Bold', 'Starry', 'Daring', 'Gallant', 'Vibrant'
+]
+const HORSE_NOUNS = [
+  'Spirit', 'Dream', 'Storm', 'Fire', 'Wind', 'Comet', 'Rocket', 'Shadow',
+  'Blaze', 'Surge', 'Flash', 'Thunder', 'Whisper', 'Blitz', 'Mirage',
+  'Avalanche', 'Echo', 'Aurora', 'Falcon', 'Phantom'
+]
+
+/**
+ * Generate a unique horse name not present in the given set.  Randomly
+ * combines an adjective and noun until an unused combination is found.
+ *
+ * @param {Set<string>} usedNames A set of names already taken.
+ * @returns {string} A unique horse name.
+ */
+function generateHorseName (usedNames) {
+  // Try a few times to find a unique combination. In the unlikely event
+  // of exhaustion, fall back to a timestamp.
+  for (let attempts = 0; attempts < 20; attempts++) {
+    const adj = HORSE_ADJECTIVES[Math.floor(Math.random() * HORSE_ADJECTIVES.length)]
+    const noun = HORSE_NOUNS[Math.floor(Math.random() * HORSE_NOUNS.length)]
+    const name = `${adj} ${noun}`
+    if (!usedNames.has(name)) {
+      return name
+    }
+  }
+  // Fallback: ensure uniqueness by appending a number
+  let base = `${HORSE_ADJECTIVES[0]} ${HORSE_NOUNS[0]}`
+  let suffix = 1
+  let unique = base
+  while (usedNames.has(unique)) {
+    unique = `${base} ${suffix++}`
+  }
+  return unique
 }
 
 // ── Race flow timing ───────────────────────────────────────────────────
 const ENTRY_MS = 30_000
-// Increase the betting window to give players more time to wager
+// Extended betting window to allow more time to wager
 const BET_MS = 45_000
 
 // ── Post-time countdown ────────────────────────────────────────────────
@@ -79,9 +113,7 @@ async function postCountdown (n = 5) {
 // to tier-based defaults.
 const TIER_RETIRE_LIMIT = { champion: 50, elite: 40, pro: 30, rookie: 25, amateur: 20, default: 25 }
 function careerLimitFor (h) {
-  // Prefer an explicit careerLength (assigned at purchase)
   if (Number.isFinite(h?.careerLength)) return Number(h.careerLength)
-  // Legacy support: if a separate careerLimit is set use it
   if (Number.isFinite(h?.careerLimit)) return Number(h?.careerLimit)
   const t = String(h?.tier || '').toLowerCase()
   for (const key of Object.keys(TIER_RETIRE_LIMIT)) {
@@ -101,7 +133,7 @@ let horseBets = {} // userId -> [{horseIndex, amount}]
 export function isWaitingForEntries () { return isAcceptingEntries === true }
 
 export async function startHorseRace () {
-  // reset
+  // reset state
   isAcceptingEntries = true
   isBettingOpen = false
   entered.clear()
@@ -204,49 +236,51 @@ async function openBetsPhase () {
     // Choose racers: entered owner horses + fill with bots up to 6.
     const all = await safeCall(getAllHorses)
     const ownerHorses = all.filter(h => entered.has(h.name))
-    // Cancel the race outright if no player entered a horse. This avoids a field
-    // composed solely of filler bots, which can feel anticlimactic and unfair.
+
+    // If no owners entered a horse, we still proceed with a bot‑only field.
+    // Notify the room that house horses will run the race.
     if (ownerHorses.length === 0) {
-      await safeCall(postMessage, [{ room: ROOM, message: '⚠️ No horses were entered. Race canceled.' }])
-      cleanup()
-      return
-    }
-    // Inform chat about the entries once the entry window closes. List the owner horses that made it in.
-    if (ownerHorses.length > 0) {
+      await safeCall(postMessage, [{
+        room: ROOM,
+        message: '⚠️ No owners entered; house horses take the field!'
+      }])
+    } else {
+      // Inform chat about the entries once the entry window closes. List the owner horses that made it in.
       const entryNames = ownerHorses.map(h => `${h.emoji || ''} ${h.name}`.trim()).join(', ')
       await safeCall(postMessage, [{ room: ROOM, message: `✅ Entries closed! Participants: ${entryNames}.` }])
     }
 
     const need = Math.max(0, 6 - ownerHorses.length)
+    // Gather available house/bot horses from the database
     let bots = all
       .filter(h => (!h.ownerId || h.ownerId === 'allen') && !h.retired)
       .sort((a, b) => (b.baseOdds || 0) - (a.baseOdds || 0))
-    // Generate filler horses if not enough bots are available
+    // Generate additional bot horses if not enough are available to fill the field.
     if (bots.length < need) {
       const fillerCount = need - bots.length
       const existingNames = new Set(all.map(h => h.name))
+      // Also include names of selected bots and owner horses so we don't duplicate.
+      for (const h of bots) existingNames.add(h.name)
+      for (const h of ownerHorses) existingNames.add(h.name)
       for (let i = 0; i < fillerCount; i++) {
-        // ensure unique filler names
-        let baseName = `Bot Horse ${i + 1}`
-        let uniqueName = baseName
-        let suffix = 1
-        while (existingNames.has(uniqueName)) {
-          uniqueName = `${baseName}-${suffix++}`
-        }
+        const uniqueName = generateHorseName(existingNames)
         existingNames.add(uniqueName)
-        const baseOdds = 3 + Math.random() * 4 // 3.0 – 7.0
+        // Assign a realistic base odds between 2.0 and 7.0 (favored to longshot)
+        const baseOdds = 2.0 + Math.random() * 5.0
+        // Volatility influences how much odds swing; choose a mild random value
+        const vol = 1.2 + Math.random() * 0.8 // 1.2–2.0
         bots.push({
           id: null,
           name: uniqueName,
           baseOdds: parseFloat(baseOdds.toFixed(1)),
-          volatility: 1.5,
+          volatility: parseFloat(vol.toFixed(2)),
           wins: 0,
           racesParticipated: 0,
           careerLength: 0,
           owner: 'House',
           ownerId: null,
           tier: 'bot',
-          emoji: '',
+          emoji: '', // silks convey colour instead of emoji
           price: 0,
           retired: false
         })
@@ -462,7 +496,6 @@ bus.on('raceFinished', async ({ winnerIdx, raceState, payouts, ownerBonus, finis
     try {
       const oddsNum = Number(horses?.[winnerIdx]?.odds || 0)
       if (oddsNum >= 5) {
-        // Add excitement if a long shot wins; trim any leading/trailing whitespace on the base comment
         comment = ` Upset! ${comment.trim()}`
       }
     } catch (_) {
@@ -522,7 +555,6 @@ function _fmtLine (h, idx = null) {
   const retired = h?.retired ? ' (retired)' : ''
   const tier = h?.tier ? ` [${String(h.tier).toUpperCase()}]` : ''
   const limit = careerLimitFor(h)
-  // Display current races along with the career limit, if available
   const raceInfo = Number.isFinite(limit) ? `${races}/${limit}` : `${races}`
   return `${tag} ${h.name}${retired}${tier} — Odds ${_fmtOdds(h)} · Races ${raceInfo} · Wins ${wins} (${pct})`
 }
@@ -553,7 +585,7 @@ export async function handleMyHorsesCommand (ctx) {
 export async function handleHorseStatsCommand (ctx) {
   const room = ctx?.room || ROOM
   const text = String(ctx?.message || '').trim()
-  const nameArg = (text.match(/^\/horsestats\s+(.+)/i) || [])[1]
+  const nameArg = (text.match(/^\/horsestats\\s+(.+)/i) || [])[1]
 
   const all = await getAllHorses()
   const horsesList = Array.isArray(all) ? all : []
@@ -605,7 +637,6 @@ export async function handleHorseStatsCommand (ctx) {
   const pct = _fmtPct(wins, races)
   const owner = match?.ownerId ? `<@uid:${match.ownerId}>` : 'House'
 
-  // Compute career limit and races left
   const limit = careerLimitFor(match)
   const left = Number.isFinite(limit) ? Math.max(limit - races, 0) : null
 
@@ -672,9 +703,10 @@ export async function handleHorseHelpCommand (ctx) {
     '/myhorses – List your owned horses with their race counts, wins and career limits.',
     '/horsestats [name] – Show detailed stats for a specific horse by name, or view leaderboards when no name is given.',
     '/tophorses – See the top user‑owned horses ranked by wins and win percentage.',
-    '/startHorseRace – Begin a new horse race (entries will open).',
-    '/horse <number> <amount> – Place a bet on a horse. Example: /horse 1 20',
-    '/horsehelp – Display this help information.'
-  ].join('\n')
-  await postMessage({ room, message: '```\n' + helpLines + '\n```' })
+    '/horse <number> <amount> – Place a bet on a horse during the betting phase (use the number shown on the race card).',
+    '/horsehelp – Display this help message.',
+    '',
+    'Note: Horses have a finite career limit assigned when purchased. Once a horse reaches this limit, it will automatically retire and cannot enter new races.'
+  ]
+  await postMessage({ room, message: '```\n' + helpLines.join('\n') + '\n```' })
 }
