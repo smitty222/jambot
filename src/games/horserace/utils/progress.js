@@ -1,24 +1,51 @@
 // src/games/horserace/utils/progress.js
-// CometChat-optimized renderers with names on the RIGHT.
-// New: 'solid' style — compact solid rail with subtle ':' ticks.
+//
+// CometChat-optimized progress bar renderers.  These helpers construct
+// monospace-safe race progress displays suitable for the Turntable chat
+// environment.  The layout deliberately avoids emoji-dependent widths by
+// using only plain ASCII for the track itself, limiting the bar length
+// to a compact value (~12 cells) to prevent line wrapping on mobile.  Each
+// rendered line has a fixed width consisting of a two‑digit lane number,
+// a track surrounded by pipes, a padded/truncated name, and a constant
+// winner suffix.  The entire output is wrapped in triple backticks to
+// force the chat client to render it as a code block.
 
-const SHADE_FULL = '█'
-const SHADE_EMPTY = '░'
-const FILL = '='
+// ASCII characters used for the progress bar.  Using dashes and dots
+// ensures consistent width across platforms and avoids relying on
+// variable‑width emoji.
+const SHADE_FULL = '-'
+const SHADE_EMPTY = '.'
+const FILL = '-'
 const EMPTY = '.'
-const MARKER = '●'
+const MARKER = '>'
 
-function clamp01 (x) { return Math.max(0, Math.min(1, x)) }
-function truncName (s, max = 24) { s = String(s || ''); return s.length <= max ? s : s.slice(0, max - 1) + '…' }
+function clamp01(x) {
+  return Math.max(0, Math.min(1, x))
+}
 
-// Simple header for non-rail styles
-export function header (barLength = 12) {
+/**
+ * Truncate a horse name to at most `max` characters.  If truncated,
+ * append an ellipsis.  Conversion to string protects against null/undefined.
+ *
+ * @param {string} s
+ * @param {number} max
+ */
+function truncName(s, max = 24) {
+  s = String(s || '')
+  return s.length <= max ? s : s.slice(0, max - 1) + '…'
+}
+
+// Simple header for non‑rail styles.  Generates the outer pipes and a run
+// of dashes equal to the bar length.  This is deliberately compact and
+// monospace‑friendly.
+export function header(barLength = 12) {
   return '|' + '-'.repeat(barLength) + '|'
 }
 
-// Header that matches the rail layout visually.
-// Group separators appear every `groupSize` cells to reduce visual noise.
-function headerRail (cells = 12, cellWidth = 1, sep = '|', groupSize = 3) {
+// Header that matches the rail layout visually.  Group separators appear
+// every `groupSize` cells to reduce visual noise.  Each cell within a
+// group may be wider than one character via `cellWidth`.
+function headerRail(cells = 12, cellWidth = 1, sep = '|', groupSize = 3) {
   const cell = '-'.repeat(cellWidth)
   const parts = []
   for (let i = 0; i < cells; i++) {
@@ -28,8 +55,10 @@ function headerRail (cells = 12, cellWidth = 1, sep = '|', groupSize = 3) {
   return sep + parts.join('') + sep
 }
 
-// Optional subtle tick marks inside shaded/fill bars
-function overlayTicks (str, every, tickChar = '|') {
+// Overlay subtle tick marks inside shaded or solid bars.  Every `every`
+// characters are replaced with the provided `tickChar`.  If `every` is 0
+// or negative, the original string is returned unchanged.
+function overlayTicks(str, every, tickChar = '|') {
   if (!every || every <= 0) return str
   const arr = str.split('')
   for (let i = every; i < arr.length; i += every) {
@@ -38,25 +67,28 @@ function overlayTicks (str, every, tickChar = '|') {
   return arr.join('')
 }
 
-function renderShade (pct, len, { ticksEvery = 0, tickChar = '|' } = {}) {
+function renderShade(pct, len, { ticksEvery = 0, tickChar = '|' } = {}) {
   const filled = Math.round(clamp01(pct) * len)
   const base = SHADE_FULL.repeat(filled) + SHADE_EMPTY.repeat(Math.max(0, len - filled))
   return overlayTicks(base, ticksEvery, tickChar)
 }
 
-function renderFill (pct, len) {
+function renderFill(pct, len) {
   const filled = Math.round(clamp01(pct) * len)
   return FILL.repeat(filled) + EMPTY.repeat(Math.max(0, len - filled))
 }
 
-function renderMarker (pct, len) {
+function renderMarker(pct, len) {
   const pos = Math.round(clamp01(pct) * (len - 1))
   const out = EMPTY.repeat(len).split('')
   out[pos] = MARKER
   return out.join('')
 }
 
-function renderSegmented (pct, len) {
+function renderSegmented(pct, len) {
+  // Divide the bar into four legs with ':' separators.  This creates a
+  // segmented look while keeping within the overall bar length.  The
+  // colon characters are ASCII and safe for monospace rendering.
   const legs = 4
   const segLen = Math.max(2, Math.floor(len / legs))
   const total = segLen * legs
@@ -68,14 +100,14 @@ function renderSegmented (pct, len) {
       ? Math.floor(p - start)
       : Math.max(0, Math.min(segLen, Math.floor(p - start)))
     bar += FILL.repeat(partial) + EMPTY.repeat(segLen - partial)
-    if (i < legs - 1) bar += ':' // separator
+    if (i < legs - 1) bar += ':'
   }
   const pad = Math.max(0, len - (segLen * legs + (legs - 1)))
   return bar + EMPTY.repeat(pad)
 }
 
-// RAIL renderer — grouped pipes:  |███|██░|…|
-function renderRail (pct, cells = 12, cellWidth = 1, sep = '|', groupSize = 3) {
+// Rail renderer — grouped pipes:  |---|--.|...
+function renderRail(pct, cells = 12, cellWidth = 1, sep = '|', groupSize = 3) {
   const filledCells = Math.round(clamp01(pct) * cells)
   const pieces = []
   for (let i = 0; i < cells; i++) {
@@ -87,22 +119,28 @@ function renderRail (pct, cells = 12, cellWidth = 1, sep = '|', groupSize = 3) {
 }
 
 /**
- * Universal, monospace-safe progress renderer with names on the right.
+ * Universal, monospace‑safe progress renderer with names on the right.  The
+ * resulting string is wrapped in triple backticks so that CometChat will
+ * render it as a code block.  Each line has a fixed width: a two‑digit
+ * lane number (zero‑padded), a bar of exactly `barLength` characters
+ * enclosed by pipes, a padded/truncated name, and a winner suffix of
+ * constant width (" WIN" for winners, four spaces otherwise).  This
+ * prevents any jitter in the display when the race updates.
  *
  * @param {Array<{index:number,name:string,progress:number}>} raceState
  * @param {{
- *   barLength?:number,             // for 'rail' = cell count; others = chars
+ *   barLength?:number,
  *   finishDistance?:number,
  *   winnerIndex?:number,
  *   style?:'rail'|'solid'|'shaded'|'fill'|'marker'|'segmented',
- *   ticksEvery?:number,            // shaded/solid only
- *   tickChar?:string,              // shaded/solid only
+ *   ticksEvery?:number,
+ *   tickChar?:string,
  *   nameWidth?:number,
- *   cellWidth?:number,             // rail only (default 1)
- *   groupSize?:number              // rail only (default 3)
+ *   cellWidth?:number,
+ *   groupSize?:number
  * }} opts
  */
-export function renderProgress (
+export function renderProgress(
   raceState,
   {
     barLength = 12,
@@ -118,6 +156,11 @@ export function renderProgress (
 ) {
   if (!raceState?.length) return ''
 
+  // Build each row with consistent formatting.  The bar is rendered
+  // according to the chosen style.  Names are truncated then padded to
+  // `nameWidth` to ensure alignment.  A constant‑width winner suffix is
+  // appended after the name.  We also record the header line so we can
+  // reuse the same one for every row.
   const rows = raceState.map((h, i) => {
     const pct = clamp01((h.progress || 0) / (finishDistance || 1))
 
@@ -130,7 +173,7 @@ export function renderProgress (
       headLine = header(barLength)
       const draw =
         style === 'solid'
-          ? (p) => renderShade(p, barLength, { ticksEvery, tickChar }) // solid: compact rail with ':' ticks
+          ? (p) => renderShade(p, barLength, { ticksEvery, tickChar })
           : style === 'shaded'
             ? (p) => renderShade(p, barLength, { ticksEvery, tickChar })
             : style === 'marker'
@@ -141,27 +184,43 @@ export function renderProgress (
       barStr = '|' + draw(pct) + '|'
     }
 
-    const idx = String(i + 1).padStart(2, ' ')
-    const crown = (i === winnerIndex) ? ' 🏆' : ''
-    const line = `${idx} ${barStr} ${truncName(h.name, nameWidth)}${crown}`
-
+    // Two‑digit lane number, zero‑padded.  E.g. 01, 02, 10.
+    const idx = String(i + 1).padStart(2, '0')
+    // Truncate then pad name to fixed width.  A silk emoji (if present)
+    // remains part of the string but still counts towards the length.
+    const nameStr = truncName(h.name, nameWidth).padEnd(nameWidth, ' ')
+    // Constant‑width winner suffix.  Append " WIN" if this row is the
+    // winner; otherwise append four spaces.
+    const suffix = i === winnerIndex ? ' WIN' : '    '
+    const line = `${idx} ${barStr} ${nameStr}${suffix}`
     return { headLine, line }
   })
 
   const headerLine = rows[0]?.headLine || header(barLength)
-  return [headerLine, ...rows.map(r => r.line)].join('\n')
+  const lines = [headerLine, ...rows.map((r) => r.line)]
+  // Wrap everything in triple backticks.  Ensure a trailing newline
+  // before the closing backticks for cleaner formatting.
+  return '```\n' + lines.join('\n') + '\n```'
 }
 
 /**
- * CometChat-friendly racecard with aligned columns.
+ * CometChat‑friendly racecard with aligned columns.  This function
+ * displays the list of horses and their odds in a monospace table.
+ * Only minor tweaks (if any) are needed to meet the Turntable display
+ * requirements.
+ *
+ * @param {Array<{name:string,odds:string}>} entries
+ * @param {{ nameWidth?:number, oddsWidth?:number }} opts
  */
-export function renderRacecard (entries, { nameWidth = 20, oddsWidth = 6 } = {}) {
+export function renderRacecard(entries, { nameWidth = 20, oddsWidth = 6 } = {}) {
   const pad = (s, n) => String(s || '').padEnd(n, ' ')
-  const header = `#  ${pad('Horse', nameWidth)}  ${pad('Odds', oddsWidth)}`
-  const line = '-'.repeat(header.length)
+  const headerLine = `#  ${pad('Horse', nameWidth)}  ${pad('Odds', oddsWidth)}`
+  const line = '-'.repeat(headerLine.length)
   const rows = entries.map((e, i) => {
-    const num = String(i + 1).padStart(2, ' ')
+    // Two‑digit lane numbers for consistency.  Note: racecard lane numbers
+    // may exceed two digits if there are >99 entrants but this is unlikely.
+    const num = String(i + 1).padStart(2, '0')
     return `${num} ${pad(e.name, nameWidth)}  ${pad(e.odds, oddsWidth)}`
   })
-  return [header, line, ...rows].join('\n')
+  return [headerLine, line, ...rows].join('\n')
 }
