@@ -1978,29 +1978,25 @@ Please refresh your page for the queue to update`
   }
 
   /// ///////////////////// SLOTS //////////////////////////////
-  if (payload.message.startsWith('/slots')) {
+  /// ///////////////////// SLOTS //////////////////////////////
+if (payload.message.startsWith('/slots')) {
   try {
     const args = payload.message.trim().split(/\s+/)
     const sub = (args[1] || '').toLowerCase()
 
-    // Default bet amount
-    let betAmount = 1
+    const userUUID = payload.sender
 
-    // NEW: allow /slots free and /slots bonus
+    // ✅ Handle feature commands BEFORE numeric parsing
     if (sub === 'free' || sub === 'bonus') {
-      const userUUID = payload.sender
-
-      // Pass the keyword through so handleSlotsCommand can route it
       const response = await handleSlotsCommand(userUUID, sub)
-
-      await postMessage({
-        room,
-        message: response
-      })
+      await postMessage({ room, message: response })
       return
     }
 
-    // Existing numeric bet logic
+    // Default bet amount
+    let betAmount = 1
+
+    // Numeric bet (optional)
     if (args.length > 1) {
       betAmount = parseFloat(args[1])
       if (isNaN(betAmount) || betAmount <= 0) {
@@ -2012,15 +2008,8 @@ Please refresh your page for the queue to update`
       }
     }
 
-    const userUUID = payload.sender
-
-    // Keep passing the numeric bet as before
     const response = await handleSlotsCommand(userUUID, betAmount)
-
-    await postMessage({
-      room,
-      message: response
-    })
+    await postMessage({ room, message: response })
   } catch (err) {
     console.error('Error processing the /slots command:', err)
     await postMessage({
@@ -2028,6 +2017,7 @@ Please refresh your page for the queue to update`
       message: 'An error occurred while processing your slots game.'
     })
   }
+
   } else if (payload.message.startsWith('/slotinfo')) {
   // Create a message that contains information about the slots scoring system
     const infoMessage = `
