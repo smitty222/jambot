@@ -8,15 +8,17 @@ import db from '../database/db.js'
 const symbols = ['🍒', '🍋', '🍊', '🍉', '🔔', '⭐', '💎', '🎟️']
 
 // Weighted reel tuning (sum=100)
+// ✅ CHANGE: tickets were too frequent → reduce 🎟️ from 10 → 4
+// Redistribute into fruit so base spins still feel active.
 const SYMBOL_WEIGHTS = {
-  '🍒': 16,
-  '🍋': 16,
-  '🍊': 14,
-  '🍉': 12,
+  '🍒': 18,
+  '🍋': 18,
+  '🍊': 16,
+  '🍉': 14,
   '🔔': 9,
   '⭐': 13,
-  '💎': 10,
-  '🎟️': 10
+  '💎': 8,
+  '🎟️': 4
 }
 
 // 3-of-a-kind payouts (multiplier × bet) — NORMAL MODE
@@ -28,7 +30,6 @@ const payouts = {
   '🔔🔔🔔': 8,
   '⭐⭐⭐': 10,
   '💎💎💎': 20 // triggers JACKPOT BONUS SESSION (interactive)
-  // 🎟️ has no triple payout multiplier; it triggers Feature Mode via symbol count
 }
 
 // 2-of-a-kind payouts (any two matching) — NORMAL MODE
@@ -40,10 +41,9 @@ const twoMatchPayouts = {
   '🔔🔔': 3,
   '⭐⭐': 4,
   '💎💎': 5
-  // 🎟️🎟️ no normal payout — just feature trigger
 }
 
-// Economy tuning (this is actually RTP multiplier; kept name to avoid touching other code)
+// Economy tuning
 const HOUSE_EDGE = 0.96
 
 // Progressive jackpot tuning
@@ -72,43 +72,56 @@ const BONUS_PERCENT_WEIGHTS = [
 // - Only bets >= FEATURE_MIN_TRIGGER_BET can trigger feature spins
 // - Feature spins pay from a fixed paytable (NOT based on bet)
 // - Feature spins are interactive: /slots free
+// ✅ CHANGE: allow tickets to land DURING feature spins to award more feature spins
 const FEATURE_MIN_TRIGGER_BET = 250
-const FEATURE_MAX_SPINS_PER_TRIGGER = 3 // max tickets counted from a single spin (since 3 reels)
-const FEATURE_MAX_SPINS_PER_SESSION = 15 // sanity cap to avoid weird inflation
+const FEATURE_MAX_SPINS_PER_TRIGGER = 3
+const FEATURE_MAX_SPINS_PER_SESSION = 15
 
-// Feature reel excludes tickets so you can’t loop-trigger features
-const FEATURE_SYMBOLS = ['🍒', '🍋', '🍊', '🍉', '🔔', '⭐', '💎']
+// ✅ CHANGE: Feature reel now INCLUDES tickets so you can extend the round
+const FEATURE_SYMBOLS = ['🍒', '🍋', '🍊', '🍉', '🔔', '⭐', '💎', '🎟️']
 
-// Feature weights: slightly “premium” feeling (more 🔔/⭐/💎 than base)
+// ✅ CHANGE: More premium feel + higher win likelihood + tickets rarer in feature
+// Sum=100
 const FEATURE_WEIGHTS = {
-  '🍒': 14,
-  '🍋': 14,
-  '🍊': 12,
-  '🍉': 10,
-  '🔔': 16,
-  '⭐': 18,
-  '💎': 16
+  '🍒': 10,
+  '🍋': 10,
+  '🍊': 9,
+  '🍉': 8,
+  '🔔': 18,
+  '⭐': 20,
+  '💎': 20,
+  '🎟️': 5
 }
 
-// Feature paytable (fixed $ payouts, not multiplier × bet)
+// ✅ CHANGE: Higher feature payouts
 const FEATURE_TRIPLE_PAYOUTS = {
-  '🍒🍒🍒': 250,
-  '🍋🍋🍋': 220,
-  '🍊🍊🍊': 200,
-  '🍉🍉🍉': 300,
-  '🔔🔔🔔': 900,
-  '⭐⭐⭐': 1400,
-  '💎💎💎': 2500
+  '🍒🍒🍒': 350,
+  '🍋🍋🍋': 320,
+  '🍊🍊🍊': 300,
+  '🍉🍉🍉': 450,
+  '🔔🔔🔔': 1400,
+  '⭐⭐⭐': 2200,
+  '💎💎💎': 4000
 }
 
+// ✅ CHANGE: Higher pair payouts (more frequent “feels good” hits)
 const FEATURE_PAIR_PAYOUTS = {
-  '🍒🍒': 75,
-  '🍋🍋': 65,
-  '🍊🍊': 60,
-  '🍉🍉': 90,
-  '🔔🔔': 250,
-  '⭐⭐': 350,
-  '💎💎': 600
+  '🍒🍒': 120,
+  '🍋🍋': 110,
+  '🍊🍊': 100,
+  '🍉🍉': 150,
+  '🔔🔔': 450,
+  '⭐⭐': 650,
+  '💎💎': 1200
+}
+
+// ✅ NEW: small “premium symbol appears anywhere” mini-pay in feature mode
+// This increases win likelihood without making every spin huge.
+// Example: if a spin contains at least one 💎 anywhere, pay +$75 (stacking highest only).
+const FEATURE_ANY_SYMBOL_BONUS = {
+  '💎': 90,
+  '⭐': 70,
+  '🔔': 50
 }
 
 // Symbol collection progression (persistent)
@@ -120,7 +133,7 @@ const COLLECTION_GOALS = {
   '🔔': 30,
   '⭐': 25,
   '💎': 10,
-  '🎟️': 25 // optional: track tickets too
+  '🎟️': 25
 }
 const COLLECTION_REWARDS = {
   '🍒': 5000,
@@ -158,7 +171,6 @@ try {
     )
   `).run()
 
-  // Jackpot bonus sessions (interactive 💎💎💎)
   db.prepare(`
     CREATE TABLE IF NOT EXISTS slot_bonus_sessions (
       userUUID  TEXT PRIMARY KEY,
@@ -167,7 +179,6 @@ try {
     )
   `).run()
 
-  // ✅ Feature sessions (interactive 🎟️ free spins)
   db.prepare(`
     CREATE TABLE IF NOT EXISTS slot_feature_sessions (
       userUUID  TEXT PRIMARY KEY,
@@ -207,7 +218,6 @@ function formatMoney (amount) {
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-// Settings helpers
 function readSetting (key) {
   try {
     const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key)
@@ -230,7 +240,6 @@ function writeSetting (key, value) {
   }
 }
 
-// Jackpot DB helpers
 function getJackpotValue () {
   const row = db.prepare('SELECT progressiveJackpot FROM jackpot WHERE id = 1').get()
   return Number(row?.progressiveJackpot || JACKPOT_SEED)
@@ -311,7 +320,6 @@ function clearBonusSession (userUUID) {
   }
 }
 
-// Hype version bonus spin
 async function spinBonusOnce (userUUID) {
   const session = getBonusSession(userUUID)
   if (!session) return `No active bonus round. Hit 💎💎💎 to trigger one!`
@@ -427,6 +435,18 @@ function evaluateFeatureLine (symbolsArr) {
     }
   }
 
+  // ✅ NEW: premium symbol “anywhere” mini-pay to increase hit rate
+  // Only award the single highest bonus.
+  let bonus = 0
+  for (const s of symbolsArr) {
+    if (FEATURE_ANY_SYMBOL_BONUS[s]) {
+      bonus = Math.max(bonus, FEATURE_ANY_SYMBOL_BONUS[s])
+    }
+  }
+  if (bonus > 0) {
+    return { payout: bonus, type: 'ANY', line: str }
+  }
+
   return { payout: 0, type: 'NONE', line: str }
 }
 
@@ -449,9 +469,23 @@ async function spinFeatureOnce (userUUID) {
   const spinNumber = (spinsTotal - spinsLeft) + 1
 
   const result = spinFeatureSlots()
-  const outcome = evaluateFeatureLine(result)
 
+  // ✅ NEW: tickets can land during feature to award more spins
+  const ticketCount = result.filter(s => s === '🎟️').length
+  if (ticketCount > 0) {
+    const add = Math.min(ticketCount, FEATURE_MAX_SPINS_PER_TRIGGER)
+    const roomLeft = FEATURE_MAX_SPINS_PER_SESSION - spinsTotal
+    const granted = Math.max(0, Math.min(add, roomLeft))
+
+    if (granted > 0) {
+      spinsLeft += granted
+      spinsTotal += granted
+    }
+  }
+
+  const outcome = evaluateFeatureLine(result)
   const win = Number(outcome.payout || 0)
+
   if (win > 0) {
     totalWon += win
     await addToUserWallet(userUUID, win)
@@ -462,11 +496,17 @@ async function spinFeatureOnce (userUUID) {
   const lines = []
   lines.push(renderSlot(result[0], result[1], result[2], `🎟️ FREE SPIN ${spinNumber}/${spinsTotal}`))
 
+  if (ticketCount > 0) {
+    // Hype line for extension
+    lines.push(`🎟️ +${Math.min(ticketCount, FEATURE_MAX_SPINS_PER_TRIGGER)} EXTRA FEATURE SPIN${ticketCount === 1 ? '' : 'S'}!`)
+  }
+
   if (win > 0) {
     lines.push(`💥 FEATURE WIN: +$${formatMoney(win)}`)
-    if (win >= 2500) lines.push(`🚨 MEGA HIT! 💎💎💎 in the feature!`)
-    else if (win >= 1400) lines.push(`🔥 HUGE HIT! ⭐⭐⭐ in the feature!`)
-    else if (win >= 900) lines.push(`🔔 BIG WIN!`)
+    if (win >= 4000) lines.push(`🚨 MEGA HIT! 💎💎💎 in the feature!`)
+    else if (win >= 2200) lines.push(`🔥 HUGE HIT! ⭐⭐⭐ in the feature!`)
+    else if (win >= 1400) lines.push(`🔔 BIG WIN!`)
+    else if (outcome.type === 'ANY') lines.push(`✨ PREMIUM SYMBOL HIT!`)
   } else {
     lines.push(`— NO WIN —`)
   }
@@ -624,7 +664,6 @@ async function applyCollectionProgress (userUUID, spins) {
 async function playSlots (userUUID, betSize = DEFAULT_BET) {
   const bet = Number(betSize) || 0
 
-  // Force resolve interactive modes first
   const activeBonus = getBonusSession(userUUID)
   if (activeBonus) {
     return [
@@ -653,7 +692,6 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
 
     await removeFromUserWallet(userUUID, bet)
 
-    // Jackpot increment (only on paid spin)
     let jackpot = getJackpotValue()
     const beforeJackpot = jackpot
     const contribBet = Math.min(bet, JACKPOT_CONTRIB_BET_CAP)
@@ -685,7 +723,6 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
       const diamondCount = result.filter(s => s === '💎').length
       if (diamondCount === 2) nearMissLines.push('😮 NEAR MISS: Two 💎!')
 
-      // 💎 Jackpot bonus session trigger (interactive)
       if (result.join('') === '💎💎💎' && !bonusTriggeredThisPlay) {
         bonusTriggeredThisPlay = true
 
@@ -708,8 +745,7 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
         ].join('\n')
       }
 
-      // 🎟️ Feature trigger: each 🎟️ = 1 premium feature free spin
-      // Only eligible if PAID bet >= $250
+      // 🎟️ Feature trigger (paid bet eligibility)
       if (!featureTriggeredThisPlay && bet >= FEATURE_MIN_TRIGGER_BET) {
         const ticketCountRaw = result.filter(s => s === '🎟️').length
         const ticketCount = Math.min(ticketCountRaw, FEATURE_MAX_SPINS_PER_TRIGGER)
@@ -738,10 +774,8 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
       spinLines.push(renderSlot(result[0], result[1], result[2], prefix))
     }
 
-    // Paid spin only (no old star-based free-spin loop anymore)
     playOneSpin('🎰 SLOTS')
 
-    // Pay out normal winnings (feature payouts are handled in /slots free)
     if (totalWinnings > 0) {
       await addToUserWallet(userUUID, totalWinnings)
     }
@@ -764,7 +798,6 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
       ? `\n\n${collection.unlockedLines.join('\n')}`
       : ''
 
-    // Note: if feature triggered and bonus triggered same play, user must resolve bonus first (guard at top)
     return [
       spinLines.join('\n'),
       resultLine + nearMiss,
@@ -781,25 +814,17 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
   }
 }
 
-// Command handler: `/slots` or `/slots 500` or `/slots bonus` or `/slots free`
+// Command handler
 async function handleSlotsCommand (userUUID, arg) {
   const raw = arg == null ? '' : String(arg).trim().toLowerCase()
 
-  if (raw === 'bonus') {
-    return await spinBonusOnce(userUUID)
-  }
-
-  if (raw === 'free') {
-    return await spinFeatureOnce(userUUID)
-  }
+  if (raw === 'bonus') return await spinBonusOnce(userUUID)
+  if (raw === 'free') return await spinFeatureOnce(userUUID)
 
   const bet = raw === '' ? DEFAULT_BET : Number(raw)
-  if (!Number.isFinite(bet) || bet <= 0) {
-    return 'Please enter a valid bet amount.'
-  }
+  if (!Number.isFinite(bet) || bet <= 0) return 'Please enter a valid bet amount.'
 
   return await playSlots(userUUID, bet)
 }
-
 
 export { playSlots, handleSlotsCommand, getJackpotValue }
