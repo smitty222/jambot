@@ -341,6 +341,36 @@ async function openBetsPhase () {
     cleanup()
   }
 }
+// ── GIF helpers ────────────────────────────────────────────────────────
+// Post a hype GIF by type. Turntable/CometChat will usually unfurl the URL.
+// If you ever want to disable these, set HORSE_RACE_GIFS=0 in env.
+const GIFS_ENABLED = String(process.env.HORSE_RACE_GIFS ?? '1') !== '0'
+
+const RACE_GIFS = {
+  start: [
+    // replace/add URLs you like
+    'https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif',
+    'https://media.giphy.com/media/3o7aD2saalBwwftBIY/giphy.gif'
+  ],
+  finish: [
+    'https://media.giphy.com/media/3o6Zt481isNVuQI1l6/giphy.gif',
+    'https://media.giphy.com/media/xT0GqFhyNd0Wmfo6sM/giphy.gif'
+  ]
+}
+
+function pickRandom (arr) {
+  if (!Array.isArray(arr) || arr.length === 0) return null
+  return arr[Math.floor(Math.random() * arr.length)]
+}
+
+async function postGif (type) {
+  if (!GIFS_ENABLED) return
+  const url = pickRandom(RACE_GIFS[type])
+  if (!url) return
+  // Posting the raw URL typically unfurls as a GIF preview
+  await safeCall(postMessage, [{ room: ROOM, message: url }])
+}
+
 
 async function startRunPhase () {
   try {
