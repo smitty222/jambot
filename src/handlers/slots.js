@@ -545,8 +545,8 @@ async function spinFeatureOnce (userUUID) {
 
   if (win > 0) {
     lines.push(`💥 FEATURE WIN: +$${formatMoney(win)}`)
-    if (win >= 4000) lines.push(`🚨 MEGA HIT! 💎💎💎 in the feature!`)
-    else if (win >= 2200) lines.push(`🔥 HUGE HIT! ⭐⭐⭐ in the feature!`)
+    if (win >= 4000) lines.push(`🚨 MEGA HIT! 💎💎💎`)
+    else if (win >= 2200) lines.push(`🔥 HUGE HIT! ⭐⭐⭐`)
     else if (win >= 1400) lines.push(`🔔 BIG WIN!`)
     else if (outcome.type === 'ANY') lines.push(`✨ PREMIUM SYMBOL HIT!`)
   } else {
@@ -563,7 +563,6 @@ async function spinFeatureOnce (userUUID) {
 
   const balance = await getUserWallet(userUUID)
 
-  lines.push(`🏁 FEATURE COMPLETE`)
   lines.push(`💰 TOTAL FEATURE WINS: +$${formatMoney(totalWon)}`)
   lines.push(`🪙 BALANCE: $${formatBalance(balance)}`)
 
@@ -761,7 +760,7 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
   if (activeFeature) {
     return [
       `🎟️ You’re in FREE SPINS FEATURE MODE!`,
-      `👉 Type /slots free to spin (${activeFeature.spinsLeft} left).`
+      `👉 Type '/slots free' to spin (${activeFeature.spinsLeft} left).`
     ].join('\n')
   }
 
@@ -826,7 +825,7 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
           `\n🚨 💎💎💎 BONUS TRIGGERED 💎💎💎 🚨`,
           `🎁 FEATURE ROUND UNLOCKED: ${spinsTotal} BONUS SPINS`,
           `💰 Locked Jackpot: $${formatMoney(lockedJackpot)}`,
-          `👉 Type /slots bonus to start (Spin 1/${spinsTotal}).`
+          `👉 Type '/slots bonus' to start (Spin 1/${spinsTotal}).`
         ].join('\n')
       }
 
@@ -849,9 +848,8 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
 
           featureTriggerMessage = [
             `\n🎟️ FREE SPINS FEATURE UNLOCKED 🎟️`,
-            `🎁 You won ${spinsTotal} FEATURE SPIN${spinsTotal === 1 ? '' : 'S'} (🎟️ = 1 spin)`,
-            `💰 Feature spins pay PREMIUM fixed prizes (not based on your bet).`,
-            `👉 Type /slots free to start (Spin 1/${spinsTotal}).`
+            `🎁 You won ${spinsTotal} FEATURE SPIN${spinsTotal === 1 ? '' : 'S'}`,
+            `👉 Type '/slots free' to start (Spin 1/${spinsTotal}).`
           ].join('\n')
         }
       }
@@ -903,6 +901,7 @@ if (bet >= COLLECTION_MIN_BET) {
     milestone,
     resetLine,
     balanceLine,
+    '',
     jackpotLine,
     bonusTriggerMessage,
     featureTriggerMessage,
