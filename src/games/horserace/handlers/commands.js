@@ -21,14 +21,13 @@ const BAR_STYLE = 'solid' // continuous track
 const BAR_CELLS = 12 // width of the progress bar
 const NAME_WIDTH = 24
 const TV_MODE = true
-const PHOTO_SUSPENSE_MS = 2500
 
 // Ticks inside the solid rail
 const TICKS_EVERY = 3
 const TICK_CHAR = ':'
 
-// ── SILKS (colored “jerseys”) ─────────────────────────────────────────
-// Provide a palette of colored square emojis so each horse (user‑owned or bot)
+// ── SILKS (colored “jerseys”) ──────────────────────────────────────────
+// Provide a palette of colored square emojis so each horse (user-owned or bot)
 // gets a distinct jersey. We cycle through this list for races with more than
 // the available colors.
 const SILKS = [
@@ -43,18 +42,20 @@ const SILKS = [
   '⬜', // white
   '🔶', // orange diamond
   '🔷', // blue diamond
-  '🟣'  // violet
+  '🟣' // violet
 ]
 const silk = (i) => SILKS[i % SILKS.length]
 
-function buildSilkLegend (horses) {
-  return horses.map((h, i) => `${String(i + 1).padStart(2, ' ')} ${silk(i)} ${h.name}`).join('\n')
+function buildSilkLegend (horsesList) {
+  return horsesList
+    .map((h, i) => `${String(i + 1).padStart(2, ' ')} ${silk(i)} ${h.name}`)
+    .join('\n')
 }
 
 // ── Bot name generator ────────────────────────────────────────────────
 // To make bot horses feel more authentic, we generate names by randomly
 // combining an adjective and a noun. These lists are curated with a
-// race‑appropriate vibe.
+// race-appropriate vibe.
 const HORSE_ADJECTIVES = [
   'Swift', 'Wild', 'Silent', 'Midnight', 'Golden', 'Thundering', 'Rapid',
   'Lucky', 'Brave', 'Majestic', 'Fierce', 'Clever', 'Mighty', 'Noble',
@@ -67,37 +68,43 @@ const HORSE_NOUNS = [
 ]
 
 /**
- * Generate a unique horse name not present in the given set.  Randomly
+ * Generate a unique horse name not present in the given set. Randomly
  * combines an adjective and noun until an unused combination is found.
  *
  * @param {Set<string>} usedNames A set of names already taken.
  * @returns {string} A unique horse name.
  */
 function generateHorseName (usedNames) {
-  // Try a few times to find a unique combination. In the unlikely event
-  // of exhaustion, fall back to a timestamp.
   for (let attempts = 0; attempts < 20; attempts++) {
     const adj = HORSE_ADJECTIVES[Math.floor(Math.random() * HORSE_ADJECTIVES.length)]
     const noun = HORSE_NOUNS[Math.floor(Math.random() * HORSE_NOUNS.length)]
     const name = `${adj} ${noun}`
-    if (!usedNames.has(name)) {
-      return name
-    }
+    if (!usedNames.has(name)) return name
   }
   // Fallback: ensure uniqueness by appending a number
   let base = `${HORSE_ADJECTIVES[0]} ${HORSE_NOUNS[0]}`
   let suffix = 1
   let unique = base
-  while (usedNames.has(unique)) {
-    unique = `${base} ${suffix++}`
-  }
+  while (usedNames.has(unique)) unique = `${base} ${suffix++}`
   return unique
 }
 
 // ── Race flow timing ───────────────────────────────────────────────────
 const ENTRY_MS = 30_000
-// Extended betting window to allow more time to wager
 const BET_MS = 45_000
+
+// ── Suspense / pacing ──────────────────────────────────────────────────
+const DELAY = (ms) => new Promise(resolve => setTimeout(resolve, ms))
+
+const PHOTO_SUSPENSE_MS = 2500
+const RESULTS_PACING = {
+  preResultBeatMs: 900,               // after finish gif
+  photoFinishBeatMs: PHOTO_SUSPENSE_MS, // if tight margin
+  officialBeatMs: 1100,              // before announcing winner
+  standingsBeatMs: 900,              // before posting final standings card
+  payoutLineBeatMs: 700,             // between payout lines (per-user)
+  ownerBonusBeatMs: 900              // before owner bonus line
+}
 
 // ── Post-time countdown ────────────────────────────────────────────────
 async function postCountdown (n = 5) {
@@ -108,9 +115,7 @@ async function postCountdown (n = 5) {
   await postMessage({ room: ROOM, message: ' *And they’re off!*' })
 }
 
-// Career limit heuristics (used by /myhorses).  If a horse has a defined
-// careerLength (assigned when purchased) use that; otherwise fall back
-// to tier-based defaults.
+// Career limit heuristics (used by /myhorses).
 const TIER_RETIRE_LIMIT = { champion: 50, elite: 40, pro: 30, rookie: 25, amateur: 20, default: 25 }
 function careerLimitFor (h) {
   if (Number.isFinite(h?.careerLength)) return Number(h.careerLength)
@@ -125,6 +130,8 @@ function careerLimitFor (h) {
 // ── State ──────────────────────────────────────────────────────────────
 let isAcceptingEntries = false
 let isBettingOpen = false
+let isRaceRunning = false
+
 const entered = new Set()
 let horses = []
 let horseBets = {} // userId -> [{horseIndex, amount}]
@@ -133,9 +140,16 @@ let horseBets = {} // userId -> [{horseIndex, amount}]
 export function isWaitingForEntries () { return isAcceptingEntries === true }
 
 export async function startHorseRace () {
+  // Guard: avoid overlapping races / duplicated timers
+  if (isAcceptingEntries || isBettingOpen || isRaceRunning) {
+    await safeCall(postMessage, [{ room: ROOM, message: '⛔ A horse race is already in progress.' }])
+    return
+  }
+
   // reset state
   isAcceptingEntries = true
   isBettingOpen = false
+  isRaceRunning = false
   entered.clear()
   horses = []
   horseBets = {}
@@ -165,7 +179,6 @@ export async function startHorseRace () {
         lines.push(`- ${h.emoji || ''} ${h.name} (by ${nick?.replace(/^@/, '') || 'Unknown'})`)
       }
     }
-    // wrap in a code block for readability
     const listMsg = ['Available horses by tier:', ...lines].join('\n')
     await safeCall(postMessage, [{ room: ROOM, message: '```\n' + listMsg + '\n```' }])
   } else {
@@ -237,38 +250,40 @@ async function openBetsPhase () {
     const all = await safeCall(getAllHorses)
     const ownerHorses = all.filter(h => entered.has(h.name))
 
-    // If no owners entered a horse, we still proceed with a bot‑only field.
-    // Notify the room that house horses will run the race.
     if (ownerHorses.length === 0) {
       await safeCall(postMessage, [{
         room: ROOM,
         message: '⚠️ No owners entered; house horses take the field!'
       }])
     } else {
-      // Inform chat about the entries once the entry window closes. List the owner horses that made it in.
       const entryNames = ownerHorses.map(h => `${h.emoji || ''} ${h.name}`.trim()).join(', ')
       await safeCall(postMessage, [{ room: ROOM, message: `✅ Entries closed! Participants: ${entryNames}.` }])
     }
 
     const need = Math.max(0, 6 - ownerHorses.length)
+
     // Gather available house/bot horses from the database
+    // NOTE: This ordering is intentionally stable; adjust sort if you want house fields to skew fav/longshot.
     let bots = all
       .filter(h => (!h.ownerId || h.ownerId === 'allen') && !h.retired)
       .sort((a, b) => (b.baseOdds || 0) - (a.baseOdds || 0))
+
     // Generate additional bot horses if not enough are available to fill the field.
     if (bots.length < need) {
       const fillerCount = need - bots.length
       const existingNames = new Set(all.map(h => h.name))
-      // Also include names of selected bots and owner horses so we don't duplicate.
       for (const h of bots) existingNames.add(h.name)
       for (const h of ownerHorses) existingNames.add(h.name)
+
       for (let i = 0; i < fillerCount; i++) {
         const uniqueName = generateHorseName(existingNames)
         existingNames.add(uniqueName)
-        // Assign a realistic base odds between 2.0 and 7.0 (favored to longshot)
+
+        // Assign realistic base odds between 2.0 and 7.0 (favored to longshot)
         const baseOdds = 2.0 + Math.random() * 5.0
         // Volatility influences how much odds swing; choose a mild random value
         const vol = 1.2 + Math.random() * 0.8 // 1.2–2.0
+
         bots.push({
           id: null,
           name: uniqueName,
@@ -286,6 +301,7 @@ async function openBetsPhase () {
         })
       }
     }
+
     bots = bots.slice(0, need)
 
     horses = [...ownerHorses, ...bots].map(h => ({
@@ -302,11 +318,10 @@ async function openBetsPhase () {
     // Pre-race card: put the silk next to the horse name
     const entries = horses.map((h, i) => ({
       index: i,
-      name: `${silk(i)} ${h.name}`, //  silk inline
+      name: `${silk(i)} ${h.name}`,
       odds: formatOdds(h.odds, 'fraction')
     }))
 
-    // widen name column slightly for emoji + name
     const card = renderRacecard(entries, { nameWidth: 24, oddsWidth: 6 })
 
     await safeCall(postMessage, [{
@@ -316,13 +331,19 @@ async function openBetsPhase () {
         '```',
         card,
         '```',
-        // Inform players how to place bets with a concrete example.
         `Place your bets using /horse <number> <amount> (for example, /horse 2 50) in the next ${BET_MS / 1000}s.`
       ].join('\n')
     }])
 
+    // Silks legend (helps track who is who during fast updates)
+    const legend = buildSilkLegend(horses)
+    await safeCall(postMessage, [{
+      room: ROOM,
+      message: ['```', 'Silks', legend, '```'].join('\n')
+    }])
+
     isBettingOpen = true
-    // Send a mid-betting reminder halfway through the betting window to nudge players.
+
     setTimeout(() => {
       if (isBettingOpen) {
         safeCall(postMessage, [{
@@ -331,6 +352,7 @@ async function openBetsPhase () {
         }])
       }
     }, BET_MS / 2)
+
     setTimeout(() => {
       isBettingOpen = false
       startRunPhase()
@@ -341,14 +363,14 @@ async function openBetsPhase () {
     cleanup()
   }
 }
+
 // ── GIF helpers ────────────────────────────────────────────────────────
-// Post a hype GIF by type. Turntable/CometChat will usually unfurl the URL.
-// If you ever want to disable these, set HORSE_RACE_GIFS=0 in env.
+// Post a hype GIF by type.
+// Keep in mind: this is the correct CometChat format for GIF posting.
 const GIFS_ENABLED = String(process.env.HORSE_RACE_GIFS ?? '1') !== '0'
 
 const RACE_GIFS = {
   start: [
-    // replace/add URLs you like
     'https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif',
     'https://media.giphy.com/media/3o7aD2saalBwwftBIY/giphy.gif'
   ],
@@ -367,13 +389,13 @@ async function postGif (type) {
   if (!GIFS_ENABLED) return
   const url = pickRandom(RACE_GIFS[type])
   if (!url) return
-  // Posting the raw URL typically unfurls as a GIF preview
-  await safeCall(postMessage, [{ room: ROOM, message: url }])
+  await safeCall(postMessage, [{ room: ROOM, message: '', images: [url] }])
 }
-
 
 async function startRunPhase () {
   try {
+    isRaceRunning = true
+
     // Start GIF, then a proper post-time countdown + bell
     await postGif('start')
     await postCountdown(5)
@@ -389,6 +411,7 @@ async function startRunPhase () {
 function cleanup () {
   isAcceptingEntries = false
   isBettingOpen = false
+  isRaceRunning = false
   entered.clear()
   horses = []
   horseBets = {}
@@ -397,15 +420,19 @@ function cleanup () {
 // ── TV commentary helpers ──────────────────────────────────────────────
 function rankOrder (raceState) {
   return raceState.map((h, i) => ({ i, p: h.progress }))
-    .sort((a, b) => b.p - a.p).map(x => x.i)
+    .sort((a, b) => b.p - a.p)
+    .map(x => x.i)
 }
+
 function blocks (progress, finishDistance, barCells = BAR_CELLS) {
   const pct = Math.max(0, Math.min(1, progress / (finishDistance || 1)))
   return Math.round(pct * barCells)
 }
+
 function phaseName (legIdx) {
   return ['Break', 'Backstretch', 'Far Turn', 'Stretch'][legIdx] || `Leg ${legIdx + 1}`
 }
+
 function pickDifferent (prev, choices) {
   const pool = choices.filter(l => l && l !== prev)
   return pool.length ? pool[Math.floor(Math.random() * pool.length)] : (choices[0] || '')
@@ -466,13 +493,12 @@ let _lastFrame = null
 let _lastLine = ''
 
 bus.on('turn', async ({ turnIndex, raceState, finishDistance }) => {
-  // Compute whether the frame changed enough to warrant a redraw.
   const MIN_CELL_CHANGE = 1 / (finishDistance * BAR_CELLS) // about 1 cell
   const prev = _lastFrame?.raceState
   const changed = raceState.some(
     (h, i) => Math.abs((h.progress ?? 0) - (prev?.[i]?.progress ?? 0)) >= MIN_CELL_CHANGE
   )
-  if (!changed && (turnIndex % 2 !== 0)) return // skip every other low-change frame
+  if (!changed && (turnIndex % 2 !== 0)) return
 
   // Inject silks into displayed names (names only; progress is the same).
   const displayState = raceState.map((h, i) => ({ ...h, name: `${silk(i)} ${h.name}` }))
@@ -486,7 +512,6 @@ bus.on('turn', async ({ turnIndex, raceState, finishDistance }) => {
     nameWidth: NAME_WIDTH
   })
 
-  // Use commentary helpers to generate flavour text
   const comment = (turnIndex === LEGS - 1)
     ? makeFinalCommentary(raceState, rankOrder(raceState)[0], finishDistance)
     : makeTurnCommentary(turnIndex, raceState, _lastFrame?.raceState, finishDistance, _lastLine)
@@ -495,23 +520,31 @@ bus.on('turn', async ({ turnIndex, raceState, finishDistance }) => {
   _lastLine = comment
 
   if (TV_MODE) {
-    await postMessage({ room: ROOM, message: [
-      '```',
-      ` Leg ${turnIndex + 1} of ${LEGS}`,
-      track,
-      '```',
-      comment
-    ].join('\n') })
+    await postMessage({
+      room: ROOM,
+      message: [
+        '```',
+        ` Leg ${turnIndex + 1} of ${LEGS}`,
+        track,
+        '```',
+        comment
+      ].join('\n')
+    })
   }
 })
 
 // Show final standings and payouts when the race ends
 bus.on('raceFinished', async ({ winnerIdx, raceState, payouts, ownerBonus, finishDistance }) => {
   try {
-    // Emit a finish GIF for drama
     await postGif('finish')
+
+    // Beat 1: immediate "wire" call
+    await DELAY(RESULTS_PACING.preResultBeatMs)
+    await safeCall(postMessage, [{ room: ROOM, message: '🏁 They hit the wire…' }])
+
     // Build a display with silks and the final positions
     const displayState = raceState.map((h, i) => ({ ...h, name: `${silk(i)} ${h.name}` }))
+
     const track = renderProgress(displayState, {
       barLength: BAR_CELLS,
       finishDistance,
@@ -521,46 +554,74 @@ bus.on('raceFinished', async ({ winnerIdx, raceState, payouts, ownerBonus, finis
       tickChar: TICK_CHAR,
       nameWidth: NAME_WIDTH
     })
+
+    // Determine tight finish for “photo finish” pacing
+    const order = rankOrder(raceState)
+    const winner = raceState[winnerIdx]
+    const runnerUpIdx = (order[0] === winnerIdx) ? order[1] : order[0]
+    const runnerUp = raceState[runnerUpIdx]
+    const margin = blocks((winner?.progress ?? 0) - (runnerUp?.progress ?? 0), finishDistance)
+    const isPhotoFinish = margin <= 1
+
+    if (isPhotoFinish) {
+      await DELAY(RESULTS_PACING.photoFinishBeatMs)
+      await safeCall(postMessage, [{ room: ROOM, message: '📸 Photo finish… waiting on the judges…' }])
+    }
+
     // Compose final commentary line. If the winner had long odds, prefix an "Upset!" callout.
     let comment = makeFinalCommentary(raceState, winnerIdx, finishDistance)
     try {
       const oddsNum = Number(horses?.[winnerIdx]?.odds || 0)
-      if (oddsNum >= 5) {
-        comment = ` Upset! ${comment.trim()}`
-      }
-    } catch (_) {
-      // ignore errors reading odds
-    }
-    // Build payout messages
-    const payoutLines = []
-    if (payouts && Object.keys(payouts).length > 0) {
-      for (const [userId, amount] of Object.entries(payouts)) {
-        if (!amount) continue
+      if (oddsNum >= 5) comment = `😱 Upset! ${comment.trim()}`
+    } catch (_) {}
+
+    // Beat 3: official result + winner callout
+    const winnerDisplayName = displayState[winnerIdx]?.name || `${silk(winnerIdx)} ${raceState[winnerIdx]?.name || ''}`
+
+    await DELAY(RESULTS_PACING.officialBeatMs)
+    await safeCall(postMessage, [{
+      room: ROOM,
+      message: `✅ **Official:** WINNER — **${winnerDisplayName}**!`
+    }])
+
+    // Beat 4: standings card + commentary
+    await DELAY(RESULTS_PACING.standingsBeatMs)
+    await safeCall(postMessage, [{
+      room: ROOM,
+      message: [
+        '```',
+        ' Final Standings',
+        track,
+        '```',
+        comment
+      ].join('\n')
+    }])
+
+    // Beat 5: payouts (paced)
+    const payoutEntries = payouts && typeof payouts === 'object'
+      ? Object.entries(payouts).filter(([, amount]) => Number(amount) > 0)
+      : []
+
+    if (payoutEntries.length > 0) {
+      await DELAY(RESULTS_PACING.payoutLineBeatMs)
+      for (const [userId, amount] of payoutEntries) {
         const nick = await safeCall(getUserNickname, [userId]).catch(() => null)
         const name = nick?.replace(/^@/, '') || `<@uid:${userId}>`
-        payoutLines.push(`💵 ${name} wins **$${amount}**`)
+        await safeCall(postMessage, [{ room: ROOM, message: `💵 ${name} wins **$${amount}**` }])
+        await DELAY(RESULTS_PACING.payoutLineBeatMs)
       }
     }
-    let ownerLine = ''
+
+    // Beat 6: owner bonus (optional)
     if (ownerBonus && ownerBonus.ownerId && ownerBonus.amount) {
+      await DELAY(RESULTS_PACING.ownerBonusBeatMs)
       const nick = await safeCall(getUserNickname, [ownerBonus.ownerId]).catch(() => null)
       const name = nick?.replace(/^@/, '') || `<@uid:${ownerBonus.ownerId}>`
-      ownerLine = `🎉 ${name} receives an owner bonus of **$${ownerBonus.amount}**`
+      await safeCall(postMessage, [{
+        room: ROOM,
+        message: `🎉 ${name} receives an owner bonus of **$${ownerBonus.amount}**`
+      }])
     }
-    const messages = [
-      '```',
-      ' Final Standings',
-      track,
-      '```',
-      comment
-    ]
-    if (payoutLines.length > 0) {
-      messages.push('', ...payoutLines)
-    }
-    if (ownerLine) {
-      messages.push('', ownerLine)
-    }
-    await safeCall(postMessage, [{ room: ROOM, message: messages.join('\n') }])
   } catch (err) {
     console.error('[raceFinished] error:', err)
     await safeCall(postMessage, [{ room: ROOM, message: '❌ Error displaying race results.' }])
@@ -597,7 +658,7 @@ export async function handleMyHorsesCommand (ctx) {
     await postMessage({ room: ROOM, message: `${nick}, you don’t own any horses yet. Use **/buyhorse <tier>** to get started.` })
     return
   }
-  // Sort by wins desc, then win% desc
+
   const arranged = mine.slice().sort((a, b) => {
     const aw = Number(a?.wins || 0)
     const bw = Number(b?.wins || 0)
@@ -606,6 +667,7 @@ export async function handleMyHorsesCommand (ctx) {
     const bp = (Number(b?.wins || 0) / Math.max(1, Number(b?.racesParticipated || 0)))
     return bp - ap
   })
+
   const lines = arranged.map((h, i) => _fmtLine(h, i))
   const header = ` **${nick}’s Stable** (${arranged.length})`
   const body = ['```', header, ...lines, '```'].join('\n')
@@ -615,13 +677,12 @@ export async function handleMyHorsesCommand (ctx) {
 export async function handleHorseStatsCommand (ctx) {
   const room = ctx?.room || ROOM
   const text = String(ctx?.message || '').trim()
-  const nameArg = (text.match(/^\/horsestats\\s+(.+)/i) || [])[1]
+  const nameArg = (text.match(/^\/horsestats\s+(.+)/i) || [])[1]
 
   const all = await getAllHorses()
   const horsesList = Array.isArray(all) ? all : []
 
   if (!nameArg) {
-    // Leaderboards
     const topWins = horsesList.slice()
       .sort((a, b) => Number(b?.wins || 0) - Number(a?.wins || 0))
       .slice(0, 10)
@@ -652,10 +713,10 @@ export async function handleHorseStatsCommand (ctx) {
     return
   }
 
-  // Specific horse lookup (case-insensitive, supports partial)
   const needle = nameArg.toLowerCase()
-  const match = horsesList.find(h => String(h?.name || '').toLowerCase() === needle) ||
-                 horsesList.find(h => String(h?.name || '').toLowerCase().includes(needle))
+  const match =
+    horsesList.find(h => String(h?.name || '').toLowerCase() === needle) ||
+    horsesList.find(h => String(h?.name || '').toLowerCase().includes(needle))
 
   if (!match) {
     await postMessage({ room, message: `❗ Couldn’t find a horse named **${nameArg}**.` })
@@ -690,16 +751,14 @@ export async function handleTopHorsesCommand (ctx) {
   const all = await getAllHorses()
   const list = Array.isArray(all) ? all : []
 
-  // Allen / house filters
   const allenIds = String(process.env.ALLEN_USER_IDS || process.env.CHAT_USER_ID || '')
     .split(',')
     .map(s => s.trim())
     .filter(Boolean)
 
-  // Only user-owned horses (must have ownerId) and not owned by Allen/bot
   const userHorses = list.filter(h => {
     const owner = h?.ownerId
-    if (!owner) return false // exclude house/no-owner
+    if (!owner) return false
     return !allenIds.includes(String(owner))
   })
 
@@ -723,7 +782,6 @@ export async function handleTopHorsesCommand (ctx) {
 }
 
 // ── Help command ─────────────────────────────────────────────────────────
-// Responds to `/horsehelp` with a summary of available horse race commands.
 export async function handleHorseHelpCommand (ctx) {
   const room = ctx?.room || ROOM
   const helpLines = [
@@ -732,7 +790,7 @@ export async function handleHorseHelpCommand (ctx) {
     '/buyhorse <tier> – Purchase a new horse. Tiers include champion, elite, pro, rookie and amateur.',
     '/myhorses – List your owned horses with their race counts, wins and career limits.',
     '/horsestats [name] – Show detailed stats for a specific horse by name, or view leaderboards when no name is given.',
-    '/tophorses – See the top user‑owned horses ranked by wins and win percentage.',
+    '/tophorses – See the top user-owned horses ranked by wins and win percentage.',
     '/horse <number> <amount> – Place a bet on a horse during the betting phase (use the number shown on the race card).',
     '/horsehelp – Display this help message.',
     '',
