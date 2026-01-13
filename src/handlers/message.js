@@ -1978,8 +1978,10 @@ Please refresh your page for the queue to update`
   }
 
   /// ///////////////////// SLOTS //////////////////////////////
-  /// ///////////////////// SLOTS //////////////////////////////
 if (payload.message.startsWith('/slots')) {
+  console.error('[SLOTS HIT]', payload.message)
+await postMessage({ room, message: 'SLOTS HANDLER HIT ✅' })
+
   try {
     const args = payload.message.trim().split(/\s+/)
     const sub = (args[1] || '').toLowerCase()
@@ -1987,6 +1989,8 @@ if (payload.message.startsWith('/slots')) {
     const userUUID = payload.sender
 
     // ✅ Handle feature commands BEFORE numeric parsing
+    console.log('[SLOTS DEBUG]', { raw: payload.message, sub })
+
     if (sub === 'free' || sub === 'bonus') {
       const response = await handleSlotsCommand(userUUID, sub)
       await postMessage({ room, message: response })

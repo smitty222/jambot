@@ -72,23 +72,43 @@ import { addAlbum, removeAlbum, getAlbumList } from '../utils/albumlistManager.j
 // current room ID, and a string of extra arguments.
 const commandRegistry = {
   // 🎰 Slots: `/slots [betAmount]`
+  // Updated to support "bonus" and "free" as arguments for jackpot bonus
+  // spins and feature free spins respectively. If provided, those strings
+  // are forwarded directly to the slots handler. Otherwise a numeric bet
+  // amount is parsed (defaulting to 1 when omitted).
   slots: async ({ payload, room }) => {
     const parts = (payload?.message || '').trim().split(/\s+/)
-    let betAmount = 1
+    const userUUID = payload?.sender
+
+    // Determine the argument (if any) after the command name.
+    let arg = ''
     if (parts.length > 1) {
-      const amt = parseFloat(parts[1])
+      arg = String(parts[1] || '').trim().toLowerCase()
+    }
+
+    // Handle special strings for bonus/feature spins.
+    if (arg === 'bonus' || arg === 'free') {
+      const response = await handleSlotsCommand(userUUID, arg)
+      await postMessage({ room, message: response })
+      return
+    }
+
+    // Parse a numeric bet amount; default to 1 when none provided.
+    let betAmount = 1
+    if (arg) {
+      const amt = parseFloat(arg)
       if (!Number.isFinite(amt) || amt <= 0) {
         await postMessage({ room, message: 'Please provide a valid bet amount.' })
         return
       }
       betAmount = amt
     }
-    const userUUID = payload?.sender
+
     const response = await handleSlotsCommand(userUUID, betAmount)
     await postMessage({ room, message: response })
   },
 
-  // 🎡 Roulette help + start:
+  // 🎲 Roulette help + start:
   // `/roulette` → instructions
   // `/roulette start` → start game (if not already running)
   roulette: async ({ payload, room, args }) => {
@@ -98,7 +118,7 @@ const commandRegistry = {
       if (rouletteGameActive) {
         await postMessage({
           room,
-          message: '🎰 A roulette game is already active! Please wait for it to finish.'
+          message: ' A roulette game is already active! Please wait for it to finish.'
         })
         return
       }
@@ -110,15 +130,15 @@ const commandRegistry = {
     await postMessage({
       room,
       message:
-        '🎡 Welcome to Roulette! Use `/roulette start` to begin.\n\n' +
-        '🎯 Place bets using:\n' +
+        ' Welcome to Roulette! Use `/roulette start` to begin.\n\n' +
+        ' Place bets using:\n' +
         '- `/red <amount>` or `/black <amount>`\n' +
         '- `/odd <amount>` or `/even <amount>`\n' +
         '- `/high <amount>` or `/low <amount>`\n' +
         '- `/number <number> <amount>` or `/<number> <amount>`\n' +
         '- `/dozen <1|2|3> <amount>`\n\n' +
-        '💰 Use `/balance` to check your wallet.\n' +
-        '🧾 Use `/bets` to see all current bets.'
+        ' Use `/balance` to check your wallet.\n' +
+        ' Use `/bets` to see all current bets.'
     })
   },
 
@@ -142,7 +162,7 @@ const commandRegistry = {
   number: async ({ payload }) => { if (rouletteGameActive) await handleRouletteBet(payload) },
   dozen: async ({ payload }) => { if (rouletteGameActive) await handleRouletteBet(payload) },
 
-  // 📀 Add an album to the remembered list.
+  // 🎵 Add an album to the remembered list.
   // Usage: `/albumadd <album name>`
   albumadd: async ({ payload, room, args }) => {
     const albumName = (args || '').trim()
@@ -175,7 +195,7 @@ const commandRegistry = {
     }
   },
 
-  // 📀 Remove an album from the remembered list.
+  // 🎵 Remove an album from the remembered list.
   // Usage: `/albumremove <album name>`
   albumremove: async ({ payload, room, args }) => {
     const albumName = (args || '').trim()
@@ -191,7 +211,7 @@ const commandRegistry = {
       if (removed) {
         await postMessage({
           room,
-          message: `🗑️ Album "${albumName}" removed from the remembered list.`
+          message: `️ Album "${albumName}" removed from the remembered list.`
         })
       } else {
         await postMessage({
@@ -208,9 +228,9 @@ const commandRegistry = {
     }
   },
 
-  // 📃 Show the current album queue.  Users can call `/albumlist` to see
+  // 🎵 Show the current album queue. Users can call `/albumlist` to see
   // what albums have been added via `/albumadd` and have not yet been
-  // automatically removed after playing.  The list is displayed as a
+  // automatically removed after playing. The list is displayed as a
   // bullet‑pointed set of album names, or a friendly message if the list
   // is empty.
   // Usage: `/albumlist`
@@ -221,16 +241,16 @@ const commandRegistry = {
       if (!albums || albums.length === 0) {
         await postMessage({
           room,
-          message: '📭 There are no albums currently queued. Use `/albumadd <album name>` to add one!'
+          message: ' There are no albums currently queued. Use `/albumadd <album name>` to add one!'
         })
         return
       }
-      // Format each album with a bullet for readability.  Preserve the order
+      // Format each album with a bullet for readability. Preserve the order
       // they were added to the list.
       const list = albums.map((a) => `• ${a}`).join('\n')
       await postMessage({
         room,
-        message: `📀 Albums in the queue:\n${list}`
+        message: ` Albums in the queue:\n${list}`
       })
     } catch (err) {
       logger.error('[albumlist] Error reading album list:', err?.message || err)
@@ -241,7 +261,7 @@ const commandRegistry = {
     }
   },
 
-  // 🎱 Lottery: `/lottery`
+  // 🎰 Lottery: `/lottery`
   // Show a fun GIF and then start the lottery game. This mirrors the
   // original behavior in message.js but moves the logic into the
   // centralized registry for faster dispatch.
@@ -258,18 +278,18 @@ const commandRegistry = {
     await handleLotteryCommand(payload)
   },
 
-  // 📊 Lotto stats: `/lottostats`
+  // 🏆 Lotto stats: `/lottostats`
   lottostats: async ({ room }) => {
     await handleTopLotteryStatsCommand(room)
   },
 
-  // 🔢 Lotto single number query: `/lotto #<number>`
+  // 🏅 Lotto single number query: `/lotto #<number>`
   lotto: async ({ payload, room }) => {
     // Pass the entire message to the helper which extracts and validates the number
     await handleSingleNumberQuery(room, payload.message)
   },
 
-  // 🎞 Show GIF list: `/gifs`
+  // 🎬 Show GIF list: `/gifs`
   gifs: async ({ room }) => {
     await postMessage({
       room,
@@ -278,7 +298,7 @@ const commandRegistry = {
     })
   },
 
-  // 🤮 Burp: `/burp`
+  // 🤢 Burp: `/burp`
   burp: async ({ room }) => {
     try {
       const gifUrl =
@@ -352,14 +372,14 @@ const commandRegistry = {
     }
   },
 
-  // 🍹 Cheers: `/cheers`
+  // 🥂 Cheers: `/cheers`
   cheers: async ({ room }) => {
     try {
       const options = [
         { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExc3dpem43dXNuNnkzb3A3NmY0ZjBxdTZxazR5aXh1dDl1N3R5OHRyaSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/BPJmthQ3YRwD6QqcVD/giphy.gif' },
         { type: 'gif', value: 'https://media.giphy.com/media/3oeSB36G9Au4V0xUhG/giphy.gif?cid=790b7611swizn7usn6y3op76f4f0qu6qk4yixut9u7ty8tri&ep=v1_gifs_search&rid=giphy.gif&ct=g' },
         { type: 'gif', value: 'https://media.giphy.com/media/l7jc8M23lg9e3l9SDn/giphy.gif?cid=790b7611swizn7usn6y3op76f4f0qu6qk4yixut9u7ty8tri&ep=v1_gifs_search&rid=giphy.gif&ct=g' },
-        { type: 'emoji', value: '🍻🍻🍻🍻' }
+        { type: 'emoji', value: '' }
       ]
       const selection = options[Math.floor(Math.random() * options.length)]
       if (selection.type === 'gif') {
@@ -378,7 +398,7 @@ const commandRegistry = {
       const options = [
         { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExb296MmJyeHBpYm9yMGQwbG81cnhlcGd4MWF4N3A1dWhhN3FxNmJvdCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/Her9TInMPQYrS/giphy.gif' },
         { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExbGY4YmQwZTA5aHk3ejhrbTI1Mmk1NDl6ZTkzM2h6cm53djZsYnB5diZlcD12MV9naWZzX3NlYXJjaCZjdD1n/26nfoIrm8lHXqmm7C/giphy.gif' },
-        { type: 'emoji', value: '🍅🍅🍅🍅' }
+        { type: 'emoji', value: '' }
       ]
       const selection = options[Math.floor(Math.random() * options.length)]
       if (selection.type === 'gif') {
@@ -391,7 +411,7 @@ const commandRegistry = {
     }
   },
 
-  // 🐶 Dog: `/dog [breed] [sub-breed]`
+  // 🐕 Dog: `/dog [breed] [sub-breed]`
   dog: async ({ room, args }) => {
     try {
       // Parse arguments into an array for breed and sub-breed
@@ -400,14 +420,14 @@ const commandRegistry = {
     } catch (err) {
       logger.error('Error processing dog command:', err?.message || err)
       try {
-        await postMessage({ room, message: '🐶 Something went wrong fetching a pup.' })
+        await postMessage({ room, message: ' Something went wrong fetching a pup.' })
       } catch {
         /* ignore */
       }
     }
   },
 
-  // 🪙 Crypto commands: `/crypto ...`
+  // 💰 Crypto commands: `/crypto ...`
   crypto: async ({ payload, room, args }) => {
     await handleCryptoCommand({ payload, room, args })
   },
@@ -417,8 +437,7 @@ const commandRegistry = {
   // These handlers update the bot's appearance or change a user's avatar.
   // Placing them in the registry avoids scanning the long conditional chain
   // in message.js and provides faster routing for commonly used avatar
-  // commands.  Moderator checks are enforced for bot commands via
-  // isUserAuthorized.
+  // commands. Moderator checks are enforced for bot commands via isUserAuthorized.
   botrandom: async ({ payload, room }) => {
     const ttlToken = process.env.TTL_USER_TOKEN
     await handleBotRandomAvatarCommand(room, postMessage, ttlToken)
@@ -518,7 +537,7 @@ export async function dispatchCommand (txt, payload, room) {
   const parts = txt.trim().substring(1).split(/\s+/)
   const cmd = (parts[0] || '').toLowerCase()
 
-  // 🎯 Special case: direct number bets like `/17 25` when roulette is active
+  //  Special case: direct number bets like `/17 25` when roulette is active
   if (/^\d+$/.test(cmd) && rouletteGameActive) {
     try {
       await handleRouletteBet(payload)
@@ -526,7 +545,9 @@ export async function dispatchCommand (txt, payload, room) {
       logger.error('[Dispatcher] Error executing numeric roulette bet:', err?.message || err)
       try {
         await postMessage({ room, message: '⚠️ Error processing roulette bet.' })
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
     return true
   }
@@ -540,7 +561,9 @@ export async function dispatchCommand (txt, payload, room) {
     logger.error(`[Dispatcher] Error executing /${cmd}:`, err?.message || err)
     try {
       await postMessage({ room, message: `⚠️ Error processing /${cmd}.` })
-    } catch { /* swallow */ }
+    } catch {
+      /* swallow */
+    }
   }
   return true
 }
