@@ -1979,36 +1979,55 @@ Please refresh your page for the queue to update`
 
   /// ///////////////////// SLOTS //////////////////////////////
   if (payload.message.startsWith('/slots')) {
-    try {
-      const args = payload.message.trim().split(' ')
-      let betAmount = 1 // Default bet amount
+  try {
+    const args = payload.message.trim().split(/\s+/)
+    const sub = (args[1] || '').toLowerCase()
 
-      if (args.length > 1) {
-        betAmount = parseFloat(args[1])
-        if (isNaN(betAmount) || betAmount <= 0) {
-          // Handle invalid bet amount
-          await postMessage({
-            room,
-            message: 'Please provide a valid bet amount.'
-          })
-          return
-        }
-      }
+    // Default bet amount
+    let betAmount = 1
 
-      const userUUID = payload.sender // Adjust this based on how you get userUUID
+    // NEW: allow /slots free and /slots bonus
+    if (sub === 'free' || sub === 'bonus') {
+      const userUUID = payload.sender
 
-      const response = await handleSlotsCommand(userUUID, betAmount) // Pass bet amount
+      // Pass the keyword through so handleSlotsCommand can route it
+      const response = await handleSlotsCommand(userUUID, sub)
+
       await postMessage({
         room,
         message: response
       })
-    } catch (err) {
-      console.error('Error processing the /slots command:', err)
-      await postMessage({
-        room,
-        message: 'An error occurred while processing your slots game.'
-      })
+      return
     }
+
+    // Existing numeric bet logic
+    if (args.length > 1) {
+      betAmount = parseFloat(args[1])
+      if (isNaN(betAmount) || betAmount <= 0) {
+        await postMessage({
+          room,
+          message: 'Please provide a valid bet amount.'
+        })
+        return
+      }
+    }
+
+    const userUUID = payload.sender
+
+    // Keep passing the numeric bet as before
+    const response = await handleSlotsCommand(userUUID, betAmount)
+
+    await postMessage({
+      room,
+      message: response
+    })
+  } catch (err) {
+    console.error('Error processing the /slots command:', err)
+    await postMessage({
+      room,
+      message: 'An error occurred while processing your slots game.'
+    })
+  }
   } else if (payload.message.startsWith('/slotinfo')) {
   // Create a message that contains information about the slots scoring system
     const infoMessage = `
