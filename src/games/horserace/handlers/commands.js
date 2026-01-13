@@ -5,8 +5,7 @@
 // `raceFinished` event to display final results and payout winners.
 
 import { postMessage } from '../../../libs/cometchat.js'
-import { getUserWallet, removeFromUserWallet } from
-  '../../../database/dbwalletmanager.js'
+import { getUserWallet, removeFromUserWallet } from '../../../database/dbwalletmanager.js'
 import { getUserNickname } from '../../../utils/nickname.js'
 import { getAllHorses, getUserHorses } from '../../../database/dbhorses.js'
 import { fetchCurrentUsers } from '../../../utils/API.js'
@@ -19,7 +18,7 @@ import { renderProgress, renderRacecard } from '../utils/progress.js'
 const ROOM = process.env.ROOM_UUID
 
 // ── Display tuning ─────────────────────────────────────────────────────
-const BAR_STYLE = 'solid' // << switch to 'solid'
+const BAR_STYLE = 'solid' // use 'solid' for a continuous track
 const BAR_CELLS = 12 // width of the solid rail
 const NAME_WIDTH = 24
 const TV_MODE = true
@@ -37,8 +36,7 @@ const GROUP_SIZE = 3
 const SILKS = ['', '', '', '', '', '', '⬛', '⬜', '', '']
 const silk = (i) => SILKS[i % SILKS.length]
 function buildSilkLegend (horses) {
-  return horses.map((h, i) => `${String(i + 1).padStart(2, ' ')} ${silk(i)}
-${h.name}`).join('\n')
+  return horses.map((h, i) => `${String(i + 1).padStart(2, ' ')} ${silk(i)} ${h.name}`).join('\n')
 }
 
 // ── GIFs (image posts) ────────────────────────────────────────────────
@@ -84,7 +82,7 @@ function careerLimitFor (h) {
   // Prefer an explicit careerLength (assigned at purchase)
   if (Number.isFinite(h?.careerLength)) return Number(h.careerLength)
   // Legacy support: if a separate careerLimit is set use it
-  if (Number.isFinite(h?.careerLimit)) return Number(h.careerLimit)
+  if (Number.isFinite(h?.careerLimit)) return Number(h?.careerLimit)
   const t = String(h?.tier || '').toLowerCase()
   for (const key of Object.keys(TIER_RETIRE_LIMIT)) {
     if (key !== 'default' && t.includes(key)) return TIER_RETIRE_LIMIT[key]
@@ -112,8 +110,7 @@ export async function startHorseRace () {
 
   await safeCall(postMessage, [{
     room: ROOM,
-    message: ` HORSE RACE STARTING! Type your horse’s exact name in the next
- ${ENTRY_MS / 1000}s to enter.`
+    message: ` HORSE RACE STARTING! Type your horse’s exact name in the next ${ENTRY_MS / 1000}s to enter.`
   }])
 
   // show available online owner horses by tier
@@ -136,7 +133,9 @@ export async function startHorseRace () {
         lines.push(`- ${h.emoji || ''} ${h.name} (by ${nick?.replace(/^@/, '') || 'Unknown'})`)
       }
     }
-    await safeCall(postMessage, [{ room: ROOM, message: ` Available horses by tier:\n${lines.join('\n')}` }])
+    // wrap in a code block for readability
+    const listMsg = ['Available horses by tier:', ...lines].join('\n')
+    await safeCall(postMessage, [{ room: ROOM, message: '```\n' + listMsg + '\n```' }])
   } else {
     await safeCall(postMessage, [{ room: ROOM, message: '⚠️ No user horses detected online — bots may fill the field.' }])
   }
@@ -205,6 +204,19 @@ async function openBetsPhase () {
     // Choose racers: entered owner horses + fill with bots up to 6.
     const all = await safeCall(getAllHorses)
     const ownerHorses = all.filter(h => entered.has(h.name))
+    // Cancel the race outright if no player entered a horse. This avoids a field
+    // composed solely of filler bots, which can feel anticlimactic and unfair.
+    if (ownerHorses.length === 0) {
+      await safeCall(postMessage, [{ room: ROOM, message: '⚠️ No horses were entered. Race canceled.' }])
+      cleanup()
+      return
+    }
+    // Inform chat about the entries once the entry window closes. List the owner horses that made it in.
+    if (ownerHorses.length > 0) {
+      const entryNames = ownerHorses.map(h => `${h.emoji || ''} ${h.name}`.trim()).join(', ')
+      await safeCall(postMessage, [{ room: ROOM, message: `✅ Entries closed! Participants: ${entryNames}.` }])
+    }
+
     const need = Math.max(0, 6 - ownerHorses.length)
     let bots = all
       .filter(h => (!h.ownerId || h.ownerId === 'allen') && !h.retired)
@@ -270,12 +282,21 @@ async function openBetsPhase () {
         '```',
         card,
         '```',
-        // Accept either "/horse[number] [amount]" or "/horse [number] [amount]" for bets
-        `Place bets with \`/horse[number] [amount]\` or \`/horse [number] [amount]\` in the next ${BET_MS / 1000}s.`
+        // Inform players how to place bets with a concrete example.
+        `Place your bets using /horse <number> <amount> (for example, /horse 2 50) in the next ${BET_MS / 1000}s.`
       ].join('\n')
     }])
 
     isBettingOpen = true
+    // Send a mid-betting reminder halfway through the betting window to nudge players.
+    setTimeout(() => {
+      if (isBettingOpen) {
+        safeCall(postMessage, [{
+          room: ROOM,
+          message: `⌛ Halfway to post! Place your bet now using /horse <number> <amount> (e.g., /horse 1 25).`
+        }])
+      }
+    }, BET_MS / 2)
     setTimeout(() => {
       isBettingOpen = false
       startRunPhase()
@@ -420,7 +441,7 @@ bus.on('turn', async ({ turnIndex, raceState, finishDistance }) => {
   }
 })
 
-// New: show final standings and payouts when the race ends
+// Show final standings and payouts when the race ends
 bus.on('raceFinished', async ({ winnerIdx, raceState, payouts, ownerBonus, finishDistance }) => {
   try {
     // Emit a finish GIF for drama
@@ -436,8 +457,17 @@ bus.on('raceFinished', async ({ winnerIdx, raceState, payouts, ownerBonus, finis
       tickChar: TICK_CHAR,
       nameWidth: NAME_WIDTH
     })
-    // Compose final commentary line
-    const comment = makeFinalCommentary(raceState, winnerIdx, finishDistance)
+    // Compose final commentary line. If the winner had long odds, prefix an "Upset!" callout.
+    let comment = makeFinalCommentary(raceState, winnerIdx, finishDistance)
+    try {
+      const oddsNum = Number(horses?.[winnerIdx]?.odds || 0)
+      if (oddsNum >= 5) {
+        // Add excitement if a long shot wins; trim any leading/trailing whitespace on the base comment
+        comment = ` Upset! ${comment.trim()}`
+      }
+    } catch (_) {
+      // ignore errors reading odds
+    }
     // Build payout messages
     const payoutLines = []
     if (payouts && Object.keys(payouts).length > 0) {
@@ -642,10 +672,9 @@ export async function handleHorseHelpCommand (ctx) {
     '/myhorses – List your owned horses with their race counts, wins and career limits.',
     '/horsestats [name] – Show detailed stats for a specific horse by name, or view leaderboards when no name is given.',
     '/tophorses – See the top user‑owned horses ranked by wins and win percentage.',
-    '/horse <number> <amount> – Place a bet on a horse during the betting phase (use the number shown on the race card).',
-    '/horsehelp – Display this help message.',
-    '',
-    'Note: Horses have a finite career limit assigned when purchased. Once a horse reaches this limit, it will automatically retire and cannot enter new races.'
-  ]
-  await postMessage({ room, message: '```\n' + helpLines.join('\n') + '\n```' })
+    '/startHorseRace – Begin a new horse race (entries will open).',
+    '/horse <number> <amount> – Place a bet on a horse. Example: /horse 1 20',
+    '/horsehelp – Display this help information.'
+  ].join('\n')
+  await postMessage({ room, message: '```\n' + helpLines + '\n```' })
 }
