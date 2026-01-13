@@ -81,6 +81,8 @@ const BONUS_PERCENT_WEIGHTS = [
 const FEATURE_MIN_TRIGGER_BET = 250
 const FEATURE_MAX_SPINS_PER_TRIGGER = 3
 const FEATURE_MAX_SPINS_PER_SESSION = 15
+const FEATURE_PAYOUT_MULTIPLIER = 5 // start with 5x, adjust after a day
+
 
 // ✅ CHANGE: Feature reel now INCLUDES tickets so you can extend the round
 const FEATURE_SYMBOLS = ['🍒', '🍋', '🍊', '🍉', '🔔', '⭐', '💎', '🎟️']
@@ -457,7 +459,7 @@ function evaluateFeatureLine (symbolsArr) {
   const str = symbolsArr.join('')
 
   if (Object.prototype.hasOwnProperty.call(FEATURE_TRIPLE_PAYOUTS, str)) {
-    return { payout: FEATURE_TRIPLE_PAYOUTS[str], type: 'TRIPLE', line: str }
+    return { payout: FEATURE_TRIPLE_PAYOUTS[str] * FEATURE_PAYOUT_MULTIPLIER, type: 'TRIPLE', line: str }
   }
 
   const pairs = [
@@ -470,7 +472,7 @@ function evaluateFeatureLine (symbolsArr) {
     if (a === b) {
       const key = a + b
       if (Object.prototype.hasOwnProperty.call(FEATURE_PAIR_PAYOUTS, key)) {
-        return { payout: FEATURE_PAIR_PAYOUTS[key], type: 'PAIR', line: str }
+        return { payout: FEATURE_PAIR_PAYOUTS[key] * FEATURE_PAYOUT_MULTIPLIER, type: 'PAIR', line: str }
       }
     }
   }
@@ -484,7 +486,7 @@ function evaluateFeatureLine (symbolsArr) {
     }
   }
   if (bonus > 0) {
-    return { payout: bonus, type: 'ANY', line: str }
+    return { payout: bonus * FEATURE_PAYOUT_MULTIPLIER, type: 'ANY', line: str }
   }
 
   return { payout: 0, type: 'NONE', line: str }
@@ -900,8 +902,8 @@ if (bet >= COLLECTION_MIN_BET) {
     resultLine + nearMiss,
     milestone,
     resetLine,
-    jackpotLine,
     balanceLine,
+    jackpotLine,
     bonusTriggerMessage,
     featureTriggerMessage,
     collectionLines
