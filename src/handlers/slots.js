@@ -54,6 +54,11 @@ const JACKPOT_CONTRIB_BET_CAP = 5000
 // Jackpot milestones (announce when crossed; persisted)
 const JACKPOT_MILESTONES = [10000, 25000, 50000, 100000, 250000, 500000, 1000000]
 
+// Collections tuning
+const COLLECTION_MIN_BET = 100
+const COLLECTION_RESET_KEY = 'slots_collection_reset_yyyymm'
+
+
 // BONUS ROUND tuning (triggered by 💎💎💎) — interactive
 const BONUS_SPINS_MIN = 3
 const BONUS_SPINS_MAX = 5
@@ -239,6 +244,40 @@ function writeSetting (key, value) {
     console.error('[Slots] writeSetting error:', e)
   }
 }
+
+function getYearMonthKey (d = new Date()) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  return `${y}${m}` // e.g. "202601"
+}
+
+function maybeResetCollectionsMonthly () {
+  const current = getYearMonthKey()
+  const last = readSetting(COLLECTION_RESET_KEY)
+
+  // First run ever: set it and do nothing
+  if (!last) {
+    writeSetting(COLLECTION_RESET_KEY, current)
+    return { didReset: false, current }
+  }
+
+  // If month changed, wipe everyone’s collections
+  if (last !== current) {
+    try {
+      db.prepare('DELETE FROM slot_collections').run()
+      writeSetting(COLLECTION_RESET_KEY, current)
+      console.log(`[Slots] Collections reset for new month: ${current}`)
+      return { didReset: true, current }
+    } catch (e) {
+      console.error('[Slots] Failed to reset collections:', e)
+      // Don’t update the setting if delete failed
+      return { didReset: false, current }
+    }
+  }
+
+  return { didReset: false, current }
+}
+
 
 function getJackpotValue () {
   const row = db.prepare('SELECT progressiveJackpot FROM jackpot WHERE id = 1').get()
@@ -535,14 +574,19 @@ async function spinFeatureOnce (userUUID) {
 function getUserCollection (userUUID) {
   try {
     const row = db.prepare('SELECT data FROM slot_collections WHERE userUUID = ?').get(userUUID)
-    if (!row?.data) return { counts: {}, tiers: {} }
+    if (!row?.data) return { counts: {}, tiers: {}, halfNotifs: {} }
     const parsed = JSON.parse(row.data)
-    return { counts: parsed.counts || {}, tiers: parsed.tiers || {} }
+    return {
+      counts: parsed.counts || {},
+      tiers: parsed.tiers || {},
+      halfNotifs: parsed.halfNotifs || {}
+    }
   } catch (e) {
     console.error('[Slots] getUserCollection error:', e)
-    return { counts: {}, tiers: {} }
+    return { counts: {}, tiers: {}, halfNotifs: {} }
   }
 }
+
 
 function saveUserCollection (userUUID, collection) {
   try {
@@ -621,22 +665,53 @@ async function applyCollectionProgress (userUUID, spins) {
   const col = getUserCollection(userUUID)
   const counts = col.counts || {}
   const tiers = col.tiers || {}
+  const halfNotifs = col.halfNotifs || {}
 
+  // Snapshot counts before this play (so we can detect threshold crossings)
+  const beforeCounts = { ...counts }
+
+  // Add counts
   for (const s of spins.flat()) {
     counts[s] = (counts[s] || 0) + 1
   }
 
   const unlocked = []
+  const progress = []
   let totalReward = 0
 
   for (const sym of Object.keys(COLLECTION_GOALS)) {
     const goal = COLLECTION_GOALS[sym]
     const reward = COLLECTION_REWARDS[sym] || 0
-    const c = counts[sym] || 0
+
+    const before = Number(beforeCounts[sym] || 0)
+    const after = Number(counts[sym] || 0)
 
     const prevTier = Number(tiers[sym] || 0)
-    const newTier = Math.floor(c / goal)
+    const newTier = Math.floor(after / goal)
 
+    // ✅ Halfway-to-next-tier message (once per tier)
+    // Next tier target is (prevTier + 1). Halfway point is prevTier*goal + ceil(goal/2)
+    const nextTier = prevTier + 1
+    const halfThreshold = (prevTier * goal) + Math.ceil(goal / 2)
+
+    // We only care if:
+    // - they haven't already been notified for this next tier
+    // - they crossed the halfway threshold during this play
+    const lastHalfTierNotified = Number(halfNotifs[sym] || 0)
+
+    if (
+      nextTier > prevTier &&                 // there is a "next tier"
+      lastHalfTierNotified < nextTier &&     // not already notified for this tier
+      before < halfThreshold &&
+      after >= halfThreshold &&
+      newTier === prevTier                   // don't show halfway if they already tiered up this play
+    ) {
+      halfNotifs[sym] = nextTier
+      const currentInTier = after - (prevTier * goal)
+      progress.push(`⏳ COLLECTION: ${sym} halfway to Tier ${nextTier} (${currentInTier}/${goal})`)
+    }
+
+    // Tier ups
     if (newTier > prevTier) {
       const tiersGained = newTier - prevTier
       tiers[sym] = newTier
@@ -645,17 +720,24 @@ async function applyCollectionProgress (userUUID, spins) {
       totalReward += payout
 
       unlocked.push(`🏅 COLLECTION: ${sym} Tier ${newTier} (+$${formatBalance(payout)})`)
+
+      // If they tier up, set halfNotifs so we don't fire a stale halfway notice
+      // for tiers they already passed.
+      halfNotifs[sym] = Math.max(Number(halfNotifs[sym] || 0), newTier)
     }
   }
 
-  saveUserCollection(userUUID, { counts, tiers })
+  // Persist updated collection state
+  saveUserCollection(userUUID, { counts, tiers, halfNotifs })
 
+  // Pay rewards if any
   if (totalReward > 0) {
     await addToUserWallet(userUUID, totalReward)
   }
 
-  return { unlockedLines: unlocked, rewardTotal: totalReward }
+  return { unlockedLines: unlocked, progressLines: progress, rewardTotal: totalReward }
 }
+
 
 // ───────────────────────────────────────────────────────────
 // Main game
@@ -780,7 +862,16 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
       await addToUserWallet(userUUID, totalWinnings)
     }
 
-    const collection = await applyCollectionProgress(userUUID, allSpinResults)
+    const resetInfo = maybeResetCollectionsMonthly()
+
+
+    let collection = { unlockedLines: [], rewardTotal: 0 }
+
+if (bet >= COLLECTION_MIN_BET) {
+  collection = await applyCollectionProgress(userUUID, allSpinResults)
+}
+
+
     balance = await getUserWallet(userUUID)
 
     const didWin = totalWinnings > 0
@@ -793,21 +884,27 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
 
     const nearMiss = nearMissLines.length ? `\n${nearMissLines[0]}` : ''
     const milestone = milestoneLine ? `\n${milestoneLine}` : ''
+    const resetLine = resetInfo.didReset ? `🗓️ Monthly Collections Reset! (New season: ${resetInfo.current})` : ''
 
-    const collectionLines = collection.unlockedLines.length
-      ? `\n\n${collection.unlockedLines.join('\n')}`
-      : ''
+
+    const collectionLines = (collection.unlockedLines.length || collection.progressLines?.length)
+  ? `\n\n${[
+      ...(collection.unlockedLines || []),
+      ...(collection.progressLines || [])
+    ].join('\n')}`
+  : ''
 
     return [
-      spinLines.join('\n'),
-      resultLine + nearMiss,
-      milestone,
-      jackpotLine,
-      balanceLine,
-      bonusTriggerMessage,
-      featureTriggerMessage,
-      collectionLines
-    ].filter(Boolean).join('\n')
+    spinLines.join('\n'),
+    resultLine + nearMiss,
+    milestone,
+    resetLine,
+    jackpotLine,
+    balanceLine,
+    bonusTriggerMessage,
+    featureTriggerMessage,
+    collectionLines
+  ].filter(Boolean).join('\n')
   } catch (err) {
     console.error('Slots error:', err)
     return 'An error occurred while playing slots.'
