@@ -47,16 +47,27 @@ const SILKS = [
 ]
 const silk = (i) => SILKS[i % SILKS.length]
 
+function shuffleArray (arr) {
+  const a = arr.slice()
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
+}
+
+
 // ── Bot name generator ────────────────────────────────────────────────
 const HORSE_ADJECTIVES = [
   'Swift', 'Wild', 'Silent', 'Midnight', 'Golden', 'Thundering', 'Rapid',
   'Lucky', 'Brave', 'Majestic', 'Fierce', 'Clever', 'Mighty', 'Noble',
-  'Radiant', 'Bold', 'Starry', 'Daring', 'Gallant', 'Vibrant'
+  'Radiant', 'Bold', 'Starry', 'Daring', 'Gallant', 'Vibrant','Iron', 'Rugged', 'Grim', 'Dusty', 'Crimson'
+
 ]
 const HORSE_NOUNS = [
   'Spirit', 'Dream', 'Storm', 'Fire', 'Wind', 'Comet', 'Rocket', 'Shadow',
   'Blaze', 'Surge', 'Flash', 'Thunder', 'Whisper', 'Blitz', 'Mirage',
-  'Avalanche', 'Echo', 'Aurora', 'Falcon', 'Phantom'
+  'Avalanche', 'Echo', 'Aurora', 'Falcon', 'Phantom','Ridge', 'Riot', 'Ember', 'Breaker', 'Raven'
 ]
 
 function generateHorseName (usedNames) {
@@ -118,6 +129,8 @@ let isRaceRunning = false
 const entered = new Set()
 let horses = []
 let horseBets = {} // userId -> [{horseIndex, amount}]
+let raceSilks = []
+
 
 // ── Public API ─────────────────────────────────────────────────────────
 export function isWaitingForEntries () { return isAcceptingEntries === true }
@@ -287,9 +300,15 @@ async function openBetsPhase () {
       return
     }
 
+    // Pick 6 random silks for this race
+    raceSilks = shuffleArray(SILKS).slice(0, horses.length)
+
+    const silkFor = (i) => raceSilks[i]
+
+
     const entries = horses.map((h, i) => ({
       index: i,
-      name: `${silk(i)} ${h.name}`,
+      name: `${raceSilks[i]} ${h.name}`,
       odds: formatOdds(h.odds, 'fraction')
     }))
 
@@ -374,6 +393,7 @@ function cleanup () {
   entered.clear()
   horses = []
   horseBets = {}
+  raceSilks = []
 }
 
 // ── TV commentary helpers ──────────────────────────────────────────────
@@ -460,7 +480,7 @@ bus.on('turn', async ({ turnIndex, raceState, finishDistance }) => {
   )
   if (!changed && (turnIndex % 2 !== 0)) return
 
-  const displayState = raceState.map((h, i) => ({ ...h, name: `${silk(i)} ${h.name}` }))
+  const displayState = raceState.map((h, i) => ({ ...h, name: `${raceSilks[i]} ${h.name}` }))
 
   const track = renderProgress(displayState, {
     barLength: BAR_CELLS,
@@ -497,7 +517,7 @@ bus.on('raceFinished', async ({ winnerIdx, raceState, payouts, ownerBonus, finis
     await DELAY(RESULTS_PACING.preResultBeatMs)
     await safeCall(postMessage, [{ room: ROOM, message: '🏁 They hit the wire…' }])
 
-    const displayState = raceState.map((h, i) => ({ ...h, name: `${silk(i)} ${h.name}` }))
+    const displayState = raceState.map((h, i) => ({ ...h, name: `${raceSilks[i]} ${h.name}` }))
 
     const track = renderProgress(displayState, {
       barLength: BAR_CELLS,
