@@ -410,8 +410,9 @@ async function spinBonusOnce (userUUID) {
 
   lines.push(`🏆 JACKPOT SLICE COMPLETE: ${totalPct}%`)
   lines.push(`💰 WON: +$${formatMoney(jackpotWon)} (locked pot: $${formatMoney(lockedJackpot)})`)
-  lines.push(`💰 JACKPOT NOW: $${formatMoney(newJackpot)}`)
   lines.push(`🪙 BALANCE: $${formatBalance(balance)}`)
+  lines.push(`💰 JACKPOT NOW: $${formatMoney(newJackpot)}`)
+  
 
   return lines.join('\n')
 }
@@ -879,8 +880,8 @@ if (bet >= COLLECTION_MIN_BET) {
       ? `\n💥 WIN: +$${formatMoney(totalWinnings)}`
       : `\n— NO WIN —`
 
-    const jackpotLine = `💰 JACKPOT: $${formatMoney(jackpot)}  📈 +$${formatMoney(jackpotIncrement)}`
     const balanceLine = `🪙 BALANCE: $${formatBalance(balance)}`
+    const jackpotLine = `💰 JACKPOT: $${formatMoney(jackpot)}  📈 +$${formatMoney(jackpotIncrement)}`
 
     const nearMiss = nearMissLines.length ? `\n${nearMissLines[0]}` : ''
     const milestone = milestoneLine ? `\n${milestoneLine}` : ''
