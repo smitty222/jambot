@@ -1,30 +1,5 @@
 // src/games/blackjack/blackJack.js
-// Blackjack engine with:
-// • 30s JOIN window
-// • 30s BETTING window (early close when all seated players have bet)
-// • Actions: hit, stand, double, surrender (split not yet supported)
-// • Multi-player; 6-deck shoe; dealer stands on soft 17
-//
-// Public API (kept stable for message.js):
-//   openBetting(ctx)
-//   openJoin(ctx)
-//   joinTable(userUUID, nickname, ctx)
-//   leaveTable(userUUID, ctx)
-//   handleBlackjackBet(userUUID, amountStr, nickname, ctx)
-//   handleHit(userUUID, nickname, ctx)
-//   handleStand(userUUID, nickname, ctx)
-//   handleDouble(userUUID, nickname, ctx)
-//   handleSurrender(userUUID, nickname, ctx)
-//   handleSplit(userUUID, nickname, ctx)   // stub
-//   getFullTableView(ctx)
-//   getPhase(ctx)
-//   isSeated(userUUID, ctx)
-//
-// Externals:
-//   addToUserWallet(userUUID, amount)
-//   removeFromUserWallet(userUUID, amount) → boolean
-//   getUserWallet(userUUID) → number | Promise<number>
-//   postMessage({ room, message, ... })
+
 import { addToUserWallet, removeFromUserWallet, getUserWallet } from '../../database/dbwalletmanager.js'
 import { postMessage } from '../../libs/cometchat.js'
 
@@ -34,8 +9,14 @@ import { postMessage } from '../../libs/cometchat.js'
 const JOIN_WINDOW_MS      = Number(process.env.BJ_JOIN_WINDOW_MS      ?? 30_000)
 const BETTING_WINDOW_MS   = Number(process.env.BJ_BETTING_WINDOW_MS   ?? 30_000)
 const EARLY_BET_CLOSE     = true
+
 const DECKS               = Number(process.env.BJ_DECKS ?? 6)
 const HIT_SOFT_17         = false // dealer stands on soft 17
+
+// “Cut card” / reshuffle threshold: reshuffle when shoe is low.
+// Default: reshuffle when < 25% of shoe remains, minimum 52 cards.
+const RESHUFFLE_FRAC      = Number(process.env.BJ_RESHUFFLE_FRAC ?? 0.25)
+const RESHUFFLE_MIN       = Number(process.env.BJ_RESHUFFLE_MIN  ?? 52)
 
 // UX pacing
 const SUSPENSE_MS         = Number(process.env.BJ_SUSPENSE_MS         ?? 700)
@@ -44,6 +25,9 @@ const DRAW_PAUSE_MS       = Number(process.env.BJ_DRAW_PAUSE_MS       ?? 650)
 // Turn timers
 const TURN_NUDGE_MS       = Number(process.env.BJ_TURN_NUDGE_MS       ?? 15_000)
 const TURN_AUTOSTAND_MS   = Number(process.env.BJ_TURN_AUTOSTAND_MS   ?? 25_000)
+
+// Formatting
+const NAME_PAD            = Number(process.env.BJ_NAME_PAD ?? 14)
 
 // ─────────────────────────────────────────────────────────────
 // Internal state
@@ -63,6 +47,14 @@ const TABLES = new Map()
  * @property {boolean} surrendered
  * @property {boolean} doubled
  * @property {number} actionCount
+ * @property {number} winStreak
+ * @property {number} lossStreak
+ * @property {number} bjStreak
+ * @property {number} wins
+ * @property {number} losses
+ * @property {number} pushes
+ * @property {number} blackjacks
+ * @property {number} biggestProfit
  */
 
 /**
@@ -84,6 +76,7 @@ const TABLES = new Map()
  * @property {string|null} turnFor
  * @property {number} handId
  * @property {number} dealtForHandId
+ * @property {boolean} shuffleAnnouncedThisHand
  */
 
 // ─────────────────────────────────────────────────────────────
@@ -113,7 +106,8 @@ function getTable (ctx) {
       turnExpireTimer: null,
       turnFor: null,
       handId: 0,
-      dealtForHandId: 0
+      dealtForHandId: 0,
+      shuffleAnnouncedThisHand: false
     })
   }
   return TABLES.get(k)
@@ -132,7 +126,22 @@ function clearAllTimers (st) {
 }
 
 function mention (uuid) { return `<@uid:${uuid}>` }
+
+// Wallet helpers: tolerate sync OR async implementations.
+async function maybeAwait (v) { return (v && typeof v.then === 'function') ? await v : v }
+async function walletRemove (uuid, amt) { return await maybeAwait(removeFromUserWallet(uuid, amt)) }
+async function walletAdd (uuid, amt) { return await maybeAwait(addToUserWallet(uuid, amt)) }
+async function walletGet (uuid) { return await maybeAwait(getUserWallet(uuid)) }
+
+function fmtMoney (n) { return `$${Number(n).toFixed(1)}` }
 function fmtCard (c) { return `${c.r}${c.s}` }
+
+function pad (s, n) {
+  const t = String(s ?? '')
+  return t.length >= n ? t.slice(0, n) : t + ' '.repeat(n - t.length)
+}
+
+// Keep hand compact & monospace-friendly
 function formatHand (cards) {
   const { total, soft } = handValue(cards)
   return `${cards.map(fmtCard).join(' ')}  (${total}${soft ? ' soft' : ''})`
@@ -151,6 +160,14 @@ function newShoe (deckCount = DECKS) {
     const tmp = cards[i]; cards[i] = cards[j]; cards[j] = tmp
   }
   return cards
+}
+
+function shoeSize (deckCount = DECKS) { return deckCount * 52 }
+
+function shouldReshuffle (st) {
+  const full = shoeSize(DECKS)
+  const threshold = Math.max(RESHUFFLE_MIN, Math.floor(full * RESHUFFLE_FRAC))
+  return !st.deck || st.deck.length < threshold
 }
 
 /** Compute a hand's value. "soft" => at least one Ace still counts as 11. */
@@ -172,7 +189,7 @@ function isBlackjack (cards) {
 }
 
 function draw (st) {
-  if (st.deck.length === 0) st.deck = newShoe()
+  if (!st.deck || st.deck.length === 0) st.deck = newShoe()
   return st.deck.pop()
 }
 
@@ -192,7 +209,15 @@ function ensurePlayer (st, userUUID, nickname) {
       busted: false,
       surrendered: false,
       doubled: false,
-      actionCount: 0
+      actionCount: 0,
+      winStreak: 0,
+      lossStreak: 0,
+      bjStreak: 0,
+      wins: 0,
+      losses: 0,
+      pushes: 0,
+      blackjacks: 0,
+      biggestProfit: 0
     })
     st.order.push(userUUID)
   } else if (nickname) {
@@ -202,6 +227,28 @@ function ensurePlayer (st, userUUID, nickname) {
 
 function ensurePhase (st, expected) {
   if (st.phase !== expected) throw new Error(`Wrong phase: expected ${expected}, got ${st.phase}`)
+}
+
+function displayName (st, id) {
+  const p = st.players.get(id)
+  const nick = (p?.nickname || '').trim()
+  return nick ? nick : `Player`
+}
+
+function eligibleActions (p) {
+  // base actions
+  const canDouble = (p.actionCount === 0 && p.hand.length === 2 && !p.doubled && !p.surrendered)
+  const canSurrender = (p.actionCount === 0 && p.hand.length === 2 && !p.doubled && !p.surrendered)
+  const actions = ['hit', 'stand']
+  if (canDouble) actions.push('double')
+  if (canSurrender) actions.push('surrender')
+  return actions
+}
+
+function actionHint (actions) {
+  // CometChat-friendly, short
+  const parts = actions.map(a => `**/bj ${a}**`)
+  return parts.join('  ')
 }
 
 // Schedule turn nudge + expiry for the given player (clears existing)
@@ -232,13 +279,30 @@ function scheduleTurnTimers (ctx, id) {
   }
 }
 
+async function postSnapshot (ctx, lines) {
+  await postMessage({ room: ctx.room, message: `\`\`\`\n${lines.join('\n')}\n\`\`\`` })
+}
+
 async function promptTurn (ctx, id, { rePrompt = false } = {}) {
-  if (SUSPENSE_MS && rePrompt) await sleep(Math.min(SUSPENSE_MS, 1000))
+  const st = getTable(ctx)
+  if (SUSPENSE_MS && rePrompt) await sleep(Math.min(SUSPENSE_MS, 900))
+
   scheduleTurnTimers(ctx, id)
-  await postMessage({
-    room: ctx.room,
-    message: `👉 ${mention(id)} it’s your turn. (**/bj hit**, **/bj stand**, **/bj double**, **/bj surrender**)`
-  })
+
+  const p = st.players.get(id)
+  const actions = eligibleActions(p)
+  const hv = handValue(p.hand).total
+
+  const snap = []
+  snap.push(`👉 TURN: ${displayName(st, id)} ${mention(id)}`)
+  snap.push(`Hand: ${formatHand(p.hand)}   Bet: ${fmtMoney(p.bet)}`)
+  snap.push(`Actions: ${actions.join(' / ')}`)
+  snap.push(`Use: ${actionHint(actions)}`)
+  snap.push(`(Auto-stand in ${Math.max(0, Math.ceil(TURN_AUTOSTAND_MS / 1000))}s)`)
+  await postSnapshot(ctx, snap)
+
+  // tiny recap line for spectators
+  await postMessage({ room: ctx.room, message: `🎯 ${mention(id)} to act (on ${hv}).` })
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -259,7 +323,7 @@ async function dealOnce (ctx, { announce = false } = {}) {
   clearTimer(st.betTimer); st.betTimer = null
 
   if (announce) {
-    await postMessage({ room: ctx.room, message: `All bets in. Dealing…` })
+    await postMessage({ room: ctx.room, message: `✅ All bets in. Dealing…` })
   }
 
   if (SUSPENSE_MS) await sleep(SUSPENSE_MS)
@@ -296,6 +360,7 @@ export async function openJoin (ctx) {
   }
   st.dealerHand = []
   st.turnIndex = 0
+  st.shuffleAnnouncedThisHand = false
 
   await postMessage({ room: ctx.room, message: [
     `🃏 **Blackjack** table is open for **${Math.round(JOIN_WINDOW_MS/1000)}s**!`,
@@ -333,6 +398,17 @@ export async function leaveTable (userUUID, ctx) {
     await postMessage({ room: ctx.room, message: `${mention(userUUID)} you’re not seated at the blackjack table.` })
     return
   }
+
+  // Fairness: if they already bet during betting phase, refund and remove from hand
+  if (st.phase === 'betting' && p.bet > 0) {
+    const refund = p.bet
+    p.bet = 0
+    await walletAdd(userUUID, refund)
+    // also remove them from the current hand’s order
+    st.handOrder = st.handOrder.filter(id => id !== userUUID)
+    await postMessage({ room: ctx.room, message: `↩️ ${mention(userUUID)} left during betting — refunded **${fmtMoney(refund)}**.` })
+  }
+
   p.seated = false
   await postMessage({ room: ctx.room, message: `👋 ${mention(userUUID)} left their seat.` })
 }
@@ -358,6 +434,7 @@ async function startBetting (ctx) {
   // New hand
   st.handId += 1
   st.dealtForHandId = 0
+  st.shuffleAnnouncedThisHand = false
 
   st.phase = 'betting'
   st.betDeadline = Date.now() + BETTING_WINDOW_MS
@@ -393,7 +470,7 @@ async function concludeBetting (ctx) {
     return
   }
 
-  // Timer-based close: deal once (no "All bets in" announcement)
+  // Timer-based close: deal once
   await dealOnce(ctx, { announce: false })
 }
 
@@ -414,13 +491,13 @@ export async function handleBlackjackBet (userUUID, amountStr, nickname, ctx) {
     return
   }
 
-  const bal = await getUserWallet(userUUID)
+  const bal = await walletGet(userUUID)
   if (bal < amount) {
-    await postMessage({ room: ctx.room, message: `${mention(userUUID)} you have $${Number(bal).toFixed(1)} — not enough for a $${amount.toFixed(1)} bet.` })
+    await postMessage({ room: ctx.room, message: `${mention(userUUID)} you have ${fmtMoney(bal)} — not enough for a ${fmtMoney(amount)} bet.` })
     return
   }
 
-  const ok = removeFromUserWallet(userUUID, amount)
+  const ok = await walletRemove(userUUID, amount)
   if (!ok) {
     await postMessage({ room: ctx.room, message: `${mention(userUUID)} unable to place bet (insufficient funds).` })
     return
@@ -430,7 +507,7 @@ export async function handleBlackjackBet (userUUID, amountStr, nickname, ctx) {
   const p = st.players.get(userUUID)
   p.bet = Number(amount.toFixed(1))
 
-  await postMessage({ room: ctx.room, message: `✅ ${mention(userUUID)} bet **$${p.bet.toFixed(1)}**.` })
+  await postMessage({ room: ctx.room, message: `✅ ${mention(userUUID)} bet **${fmtMoney(p.bet)}**.` })
 
   // Early close if everyone has bet (race-safe)
   if (EARLY_BET_CLOSE && st.handOrder.every(id => (st.players.get(id)?.bet || 0) > 0)) {
@@ -443,14 +520,21 @@ export async function handleBlackjackBet (userUUID, amountStr, nickname, ctx) {
 // ─────────────────────────────────────────────────────────────
 async function dealInitial (ctx) {
   const st = getTable(ctx)
-
-  // Guard: only deal if locked to dealing, and only once per hand handled by dealOnce()
   if (st.phase !== 'dealing') return
 
   // Safety: ensure betting timer can't trigger later
   clearTimer(st.betTimer); st.betTimer = null
 
-  st.deck = newShoe()
+  // Shoe handling: keep across hands, reshuffle only when low
+  if (shouldReshuffle(st)) {
+    st.deck = newShoe()
+    if (!st.shuffleAnnouncedThisHand) {
+      st.shuffleAnnouncedThisHand = true
+      await postMessage({ room: ctx.room, message: `🔄 Shuffling the shoe…` })
+      if (SUSPENSE_MS) await sleep(Math.min(900, SUSPENSE_MS))
+    }
+  }
+
   st.dealerHand = []
   for (const id of st.handOrder) {
     const p = st.players.get(id)
@@ -463,14 +547,33 @@ async function dealInitial (ctx) {
     st.dealerHand.push(draw(st))
   }
 
-  // Announce initial hands
-  const lines = [`🃏 **Initial deal**`]
+  // Snapshot: Initial deal (code block)
+  const up = fmtCard(st.dealerHand[0])
+  const snap = []
+  snap.push(`🃏 BLACKJACK — Initial Deal`)
+  snap.push(`Dealer: ${up}  ??`)
+  snap.push(`----------------------------------------`)
   for (const id of st.handOrder) {
     const p = st.players.get(id)
-    lines.push(`• ${mention(id)} — ${formatHand(p.hand)}  |  bet $${p.bet.toFixed(1)}`)
+    const nm = pad(displayName(st, id), NAME_PAD)
+    snap.push(`${nm} ${pad(mention(id), 18)}  ${pad(p.hand.map(fmtCard).join(' '), 9)}  (${pad(handValue(p.hand).total, 2)})  bet ${fmtMoney(p.bet)}`)
   }
-  lines.push(`• Dealer — ${fmtCard(st.dealerHand[0])} ??`)
-  await postMessage({ room: ctx.room, message: lines.join('\n') })
+  await postSnapshot(ctx, snap)
+
+  // Micro-drama: Dealer peek (no insurance)
+  const upRank = st.dealerHand[0]?.r
+  const peekEligible = (upRank === 'A' || upRank === '10' || upRank === 'J' || upRank === 'Q' || upRank === 'K')
+  if (peekEligible) {
+    await postMessage({ room: ctx.room, message: `🕵️ Dealer checks for blackjack…` })
+    if (DRAW_PAUSE_MS) await sleep(Math.min(900, DRAW_PAUSE_MS))
+    if (isBlackjack(st.dealerHand)) {
+      await postMessage({ room: ctx.room, message: `🂠 Dealer has **BLACKJACK**.` })
+      return settleRound(ctx)
+    } else {
+      await postMessage({ room: ctx.room, message: `✅ No dealer blackjack.` })
+      if (SUSPENSE_MS) await sleep(Math.min(700, SUSPENSE_MS))
+    }
+  }
 
   // If everyone has natural blackjack, skip to dealer/settle
   const allBJ = st.handOrder.every(id => isBlackjack(st.players.get(id).hand))
@@ -479,7 +582,7 @@ async function dealInitial (ctx) {
 
   // Otherwise, advance to first player who is not auto-done
   st.phase = 'acting'
-  if (SUSPENSE_MS) await sleep(Math.max(250, Math.min(1200, SUSPENSE_MS)))
+  if (SUSPENSE_MS) await sleep(Math.max(250, Math.min(1100, SUSPENSE_MS)))
   await advanceIfDoneAndPrompt(ctx)
 }
 
@@ -513,10 +616,13 @@ export async function handleHit (userUUID, nickname, ctx) {
   const v = handValue(p.hand).total
   if (v > 21) { p.busted = true; p.done = true }
 
-  await postMessage({ room: ctx.room, message: `🫳 ${mention(userUUID)} hits: ${formatHand(p.hand)}${p.busted ? ' — **BUST**' : ''}` })
+  await postMessage({ room: ctx.room, message: `🫳 ${mention(userUUID)} hits → ${formatHand(p.hand)}${p.busted ? ' — **BUST**' : ''}` })
 
   if (p.busted) {
     st.turnIndex++
+    if (st.turnIndex < st.handOrder.length) {
+      await postMessage({ room: ctx.room, message: `➡️ Next up: ${mention(st.handOrder[st.turnIndex])}` })
+    }
     return advanceIfDoneAndPrompt(ctx)
   } else {
     return promptTurn(ctx, userUUID, { rePrompt: true })
@@ -534,6 +640,9 @@ export async function handleStand (userUUID, nickname, ctx) {
   p.done = true
   await postMessage({ room: ctx.room, message: `✋ ${mention(userUUID)} stands on ${handValue(p.hand).total}.` })
   st.turnIndex++
+  if (st.turnIndex < st.handOrder.length) {
+    await postMessage({ room: ctx.room, message: `➡️ Next up: ${mention(st.handOrder[st.turnIndex])}` })
+  }
   await advanceIfDoneAndPrompt(ctx)
 }
 
@@ -547,18 +656,21 @@ export async function handleDouble (userUUID, nickname, ctx) {
   const p = st.players.get(userUUID)
   if (p.actionCount > 0 || p.hand.length !== 2) {
     await postMessage({ room: ctx.room, message: `${mention(userUUID)} you can only **double** as your first action on two cards.` })
-    return
+    return promptTurn(ctx, userUUID, { rePrompt: true })
   }
-  const bal = await getUserWallet(userUUID)
+
+  const bal = await walletGet(userUUID)
   if (bal < p.bet) {
-    await postMessage({ room: ctx.room, message: `${mention(userUUID)} you don’t have enough to double (need another $${p.bet.toFixed(1)}).` })
-    return
+    await postMessage({ room: ctx.room, message: `${mention(userUUID)} you don’t have enough to double (need another ${fmtMoney(p.bet)}).` })
+    return promptTurn(ctx, userUUID, { rePrompt: true })
   }
-  const ok = removeFromUserWallet(userUUID, p.bet)
+
+  const ok = await walletRemove(userUUID, p.bet)
   if (!ok) {
     await postMessage({ room: ctx.room, message: `${mention(userUUID)} unable to double at this time.` })
-    return
+    return promptTurn(ctx, userUUID, { rePrompt: true })
   }
+
   p.doubled = true
   p.bet = Number((p.bet * 2).toFixed(1))
   p.actionCount++
@@ -567,8 +679,11 @@ export async function handleDouble (userUUID, nickname, ctx) {
   if (v > 21) p.busted = true
   p.done = true
 
-  await postMessage({ room: ctx.room, message: `✌️ ${mention(userUUID)} doubles to **$${p.bet.toFixed(1)}** → ${formatHand(p.hand)}${p.busted ? ' — **BUST**' : ''}` })
+  await postMessage({ room: ctx.room, message: `✌️ ${mention(userUUID)} doubles to **${fmtMoney(p.bet)}** → ${formatHand(p.hand)}${p.busted ? ' — **BUST**' : ''}` })
   st.turnIndex++
+  if (st.turnIndex < st.handOrder.length) {
+    await postMessage({ room: ctx.room, message: `➡️ Next up: ${mention(st.handOrder[st.turnIndex])}` })
+  }
   await advanceIfDoneAndPrompt(ctx)
 }
 
@@ -582,14 +697,22 @@ export async function handleSurrender (userUUID, nickname, ctx) {
   const p = st.players.get(userUUID)
   if (p.actionCount > 0 || p.hand.length !== 2) {
     await postMessage({ room: ctx.room, message: `${mention(userUUID)} you can only **surrender** as your first action on two cards.` })
-    return
+    return promptTurn(ctx, userUUID, { rePrompt: true })
   }
+
   p.surrendered = true
   p.done = true
+
+  // Refund half of current bet (bet was already deducted at bet time)
   const refund = Number((p.bet / 2).toFixed(1))
-  await addToUserWallet(userUUID, refund)
-  await postMessage({ room: ctx.room, message: `🏳️ ${mention(userUUID)} surrenders and gets **$${refund.toFixed(1)}** back.` })
+  await walletAdd(userUUID, refund)
+
+  await postMessage({ room: ctx.room, message: `🏳️ ${mention(userUUID)} surrenders → refund **${fmtMoney(refund)}**.` })
+
   st.turnIndex++
+  if (st.turnIndex < st.handOrder.length) {
+    await postMessage({ room: ctx.room, message: `➡️ Next up: ${mention(st.handOrder[st.turnIndex])}` })
+  }
   await advanceIfDoneAndPrompt(ctx)
 }
 
@@ -609,11 +732,20 @@ async function dealerPlay (ctx) {
   if (DRAW_PAUSE_MS) await sleep(DRAW_PAUSE_MS)
 
   let { total, soft } = handValue(st.dealerHand)
+  const drawLog = []
   while (total < 17 || (total === 17 && soft === true && HIT_SOFT_17)) {
     st.dealerHand.push(draw(st))
     const hv = handValue(st.dealerHand); total = hv.total; soft = hv.soft
-    await postMessage({ room: ctx.room, message: `Dealer draws → ${formatHand(st.dealerHand)}` })
+    drawLog.push(`Draw → ${formatHand(st.dealerHand)}`)
     if (DRAW_PAUSE_MS) await sleep(DRAW_PAUSE_MS)
+  }
+
+  if (drawLog.length > 0) {
+    // Reduce spam: one recap snapshot
+    const snap = []
+    snap.push(`DEALER PLAY`)
+    for (const line of drawLog) snap.push(line)
+    await postSnapshot(ctx, snap)
   }
 
   await settleRound(ctx)
@@ -626,52 +758,123 @@ async function settleRound (ctx) {
 
   const dealerVal = handValue(st.dealerHand).total
   const dealerBJ = isBlackjack(st.dealerHand)
-  const dealerBust = dealerVal > 21
 
-  const lines = ['📊 **Results**']
+  const snap = []
+  snap.push(`📊 RESULTS`)
+  snap.push(`Dealer: ${formatHand(st.dealerHand)}${dealerBJ ? '  (BJ)' : ''}`)
+  snap.push(`----------------------------------------`)
+
   for (const id of st.handOrder) {
     const p = st.players.get(id)
     if (!p || p.bet <= 0) continue
+
     const pv = handValue(p.hand).total
     const bj = isBlackjack(p.hand)
-    if (p.surrendered) {
-      lines.push(`• ${mention(id)} — surrendered (refund $${(p.bet/2).toFixed(1)})`)
-      continue
-    }
-    if (p.busted) {
-      lines.push(`• ${mention(id)} — busted (${pv}). Lose $${p.bet.toFixed(1)}`)
-      continue
-    }
+
+    // By this point, initial bet is already removed from wallet.
+    // We will "return" money via walletAdd as:
+    // - win: return 2x bet (stake + profit)
+    // - blackjack: return 2.5x bet (stake + 1.5x profit)
+    // - push: return 1x bet (stake back)
+    // - lose: return 0
+    // Surrender refunds half at action time.
     let outcome = 'push'
-    let payout = 0
-    if (bj && !dealerBJ) {
+    let returned = 0
+    let profit = 0
+
+    if (p.surrendered) {
+      outcome = 'surrender'
+      returned = p.bet / 2
+      profit = -p.bet / 2
+      // streaks
+      p.lossStreak++
+      p.winStreak = 0
+      p.bjStreak = 0
+      p.losses++
+    } else if (p.busted) {
+      outcome = 'bust'
+      returned = 0
+      profit = -p.bet
+      p.lossStreak++
+      p.winStreak = 0
+      p.bjStreak = 0
+      p.losses++
+    } else if (bj && !dealerBJ) {
       outcome = 'blackjack'
-      payout = p.bet * 2.5
+      returned = p.bet * 2.5
+      profit = p.bet * 1.5
+      p.winStreak++
+      p.lossStreak = 0
+      p.bjStreak++
+      p.wins++
+      p.blackjacks++
     } else if (dealerBJ && bj) {
       outcome = 'push'
-      payout = p.bet
-    } else if (dealerBust || pv > dealerVal) {
+      returned = p.bet
+      profit = 0
+      p.pushes++
+      p.bjStreak++ // still a BJ hand
+    } else if (dealerVal > 21 || pv > dealerVal) {
       outcome = 'win'
-      payout = p.bet * 2
+      returned = p.bet * 2
+      profit = p.bet
+      p.winStreak++
+      p.lossStreak = 0
+      p.bjStreak = 0
+      p.wins++
     } else if (pv < dealerVal) {
       outcome = 'lose'
-      payout = 0
+      returned = 0
+      profit = -p.bet
+      p.lossStreak++
+      p.winStreak = 0
+      p.bjStreak = 0
+      p.losses++
     } else {
       outcome = 'push'
-      payout = p.bet
+      returned = p.bet
+      profit = 0
+      p.pushes++
+      p.bjStreak = 0
     }
 
-    if (payout > 0) await addToUserWallet(id, payout)
-    lines.push(`• ${mention(id)} — ${outcome} (${pv} vs dealer ${dealerVal}) ${payout>0?`→ +$${payout.toFixed(1)}`:''}`)
+    if (profit > p.biggestProfit) p.biggestProfit = profit
+
+    // Only add if not already paid out elsewhere.
+    // Note: surrender already refunded half during action; we do not add here.
+    if (!p.surrendered && returned > 0) {
+      await walletAdd(id, Number(returned.toFixed(1)))
+    }
+
+    const nm = pad(displayName(st, id), NAME_PAD)
+    const profStr = (profit > 0) ? `+${fmtMoney(profit)}` : (profit < 0 ? `-${fmtMoney(Math.abs(profit))}` : `+${fmtMoney(0)}`)
+    const retStr = returned > 0 ? fmtMoney(returned) : fmtMoney(0)
+    const streakNote =
+      p.winStreak >= 3 ? ` 🔥W${p.winStreak}` :
+      p.lossStreak >= 3 ? ` 🧊L${p.lossStreak}` :
+      p.bjStreak >= 2 ? ` ✨BJ${p.bjStreak}` : ''
+
+    snap.push(`${nm} ${pad(mention(id), 18)}  ${pad(outcome.toUpperCase(), 10)}  hand ${pad(pv, 2)}  profit ${pad(profStr, 8)}  return ${pad(retStr, 6)}${streakNote}`)
   }
 
-  await postMessage({ room: ctx.room, message: lines.join('\n') })
+  await postSnapshot(ctx, snap)
 
+  // tiny “table flavor” line
+  const biggest = st.handOrder
+    .map(id => st.players.get(id))
+    .filter(Boolean)
+    .sort((a, b) => (b.biggestProfit || 0) - (a.biggestProfit || 0))[0]
+  if (biggest?.biggestProfit > 0) {
+    await postMessage({ room: ctx.room, message: `💎 Biggest profit at this table: ${mention(biggest.uuid)} (+${fmtMoney(biggest.biggestProfit)})` })
+  }
+
+  // Reset hand state (keep shoe + long-term stats)
   st.phase = 'idle'
   st.handOrder = []
   st.dealerHand = []
   st.turnIndex = 0
   clearAllTimers(st)
+
   await postMessage({ room: ctx.room, message: `Type **/bj** to open a new table.` })
 }
 
@@ -681,21 +884,26 @@ async function settleRound (ctx) {
 export function getFullTableView (ctx) {
   const st = getTable(ctx)
   const out = []
-  out.push(`🃏 Blackjack — table ${st.id}`)
+  out.push(`🃏 BLACKJACK — table ${st.id}`)
   out.push(`Phase: ${st.phase}`)
-  if (st.phase === 'join') {
-    out.push(`Join closes in: ${Math.max(0, Math.ceil((st.joinDeadline - Date.now())/1000))}s`)
-  }
-  if (st.phase === 'betting') {
-    out.push(`Betting closes in: ${Math.max(0, Math.ceil((st.betDeadline - Date.now())/1000))}s`)
-  }
+  if (st.phase === 'join') out.push(`Join closes in: ${Math.max(0, Math.ceil((st.joinDeadline - Date.now())/1000))}s`)
+  if (st.phase === 'betting') out.push(`Betting closes in: ${Math.max(0, Math.ceil((st.betDeadline - Date.now())/1000))}s`)
+  out.push(`Shoe: ${st.deck?.length ?? 0} cards remaining`)
+  out.push(`----------------------------------------`)
+
   if (st.order.length === 0) out.push(`(no one has ever sat down at this table yet)`)
+
   for (const id of st.order) {
     const p = st.players.get(id)
-    const seat = p?.seated ? '🪑' : '—'
-    out.push(`${seat} ${mention(id)} bet:$${(p?.bet||0).toFixed(1)} hand:${p?.hand?.length?formatHand(p.hand):'—'}`)
+    const seat = p?.seated ? '🪑' : '— '
+    const nm = pad(displayName(st, id), NAME_PAD)
+    const bet = fmtMoney(p?.bet || 0)
+    const hv = p?.hand?.length ? handValue(p.hand).total : '-'
+    const hand = p?.hand?.length ? p.hand.map(fmtCard).join(' ') : '—'
+    out.push(`${seat} ${nm} ${pad(mention(id), 18)}  bet ${pad(bet, 6)}  hand ${pad(String(hv), 2)}  ${hand}`)
   }
-  return out.join('\n')
+
+  return `\`\`\`\n${out.join('\n')}\n\`\`\``
 }
 
 export function getPhase (ctx) {
