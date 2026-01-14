@@ -28,6 +28,8 @@ export const COIN_ALIASES = {
   xrp: 'ripple',
   ripple: 'ripple',
   pepe: 'pepe',
+  xmr: 'monero',
+  dash: 'dash',
 }
 
 // Resolve an input symbol or id to a CoinGecko id. Returns null when the

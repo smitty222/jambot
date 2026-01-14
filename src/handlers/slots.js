@@ -58,7 +58,6 @@ const JACKPOT_MILESTONES = [10000, 25000, 50000, 100000, 250000, 500000, 1000000
 const COLLECTION_MIN_BET = 100
 const COLLECTION_RESET_KEY = 'slots_collection_reset_yyyymm'
 
-
 // BONUS ROUND tuning (triggered by 💎💎💎) — interactive
 const BONUS_SPINS_MIN = 3
 const BONUS_SPINS_MAX = 5
@@ -81,13 +80,12 @@ const BONUS_PERCENT_WEIGHTS = [
 const FEATURE_MIN_TRIGGER_BET = 250
 const FEATURE_MAX_SPINS_PER_TRIGGER = 3
 const FEATURE_MAX_SPINS_PER_SESSION = 15
-const FEATURE_PAYOUT_MULTIPLIER = 5 // start with 5x, adjust after a day
+const FEATURE_PAYOUT_MULTIPLIER = 5 // option 1
 
-
-// ✅ CHANGE: Feature reel now INCLUDES tickets so you can extend the round
+// ✅ Feature reel includes tickets so you can extend the round
 const FEATURE_SYMBOLS = ['🍒', '🍋', '🍊', '🍉', '🔔', '⭐', '💎', '🎟️']
 
-// ✅ CHANGE: More premium feel + higher win likelihood + tickets rarer in feature
+// ✅ More premium feel + higher win likelihood + tickets rarer in feature
 // Sum=100
 const FEATURE_WEIGHTS = {
   '🍒': 10,
@@ -100,7 +98,7 @@ const FEATURE_WEIGHTS = {
   '🎟️': 5
 }
 
-// ✅ CHANGE: Higher feature payouts
+// Feature paytable (base values; multiplied by FEATURE_PAYOUT_MULTIPLIER)
 const FEATURE_TRIPLE_PAYOUTS = {
   '🍒🍒🍒': 350,
   '🍋🍋🍋': 320,
@@ -111,7 +109,6 @@ const FEATURE_TRIPLE_PAYOUTS = {
   '💎💎💎': 4000
 }
 
-// ✅ CHANGE: Higher pair payouts (more frequent “feels good” hits)
 const FEATURE_PAIR_PAYOUTS = {
   '🍒🍒': 120,
   '🍋🍋': 110,
@@ -122,9 +119,7 @@ const FEATURE_PAIR_PAYOUTS = {
   '💎💎': 1200
 }
 
-// ✅ NEW: small “premium symbol appears anywhere” mini-pay in feature mode
-// This increases win likelihood without making every spin huge.
-// Example: if a spin contains at least one 💎 anywhere, pay +$75 (stacking highest only).
+// Premium “anywhere” mini-pay (only if no pair/triple)
 const FEATURE_ANY_SYMBOL_BONUS = {
   '💎': 90,
   '⭐': 70,
@@ -250,20 +245,18 @@ function writeSetting (key, value) {
 function getYearMonthKey (d = new Date()) {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
-  return `${y}${m}` // e.g. "202601"
+  return `${y}${m}`
 }
 
 function maybeResetCollectionsMonthly () {
   const current = getYearMonthKey()
   const last = readSetting(COLLECTION_RESET_KEY)
 
-  // First run ever: set it and do nothing
   if (!last) {
     writeSetting(COLLECTION_RESET_KEY, current)
     return { didReset: false, current }
   }
 
-  // If month changed, wipe everyone’s collections
   if (last !== current) {
     try {
       db.prepare('DELETE FROM slot_collections').run()
@@ -272,14 +265,12 @@ function maybeResetCollectionsMonthly () {
       return { didReset: true, current }
     } catch (e) {
       console.error('[Slots] Failed to reset collections:', e)
-      // Don’t update the setting if delete failed
       return { didReset: false, current }
     }
   }
 
   return { didReset: false, current }
 }
-
 
 function getJackpotValue () {
   const row = db.prepare('SELECT progressiveJackpot FROM jackpot WHERE id = 1').get()
@@ -293,21 +284,32 @@ function updateJackpotValue (newValue) {
 
 // ───────────────────────────────────────────────────────────
 // Weighted symbol rolling (normal + feature)
+// ✅ Option A: exclude tickets for bets < FEATURE_MIN_TRIGGER_BET
 // ───────────────────────────────────────────────────────────
 
 const WEIGHTED_SYMBOLS = symbols
   .map(sym => ({ sym, w: Number(SYMBOL_WEIGHTS[sym] ?? 0) }))
   .filter(it => it.w > 0)
 
+// ✅ Tickets excluded for low-bet spins (< FEATURE_MIN_TRIGGER_BET)
+const WEIGHTED_SYMBOLS_NO_TICKETS = WEIGHTED_SYMBOLS.filter(it => it.sym !== '🎟️')
+
 const WEIGHTED_FEATURE_SYMBOLS = FEATURE_SYMBOLS
   .map(sym => ({ sym, w: Number(FEATURE_WEIGHTS[sym] ?? 0) }))
   .filter(it => it.w > 0)
 
-function randSymbol () {
-  if (!WEIGHTED_SYMBOLS.length) {
-    return symbols[Math.floor(Math.random() * symbols.length)]
+function randSymbol (bet = 0) {
+  const list = bet >= FEATURE_MIN_TRIGGER_BET ? WEIGHTED_SYMBOLS : WEIGHTED_SYMBOLS_NO_TICKETS
+
+  if (!list.length) {
+    const fallback = bet >= FEATURE_MIN_TRIGGER_BET
+      ? symbols
+      : symbols.filter(s => s !== '🎟️')
+
+    return fallback[Math.floor(Math.random() * fallback.length)]
   }
-  return weightedPick(WEIGHTED_SYMBOLS).sym
+
+  return weightedPick(list).sym
 }
 
 function randFeatureSymbol () {
@@ -317,8 +319,8 @@ function randFeatureSymbol () {
   return weightedPick(WEIGHTED_FEATURE_SYMBOLS).sym
 }
 
-function spinSlots () {
-  return [randSymbol(), randSymbol(), randSymbol()]
+function spinSlots (bet = 0) {
+  return [randSymbol(bet), randSymbol(bet), randSymbol(bet)]
 }
 
 function spinFeatureSlots () {
@@ -378,8 +380,8 @@ async function spinBonusOnce (userUUID) {
   }
 
   const spinNumber = (spinsTotal - spinsLeft) + 1
-
   const pick = weightedPick(BONUS_PERCENT_WEIGHTS)
+
   totalPct += pick.pct
   spinsLeft -= 1
 
@@ -387,7 +389,6 @@ async function spinBonusOnce (userUUID) {
 
   const lines = []
   lines.push(`🎁 BONUS SPIN ${spinNumber}/${spinsTotal}: +${pick.pct}%  🧮 Total: ${cappedTotal}%`)
-
   if (pick.pct >= 25) lines.push(`🔥 MASSIVE HIT! 25% spin!`)
   else if (pick.pct >= 20) lines.push(`🚨 BIG HIT! 20% spin!`)
 
@@ -414,7 +415,6 @@ async function spinBonusOnce (userUUID) {
   lines.push(`💰 WON: +$${formatMoney(jackpotWon)} (locked pot: $${formatMoney(lockedJackpot)})`)
   lines.push(`🪙 BALANCE: $${formatBalance(balance)}`)
   lines.push(`💰 JACKPOT NOW: $${formatMoney(newJackpot)}`)
-  
 
   return lines.join('\n')
 }
@@ -477,8 +477,6 @@ function evaluateFeatureLine (symbolsArr) {
     }
   }
 
-  // ✅ NEW: premium symbol “anywhere” mini-pay to increase hit rate
-  // Only award the single highest bonus.
   let bonus = 0
   for (const s of symbolsArr) {
     if (FEATURE_ANY_SYMBOL_BONUS[s]) {
@@ -509,10 +507,9 @@ async function spinFeatureOnce (userUUID) {
   }
 
   const spinNumber = (spinsTotal - spinsLeft) + 1
-
   const result = spinFeatureSlots()
 
-  // ✅ NEW: tickets can land during feature to award more spins
+  // tickets can land during feature to award more spins
   const ticketCount = result.filter(s => s === '🎟️').length
   if (ticketCount > 0) {
     const add = Math.min(ticketCount, FEATURE_MAX_SPINS_PER_TRIGGER)
@@ -539,15 +536,14 @@ async function spinFeatureOnce (userUUID) {
   lines.push(renderSlot(result[0], result[1], result[2], `🎟️ FREE SPIN ${spinNumber}/${spinsTotal}`))
 
   if (ticketCount > 0) {
-    // Hype line for extension
     lines.push(`🎟️ +${Math.min(ticketCount, FEATURE_MAX_SPINS_PER_TRIGGER)} EXTRA FEATURE SPIN${ticketCount === 1 ? '' : 'S'}!`)
   }
 
   if (win > 0) {
     lines.push(`💥 FEATURE WIN: +$${formatMoney(win)}`)
-    if (win >= 4000) lines.push(`🚨 MEGA HIT! 💎💎💎`)
-    else if (win >= 2200) lines.push(`🔥 HUGE HIT! ⭐⭐⭐`)
-    else if (win >= 1400) lines.push(`🔔 BIG WIN!`)
+    if (win >= 4000 * FEATURE_PAYOUT_MULTIPLIER) lines.push(`🚨 MEGA HIT! 💎💎💎`)
+    else if (win >= 2200 * FEATURE_PAYOUT_MULTIPLIER) lines.push(`🔥 HUGE HIT! ⭐⭐⭐`)
+    else if (win >= 1400 * FEATURE_PAYOUT_MULTIPLIER) lines.push(`🔔 BIG WIN!`)
     else if (outcome.type === 'ANY') lines.push(`✨ PREMIUM SYMBOL HIT!`)
   } else {
     lines.push(`— NO WIN —`)
@@ -562,7 +558,6 @@ async function spinFeatureOnce (userUUID) {
   clearFeatureSession(userUUID)
 
   const balance = await getUserWallet(userUUID)
-
   lines.push(`💰 TOTAL FEATURE WINS: +$${formatMoney(totalWon)}`)
   lines.push(`🪙 BALANCE: $${formatBalance(balance)}`)
 
@@ -588,7 +583,6 @@ function getUserCollection (userUUID) {
     return { counts: {}, tiers: {}, halfNotifs: {} }
   }
 }
-
 
 function saveUserCollection (userUUID, collection) {
   try {
@@ -669,10 +663,8 @@ async function applyCollectionProgress (userUUID, spins) {
   const tiers = col.tiers || {}
   const halfNotifs = col.halfNotifs || {}
 
-  // Snapshot counts before this play (so we can detect threshold crossings)
   const beforeCounts = { ...counts }
 
-  // Add counts
   for (const s of spins.flat()) {
     counts[s] = (counts[s] || 0) + 1
   }
@@ -691,29 +683,22 @@ async function applyCollectionProgress (userUUID, spins) {
     const prevTier = Number(tiers[sym] || 0)
     const newTier = Math.floor(after / goal)
 
-    // ✅ Halfway-to-next-tier message (once per tier)
-    // Next tier target is (prevTier + 1). Halfway point is prevTier*goal + ceil(goal/2)
     const nextTier = prevTier + 1
     const halfThreshold = (prevTier * goal) + Math.ceil(goal / 2)
-
-    // We only care if:
-    // - they haven't already been notified for this next tier
-    // - they crossed the halfway threshold during this play
     const lastHalfTierNotified = Number(halfNotifs[sym] || 0)
 
     if (
-      nextTier > prevTier &&                 // there is a "next tier"
-      lastHalfTierNotified < nextTier &&     // not already notified for this tier
+      nextTier > prevTier &&
+      lastHalfTierNotified < nextTier &&
       before < halfThreshold &&
       after >= halfThreshold &&
-      newTier === prevTier                   // don't show halfway if they already tiered up this play
+      newTier === prevTier
     ) {
       halfNotifs[sym] = nextTier
       const currentInTier = after - (prevTier * goal)
       progress.push(`⏳ COLLECTION: ${sym} halfway to Tier ${nextTier} (${currentInTier}/${goal})`)
     }
 
-    // Tier ups
     if (newTier > prevTier) {
       const tiersGained = newTier - prevTier
       tiers[sym] = newTier
@@ -722,24 +707,18 @@ async function applyCollectionProgress (userUUID, spins) {
       totalReward += payout
 
       unlocked.push(`🏅 COLLECTION: ${sym} Tier ${newTier} (+$${formatBalance(payout)})`)
-
-      // If they tier up, set halfNotifs so we don't fire a stale halfway notice
-      // for tiers they already passed.
       halfNotifs[sym] = Math.max(Number(halfNotifs[sym] || 0), newTier)
     }
   }
 
-  // Persist updated collection state
   saveUserCollection(userUUID, { counts, tiers, halfNotifs })
 
-  // Pay rewards if any
   if (totalReward > 0) {
     await addToUserWallet(userUUID, totalReward)
   }
 
   return { unlockedLines: unlocked, progressLines: progress, rewardTotal: totalReward }
 }
-
 
 // ───────────────────────────────────────────────────────────
 // Main game
@@ -797,7 +776,8 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
     let featureTriggeredThisPlay = false
 
     const playOneSpin = (prefix) => {
-      const result = spinSlots()
+      // ✅ Option A in action: tickets can’t appear if bet < FEATURE_MIN_TRIGGER_BET
+      const result = spinSlots(bet)
       allSpinResults.push(result)
 
       const outcome = evaluateLine(result)
@@ -829,7 +809,6 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
         ].join('\n')
       }
 
-      // 🎟️ Feature trigger (paid bet eligibility)
       if (!featureTriggeredThisPlay && bet >= FEATURE_MIN_TRIGGER_BET) {
         const ticketCountRaw = result.filter(s => s === '🎟️').length
         const ticketCount = Math.min(ticketCountRaw, FEATURE_MAX_SPINS_PER_TRIGGER)
@@ -865,13 +844,10 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
 
     const resetInfo = maybeResetCollectionsMonthly()
 
-
     let collection = { unlockedLines: [], rewardTotal: 0 }
-
-if (bet >= COLLECTION_MIN_BET) {
-  collection = await applyCollectionProgress(userUUID, allSpinResults)
-}
-
+    if (bet >= COLLECTION_MIN_BET) {
+      collection = await applyCollectionProgress(userUUID, allSpinResults)
+    }
 
     balance = await getUserWallet(userUUID)
 
@@ -882,31 +858,30 @@ if (bet >= COLLECTION_MIN_BET) {
 
     const balanceLine = `🪙 BALANCE: $${formatBalance(balance)}`
     const jackpotLine = `💰 JACKPOT: $${formatMoney(jackpot)}  📈 +$${formatMoney(jackpotIncrement)}`
-
     const nearMiss = nearMissLines.length ? `\n${nearMissLines[0]}` : ''
     const milestone = milestoneLine ? `\n${milestoneLine}` : ''
     const resetLine = resetInfo.didReset ? `🗓️ Monthly Collections Reset! (New season: ${resetInfo.current})` : ''
 
-
     const collectionLines = (collection.unlockedLines.length || collection.progressLines?.length)
-  ? `\n\n${[
-      ...(collection.unlockedLines || []),
-      ...(collection.progressLines || [])
-    ].join('\n')}`
-  : ''
+      ? `\n\n${[
+          ...(collection.unlockedLines || []),
+          ...(collection.progressLines || [])
+        ].join('\n')}`
+      : ''
 
+    // ✅ Balance above, jackpot last, with a visual gap before jackpot
     return [
-    spinLines.join('\n'),
-    resultLine + nearMiss,
-    milestone,
-    resetLine,
-    balanceLine,
-    '',
-    jackpotLine,
-    bonusTriggerMessage,
-    featureTriggerMessage,
-    collectionLines
-  ].filter(Boolean).join('\n')
+      spinLines.join('\n'),
+      resultLine + nearMiss,
+      milestone,
+      resetLine,
+      balanceLine,
+      bonusTriggerMessage,
+      featureTriggerMessage,
+      collectionLines,
+      ' ',          // spacer line (survives filter(Boolean))
+      jackpotLine   // jackpot at very bottom
+    ].filter(Boolean).join('\n')
   } catch (err) {
     console.error('Slots error:', err)
     return 'An error occurred while playing slots.'
