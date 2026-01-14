@@ -59,8 +59,9 @@ function coinEmoji (symbol) {
 
 function coinLabel (symbol) {
   const sym = String(symbol || '').toUpperCase()
-  return `${coinEmoji(symbol)} ${sym}`
+  return `${sym} ${coinEmoji(symbol)}`
 }
+
 
 // Format a crypto quantity with commas and up to 6 decimals (good for trades)
 function formatQty (amount) {
