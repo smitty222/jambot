@@ -83,6 +83,17 @@ function formatUsd (amount) {
   return Number(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+function formatSignedUsd (amount) {
+  const sign = amount >= 0 ? '+' : '-'
+  return `${sign}$${formatUsd(Math.abs(amount))}`
+}
+
+function pnlEmoji (amount) {
+  if (amount > 0) return '🟢'
+  if (amount < 0) return '🔴'
+  return '⚪'
+}
+
 function formatPct (x) {
   if (!Number.isFinite(x)) return '—'
   const sign = x > 0 ? '+' : ''
@@ -211,14 +222,16 @@ export async function handleCryptoCommand ({ payload, room, args }) {
         .map(pos => {
           const price = priceMap[pos.coinId] || 0
           const value = pos.quantity * price
-          return { ...pos, price, value }
+          const costBasis = pos.quantity * pos.avgCostUsd
+          const pnlUsd = value - costBasis
+          return { ...pos, price, value, costBasis, pnlUsd }
         })
         .sort((a, b) => (b.value || 0) - (a.value || 0))
 
       let totalValue = cash
       const lines = enriched.map(pos => {
         totalValue += pos.value
-        return `${coinLabel(pos.symbol)}: ${formatQtyPortfolio(pos.quantity)} (avg $${formatUsd(pos.avgCostUsd)}) – worth $${formatUsd(pos.value)}`
+        return `${coinLabel(pos.symbol)}: ${formatQtyPortfolio(pos.quantity)} – worth $${formatUsd(pos.value)} (${formatSignedUsd(pos.pnlUsd)}) ${pnlEmoji(pos.pnlUsd)}`
       })
 
       lines.push(`\nWallet cash: $${formatUsd(cash)}`)
