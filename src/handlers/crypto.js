@@ -54,7 +54,7 @@ function buildHelpMessage () {
     '*Commands:*\n' +
     '`/crypto price <symbol>` – Show the current USD price for a coin (e.g. btc, eth).\n' +
     '`/crypto buy <symbol> <Amount>` – Buy a coin using cash from your wallet balance.\n' +
-    '`/crypto sell <symbol> <Amount>` – Sell a coin for cash (sells proportionally by value).\n' +
+    '`/crypto sell <symbol> <Amount|all>` – Sell a coin for cash (sells proportionally by value, or sell your entire position).\n' +
     '`/crypto portfolio` – Show your current crypto holdings and cash.\n' +
     '`/crypto help` – Show this help message.\n\n' +
     'Supported symbols include: ' + Object.keys(COIN_ALIASES).filter((k, i, arr) => arr.indexOf(k) === i).join(', ') + '.\n' +
@@ -78,6 +78,7 @@ export async function handleCryptoCommand ({ payload, room, args }) {
       await postMessage({ room, message: buildHelpMessage() })
       return
     }
+
     if (sub === 'price') {
       if (parts.length < 2) {
         await postMessage({ room, message: 'Please specify a coin symbol. Example: `/crypto price btc`' })
@@ -93,6 +94,7 @@ export async function handleCryptoCommand ({ payload, room, args }) {
       await postMessage({ room, message: `The current price of *${coinInput.toUpperCase()}* is $${formatUsd(price)}.` })
       return
     }
+
     if (sub === 'portfolio') {
       // Use the general wallet for cash rather than a separate crypto cash
       const cash = getUserWallet(userId)
@@ -107,7 +109,7 @@ export async function handleCryptoCommand ({ payload, room, args }) {
       const priceEntries = await Promise.all(pricePromises)
       const priceMap = Object.fromEntries(priceEntries)
       let totalValue = cash
-      let lines = positions.map(pos => {
+      const lines = positions.map(pos => {
         const price = priceMap[pos.coinId] || 0
         const value = pos.quantity * price
         totalValue += value
@@ -118,6 +120,7 @@ export async function handleCryptoCommand ({ payload, room, args }) {
       await postMessage({ room, message: lines.join('\n') })
       return
     }
+
     if (sub === 'buy') {
       if (parts.length < 3) {
         await postMessage({ room, message: 'Usage: `/crypto buy <symbol> <Amount>`' })
@@ -155,42 +158,76 @@ export async function handleCryptoCommand ({ payload, room, args }) {
       await postMessage({ room, message: `✅ Bought ${qty.toFixed(6)} ${coinInput.toUpperCase()} @ $${formatUsd(price)} for $${formatUsd(usdAmount)}.` })
       return
     }
+
     if (sub === 'sell') {
       if (parts.length < 3) {
-        await postMessage({ room, message: 'Usage: `/crypto sell <symbol> <Amount>`' })
+        await postMessage({ room, message: 'Usage: `/crypto sell <symbol> <Amount|all>`' })
         return
       }
+
       const coinInput = parts[1]
       const coinId = resolveCoinId(coinInput)
       if (!coinId) {
         await postMessage({ room, message: `Unknown coin: ${coinInput}. Try one of: ${Object.keys(COIN_ALIASES).join(', ')}` })
         return
       }
-      const usdAmount = parseFloat(parts[2])
-      if (!Number.isFinite(usdAmount) || usdAmount <= 0) {
-        await postMessage({ room, message: 'Please provide a positive cash amount to sell.' })
-        return
-      }
+
       const position = getPosition(userId, coinId)
       if (!position) {
         await postMessage({ room, message: `You do not own any ${coinInput.toUpperCase()}.` })
         return
       }
+
+      const amountToken = String(parts[2] || '').trim().toLowerCase()
       const price = await getCryptoPrice(coinId)
+
+      // ✅ NEW: allow "/crypto sell <symbol> all"
+      if (amountToken === 'all') {
+        const qtyToSell = position.quantity
+        const proceedsUsd = qtyToSell * price
+
+        // If position is basically dust, avoid weird messages/credits
+        if (!Number.isFinite(qtyToSell) || qtyToSell <= 0 || !Number.isFinite(proceedsUsd) || proceedsUsd <= 0) {
+          await postMessage({ room, message: `Your ${coinInput.toUpperCase()} position is too small to sell.` })
+          return
+        }
+
+        reducePosition(userId, coinId, qtyToSell)
+        await addToUserWallet(userId, proceedsUsd)
+        recordTrade(userId, coinId, 'SELL', qtyToSell, price)
+
+        await postMessage({
+          room,
+          message: `✅ Sold *ALL* (${qtyToSell.toFixed(6)} ${coinInput.toUpperCase()}) @ $${formatUsd(price)} for $${formatUsd(proceedsUsd)}.`
+        })
+        return
+      }
+
+      // Default behavior: sell by USD amount
+      const usdAmount = parseFloat(amountToken)
+      if (!Number.isFinite(usdAmount) || usdAmount <= 0) {
+        await postMessage({ room, message: 'Please provide a positive cash amount to sell, or use `all` (example: `/crypto sell btc all`).' })
+        return
+      }
+
       const maxUsdValue = position.quantity * price
       if (usdAmount > maxUsdValue + 1e-8) {
         await postMessage({ room, message: `Insufficient position value. Your ${coinInput.toUpperCase()} is worth $${formatUsd(maxUsdValue)}.` })
         return
       }
+
       // Determine quantity to sell
       const qtyToSell = usdAmount / price
+
       // Update DB: reduce position, credit wallet, record trade
       reducePosition(userId, coinId, qtyToSell)
       await addToUserWallet(userId, usdAmount)
       recordTrade(userId, coinId, 'SELL', qtyToSell, price)
+
       await postMessage({ room, message: `✅ Sold ${qtyToSell.toFixed(6)} ${coinInput.toUpperCase()} @ $${formatUsd(price)} for $${formatUsd(usdAmount)}.` })
       return
     }
+
     // Unknown subcommand
     await postMessage({ room, message: `Unknown crypto command: ${sub}. Use "/crypto help" for usage.` })
   } catch (err) {
