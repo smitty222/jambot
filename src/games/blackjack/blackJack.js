@@ -32,10 +32,10 @@ const NAME_PAD            = Number(process.env.BJ_NAME_PAD ?? 14)
 // ─────────────────────────────────────────────────────────────
 // Internal state
 // ─────────────────────────────────────────────────────────────
-/** @type {Map<string, TableState>} */
+/* @type {Map<string, TableState>} */
 const TABLES = new Map()
 
-/**
+/*
  * @typedef {Object} PlayerState
  * @property {string} uuid
  * @property {string} nickname
@@ -57,7 +57,7 @@ const TABLES = new Map()
  * @property {number} biggestProfit
  */
 
-/**
+/*
  * @typedef {Object} TableState
  * @property {string} id
  * @property {'idle'|'join'|'betting'|'dealing'|'acting'|'dealer'|'payout'} phase
@@ -182,7 +182,7 @@ function nicknameOf (st, id) {
   const p = st.players.get(id)
   const n = cleanNicknameForBlock(p?.nickname || '')
   if (n) return n
-  return `Player-${String(id).slice(0, 6)}`
+  return `<@uid:${id}>`
 }
 
 function nameInBlock (st, id) {
@@ -291,7 +291,7 @@ function eligibleActions (p) {
 }
 
 function actionHint (actions) {
-  return actions.map(a => `**/bj ${a}**`).join(' | ')
+  return actions.map(a => `*/bj ${a}*`).join(' | ')
 }
 
 async function postSnapshot (ctx, lines) {
@@ -372,7 +372,7 @@ async function dealOnce (ctx, { announce = false } = {}) {
 export async function openBetting (ctx) {
   const st = getTable(ctx)
   if (st.phase !== 'idle') {
-    await postMessage({ room: ctx.room, message: `♠ Blackjack round already in progress (phase: ${st.phase}). Type **/bj table** for status.` })
+    await postMessage({ room: ctx.room, message: `♠ Blackjack round already in progress (phase: ${st.phase}). Type */bj table* for status.` })
     return
   }
   await openJoin(ctx)
@@ -399,9 +399,9 @@ export async function openJoin (ctx) {
   st.shuffleAnnouncedThisHand = false
 
   await postMessage({ room: ctx.room, message: [
-    `🃏 **Blackjack** table is open for **${Math.round(JOIN_WINDOW_MS/1000)}s**!`,
-    `Type **/bj join** to take a seat.`,
-    `After join: you’ll have ${Math.round(BETTING_WINDOW_MS/1000)}s to place bets with **/bj bet <amount>**.`
+    `🃏 *Blackjack* table is open for *${Math.round(JOIN_WINDOW_MS/1000)}s*!`,
+    `Type */bj join* to take a seat.`,
+    `After join: you’ll have ${Math.round(BETTING_WINDOW_MS/1000)}s to place bets with */bj bet <amount>*.`
   ].join('\n') })
 
   st.joinTimer = setTimeout(() => concludeJoin(ctx), JOIN_WINDOW_MS)
@@ -410,7 +410,7 @@ export async function openJoin (ctx) {
 export async function joinTable (userUUID, nickname, ctx) {
   const st = getTable(ctx)
   if (st.phase !== 'join') {
-    await postMessage({ room: ctx.room, message: `${await mention(userUUID)} there isn’t an active blackjack **join** window right now.` })
+    await postMessage({ room: ctx.room, message: `${await mention(userUUID)} there isn’t an active blackjack *join* window right now.` })
     return
   }
   ensurePlayer(st, userUUID, nickname)
@@ -440,7 +440,7 @@ export async function leaveTable (userUUID, ctx) {
     p.bet = 0
     await walletAdd(userUUID, refund)
     st.handOrder = st.handOrder.filter(id => id !== userUUID)
-    await postMessage({ room: ctx.room, message: `↩️ ${await mention(userUUID)} left during betting — refunded **${fmtMoney(refund)}**.` })
+    await postMessage({ room: ctx.room, message: `↩️ ${await mention(userUUID)} left during betting — refunded *${fmtMoney(refund)}*.` })
   }
 
   p.seated = false
@@ -454,7 +454,7 @@ async function concludeJoin (ctx) {
   st.handOrder = seatedPlayers(st)
   if (st.handOrder.length === 0) {
     st.phase = 'idle'
-    await postMessage({ room: ctx.room, message: `No players joined. Start again with **/bj** when ready.` })
+    await postMessage({ room: ctx.room, message: `No players joined. Start again with */bj* when ready.` })
     return
   }
 
@@ -479,9 +479,9 @@ async function startBetting (ctx) {
 
   const playerMentions = await Promise.all(st.handOrder.map(id => mention(id)))
   await postMessage({ room: ctx.room, message: [
-    `💰 **Betting open** for ${Math.round(BETTING_WINDOW_MS/1000)}s.`,
+    `💰 *Betting open* for ${Math.round(BETTING_WINDOW_MS/1000)}s.`,
     `Players: ${playerMentions.join(', ')}`,
-    `Place your bet with **/bj bet <amount>**.`
+    `Place your bet with */bj bet <amount>*.`
   ].join('\n') })
 
   clearTimer(st.betTimer)
@@ -541,7 +541,7 @@ export async function handleBlackjackBet (userUUID, amountStr, nickname, ctx) {
   const p = st.players.get(userUUID)
   p.bet = Number(amount.toFixed(1))
 
-  await postMessage({ room: ctx.room, message: `✅ ${await mention(userUUID)} bet **${fmtMoney(p.bet)}**.` })
+  await postMessage({ room: ctx.room, message: `✅ ${await mention(userUUID)} bet *${fmtMoney(p.bet)}*.` })
 
   if (EARLY_BET_CLOSE && st.handOrder.every(id => (st.players.get(id)?.bet || 0) > 0)) {
     await dealOnce(ctx, { announce: true })
@@ -599,7 +599,7 @@ async function dealInitial (ctx) {
     await postMessage({ room: ctx.room, message: `🕵️ Dealer checks for blackjack…` })
     if (DRAW_PAUSE_MS) await sleep(Math.min(900, DRAW_PAUSE_MS))
     if (isBlackjack(st.dealerHand)) {
-      await postMessage({ room: ctx.room, message: `🂠 Dealer has **BLACKJACK**.` })
+      await postMessage({ room: ctx.room, message: `🂠 Dealer has *BLACKJACK*.` })
       return settleRound(ctx)
     } else {
       await postMessage({ room: ctx.room, message: `✅ No dealer blackjack.` })
@@ -645,7 +645,7 @@ export async function handleHit (userUUID, nickname, ctx) {
   const v = handValue(p.hand).total
   if (v > 21) { p.busted = true; p.done = true }
 
-  await postMessage({ room: ctx.room, message: `🫳 ${await mention(userUUID)} hits → ${formatHand(p.hand)}${p.busted ? ' — **BUST**' : ''}` })
+  await postMessage({ room: ctx.room, message: `🫳 ${await mention(userUUID)} hits → ${formatHand(p.hand)}${p.busted ? ' — *BUST*' : ''}` })
 
   if (p.busted) {
     st.turnIndex++
@@ -683,7 +683,7 @@ export async function handleDouble (userUUID, nickname, ctx) {
 
   const p = st.players.get(userUUID)
   if (p.actionCount > 0 || p.hand.length !== 2) {
-    await postMessage({ room: ctx.room, message: `${await mention(userUUID)} you can only **double** as your first action on two cards.` })
+    await postMessage({ room: ctx.room, message: `${await mention(userUUID)} you can only *double* as your first action on two cards.` })
     return promptTurn(ctx, userUUID, { rePrompt: true })
   }
 
@@ -707,7 +707,7 @@ export async function handleDouble (userUUID, nickname, ctx) {
   if (v > 21) p.busted = true
   p.done = true
 
-  await postMessage({ room: ctx.room, message: `✌️ ${await mention(userUUID)} doubles to **${fmtMoney(p.bet)}** → ${formatHand(p.hand)}${p.busted ? ' — **BUST**' : ''}` })
+  await postMessage({ room: ctx.room, message: `✌️ ${await mention(userUUID)} doubles to *${fmtMoney(p.bet)}* → ${formatHand(p.hand)}${p.busted ? ' — *BUST*' : ''}` })
 
   st.turnIndex++
   const nextId = st.handOrder[st.turnIndex]
@@ -724,7 +724,7 @@ export async function handleSurrender (userUUID, nickname, ctx) {
 
   const p = st.players.get(userUUID)
   if (p.actionCount > 0 || p.hand.length !== 2) {
-    await postMessage({ room: ctx.room, message: `${await mention(userUUID)} you can only **surrender** as your first action on two cards.` })
+    await postMessage({ room: ctx.room, message: `${await mention(userUUID)} you can only *surrender* as your first action on two cards.` })
     return promptTurn(ctx, userUUID, { rePrompt: true })
   }
 
@@ -734,7 +734,7 @@ export async function handleSurrender (userUUID, nickname, ctx) {
   const refund = Number((p.bet / 2).toFixed(1))
   await walletAdd(userUUID, refund)
 
-  await postMessage({ room: ctx.room, message: `🏳️ ${await mention(userUUID)} surrenders → refund **${fmtMoney(refund)}**.` })
+  await postMessage({ room: ctx.room, message: `🏳️ ${await mention(userUUID)} surrenders → refund *${fmtMoney(refund)}*.` })
 
   st.turnIndex++
   const nextId = st.handOrder[st.turnIndex]
@@ -743,7 +743,7 @@ export async function handleSurrender (userUUID, nickname, ctx) {
 }
 
 export async function handleSplit (userUUID, nickname, ctx) {
-  await postMessage({ room: ctx.room, message: `${await mention(userUUID)} **split** is not supported yet.` })
+  await postMessage({ room: ctx.room, message: `${await mention(userUUID)} *split* is not supported yet.` })
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -867,7 +867,7 @@ async function settleRound (ctx) {
   st.turnIndex = 0
   clearAllTimers(st)
 
-  await postMessage({ room: ctx.room, message: `Type **/bj** to open a new table.` })
+  await postMessage({ room: ctx.room, message: `Type */bj* to open a new table.` })
 }
 
 // ─────────────────────────────────────────────────────────────
