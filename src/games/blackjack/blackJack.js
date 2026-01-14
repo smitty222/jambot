@@ -1,6 +1,7 @@
 // src/games/blackjack/blackJack.js
 import { addToUserWallet, removeFromUserWallet, getUserWallet } from '../../database/dbwalletmanager.js'
 import { postMessage } from '../../libs/cometchat.js'
+import { getUserNickname } from '../../handlers/message.js'
 
 // ─────────────────────────────────────────────────────────────
 // Config
@@ -124,13 +125,17 @@ function clearAllTimers (st) {
   clearTurnTimers(st)
 }
 
-function mention (uuid) { return `<@uid:${uuid}>` }
-
 // Wallet helpers: tolerate sync OR async implementations.
 async function maybeAwait (v) { return (v && typeof v.then === 'function') ? await v : v }
 async function walletRemove (uuid, amt) { return await maybeAwait(removeFromUserWallet(uuid, amt)) }
 async function walletAdd (uuid, amt) { return await maybeAwait(addToUserWallet(uuid, amt)) }
 async function walletGet (uuid) { return await maybeAwait(getUserWallet(uuid)) }
+
+// Mention helper: ALWAYS use the shared getUserNickname() for in-chat pings.
+// Note: your getUserNickname is declared async, so we must await it everywhere.
+async function mention (userId) {
+  return await maybeAwait(getUserNickname(userId))
+}
 
 function fmtMoney (n) { return `$${Number(n).toFixed(1)}` }
 function fmtCard (c) { return `${c.r}${c.s}` }
@@ -170,7 +175,6 @@ function isMentionToken (s) {
 function cleanNicknameForBlock (s) {
   return String(s ?? '').trim().replace(/^@+/, '').trim()
 }
-
 
 // IMPORTANT COMETCHAT RULE:
 // code blocks must use nickname-only (never mention tokens)
@@ -238,13 +242,14 @@ function seatedPlayers (st) {
 }
 
 function ensurePlayer (st, userUUID, nickname) {
-  const incoming = String(nickname ?? '').trim()
+  const incomingRaw = String(nickname ?? '').trim()
+  const incoming = sanitizeNickname(incomingRaw)
 
   if (!st.players.has(userUUID)) {
     st.players.set(userUUID, {
       uuid: userUUID,
-      // If incoming is a mention token, start empty and we’ll fall back later
-      nickname: isMentionToken(incoming) ? '' : incoming,
+      // If incoming is a mention token / empty, start empty and we’ll fall back later
+      nickname: (incoming && !isMentionToken(incomingRaw)) ? incoming : '',
       seated: false,
       bet: 0,
       hand: [],
@@ -267,11 +272,10 @@ function ensurePlayer (st, userUUID, nickname) {
   }
 
   // Update nickname ONLY if it looks like a real name (not a mention token)
-  if (incoming && !isMentionToken(incoming)) {
+  if (incoming && !isMentionToken(incomingRaw)) {
     st.players.get(userUUID).nickname = incoming
   }
 }
-
 
 function ensurePhase (st, expected) {
   if (st.phase !== expected) throw new Error(`Wrong phase: expected ${expected}, got ${st.phase}`)
@@ -309,7 +313,7 @@ function scheduleTurnTimers (ctx, id) {
       const st2 = getTable(ctx)
       if (st2.phase !== 'acting' || st2.handOrder[st2.turnIndex] !== id) return
       const extra = displayRemainingAfterNudge > 0 ? ` ${displayRemainingAfterNudge}s until auto-stand.` : ''
-      await postMessage({ room: ctx.room, message: `⏳ ${mention(id)} still your turn.${extra}` })
+      await postMessage({ room: ctx.room, message: `⏳ ${await mention(id)} still your turn.${extra}` })
     }, TURN_NUDGE_MS)
   }
 
@@ -317,7 +321,7 @@ function scheduleTurnTimers (ctx, id) {
     st.turnExpireTimer = setTimeout(async () => {
       const st2 = getTable(ctx)
       if (st2.phase !== 'acting' || st2.handOrder[st2.turnIndex] !== id) return
-      await postMessage({ room: ctx.room, message: `⌛ ${mention(id)} time’s up — auto-stand.` })
+      await postMessage({ room: ctx.room, message: `⌛ ${await mention(id)} time’s up — auto-stand.` })
       await handleStand(id, st2.players.get(id)?.nickname || '', ctx)
     }, TURN_AUTOSTAND_MS)
   }
@@ -341,7 +345,7 @@ async function promptTurn (ctx, id, { rePrompt = false } = {}) {
   snap.push(`(Auto-stand in ${TURN_AUTOSTAND_DISPLAY_S}s)`)
   await postSnapshot(ctx, snap)
 
-  await postMessage({ room: ctx.room, message: `🎯 ${mention(id)} to act (on ${hv}).` })
+  await postMessage({ room: ctx.room, message: `🎯 ${await mention(id)} to act (on ${hv}).` })
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -406,28 +410,28 @@ export async function openJoin (ctx) {
 export async function joinTable (userUUID, nickname, ctx) {
   const st = getTable(ctx)
   if (st.phase !== 'join') {
-    await postMessage({ room: ctx.room, message: `${mention(userUUID)} there isn’t an active blackjack **join** window right now.` })
+    await postMessage({ room: ctx.room, message: `${await mention(userUUID)} there isn’t an active blackjack **join** window right now.` })
     return
   }
   ensurePlayer(st, userUUID, nickname)
   const p = st.players.get(userUUID)
   if (p.seated) {
-    await postMessage({ room: ctx.room, message: `${mention(userUUID)} you’re already seated.` })
+    await postMessage({ room: ctx.room, message: `${await mention(userUUID)} you’re already seated.` })
     return
   }
   p.seated = true
-  await postMessage({ room: ctx.room, message: `🪑 ${mention(userUUID)} sits at the table.` })
+  await postMessage({ room: ctx.room, message: `🪑 ${await mention(userUUID)} sits at the table.` })
 }
 
 export async function leaveTable (userUUID, ctx) {
   const st = getTable(ctx)
   if (st.phase !== 'join' && st.phase !== 'betting') {
-    await postMessage({ room: ctx.room, message: `${mention(userUUID)} please wait until the round is over to leave.` })
+    await postMessage({ room: ctx.room, message: `${await mention(userUUID)} please wait until the round is over to leave.` })
     return
   }
   const p = st.players.get(userUUID)
   if (!p?.seated) {
-    await postMessage({ room: ctx.room, message: `${mention(userUUID)} you’re not seated at the blackjack table.` })
+    await postMessage({ room: ctx.room, message: `${await mention(userUUID)} you’re not seated at the blackjack table.` })
     return
   }
 
@@ -436,11 +440,11 @@ export async function leaveTable (userUUID, ctx) {
     p.bet = 0
     await walletAdd(userUUID, refund)
     st.handOrder = st.handOrder.filter(id => id !== userUUID)
-    await postMessage({ room: ctx.room, message: `↩️ ${mention(userUUID)} left during betting — refunded **${fmtMoney(refund)}**.` })
+    await postMessage({ room: ctx.room, message: `↩️ ${await mention(userUUID)} left during betting — refunded **${fmtMoney(refund)}**.` })
   }
 
   p.seated = false
-  await postMessage({ room: ctx.room, message: `👋 ${mention(userUUID)} left their seat.` })
+  await postMessage({ room: ctx.room, message: `👋 ${await mention(userUUID)} left their seat.` })
 }
 
 async function concludeJoin (ctx) {
@@ -454,7 +458,8 @@ async function concludeJoin (ctx) {
     return
   }
 
-  await postMessage({ room: ctx.room, message: `⏱️ Join closed. Players this hand: ${st.handOrder.map(mention).join(', ')}` })
+  const playerMentions = await Promise.all(st.handOrder.map(id => mention(id)))
+  await postMessage({ room: ctx.room, message: `⏱️ Join closed. Players this hand: ${playerMentions.join(', ')}` })
   await startBetting(ctx)
 }
 
@@ -472,9 +477,10 @@ async function startBetting (ctx) {
     const p = st.players.get(id); if (p) p.bet = 0
   }
 
+  const playerMentions = await Promise.all(st.handOrder.map(id => mention(id)))
   await postMessage({ room: ctx.room, message: [
     `💰 **Betting open** for ${Math.round(BETTING_WINDOW_MS/1000)}s.`,
-    `Players: ${st.handOrder.map(mention).join(', ')}`,
+    `Players: ${playerMentions.join(', ')}`,
     `Place your bet with **/bj bet <amount>**.`
   ].join('\n') })
 
@@ -504,11 +510,11 @@ async function concludeBetting (ctx) {
 export async function handleBlackjackBet (userUUID, amountStr, nickname, ctx) {
   const st = getTable(ctx)
   if (st.phase !== 'betting') {
-    await postMessage({ room: ctx.room, message: `${mention(userUUID)} betting is not open.` })
+    await postMessage({ room: ctx.room, message: `${await mention(userUUID)} betting is not open.` })
     return
   }
   if (!st.handOrder.includes(userUUID)) {
-    await postMessage({ room: ctx.room, message: `${mention(userUUID)} you’re not in this round.` })
+    await postMessage({ room: ctx.room, message: `${await mention(userUUID)} you’re not in this round.` })
     return
   }
 
@@ -516,26 +522,26 @@ export async function handleBlackjackBet (userUUID, amountStr, nickname, ctx) {
 
   const amount = Number(String(amountStr ?? '').replace(/[^\d.]/g, ''))
   if (!Number.isFinite(amount) || amount <= 0) {
-    await postMessage({ room: ctx.room, message: `${mention(userUUID)} enter a valid bet amount greater than 0.` })
+    await postMessage({ room: ctx.room, message: `${await mention(userUUID)} enter a valid bet amount greater than 0.` })
     return
   }
 
   const bal = await walletGet(userUUID)
   if (bal < amount) {
-    await postMessage({ room: ctx.room, message: `${mention(userUUID)} you have ${fmtMoney(bal)} — not enough for a ${fmtMoney(amount)} bet.` })
+    await postMessage({ room: ctx.room, message: `${await mention(userUUID)} you have ${fmtMoney(bal)} — not enough for a ${fmtMoney(amount)} bet.` })
     return
   }
 
   const ok = await walletRemove(userUUID, amount)
   if (!ok) {
-    await postMessage({ room: ctx.room, message: `${mention(userUUID)} unable to place bet (insufficient funds).` })
+    await postMessage({ room: ctx.room, message: `${await mention(userUUID)} unable to place bet (insufficient funds).` })
     return
   }
 
   const p = st.players.get(userUUID)
   p.bet = Number(amount.toFixed(1))
 
-  await postMessage({ room: ctx.room, message: `✅ ${mention(userUUID)} bet **${fmtMoney(p.bet)}**.` })
+  await postMessage({ room: ctx.room, message: `✅ ${await mention(userUUID)} bet **${fmtMoney(p.bet)}**.` })
 
   if (EARLY_BET_CLOSE && st.handOrder.every(id => (st.players.get(id)?.bet || 0) > 0)) {
     await dealOnce(ctx, { announce: true })
@@ -639,12 +645,12 @@ export async function handleHit (userUUID, nickname, ctx) {
   const v = handValue(p.hand).total
   if (v > 21) { p.busted = true; p.done = true }
 
-  await postMessage({ room: ctx.room, message: `🫳 ${mention(userUUID)} hits → ${formatHand(p.hand)}${p.busted ? ' — **BUST**' : ''}` })
+  await postMessage({ room: ctx.room, message: `🫳 ${await mention(userUUID)} hits → ${formatHand(p.hand)}${p.busted ? ' — **BUST**' : ''}` })
 
   if (p.busted) {
     st.turnIndex++
     const nextId = st.handOrder[st.turnIndex]
-    if (nextId) await postMessage({ room: ctx.room, message: `➡️ Next up: ${mention(nextId)}` })
+    if (nextId) await postMessage({ room: ctx.room, message: `➡️ Next up: ${await mention(nextId)}` })
     return advanceIfDoneAndPrompt(ctx)
   }
 
@@ -660,11 +666,11 @@ export async function handleStand (userUUID, nickname, ctx) {
 
   const p = st.players.get(userUUID)
   p.done = true
-  await postMessage({ room: ctx.room, message: `✋ ${mention(userUUID)} stands on ${handValue(p.hand).total}.` })
+  await postMessage({ room: ctx.room, message: `✋ ${await mention(userUUID)} stands on ${handValue(p.hand).total}.` })
 
   st.turnIndex++
   const nextId = st.handOrder[st.turnIndex]
-  if (nextId) await postMessage({ room: ctx.room, message: `➡️ Next up: ${mention(nextId)}` })
+  if (nextId) await postMessage({ room: ctx.room, message: `➡️ Next up: ${await mention(nextId)}` })
   await advanceIfDoneAndPrompt(ctx)
 }
 
@@ -677,19 +683,19 @@ export async function handleDouble (userUUID, nickname, ctx) {
 
   const p = st.players.get(userUUID)
   if (p.actionCount > 0 || p.hand.length !== 2) {
-    await postMessage({ room: ctx.room, message: `${mention(userUUID)} you can only **double** as your first action on two cards.` })
+    await postMessage({ room: ctx.room, message: `${await mention(userUUID)} you can only **double** as your first action on two cards.` })
     return promptTurn(ctx, userUUID, { rePrompt: true })
   }
 
   const bal = await walletGet(userUUID)
   if (bal < p.bet) {
-    await postMessage({ room: ctx.room, message: `${mention(userUUID)} you don’t have enough to double (need another ${fmtMoney(p.bet)}).` })
+    await postMessage({ room: ctx.room, message: `${await mention(userUUID)} you don’t have enough to double (need another ${fmtMoney(p.bet)}).` })
     return promptTurn(ctx, userUUID, { rePrompt: true })
   }
 
   const ok = await walletRemove(userUUID, p.bet)
   if (!ok) {
-    await postMessage({ room: ctx.room, message: `${mention(userUUID)} unable to double at this time.` })
+    await postMessage({ room: ctx.room, message: `${await mention(userUUID)} unable to double at this time.` })
     return promptTurn(ctx, userUUID, { rePrompt: true })
   }
 
@@ -701,11 +707,11 @@ export async function handleDouble (userUUID, nickname, ctx) {
   if (v > 21) p.busted = true
   p.done = true
 
-  await postMessage({ room: ctx.room, message: `✌️ ${mention(userUUID)} doubles to **${fmtMoney(p.bet)}** → ${formatHand(p.hand)}${p.busted ? ' — **BUST**' : ''}` })
+  await postMessage({ room: ctx.room, message: `✌️ ${await mention(userUUID)} doubles to **${fmtMoney(p.bet)}** → ${formatHand(p.hand)}${p.busted ? ' — **BUST**' : ''}` })
 
   st.turnIndex++
   const nextId = st.handOrder[st.turnIndex]
-  if (nextId) await postMessage({ room: ctx.room, message: `➡️ Next up: ${mention(nextId)}` })
+  if (nextId) await postMessage({ room: ctx.room, message: `➡️ Next up: ${await mention(nextId)}` })
   await advanceIfDoneAndPrompt(ctx)
 }
 
@@ -718,7 +724,7 @@ export async function handleSurrender (userUUID, nickname, ctx) {
 
   const p = st.players.get(userUUID)
   if (p.actionCount > 0 || p.hand.length !== 2) {
-    await postMessage({ room: ctx.room, message: `${mention(userUUID)} you can only **surrender** as your first action on two cards.` })
+    await postMessage({ room: ctx.room, message: `${await mention(userUUID)} you can only **surrender** as your first action on two cards.` })
     return promptTurn(ctx, userUUID, { rePrompt: true })
   }
 
@@ -728,16 +734,16 @@ export async function handleSurrender (userUUID, nickname, ctx) {
   const refund = Number((p.bet / 2).toFixed(1))
   await walletAdd(userUUID, refund)
 
-  await postMessage({ room: ctx.room, message: `🏳️ ${mention(userUUID)} surrenders → refund **${fmtMoney(refund)}**.` })
+  await postMessage({ room: ctx.room, message: `🏳️ ${await mention(userUUID)} surrenders → refund **${fmtMoney(refund)}**.` })
 
   st.turnIndex++
   const nextId = st.handOrder[st.turnIndex]
-  if (nextId) await postMessage({ room: ctx.room, message: `➡️ Next up: ${mention(nextId)}` })
+  if (nextId) await postMessage({ room: ctx.room, message: `➡️ Next up: ${await mention(nextId)}` })
   await advanceIfDoneAndPrompt(ctx)
 }
 
 export async function handleSplit (userUUID, nickname, ctx) {
-  await postMessage({ room: ctx.room, message: `${mention(userUUID)} **split** is not supported yet.` })
+  await postMessage({ room: ctx.room, message: `${await mention(userUUID)} **split** is not supported yet.` })
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -852,7 +858,7 @@ async function settleRound (ctx) {
     .filter(Boolean)
     .sort((a, b) => (b.biggestProfit || 0) - (a.biggestProfit || 0))[0]
   if (biggest?.biggestProfit > 0) {
-    await postMessage({ room: ctx.room, message: `💎 Biggest profit at this table: ${mention(biggest.uuid)} (+${fmtMoney(biggest.biggestProfit)})` })
+    await postMessage({ room: ctx.room, message: `💎 Biggest profit at this table: ${await mention(biggest.uuid)} (+${fmtMoney(biggest.biggestProfit)})` })
   }
 
   st.phase = 'idle'
