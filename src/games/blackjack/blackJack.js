@@ -229,14 +229,22 @@ function ensurePhase (st, expected) {
   if (st.phase !== expected) throw new Error(`Wrong phase: expected ${expected}, got ${st.phase}`)
 }
 
-function displayName (st, id) {
+// IMPORTANT COMETCHAT RULE:
+// Mentions like <@uid:...> do NOT render as mentions inside code blocks, and padding/truncation mangles them.
+// So: code blocks must use nickname-only.
+// Non-code lines can use mention() for pings.
+function nicknameOf (st, id) {
   const p = st.players.get(id)
   const nick = (p?.nickname || '').trim()
-  return nick ? nick : `Player`
+  if (nick) return nick
+  // fallback that's stable but doesn't rely on <@uid:...>
+  return `Player-${String(id).slice(0, 6)}`
+}
+function nameInBlock (st, id) {
+  return pad(nicknameOf(st, id), NAME_PAD)
 }
 
 function eligibleActions (p) {
-  // base actions
   const canDouble = (p.actionCount === 0 && p.hand.length === 2 && !p.doubled && !p.surrendered)
   const canSurrender = (p.actionCount === 0 && p.hand.length === 2 && !p.doubled && !p.surrendered)
   const actions = ['hit', 'stand']
@@ -246,9 +254,8 @@ function eligibleActions (p) {
 }
 
 function actionHint (actions) {
-  // CometChat-friendly, short
-  const parts = actions.map(a => `**/bj ${a}**`)
-  return parts.join('  ')
+  // Use separators for scanability in chat
+  return actions.map(a => `**/bj ${a}**`).join(' | ')
 }
 
 // Schedule turn nudge + expiry for the given player (clears existing)
@@ -294,14 +301,14 @@ async function promptTurn (ctx, id, { rePrompt = false } = {}) {
   const hv = handValue(p.hand).total
 
   const snap = []
-  snap.push(`👉 TURN: ${displayName(st, id)} ${mention(id)}`)
+  snap.push(`👉 TURN: ${nicknameOf(st, id)}`)
   snap.push(`Hand: ${formatHand(p.hand)}   Bet: ${fmtMoney(p.bet)}`)
   snap.push(`Actions: ${actions.join(' / ')}`)
   snap.push(`Use: ${actionHint(actions)}`)
   snap.push(`(Auto-stand in ${Math.max(0, Math.ceil(TURN_AUTOSTAND_MS / 1000))}s)`)
   await postSnapshot(ctx, snap)
 
-  // tiny recap line for spectators
+  // Ping outside code block so it renders properly
   await postMessage({ room: ctx.room, message: `🎯 ${mention(id)} to act (on ${hv}).` })
 }
 
@@ -547,7 +554,7 @@ async function dealInitial (ctx) {
     st.dealerHand.push(draw(st))
   }
 
-  // Snapshot: Initial deal (code block)
+  // Snapshot: Initial deal (nickname-only inside code block)
   const up = fmtCard(st.dealerHand[0])
   const snap = []
   snap.push(`🃏 BLACKJACK — Initial Deal`)
@@ -555,8 +562,10 @@ async function dealInitial (ctx) {
   snap.push(`----------------------------------------`)
   for (const id of st.handOrder) {
     const p = st.players.get(id)
-    const nm = pad(displayName(st, id), NAME_PAD)
-    snap.push(`${nm} ${pad(mention(id), 18)}  ${pad(p.hand.map(fmtCard).join(' '), 9)}  (${pad(handValue(p.hand).total, 2)})  bet ${fmtMoney(p.bet)}`)
+    const nm = nameInBlock(st, id)
+    const cards = pad(p.hand.map(fmtCard).join(' '), 11)
+    const hv = String(handValue(p.hand).total).padStart(2, ' ')
+    snap.push(`${nm}  ${cards} (${hv})  bet ${fmtMoney(p.bet)}`)
   }
   await postSnapshot(ctx, snap)
 
@@ -771,13 +780,6 @@ async function settleRound (ctx) {
     const pv = handValue(p.hand).total
     const bj = isBlackjack(p.hand)
 
-    // By this point, initial bet is already removed from wallet.
-    // We will "return" money via walletAdd as:
-    // - win: return 2x bet (stake + profit)
-    // - blackjack: return 2.5x bet (stake + 1.5x profit)
-    // - push: return 1x bet (stake back)
-    // - lose: return 0
-    // Surrender refunds half at action time.
     let outcome = 'push'
     let returned = 0
     let profit = 0
@@ -786,7 +788,6 @@ async function settleRound (ctx) {
       outcome = 'surrender'
       returned = p.bet / 2
       profit = -p.bet / 2
-      // streaks
       p.lossStreak++
       p.winStreak = 0
       p.bjStreak = 0
@@ -813,7 +814,7 @@ async function settleRound (ctx) {
       returned = p.bet
       profit = 0
       p.pushes++
-      p.bjStreak++ // still a BJ hand
+      p.bjStreak++
     } else if (dealerVal > 21 || pv > dealerVal) {
       outcome = 'win'
       returned = p.bet * 2
@@ -840,26 +841,27 @@ async function settleRound (ctx) {
 
     if (profit > p.biggestProfit) p.biggestProfit = profit
 
-    // Only add if not already paid out elsewhere.
-    // Note: surrender already refunded half during action; we do not add here.
+    // Surrender already refunded half during action; do not add again.
     if (!p.surrendered && returned > 0) {
       await walletAdd(id, Number(returned.toFixed(1)))
     }
 
-    const nm = pad(displayName(st, id), NAME_PAD)
+    const nm = nameInBlock(st, id)
+    const pvStr = String(pv).padStart(2, ' ')
     const profStr = (profit > 0) ? `+${fmtMoney(profit)}` : (profit < 0 ? `-${fmtMoney(Math.abs(profit))}` : `+${fmtMoney(0)}`)
-    const retStr = returned > 0 ? fmtMoney(returned) : fmtMoney(0)
+    const retStr = fmtMoney(returned)
+
     const streakNote =
       p.winStreak >= 3 ? ` 🔥W${p.winStreak}` :
       p.lossStreak >= 3 ? ` 🧊L${p.lossStreak}` :
       p.bjStreak >= 2 ? ` ✨BJ${p.bjStreak}` : ''
 
-    snap.push(`${nm} ${pad(mention(id), 18)}  ${pad(outcome.toUpperCase(), 10)}  hand ${pad(pv, 2)}  profit ${pad(profStr, 8)}  return ${pad(retStr, 6)}${streakNote}`)
+    snap.push(`${nm}  ${pad(outcome.toUpperCase(), 10)}  hand ${pvStr}  profit ${pad(profStr, 10)}  return ${pad(retStr, 8)}${streakNote}`)
   }
 
   await postSnapshot(ctx, snap)
 
-  // tiny “table flavor” line
+  // Flavor line outside code block (pings work here)
   const biggest = st.handOrder
     .map(id => st.players.get(id))
     .filter(Boolean)
@@ -896,11 +898,11 @@ export function getFullTableView (ctx) {
   for (const id of st.order) {
     const p = st.players.get(id)
     const seat = p?.seated ? '🪑' : '— '
-    const nm = pad(displayName(st, id), NAME_PAD)
+    const nm = nameInBlock(st, id)
     const bet = fmtMoney(p?.bet || 0)
     const hv = p?.hand?.length ? handValue(p.hand).total : '-'
     const hand = p?.hand?.length ? p.hand.map(fmtCard).join(' ') : '—'
-    out.push(`${seat} ${nm} ${pad(mention(id), 18)}  bet ${pad(bet, 6)}  hand ${pad(String(hv), 2)}  ${hand}`)
+    out.push(`${seat} ${nm}  bet ${pad(bet, 8)}  hand ${pad(String(hv), 2)}  ${hand}`)
   }
 
   return `\`\`\`\n${out.join('\n')}\n\`\`\``
