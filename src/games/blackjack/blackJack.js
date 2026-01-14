@@ -1,5 +1,4 @@
 // src/games/blackjack/blackJack.js
-
 import { addToUserWallet, removeFromUserWallet, getUserWallet } from '../../database/dbwalletmanager.js'
 import { postMessage } from '../../libs/cometchat.js'
 
@@ -13,8 +12,6 @@ const EARLY_BET_CLOSE     = true
 const DECKS               = Number(process.env.BJ_DECKS ?? 6)
 const HIT_SOFT_17         = false // dealer stands on soft 17
 
-// “Cut card” / reshuffle threshold: reshuffle when shoe is low.
-// Default: reshuffle when < 25% of shoe remains, minimum 52 cards.
 const RESHUFFLE_FRAC      = Number(process.env.BJ_RESHUFFLE_FRAC ?? 0.25)
 const RESHUFFLE_MIN       = Number(process.env.BJ_RESHUFFLE_MIN  ?? 52)
 
@@ -24,9 +21,8 @@ const DRAW_PAUSE_MS       = Number(process.env.BJ_DRAW_PAUSE_MS       ?? 650)
 
 // Turn timers (actual)
 const TURN_NUDGE_MS       = Number(process.env.BJ_TURN_NUDGE_MS       ?? 15_000)
-// You asked: actual auto-stand 35s, but tell players 30s.
+// Actual: 35s, Display: 30s
 const TURN_AUTOSTAND_MS   = Number(process.env.BJ_TURN_AUTOSTAND_MS   ?? 35_000)
-// Display only (seconds shown in messages)
 const TURN_AUTOSTAND_DISPLAY_S = Number(process.env.BJ_TURN_AUTOSTAND_DISPLAY_S ?? 30)
 
 // Formatting
@@ -144,15 +140,47 @@ function pad (s, n) {
   return t.length >= n ? t.slice(0, n) : t + ' '.repeat(n - t.length)
 }
 
+// Strip CometChat mention tokens and leading @ for code-block display.
+// Examples:
+//   "<@uid:210141ad>" -> ""
+//   "<@uid:210141ad> Rsmitty" -> "Rsmitty"
+//   "@Rsmitty" -> "Rsmitty"
+function sanitizeNickname (raw) {
+  let s = String(raw ?? '').trim()
+
+  // Remove ALL mention tokens like <@uid:...>
+  s = s.replace(/<@uid:[^>]+>/g, '').trim()
+
+  // If it's only leftovers like "<@uid:...something" from truncation, kill it
+  if (s.includes('<@uid:')) s = s.replace(/<@uid:.*/g, '').trim()
+
+  // Strip leading @
+  s = s.replace(/^@+/, '').trim()
+
+  // Collapse whitespace
+  s = s.replace(/\s+/g, ' ').trim()
+
+  return s
+}
+function isMentionToken (s) {
+  const t = String(s ?? '').trim()
+  return /^<@uid:[^>]+>$/.test(t) || t.includes('<@uid:')
+}
+
+function cleanNicknameForBlock (s) {
+  return String(s ?? '').trim().replace(/^@+/, '').trim()
+}
+
+
 // IMPORTANT COMETCHAT RULE:
-// Mentions like <@uid:...> do NOT render inside code blocks and padding mangles them.
-// So: code blocks must use nickname-only; pings go outside code blocks.
+// code blocks must use nickname-only (never mention tokens)
 function nicknameOf (st, id) {
   const p = st.players.get(id)
-  const nick = (p?.nickname || '').trim()
-  if (nick) return nick
+  const n = cleanNicknameForBlock(p?.nickname || '')
+  if (n) return n
   return `Player-${String(id).slice(0, 6)}`
 }
+
 function nameInBlock (st, id) {
   return pad(nicknameOf(st, id), NAME_PAD)
 }
@@ -169,7 +197,6 @@ function newShoe (deckCount = DECKS) {
   for (let d = 0; d < deckCount; d++) {
     for (const r of ranks) for (const s of suits) cards.push({ r, s })
   }
-  // Fisher–Yates
   for (let i = cards.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1))
     const tmp = cards[i]; cards[i] = cards[j]; cards[j] = tmp
@@ -185,7 +212,6 @@ function shouldReshuffle (st) {
   return !st.deck || st.deck.length < threshold
 }
 
-/** Compute a hand's value. "soft" => at least one Ace still counts as 11. */
 function handValue (cards) {
   let total = 0
   let acesAs11 = 0
@@ -195,8 +221,7 @@ function handValue (cards) {
     else total += Number(c.r)
   }
   while (total > 21 && acesAs11 > 0) { total -= 10; acesAs11-- }
-  const soft = acesAs11 > 0
-  return { total, soft }
+  return { total, soft: acesAs11 > 0 }
 }
 
 function isBlackjack (cards) {
@@ -213,10 +238,13 @@ function seatedPlayers (st) {
 }
 
 function ensurePlayer (st, userUUID, nickname) {
+  const incoming = String(nickname ?? '').trim()
+
   if (!st.players.has(userUUID)) {
     st.players.set(userUUID, {
       uuid: userUUID,
-      nickname: nickname || '',
+      // If incoming is a mention token, start empty and we’ll fall back later
+      nickname: isMentionToken(incoming) ? '' : incoming,
       seated: false,
       bet: 0,
       hand: [],
@@ -235,10 +263,15 @@ function ensurePlayer (st, userUUID, nickname) {
       biggestProfit: 0
     })
     st.order.push(userUUID)
-  } else if (nickname) {
-    st.players.get(userUUID).nickname = nickname
+    return
+  }
+
+  // Update nickname ONLY if it looks like a real name (not a mention token)
+  if (incoming && !isMentionToken(incoming)) {
+    st.players.get(userUUID).nickname = incoming
   }
 }
+
 
 function ensurePhase (st, expected) {
   if (st.phase !== expected) throw new Error(`Wrong phase: expected ${expected}, got ${st.phase}`)
@@ -261,7 +294,7 @@ async function postSnapshot (ctx, lines) {
   await postMessage({ room: ctx.room, message: `\`\`\`\n${lines.join('\n')}\n\`\`\`` })
 }
 
-// Schedule turn nudge + expiry for the given player (clears existing)
+// Turn timers
 function scheduleTurnTimers (ctx, id) {
   const st = getTable(ctx)
   clearTurnTimers(st)
@@ -275,9 +308,7 @@ function scheduleTurnTimers (ctx, id) {
     st.turnNudgeTimer = setTimeout(async () => {
       const st2 = getTable(ctx)
       if (st2.phase !== 'acting' || st2.handOrder[st2.turnIndex] !== id) return
-      const extra = displayRemainingAfterNudge > 0
-        ? ` ${displayRemainingAfterNudge}s until auto-stand.`
-        : ''
+      const extra = displayRemainingAfterNudge > 0 ? ` ${displayRemainingAfterNudge}s until auto-stand.` : ''
       await postMessage({ room: ctx.room, message: `⏳ ${mention(id)} still your turn.${extra}` })
     }, TURN_NUDGE_MS)
   }
@@ -302,7 +333,6 @@ async function promptTurn (ctx, id, { rePrompt = false } = {}) {
   const actions = eligibleActions(p)
   const hv = handValue(p.hand).total
 
-  // Code-block UI = nickname ONLY
   const snap = []
   snap.push(`👉 TURN: ${nicknameOf(st, id)}`)
   snap.push(`Hand: ${formatHand(p.hand)}   Bet: ${fmtMoney(p.bet)}`)
@@ -311,16 +341,14 @@ async function promptTurn (ctx, id, { rePrompt = false } = {}) {
   snap.push(`(Auto-stand in ${TURN_AUTOSTAND_DISPLAY_S}s)`)
   await postSnapshot(ctx, snap)
 
-  // Ping outside code block so it renders properly
   await postMessage({ room: ctx.room, message: `🎯 ${mention(id)} to act (on ${hv}).` })
 }
 
 // ─────────────────────────────────────────────────────────────
-// Deal lock: allow exactly one deal per hand
+// Deal lock
 // ─────────────────────────────────────────────────────────────
 async function dealOnce (ctx, { announce = false } = {}) {
   const st = getTable(ctx)
-
   if (st.phase !== 'betting' && st.phase !== 'dealing') return
   if (st.dealtForHandId === st.handId) return
   st.dealtForHandId = st.handId
@@ -328,11 +356,9 @@ async function dealOnce (ctx, { announce = false } = {}) {
   st.phase = 'dealing'
   clearTimer(st.betTimer); st.betTimer = null
 
-  if (announce) {
-    await postMessage({ room: ctx.room, message: `✅ All bets in. Dealing…` })
-  }
-
+  if (announce) await postMessage({ room: ctx.room, message: `✅ All bets in. Dealing…` })
   if (SUSPENSE_MS) await sleep(SUSPENSE_MS)
+
   await dealInitial(ctx)
 }
 
@@ -405,7 +431,6 @@ export async function leaveTable (userUUID, ctx) {
     return
   }
 
-  // Fairness: if they already bet during betting phase, refund and remove from hand
   if (st.phase === 'betting' && p.bet > 0) {
     const refund = p.bet
     p.bet = 0
@@ -487,6 +512,8 @@ export async function handleBlackjackBet (userUUID, amountStr, nickname, ctx) {
     return
   }
 
+  ensurePlayer(st, userUUID, nickname)
+
   const amount = Number(String(amountStr ?? '').replace(/[^\d.]/g, ''))
   if (!Number.isFinite(amount) || amount <= 0) {
     await postMessage({ room: ctx.room, message: `${mention(userUUID)} enter a valid bet amount greater than 0.` })
@@ -505,7 +532,6 @@ export async function handleBlackjackBet (userUUID, amountStr, nickname, ctx) {
     return
   }
 
-  ensurePlayer(st, userUUID, nickname)
   const p = st.players.get(userUUID)
   p.bet = Number(amount.toFixed(1))
 
@@ -545,7 +571,7 @@ async function dealInitial (ctx) {
     st.dealerHand.push(draw(st))
   }
 
-  // Snapshot: Initial deal (nickname-only in code block)
+  // Initial deal snapshot (nickname-only)
   const up = fmtCard(st.dealerHand[0])
   const snap = []
   snap.push(`🃏 BLACKJACK — Initial Deal`)
@@ -560,7 +586,7 @@ async function dealInitial (ctx) {
   }
   await postSnapshot(ctx, snap)
 
-  // Micro-drama: dealer peek (no insurance)
+  // Peek micro-drama
   const upRank = st.dealerHand[0]?.r
   const peekEligible = (upRank === 'A' || upRank === '10' || upRank === 'J' || upRank === 'Q' || upRank === 'K')
   if (peekEligible) {
@@ -761,7 +787,7 @@ async function settleRound (ctx) {
     const pv = handValue(p.hand).total
     const bj = isBlackjack(p.hand)
 
-    let outcome = 'push'
+    let outcome = 'PUSH'
     let returned = 0
     let profit = 0
 
@@ -804,12 +830,11 @@ async function settleRound (ctx) {
 
     if (profit > p.biggestProfit) p.biggestProfit = profit
 
-    // Surrender already refunded half at action time; don't add again.
     if (!p.surrendered && returned > 0) {
       await walletAdd(id, Number(returned.toFixed(1)))
     }
 
-    const nm = nameInBlock(st, id)
+    const nm = nameInBlock(st, id) // nickname-only
     const pvStr = String(pv).padStart(2, ' ')
     const profStr =
       profit > 0 ? `+${fmtMoney(profit)}` :
