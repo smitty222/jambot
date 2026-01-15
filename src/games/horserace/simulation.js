@@ -1,33 +1,4 @@
 // src/games/horserace/simulation.js
-//
-// This module implements the core race simulation for the Jambot horse race
-// game. It closely mirrors the original open‑source implementation but
-// contains a few critical updates:
-//
-//   • When updating horse statistics after a race, filler "bot" horses with
-//     no database ID (id === null or undefined) are skipped.  Without
-//     this guard the original code attempted to call updateHorseStats on
-//     a null id which threw and prevented the payout logic from executing.
-//
-//   • Speed scaling and randomness have been adjusted to improve fairness.
-//     Specifically, the speed formula compresses differences across odds,
-//     late kick probability has been reduced, and noise has been slightly
-//     lowered.  These tweaks make favorites and longshots behave more
-//     reasonably relative to their odds.
-//
-//   • A defensive guard has been added at the start of runRace to ensure
-//     the function exits early if no horses are provided.  This prevents
-//     runtime errors when called with an empty or invalid array.
-//
-//   • The soft‑cap logic has been fixed so that a horse's progress can never
-//     decrease.  In the original implementation, horses near the soft cap
-//     could move backwards; we now clamp the capped value to be at least
-//     the current progress.
-//
-//   • Photo finish logic now uses weighted randomness: when multiple horses
-//     finish within 1/16th of the leader, each horse's chance of winning is
-//     proportional to how close it is to the leader.  This makes photo
-//     finishes feel fairer while still remaining unpredictable.
 
 import { bus, safeCall } from './service.js'
 import { addToUserWallet } from '../../database/dbwalletmanager.js'
@@ -79,7 +50,7 @@ function speedFromOdds (decOdds) {
 
 /**
  * Run a single race.  Takes an array of horse objects and an optional map
- * of bets keyed by userId.  Emits real‑time progress events via the bus.
+ * of bets keyed by userId.  Emits real-time progress events via the bus.
  *
  * @param {Object} opts.horses Array of horses; each should include
  *        at least `id`, `name`, `odds`, `racesParticipated`, `wins` and
@@ -94,7 +65,7 @@ export async function runRace ({ horses, horseBets }) {
   }
 
   // Build the internal state used to simulate the race.  Each entry tracks
-  // progress, lastDelta, speed and other per‑race parameters.
+  // progress, lastDelta, speed and other per-race parameters.
   const state = horses.map((h, idx) => ({
     index: idx,
     name: h.name,
@@ -115,7 +86,7 @@ export async function runRace ({ horses, horseBets }) {
     }
   }
 
-  // Simulate each leg and sub‑tick
+  // Simulate each leg and sub-tick
   for (let leg = 0; leg < LEGS; leg++) {
     const legWeight = LEG_WEIGHTS[leg] ?? (1 / LEGS)
     const perTickScale = (legWeight * TOTAL_SUBTICKS) / SUBTICKS_PER_LEG
@@ -165,7 +136,7 @@ export async function runRace ({ horses, horseBets }) {
 
   // Determine the winner.  If multiple horses are within 1/16th of the
   // leader the winner is chosen using weighted randomness among them to allow
-  // photo‑finishes.  Closer horses have a higher chance.
+  // photo-finishes.  Closer horses have a higher chance.
   const maxProg = Math.max(...state.map(h => h.progress))
   // Determine horses within 1/16 of the leader for a potential photo finish.
   const closers = state.map((h, i) => ({ i, d: maxProg - h.progress }))
@@ -201,8 +172,22 @@ export async function runRace ({ horses, horseBets }) {
     let sum = 0
     for (const s of slips) {
       if (s.horseIndex === winnerIdx) {
-        const dec = Number(horses[winnerIdx].odds || 3.0)
-        sum += Math.floor(s.amount * dec)
+        // Board-style fractional odds settlement (Option A):
+        // - oddsFrac is profit odds A/B (e.g. 7/2)
+        // - return = stake + stake*(A/B)
+        // Stake was already debited at bet placement, so we credit the full return here.
+        const w = horses[winnerIdx]
+        const num = Number(w?.oddsFrac?.num)
+        const den = Number(w?.oddsFrac?.den)
+
+        if (Number.isFinite(num) && Number.isFinite(den) && den > 0) {
+          const profit = s.amount * (num / den)
+          sum += Math.floor(s.amount + profit)
+        } else {
+          // Fallback: if oddsFrac is missing for any reason, settle via decimal odds.
+          const dec = Number(w?.odds || 3.0)
+          sum += Math.floor(s.amount * dec)
+        }
       }
     }
     if (sum > 0) {
@@ -231,7 +216,7 @@ export async function runRace ({ horses, horseBets }) {
           try {
             const nick = await safeCall(getUserNickname, [src.ownerId]).catch(() => null)
             const ownerTag = nick || `<@uid:${src.ownerId}>`
-            const message = ` ${ownerTag}, your horse **${src.name}** has reached its career limit (${limit} races) and has retired.`
+            const message = `🏁 ${ownerTag}, your horse **${src.name}** has reached its career limit (${limit} races) and has retired.`
             await safeCall(postMessage, [{ room: ROOM, message }])
           } catch (err) {
             console.warn('[simulation] failed to notify owner about retirement:', err?.message)

@@ -1,7 +1,5 @@
 // src/games/horserace/handlers/commands.js
-// Updated horse race command handlers with bot-only race support, improved visual
-// presentation, fair odds, and realistic bot names. If no owners enter a horse,
-// house horses automatically fill the field, and the race continues as normal.
+
 
 import { postMessage } from '../../../libs/cometchat.js'
 import { getUserWallet, removeFromUserWallet } from '../../../database/dbwalletmanager.js'
@@ -11,7 +9,7 @@ import { fetchCurrentUsers } from '../../../utils/API.js'
 
 import { bus, safeCall } from '../service.js'
 import { runRace, LEGS } from '../simulation.js'
-import { getCurrentOdds, formatOdds } from '../utils/odds.js'
+import { getCurrentOdds, lockBoardOdds } from '../utils/odds.js'
 import { renderProgress, renderRacecard } from '../utils/progress.js'
 
 const ROOM = process.env.ROOM_UUID
@@ -41,9 +39,6 @@ const SILKS = [
   '🟫', // brown
   '⬛', // black
   '⬜', // white
-  '🔶', // orange diamond
-  '🔷', // blue diamond
-  '🟣'  // violet
 ]
 const silk = (i) => SILKS[i % SILKS.length]
 
@@ -56,18 +51,18 @@ function shuffleArray (arr) {
   return a
 }
 
-
 // ── Bot name generator ────────────────────────────────────────────────
 const HORSE_ADJECTIVES = [
   'Swift', 'Wild', 'Silent', 'Midnight', 'Golden', 'Thundering', 'Rapid',
   'Lucky', 'Brave', 'Majestic', 'Fierce', 'Clever', 'Mighty', 'Noble',
-  'Radiant', 'Bold', 'Starry', 'Daring', 'Gallant', 'Vibrant','Iron', 'Rugged', 'Grim', 'Dusty', 'Crimson'
-
+  'Radiant', 'Bold', 'Starry', 'Daring', 'Gallant', 'Vibrant', 'Iron',
+  'Rugged', 'Grim', 'Dusty', 'Crimson'
 ]
 const HORSE_NOUNS = [
   'Spirit', 'Dream', 'Storm', 'Fire', 'Wind', 'Comet', 'Rocket', 'Shadow',
   'Blaze', 'Surge', 'Flash', 'Thunder', 'Whisper', 'Blitz', 'Mirage',
-  'Avalanche', 'Echo', 'Aurora', 'Falcon', 'Phantom','Ridge', 'Riot', 'Ember', 'Breaker', 'Raven'
+  'Avalanche', 'Echo', 'Aurora', 'Falcon', 'Phantom', 'Ridge', 'Riot',
+  'Ember', 'Breaker', 'Raven'
 ]
 
 function generateHorseName (usedNames) {
@@ -106,7 +101,7 @@ async function postCountdown (n = 5) {
     await postMessage({ room: ROOM, message: `⏱️ Post time in ${i}…` })
     await new Promise(r => setTimeout(r, 800))
   }
-  await postMessage({ room: ROOM, message: ' *And they’re off!*' })
+  await postMessage({ room: ROOM, message: '🏁 *And they’re off!*' })
 }
 
 // Career limit heuristics (used by /myhorses).
@@ -131,18 +126,15 @@ let horses = []
 let horseBets = {} // userId -> [{horseIndex, amount}]
 let raceSilks = []
 
-
 // ── Public API ─────────────────────────────────────────────────────────
 export function isWaitingForEntries () { return isAcceptingEntries === true }
 
 export async function startHorseRace () {
-  // Guard against overlap
   if (isAcceptingEntries || isBettingOpen || isRaceRunning) {
     await safeCall(postMessage, [{ room: ROOM, message: '⛔ A horse race is already in progress.' }])
     return
   }
 
-  // reset state
   isAcceptingEntries = true
   isBettingOpen = false
   isRaceRunning = false
@@ -152,7 +144,7 @@ export async function startHorseRace () {
 
   await safeCall(postMessage, [{
     room: ROOM,
-    message: ` HORSE RACE STARTING! Type your horse’s exact name in the next ${ENTRY_MS / 1000}s to enter.`
+    message: `🏇 HORSE RACE STARTING! Type your horse’s exact name in the next ${ENTRY_MS / 1000}s to enter.`
   }])
 
   const all = await safeCall(getAllHorses)
@@ -232,7 +224,7 @@ export async function handleHorseBet (ctx) {
   const h = horses[idx]
   await safeCall(postMessage, [{
     room: ROOM,
-    message: `${nick} bets $${amt} on #${idx + 1} **${h.name}**! `
+    message: `${nick} bets $${amt} on #${idx + 1} **${h.name}**!`
   }])
 }
 
@@ -253,46 +245,51 @@ async function openBetsPhase () {
 
     const need = Math.max(0, 6 - ownerHorses.length)
 
-    let bots = all
-      .filter(h => (!h.ownerId || h.ownerId === 'allen') && !h.retired)
-      .sort((a, b) => (b.baseOdds || 0) - (a.baseOdds || 0))
+    // Generate fresh bot horses every race (do not pull from DB).
+    // This prevents stale placeholder names from resurfacing and keeps
+    // bot-only races purely ephemeral (no DB writes needed).
+    const bots = []
+    const existingNames = new Set(all.map(h => h.name))
+    for (const h of ownerHorses) existingNames.add(h.name)
 
-    if (bots.length < need) {
-      const fillerCount = need - bots.length
-      const existingNames = new Set(all.map(h => h.name))
-      for (const h of bots) existingNames.add(h.name)
-      for (const h of ownerHorses) existingNames.add(h.name)
+    for (let i = 0; i < need; i++) {
+      const uniqueName = generateHorseName(existingNames)
+      existingNames.add(uniqueName)
+      const baseOdds = 2.0 + Math.random() * 5.0
+      const vol = 1.2 + Math.random() * 0.8
 
-      for (let i = 0; i < fillerCount; i++) {
-        const uniqueName = generateHorseName(existingNames)
-        existingNames.add(uniqueName)
-        const baseOdds = 2.0 + Math.random() * 5.0
-        const vol = 1.2 + Math.random() * 0.8
-
-        bots.push({
-          id: null,
-          name: uniqueName,
-          baseOdds: parseFloat(baseOdds.toFixed(1)),
-          volatility: parseFloat(vol.toFixed(2)),
-          wins: 0,
-          racesParticipated: 0,
-          careerLength: 0,
-          owner: 'House',
-          ownerId: null,
-          tier: 'bot',
-          emoji: '',
-          price: 0,
-          retired: false
-        })
-      }
+      bots.push({
+        id: null,
+        name: uniqueName,
+        baseOdds: parseFloat(baseOdds.toFixed(1)),
+        volatility: parseFloat(vol.toFixed(2)),
+        wins: 0,
+        racesParticipated: 0,
+        careerLength: 0,
+        owner: 'House',
+        ownerId: null,
+        tier: 'bot',
+        emoji: '',
+        price: 0,
+        retired: false
+      })
     }
 
-    bots = bots.slice(0, need)
-
-    horses = [...ownerHorses, ...bots].map(h => ({
-      ...h,
-      odds: getCurrentOdds(h)
-    }))
+    // Build race horses and LOCK board-style fractional odds for this race.
+    // - h.odds: decimal odds used for simulation speed scaling
+    // - h.oddsFrac / h.oddsLabel: displayed fractional profit odds (A/B)
+    // - h.oddsDecLocked: decimal return (1 + A/B) used for bet settlement
+    horses = [...ownerHorses, ...bots].map(h => {
+      const dec = getCurrentOdds(h)
+      const locked = lockBoardOdds(dec)
+      return {
+        ...h,
+        odds: locked.dec,
+        oddsFrac: locked.frac,
+        oddsLabel: locked.label,
+        oddsDecLocked: locked.decLocked
+      }
+    })
 
     if (!horses.length) {
       await safeCall(postMessage, [{ room: ROOM, message: '❌ No eligible horses. Race canceled.' }])
@@ -300,24 +297,21 @@ async function openBetsPhase () {
       return
     }
 
-    // Pick 6 random silks for this race
+    // Pick random silks for this race
     raceSilks = shuffleArray(SILKS).slice(0, horses.length)
-
-    const silkFor = (i) => raceSilks[i]
-
 
     const entries = horses.map((h, i) => ({
       index: i,
       name: `${raceSilks[i]} ${h.name}`,
-      odds: formatOdds(h.odds, 'fraction')
+      odds: h.oddsLabel || '—'
     }))
 
-    const card = renderRacecard(entries, { nameWidth: 24, oddsWidth: 6 })
+    const card = renderRacecard(entries, { nameWidth: 24, oddsWidth: 7 })
 
     await safeCall(postMessage, [{
       room: ROOM,
       message: [
-        '** Post parade — today’s field & odds**',
+        '**🏇 Post parade — today’s field & odds**',
         '```',
         card,
         '```',
@@ -368,14 +362,12 @@ async function postGif (type) {
   if (!GIFS_ENABLED) return
   const url = pickRandom(RACE_GIFS[type])
   if (!url) return
-  // Correct CometChat format for GIF posting
   await safeCall(postMessage, [{ room: ROOM, message: '', images: [url] }])
 }
 
 async function startRunPhase () {
   try {
     isRaceRunning = true
-
     await postGif('start')
     await postCountdown(5)
     await runRace({ horses, horseBets })
@@ -425,8 +417,8 @@ function makeTurnCommentary (legIndex, raceState, prevState, finishDistance, pre
 
   if (!prevState) {
     return pickDifferent(prevLine, [
-      `️ Clean **Break** — **${leader.name}** shows speed; **${second.name}** keeps tabs.`,
-      `️ They spring away — **${leader.name}** quick into stride.`
+      `✨ Clean **Break** — **${leader.name}** shows speed; **${second.name}** keeps tabs.`,
+      `✨ They spring away — **${leader.name}** quick into stride.`
     ])
   }
 
@@ -436,23 +428,21 @@ function makeTurnCommentary (legIndex, raceState, prevState, finishDistance, pre
   const options = []
   if (leadGap <= 1) {
     options.push(
-      `️ ${phase}: Bunched up — anyone’s race.`,
-      `️ ${phase}: Wall of horses — looking for room.`
+      `🔥 ${phase}: Bunched up — anyone’s race.`,
+      `🔥 ${phase}: Wall of horses — looking for room.`
     )
   }
   if (late) {
-    // IMPORTANT: last-leg commentary should NOT declare "photo finish" / winner.
-    // Keep it as tension-only; official result comes in raceFinished.
     options.push(
-      `️ Down the **Stretch** — **${leader.name}** digs in, **${second.name}** charging!`,
-      `️ Final strides — they’re all out!`
+      `🏁 Down the **Stretch** — **${leader.name}** digs in, **${second.name}** charging!`,
+      `🏁 Final strides — they’re all out!`
     )
   }
   if (prevOrder[0] !== order[0]) {
-    options.push(`️ New leader! **${leader.name}** takes command.`)
+    options.push(`⚡ New leader! **${leader.name}** takes command.`)
   }
   if (!options.length) {
-    options.push(`️ ${phase}: **${leader.name}** controls; **${second.name}** poised.`)
+    options.push(`🎯 ${phase}: **${leader.name}** controls; **${second.name}** poised.`)
   }
   return pickDifferent(prevLine, options)
 }
@@ -463,146 +453,136 @@ function makeFinalCommentary (raceState, winnerIdx, finishDistance) {
   const runnerUp = raceState[order[0] === winnerIdx ? order[1] : order[0]]
   const margin = blocks(winner.progress - runnerUp.progress, finishDistance)
 
-  if (margin <= 1) return ` Photo finish! **${winner.name}** noses out **${runnerUp.name}** at the wire.`
-  if (margin <= 3) return ` **${winner.name}** holds off **${runnerUp.name}** late.`
-  return ` Dominant — **${winner.name}** powers clear in the final strides.`
+  if (margin <= 1) return `📸 Photo finish! **${winner.name}** noses out **${runnerUp.name}** at the wire.`
+  if (margin <= 3) return `✅ **${winner.name}** holds off **${runnerUp.name}** late.`
+  return `💪 Dominant — **${winner.name}** powers clear in the final strides.`
 }
 
 // ── Event rendering ────────────────────────────────────────────────────
 let _lastFrame = null
 let _lastLine = ''
 
-bus.on('turn', async ({ turnIndex, raceState, finishDistance }) => {
-  const MIN_CELL_CHANGE = 1 / (finishDistance * BAR_CELLS)
-  const prev = _lastFrame?.raceState
-  const changed = raceState.some(
-    (h, i) => Math.abs((h.progress ?? 0) - (prev?.[i]?.progress ?? 0)) >= MIN_CELL_CHANGE
-  )
-  if (!changed && (turnIndex % 2 !== 0)) return
+// Guard against duplicate event listeners in environments where modules may reload.
+const LISTENER_GUARD_KEY = '__JAMBOT_HORSERACE_LISTENERS__'
+if (!globalThis[LISTENER_GUARD_KEY]) {
+  globalThis[LISTENER_GUARD_KEY] = true
 
-  const displayState = raceState.map((h, i) => ({ ...h, name: `${raceSilks[i]} ${h.name}` }))
-
-  const track = renderProgress(displayState, {
-    barLength: BAR_CELLS,
-    finishDistance,
-    style: BAR_STYLE,
-    ticksEvery: TICKS_EVERY,
-    tickChar: TICK_CHAR,
-    nameWidth: NAME_WIDTH
-  })
-
-  // IMPORTANT: never use makeFinalCommentary here; it can emit "Photo finish!".
-  // Official winner commentary belongs ONLY in raceFinished.
-  const comment = makeTurnCommentary(turnIndex, raceState, _lastFrame?.raceState, finishDistance, _lastLine)
-
-  _lastFrame = { raceState, finishDistance }
-  _lastLine = comment
-
-  if (TV_MODE) {
-    await postMessage({ room: ROOM, message: [
-      '```',
-      ` Leg ${turnIndex + 1} of ${LEGS}`,
-      track,
-      '```',
-      comment
-    ].join('\n') })
-  }
-})
-
-// Show final standings and payouts when the race ends
-bus.on('raceFinished', async ({ winnerIdx, raceState, payouts, ownerBonus, finishDistance }) => {
-  try {
-    await postGif('finish')
-
-    await DELAY(RESULTS_PACING.preResultBeatMs)
-    await safeCall(postMessage, [{ room: ROOM, message: '🏁 They hit the wire…' }])
+  bus.on('turn', async ({ turnIndex, raceState, finishDistance }) => {
+    const MIN_CELL_CHANGE = 1 / (finishDistance * BAR_CELLS)
+    const prev = _lastFrame?.raceState
+    const changed = raceState.some(
+      (h, i) => Math.abs((h.progress ?? 0) - (prev?.[i]?.progress ?? 0)) >= MIN_CELL_CHANGE
+    )
+    if (!changed && (turnIndex % 2 !== 0)) return
 
     const displayState = raceState.map((h, i) => ({ ...h, name: `${raceSilks[i]} ${h.name}` }))
-
     const track = renderProgress(displayState, {
       barLength: BAR_CELLS,
       finishDistance,
-      winnerIndex: winnerIdx,
       style: BAR_STYLE,
       ticksEvery: TICKS_EVERY,
       tickChar: TICK_CHAR,
       nameWidth: NAME_WIDTH
     })
 
-    const order = rankOrder(raceState)
-    const winner = raceState[winnerIdx]
-    const runnerUpIdx = (order[0] === winnerIdx) ? order[1] : order[0]
-    const runnerUp = raceState[runnerUpIdx]
-    const margin = blocks((winner?.progress ?? 0) - (runnerUp?.progress ?? 0), finishDistance)
-    const isPhotoFinish = margin <= 1
+    const comment = makeTurnCommentary(turnIndex, raceState, _lastFrame?.raceState, finishDistance, _lastLine)
+    _lastFrame = { raceState, finishDistance }
+    _lastLine = comment
 
-    // Beat 2: suspense line (ONLY line that says “photo finish”)
-    if (isPhotoFinish) {
-      await DELAY(RESULTS_PACING.photoFinishBeatMs)
-      await safeCall(postMessage, [{ room: ROOM, message: '📸 Photo finish… waiting on the judges…' }])
-    }
-
-    // Commentary: avoid repeating "Photo finish!" after the judges line.
-    let comment = makeFinalCommentary(raceState, winnerIdx, finishDistance)
-    if (isPhotoFinish) {
-      comment = ` **${winner.name}** gets the nod over **${runnerUp.name}**!`
-    }
-
-    try {
-      const oddsNum = Number(horses?.[winnerIdx]?.odds || 0)
-      if (oddsNum >= 5) comment = `😱 Upset! ${comment.trim()}`
-    } catch (_) {}
-
-    await DELAY(RESULTS_PACING.officialBeatMs)
-
-    const winnerDisplayName = displayState[winnerIdx]?.name || `${silk(winnerIdx)} ${raceState[winnerIdx]?.name || ''}`
-    await safeCall(postMessage, [{
-      room: ROOM,
-      message: `✅ **Official:** WINNER — **${winnerDisplayName}**!`
-    }])
-
-    await DELAY(RESULTS_PACING.standingsBeatMs)
-    await safeCall(postMessage, [{
-      room: ROOM,
-      message: [
+    if (TV_MODE) {
+      await postMessage({ room: ROOM, message: [
         '```',
-        ' Final Standings',
+        ` Leg ${turnIndex + 1} of ${LEGS}`,
         track,
         '```',
         comment
-      ].join('\n')
-    }])
-
-    const payoutEntries = payouts && typeof payouts === 'object'
-      ? Object.entries(payouts).filter(([, amount]) => Number(amount) > 0)
-      : []
-
-    if (payoutEntries.length > 0) {
-      await DELAY(RESULTS_PACING.payoutLineBeatMs)
-      for (const [userId, amount] of payoutEntries) {
-        const nick = await safeCall(getUserNickname, [userId]).catch(() => null)
-        const name = nick?.replace(/^@/, '') || `<@uid:${userId}>`
-        await safeCall(postMessage, [{ room: ROOM, message: `💵 ${name} wins **$${amount}**` }])
-        await DELAY(RESULTS_PACING.payoutLineBeatMs)
-      }
+      ].join('\n') })
     }
+  })
 
-    if (ownerBonus && ownerBonus.ownerId && ownerBonus.amount) {
-      await DELAY(RESULTS_PACING.ownerBonusBeatMs)
-      const nick = await safeCall(getUserNickname, [ownerBonus.ownerId]).catch(() => null)
-      const name = nick?.replace(/^@/, '') || `<@uid:${ownerBonus.ownerId}>`
+  bus.on('raceFinished', async ({ winnerIdx, raceState, payouts, ownerBonus, finishDistance }) => {
+    try {
+      await postGif('finish')
+
+      await DELAY(RESULTS_PACING.preResultBeatMs)
+      await safeCall(postMessage, [{ room: ROOM, message: '🏁 They hit the wire…' }])
+
+      const displayState = raceState.map((h, i) => ({ ...h, name: `${raceSilks[i]} ${h.name}` }))
+      const track = renderProgress(displayState, {
+        barLength: BAR_CELLS,
+        finishDistance,
+        winnerIndex: winnerIdx,
+        style: BAR_STYLE,
+        ticksEvery: TICKS_EVERY,
+        tickChar: TICK_CHAR,
+        nameWidth: NAME_WIDTH
+      })
+      const order = rankOrder(raceState)
+      const winner = raceState[winnerIdx]
+      const runnerUpIdx = (order[0] === winnerIdx) ? order[1] : order[0]
+      const runnerUp = raceState[runnerUpIdx]
+      const margin = blocks((winner?.progress ?? 0) - (runnerUp?.progress ?? 0), finishDistance)
+      const isPhotoFinish = margin <= 1
+
+      if (isPhotoFinish) {
+        await DELAY(RESULTS_PACING.photoFinishBeatMs)
+        await safeCall(postMessage, [{ room: ROOM, message: '📸 Photo finish… waiting on the judges…' }])
+      }
+
+      let comment = makeFinalCommentary(raceState, winnerIdx, finishDistance)
+      if (isPhotoFinish) comment = `✅ **${winner.name}** gets the nod over **${runnerUp.name}**!`
+
+      await DELAY(RESULTS_PACING.officialBeatMs)
+
+      const winnerDisplayName = displayState[winnerIdx]?.name || `${silk(winnerIdx)} ${raceState[winnerIdx]?.name || ''}`
       await safeCall(postMessage, [{
         room: ROOM,
-        message: `🎉 ${name} receives an owner bonus of **$${ownerBonus.amount}**`
+        message: `✅ **Official:** WINNER — **${winnerDisplayName}**!`
       }])
+
+      await DELAY(RESULTS_PACING.standingsBeatMs)
+      await safeCall(postMessage, [{
+        room: ROOM,
+        message: [
+          '```',
+          ' Final Standings',
+          track,
+          '```',
+          comment
+        ].join('\n')
+      }])
+
+      const payoutEntries = payouts && typeof payouts === 'object'
+        ? Object.entries(payouts).filter(([, amount]) => Number(amount) > 0)
+        : []
+
+      if (payoutEntries.length > 0) {
+        await DELAY(RESULTS_PACING.payoutLineBeatMs)
+        for (const [userId, amount] of payoutEntries) {
+          const nick = await safeCall(getUserNickname, [userId]).catch(() => null)
+          const name = nick?.replace(/^@/, '') || `<@uid:${userId}>`
+          await safeCall(postMessage, [{ room: ROOM, message: `💵 ${name} wins **$${amount}**` }])
+          await DELAY(RESULTS_PACING.payoutLineBeatMs)
+        }
+      }
+
+      if (ownerBonus && ownerBonus.ownerId && ownerBonus.amount) {
+        await DELAY(RESULTS_PACING.ownerBonusBeatMs)
+        const nick = await safeCall(getUserNickname, [ownerBonus.ownerId]).catch(() => null)
+        const name = nick?.replace(/^@/, '') || `<@uid:${ownerBonus.ownerId}>`
+        await safeCall(postMessage, [{
+          room: ROOM,
+          message: `🎉 ${name} receives an owner bonus of **$${ownerBonus.amount}**`
+        }])
+      }
+    } catch (err) {
+      console.error('[raceFinished] error:', err)
+      await safeCall(postMessage, [{ room: ROOM, message: '❌ Error displaying race results.' }])
+    } finally {
+      cleanup()
     }
-  } catch (err) {
-    console.error('[raceFinished] error:', err)
-    await safeCall(postMessage, [{ room: ROOM, message: '❌ Error displaying race results.' }])
-  } finally {
-    cleanup()
-  }
-})
+  })
+}
 
 // ── Misc helpers ───────────────────────────────────────────────────────
 function _fmtPct (w, r) {
@@ -611,7 +591,10 @@ function _fmtPct (w, r) {
   if (!races) return '0%'
   return Math.round((wins / races) * 100) + '%'
 }
-function _fmtOdds (h) { return formatOdds(getCurrentOdds(h)) }
+function _fmtOdds (h) {
+  // Stats views should also use board-style fractional odds.
+  return lockBoardOdds(getCurrentOdds(h)).label
+}
 function _fmtLine (h, idx = null) {
   const tag = (idx != null) ? `${String(idx + 1).padStart(2, ' ')}.` : '•'
   const races = Number(h?.racesParticipated || 0)
@@ -643,7 +626,7 @@ export async function handleMyHorsesCommand (ctx) {
   })
 
   const lines = arranged.map((h, i) => _fmtLine(h, i))
-  const header = ` **${nick}’s Stable** (${arranged.length})`
+  const header = `🐴 **${nick}’s Stable** (${arranged.length})`
   const body = ['```', header, ...lines, '```'].join('\n')
   await postMessage({ room: ROOM, message: body })
 }
