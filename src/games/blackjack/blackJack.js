@@ -144,6 +144,12 @@ function pad (s, n) {
   const t = String(s ?? '')
   return t.length >= n ? t.slice(0, n) : t + ' '.repeat(n - t.length)
 }
+function padNoTrunc (s, n) {
+  const t = String(s ?? '')
+  // NEVER truncate (important for mention tokens like <@uid:...>)
+  return t.length >= n ? t : t + ' '.repeat(n - t.length)
+}
+
 
 // Strip CometChat mention tokens and leading @ for code-block display.
 // Examples:
@@ -186,8 +192,9 @@ function nicknameOf (st, id) {
 }
 
 function nameInBlock (st, id) {
-  return pad(nicknameOf(st, id), NAME_PAD)
+  return padNoTrunc(nicknameOf(st, id), NAME_PAD)
 }
+
 
 function formatHand (cards) {
   const { total, soft } = handValue(cards)
@@ -861,11 +868,18 @@ async function settleRound (ctx) {
     await postMessage({ room: ctx.room, message: `💎 Biggest profit at this table: ${await mention(biggest.uuid)} (+${fmtMoney(biggest.biggestProfit)})` })
   }
 
-  st.phase = 'idle'
-  st.handOrder = []
-  st.dealerHand = []
-  st.turnIndex = 0
-  clearAllTimers(st)
+  // ✅ Unseat all players so the next /bj starts clean
+for (const id of st.order) {
+  const p = st.players.get(id)
+  if (p) p.seated = false
+}
+
+st.phase = 'idle'
+st.handOrder = []
+st.dealerHand = []
+st.turnIndex = 0
+clearAllTimers(st)
+
 
   await postMessage({ room: ctx.room, message: `Type */bj* to open a new table.` })
 }
