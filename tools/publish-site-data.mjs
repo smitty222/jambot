@@ -27,6 +27,11 @@ await import(new URL('../src/database/initdb.js', import.meta.url));
 const COOLDOWN_MINUTES_DB       = Number(process.env.PUBLISH_DB_EVERY_MIN    || 240);
 const COOLDOWN_MINUTES_COMMANDS = Number(process.env.PUBLISH_CMDS_EVERY_MIN  || 240);
 const COOLDOWN_MINUTES_STATS    = Number(process.env.PUBLISH_STATS_EVERY_MIN || 240);
+// Publish album stats more frequently to keep the website up‑to‑date.  This can
+// be overridden via the PUBLISH_ALBUMS_EVERY_MIN environment variable.  A
+// reasonable default of 10 minutes means that new reviews will be visible on
+// the site within a short window without spamming the API.
+const COOLDOWN_MINUTES_ALBUMS   = Number(process.env.PUBLISH_ALBUMS_EVERY_MIN || 10);
 const COOLDOWN_MINUTES_SITEDATA = Number(process.env.PUBLISH_SITEDATA_EVERY_MIN || 10);
 
 // Persist state on the volume so cooldowns survive restarts
@@ -60,6 +65,77 @@ async function postJson(pathname, payload) {
   });
   if (!res.ok) throw new Error(`${pathname} ${res.status}: ${await res.text()}`);
   return res.json();
+}
+
+// ── Publish: Album review stats ────────────────────────────────
+// The public site shows a list of reviewed albums.  Historically this data
+// has been published from within the Turntable bot using ad‑hoc scripts, so
+// it wasn’t obvious when new reviews stopped appearing.  To make the
+// publishing explicit and reproducible, we derive two simple datasets from
+// the local SQLite database:
+//   • album_stats_public: one row per album with its name, artist, artwork and
+//     average rating (id is preserved to merge with review counts)
+//   • album_review_counts_public: one row per albumId with the number of
+//     reviews it has received
+// These tables mirror the schema expected by site/app.js.  Both tables are
+// uploaded via /api/publishDb with the `public` flag so that they become
+// accessible under /api/db/album_stats_public and
+// /api/db/album_review_counts_public.  A configurable cooldown prevents
+// excessive updates.
+async function publishAlbumStats (state) {
+  // Respect configured cooldowns
+  if (minutesSince(state.last?.albumStats) < COOLDOWN_MINUTES_ALBUMS) {
+    console.log('[publish] albumStats skipped (cooldown)');
+    return;
+  }
+
+  console.log('[publish] albumStats snapshot from', process.env.DB_PATH);
+  const db = new Database(process.env.DB_PATH, { readonly: true });
+  try {
+    // Extract core album stats needed by the website.  We select only the
+    // columns that the frontend consumes.  Keep column names consistent with
+    // existing API (id, albumName, albumArt, artistName, averageReview).
+    const albumStats = db.prepare(`
+      SELECT id,
+             albumName,
+             albumArt,
+             artistName,
+             averageReview
+        FROM album_stats
+       ORDER BY id ASC
+    `).all();
+
+    // Compute review counts per albumId.  We alias albumId to "number" to
+    // match existing API responses.  SQLite will return a numeric count.
+    const reviewCounts = db.prepare(`
+      SELECT albumId AS number,
+             COUNT(*) AS count
+        FROM album_reviews
+       GROUP BY albumId
+       ORDER BY albumId ASC
+    `).all();
+
+    // Post both tables to the worker.  We declare them public so the
+    // Cloudflare worker stores them under the "db:" namespace (mirrored to
+    // mod as well).  See worker/worker.js for details on handling /api/publishDb.
+    await postJson('/api/publishDb', {
+      tables: {
+        album_stats_public: albumStats,
+        album_review_counts_public: reviewCounts
+      },
+      public: ['album_stats_public', 'album_review_counts_public']
+    });
+
+    // Record timestamp so we respect the cooldown on the next run
+    state.last.albumStats = new Date().toISOString();
+    saveState(state);
+    console.log('[publish] albumStats published:', albumStats.length,
+                'albums and', reviewCounts.length, 'review counts');
+  } catch (err) {
+    console.warn('[publish] albumStats failed:', err?.message || err);
+  } finally {
+  db.close();
+  }
 }
 
 // ── Publish: Commands ────────────────────────────────────────
@@ -140,6 +216,9 @@ const main = async () => {
   await publishDb(state);
   await publishStats(state);
   await publishSiteData(state);
+  // Publish album review statistics after other tasks.  This runs on its own
+  // cooldown separate from the overall site snapshot to avoid undue load.
+  await publishAlbumStats(state);
   console.log('[publish] done');
 };
 
