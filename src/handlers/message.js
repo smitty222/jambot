@@ -1810,6 +1810,7 @@ Please refresh your page for the queue to update`
       { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNW15MDZnb2hiNHhiajNrY2xnOTNwMmQxMWNvcW1laXY5bXl5NTZzaSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/QVP7DawXZitKYg3AX5/giphy.gif' }, // replace
       { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNW15MDZnb2hiNHhiajNrY2xnOTNwMmQxMWNvcW1laXY5bXl5NTZzaSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/bQvTkpRYa4CF0lX3Zg/giphy.gif' }, // replace
       { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNW15MDZnb2hiNHhiajNrY2xnOTNwMmQxMWNvcW1laXY5bXl5NTZzaSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/NHs9GJQzKh3uU/giphy.gif' }, // replace
+      { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExeXNxd3BtOGV1cGhlaHRwbm0waWczZ2thOHBtZnA2cnc3aGM5MXFjYSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/05wBfiXHq4U6dfHeeP/giphy.gif' },
       { type: 'emoji', value: '🗑️🔥💀' }
     ]
 
