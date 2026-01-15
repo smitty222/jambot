@@ -1804,6 +1804,34 @@ Please refresh your page for the queue to update`
     } catch (error) {
       console.error('Error processing command:', error.message)
     }
+    } else if (payload.message.startsWith('/trash')) {
+  try {
+    const trashOptions = [
+      { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNW15MDZnb2hiNHhiajNrY2xnOTNwMmQxMWNvcW1laXY5bXl5NTZzaSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/QVP7DawXZitKYg3AX5/giphy.gif' }, // replace
+      { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNW15MDZnb2hiNHhiajNrY2xnOTNwMmQxMWNvcW1laXY5bXl5NTZzaSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/bQvTkpRYa4CF0lX3Zg/giphy.gif' }, // replace
+      { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNW15MDZnb2hiNHhiajNrY2xnOTNwMmQxMWNvcW1laXY5bXl5NTZzaSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/NHs9GJQzKh3uU/giphy.gif' }, // replace
+      { type: 'emoji', value: '🗑️🔥💀' }
+    ]
+
+    const randomTrashOption =
+      trashOptions[Math.floor(Math.random() * trashOptions.length)]
+
+    if (randomTrashOption.type === 'gif') {
+      await postMessage({
+        room,
+        message: '',
+        images: [randomTrashOption.value]
+      })
+    } else {
+      await postMessage({
+        room,
+        message: randomTrashOption.value
+      })
+    }
+  } catch (err) {
+    console.error('Error handling /trash command:', err)
+  }
+
   } else if (payload.message.startsWith('/tomatoes')) {
     try {
       const cheersOptions = [
@@ -2143,7 +2171,6 @@ if (/^\/(hit|stand|double|surrender|split)\b/i.test(txt) && getPhase(ctx) === 'a
   if (cmd === 'split')     return await handleSplit(userUUID, nickname, ctx)
 }
 
-  /// /////////////////////// BOT AVATAR UPDATES //////////////////////////
   /// /////////////////////// BOT AVATAR UPDATES //////////////////////////
 else if (payload.message.startsWith('/botrandom')) {
   // signature: (room, postMessage, ttlUserToken)
