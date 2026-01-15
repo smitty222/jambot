@@ -1,5 +1,6 @@
 // src/games/horserace/handlers/commands.js
 
+
 import { postMessage } from '../../../libs/cometchat.js'
 import { getUserWallet, removeFromUserWallet } from '../../../database/dbwalletmanager.js'
 import { getUserNickname } from '../../../utils/nickname.js'
@@ -624,4 +625,130 @@ export async function handleMyHorsesCommand (ctx) {
   const header = `🐴 **${nick}’s Stable** (${arranged.length})`
   const body = ['```', header, ...lines, '```'].join('\n')
   await postMessage({ room: ROOM, message: body })
+}
+
+
+export async function handleHorseStatsCommand (ctx) {
+  const room = ctx?.room || ROOM
+  const text = String(ctx?.message || '').trim()
+  // FIX: this should be \s not \\s
+  const nameArg = (text.match(/^\/horsestats\s+(.+)/i) || [])[1]
+
+  const all = await getAllHorses()
+  const horsesList = Array.isArray(all) ? all : []
+
+  if (!nameArg) {
+    const topWins = horsesList.slice()
+      .sort((a, b) => Number(b?.wins || 0) - Number(a?.wins || 0))
+      .slice(0, 10)
+
+    const topPct = horsesList.slice()
+      .filter(h => Number(h?.racesParticipated || 0) >= 5)
+      .sort((a, b) => {
+        const ap = Number(a?.wins || 0) / Math.max(1, Number(a?.racesParticipated || 0))
+        const bp = Number(b?.wins || 0) / Math.max(1, Number(b?.racesParticipated || 0))
+        return bp - ap
+      })
+      .slice(0, 10)
+
+    const linesWins = topWins.map((h, i) => _fmtLine(h, i))
+    const linesPct = topPct.map((h, i) => _fmtLine(h, i))
+
+    const msg = [
+      ' **Horse Stats**',
+      '',
+      ' Top Wins',
+      ...linesWins,
+      '',
+      ' Best Win% (min 5 starts)',
+      ...linesPct
+    ].join('\n')
+
+    await postMessage({ room, message: '```\n' + msg + '\n```' })
+    return
+  }
+
+  const needle = nameArg.toLowerCase()
+  const match = horsesList.find(h => String(h?.name || '').toLowerCase() === needle) ||
+                 horsesList.find(h => String(h?.name || '').toLowerCase().includes(needle))
+
+  if (!match) {
+    await postMessage({ room, message: `❗ Couldn’t find a horse named **${nameArg}**.` })
+    return
+  }
+
+  const races = Number(match?.racesParticipated || 0)
+  const wins = Number(match?.wins || 0)
+  const pct = _fmtPct(wins, races)
+  const owner = match?.ownerId ? `<@uid:${match.ownerId}>` : 'House'
+
+  const limit = careerLimitFor(match)
+  const left = Number.isFinite(limit) ? Math.max(limit - races, 0) : null
+
+  const details = [
+    ` **${match.name}**` + (match.retired ? ' (retired)' : ''),
+    `Owner: ${owner}`,
+    `Tier: ${String(match?.tier || '').toUpperCase() || '—'}`,
+    `Odds (current): ${_fmtOdds(match)}`,
+    `Record: ${wins} wins from ${races} starts (${pct})`,
+    Number.isFinite(limit)
+      ? `Career limit: ${limit} · Races left: ${left}`
+      : 'Career limit: —',
+    `Base odds: ${match?.baseOdds ?? '—'} · Volatility: ${match?.volatility ?? '—'}`
+  ].join('\n')
+
+  await postMessage({ room, message: '```\n' + details + '\n```' })
+}
+
+export async function handleTopHorsesCommand (ctx) {
+  const room = ctx?.room || ROOM
+  const all = await getAllHorses()
+  const list = Array.isArray(all) ? all : []
+
+  const allenIds = String(process.env.ALLEN_USER_IDS || process.env.CHAT_USER_ID || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+
+  const userHorses = list.filter(h => {
+    const owner = h?.ownerId
+    if (!owner) return false
+    return !allenIds.includes(String(owner))
+  })
+
+  if (userHorses.length === 0) {
+    await postMessage({ room, message: '```\nNo user-owned horses found yet.\n```' })
+    return
+  }
+
+  const top = userHorses.slice()
+    .sort((a, b) => {
+      const dw = Number(b?.wins || 0) - Number(a?.wins || 0)
+      if (dw) return dw
+      const ap = Number(a?.wins || 0) / Math.max(1, Number(a?.racesParticipated || 0))
+      const bp = Number(b?.wins || 0) / Math.max(1, Number(b?.racesParticipated || 0))
+      return bp - ap
+    })
+    .slice(0, 10)
+
+  const lines = top.map((h, i) => _fmtLine(h, i))
+  await postMessage({ room, message: '```\n' + [' Top Horses by Wins', ...lines].join('\n') + '\n```' })
+}
+
+// ── Help command ─────────────────────────────────────────────────────────
+export async function handleHorseHelpCommand (ctx) {
+  const room = ctx?.room || ROOM
+  const helpLines = [
+    ' **Horse Race Commands**',
+    '',
+    '/buyhorse <tier> – Purchase a new horse. Tiers include champion, elite, pro, rookie and amateur.',
+    '/myhorses – List your owned horses with their race counts, wins and career limits.',
+    '/horsestats [name] – Show detailed stats for a specific horse by name, or view leaderboards when no name is given.',
+    '/tophorses – See the top user-owned horses ranked by wins and win percentage.',
+    '/horse <number> <amount> – Place a bet on a horse during the betting phase (use the number shown on the race card).',
+    '/horsehelp – Display this help message.',
+    '',
+    'Note: Horses have a finite career limit assigned when purchased. Once a horse reaches this limit, it will automatically retire and cannot enter new races.'
+  ]
+  await postMessage({ room, message: '```\n' + helpLines.join('\n') + '\n```' })
 }
