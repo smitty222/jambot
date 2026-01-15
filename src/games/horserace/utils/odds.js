@@ -1,76 +1,84 @@
 // src/games/horserace/utils/odds.js
 
+
 function roundTo (value, step = 0.05) {
   return Math.round(value / step) * step
 }
 
-function gcd (a, b) {
-  a = Math.abs(a)
-  b = Math.abs(b)
-  while (b) {
-    const t = b
-    b = a % b
-    a = t
-  }
-  return a || 1
-}
+// --- Tote-board ladder (profit odds A/B) ---
+// Starts at 2/1 to keep the board intuitive for your game.
+const TOTE_LADDER = [
+  { num: 2, den: 1 },
+  { num: 5, den: 2 },
+  { num: 3, den: 1 },
+  { num: 7, den: 2 },
+  { num: 4, den: 1 },
+  { num: 9, den: 2 },
+  { num: 5, den: 1 },
+  { num: 6, den: 1 },
+  { num: 7, den: 1 },
+  { num: 8, den: 1 },
+  { num: 10, den: 1 },
+  { num: 12, den: 1 },
+  { num: 15, den: 1 },
+  { num: 20, den: 1 },
+  { num: 30, den: 1 },
+  { num: 40, den: 1 },
+  { num: 50, den: 1 }
+]
 
-function reduceFraction (num, den) {
-  const g = gcd(num, den)
-  return { num: num / g, den: den / g }
+function ladderValue (o) {
+  return o.num / o.den
 }
 
 /**
- * Convert a decimal PROFIT (dec - 1) into a board-style fraction (Option A).
- * Allowed denominators: 1, 2, 4.
+ * Snap a decimal PROFIT (dec - 1) to the tote-board ladder.
+ * Fairness rule: never snap to a shorter price than fair.
+ * We choose the smallest ladder value >= fairProfit.
  */
-export function profitToBoardFraction (profit, allowedDens = [1, 2, 4]) {
-  const p = Math.max(0, Number(profit || 0))
+export function profitToToteLadder (profit, { minProfit = 2.0 } = {}) {
+  let p = Math.max(0, Number(profit || 0))
+  p = Math.max(p, minProfit)
 
-  let best = null
-  for (const den of allowedDens) {
-    // nearest numerator for this denominator
-    let num = Math.round(p * den)
-    if (num < 1) num = 1 // avoid 0/X
-
-    const approx = num / den
-    const err = Math.abs(approx - p)
-
-    // tie-breaker: prefer larger denominator for a slightly "truer" board price
-    if (!best || err < best.err || (err === best.err && den > best.den)) {
-      best = { num, den, err }
+  // Choose smallest ladder >= p
+  let chosen = TOTE_LADDER[TOTE_LADDER.length - 1]
+  for (const o of TOTE_LADDER) {
+    if (ladderValue(o) >= p) {
+      chosen = o
+      break
     }
   }
 
-  const reduced = reduceFraction(best.num, best.den)
-  const decLocked = 1 + (reduced.num / reduced.den)
+  const val = ladderValue(chosen)
   return {
-    num: reduced.num,
-    den: reduced.den,
-    label: `${reduced.num}/${reduced.den}`,
-    decLocked
+    num: chosen.num,
+    den: chosen.den,
+    label: `${chosen.num}/${chosen.den}`,
+    decLocked: 1 + val
   }
 }
 
 /**
- * Compute dynamic decimal odds from baseOdds + basic form.
- * Owner horses get slightly tighter odds than bots.
- *
- * @param {object} horse The horse object containing baseOdds, wins, races,
- *        ownerId, and other stats.
- * @returns {number} Decimal odds (rounded to nearest 0.05, minimum 1.2).
+ * Compute dynamic decimal odds (return odds) from baseOdds + smoothed form.
+ * This is used for *simulation strength* and as the input to tote snapping.
  */
 export function getCurrentOdds (horse) {
   const base = Number(horse?.baseOdds ?? 3.0)
 
   const wins = Number(horse?.wins ?? 0)
   const races = Number(horse?.racesParticipated ?? 0)
-  const form = races > 0 ? wins / races : 0
 
-  // Better form -> slightly lower odds. Cap the form impact at 30% and weight by 0.25.
+  // Bayesian smoothing keeps streaks from over-tightening odds.
+  // Acts like each horse starts 1-for-3.
+  const priorWins = 1
+  const priorRaces = 3
+  const form = (wins + priorWins) / Math.max(1, (races + priorRaces))
+
+  // Better form -> slightly lower odds.
+  // Cap the form impact at 30% and weight by 0.25.
   let dec = base * (1.0 - Math.min(0.3, form * 0.25))
 
-  // Owner horses get a small (2%) discount.
+  // Owner horses get only a small discount.
   const isBot = !horse?.ownerId || horse.ownerId === 'allen'
   dec *= isBot ? 1.0 : 0.98
 
@@ -80,35 +88,33 @@ export function getCurrentOdds (horse) {
 }
 
 /**
- * Lock board odds (fraction + equivalent decimal return) from a decimal input.
+ * Lock tote-board odds for display + settlement.
  *
- * @param {number} dec Decimal odds.
- * @returns {{ dec:number, frac:{num:number,den:number}, label:string, decLocked:number }}
+ * Returns:
+ * - decFair: fair-ish decimal odds (kept for simulation strength)
+ * - oddsFrac: {num, den} profit odds for settlement
+ * - oddsLabel: string like "5/2" for display
+ * - oddsDecLocked: decimal return equivalent of the locked tote odds
  */
-export function lockBoardOdds (dec) {
-  const d = Number(dec || 0)
-  if (!Number.isFinite(d) || d <= 0) {
-    return { dec: 3.0, frac: { num: 2, den: 1 }, label: '2/1', decLocked: 3.0 }
-  }
-  const board = profitToBoardFraction(d - 1)
+export function lockToteBoardOdds (decFair, { minProfit = 2.0 } = {}) {
+  const d = Number(decFair || 0)
+  const safe = (Number.isFinite(d) && d > 1) ? d : 3.0
+  const tote = profitToToteLadder(safe - 1, { minProfit })
   return {
-    dec: d,
-    frac: { num: board.num, den: board.den },
-    label: board.label,
-    decLocked: board.decLocked
+    decFair: safe,
+    oddsFrac: { num: tote.num, den: tote.den },
+    oddsLabel: tote.label,
+    oddsDecLocked: tote.decLocked
   }
 }
 
 /**
- * Format odds for display.
- * - 'fraction'/'frac' (default): board-style fraction (Option A)
- * - 'decimal'/'dec': 2dp decimal odds
+ * Legacy formatter.
+ * Prefer using lockToteBoardOdds() so display/settlement are guaranteed.
  */
 export function formatOdds (dec, mode = 'fraction') {
   const d = Number(dec || 0)
   if (!Number.isFinite(d) || d <= 0) return '—'
-
   if (mode === 'decimal' || mode === 'dec') return d.toFixed(2)
-
-  return lockBoardOdds(d).label
+  return lockToteBoardOdds(d, { minProfit: 2.0 }).oddsLabel
 }

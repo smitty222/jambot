@@ -44,8 +44,10 @@ function randn (mean = 0, sd = 1) {
 // Adjust speed scaling to compress differences across odds.  Lower odds
 // (favorites) still get a boost but within a narrower band.
 function speedFromOdds (decOdds) {
-  const f = 1.0 + (3.0 - Number(decOdds || 3.0)) * 0.08 // ~0.9..1.1
-  return Math.max(0.9, Math.min(1.1, f))
+  // Compressed advantage band so favorites are more likely, but not locks.
+  // Targets roughly ~30-45% win rates for typical favorites in a 6-horse field.
+  const f = 1.0 + (3.0 - Number(decOdds || 3.0)) * 0.05 // narrower than before
+  return Math.max(0.95, Math.min(1.07, f))
 }
 
 /**
@@ -172,19 +174,17 @@ export async function runRace ({ horses, horseBets }) {
     let sum = 0
     for (const s of slips) {
       if (s.horseIndex === winnerIdx) {
-        // Board-style fractional odds settlement (Option A):
-        // - oddsFrac is profit odds A/B (e.g. 7/2)
-        // - return = stake + stake*(A/B)
-        // Stake was already debited at bet placement, so we credit the full return here.
+        // Settle using locked tote-board fractional odds (profit odds A/B).
+        // Stake was already debited at placement, so we credit the full return:
+        //   return = stake + stake*(A/B)
         const w = horses[winnerIdx]
         const num = Number(w?.oddsFrac?.num)
         const den = Number(w?.oddsFrac?.den)
-
         if (Number.isFinite(num) && Number.isFinite(den) && den > 0) {
           const profit = s.amount * (num / den)
           sum += Math.floor(s.amount + profit)
         } else {
-          // Fallback: if oddsFrac is missing for any reason, settle via decimal odds.
+          // Fallback: if oddsFrac is missing, settle via decimal.
           const dec = Number(w?.odds || 3.0)
           sum += Math.floor(s.amount * dec)
         }

@@ -1,6 +1,5 @@
 // src/games/horserace/handlers/commands.js
 
-
 import { postMessage } from '../../../libs/cometchat.js'
 import { getUserWallet, removeFromUserWallet } from '../../../database/dbwalletmanager.js'
 import { getUserNickname } from '../../../utils/nickname.js'
@@ -9,7 +8,7 @@ import { fetchCurrentUsers } from '../../../utils/API.js'
 
 import { bus, safeCall } from '../service.js'
 import { runRace, LEGS } from '../simulation.js'
-import { getCurrentOdds, lockBoardOdds } from '../utils/odds.js'
+import { getCurrentOdds, lockToteBoardOdds } from '../utils/odds.js'
 import { renderProgress, renderRacecard } from '../utils/progress.js'
 
 const ROOM = process.env.ROOM_UUID
@@ -26,9 +25,7 @@ const TICKS_EVERY = 3
 const TICK_CHAR = ':'
 
 // ── SILKS (colored “jerseys”) ─────────────────────────────────────────
-// Provide a palette of colored square emojis so each horse (user-owned or bot)
-// gets a distinct jersey. We cycle through this list for races with more than
-// the available colors.
+// Squares only (consistent “silks” look).
 const SILKS = [
   '🟥', // red
   '🟧', // orange
@@ -38,7 +35,7 @@ const SILKS = [
   '🟪', // purple
   '🟫', // brown
   '⬛', // black
-  '⬜', // white
+  '⬜'  // white
 ]
 const silk = (i) => SILKS[i % SILKS.length]
 
@@ -246,8 +243,6 @@ async function openBetsPhase () {
     const need = Math.max(0, 6 - ownerHorses.length)
 
     // Generate fresh bot horses every race (do not pull from DB).
-    // This prevents stale placeholder names from resurfacing and keeps
-    // bot-only races purely ephemeral (no DB writes needed).
     const bots = []
     const existingNames = new Set(all.map(h => h.name))
     for (const h of ownerHorses) existingNames.add(h.name)
@@ -275,19 +270,18 @@ async function openBetsPhase () {
       })
     }
 
-    // Build race horses and LOCK board-style fractional odds for this race.
-    // - h.odds: decimal odds used for simulation speed scaling
-    // - h.oddsFrac / h.oddsLabel: displayed fractional profit odds (A/B)
-    // - h.oddsDecLocked: decimal return (1 + A/B) used for bet settlement
+    // Build race horses and lock tote-board odds for display + settlement.
+    // - h.odds (decimal) is used for simulation strength.
+    // - h.oddsLabel / h.oddsFrac are used for the race card + bet settlement.
     horses = [...ownerHorses, ...bots].map(h => {
-      const dec = getCurrentOdds(h)
-      const locked = lockBoardOdds(dec)
+      const decFair = getCurrentOdds(h)
+      const locked = lockToteBoardOdds(decFair, { minProfit: 2.0 })
       return {
         ...h,
-        odds: locked.dec,
-        oddsFrac: locked.frac,
-        oddsLabel: locked.label,
-        oddsDecLocked: locked.decLocked
+        odds: locked.decFair,
+        oddsLabel: locked.oddsLabel,
+        oddsFrac: locked.oddsFrac,
+        oddsDecLocked: locked.oddsDecLocked
       }
     })
 
@@ -517,6 +511,7 @@ if (!globalThis[LISTENER_GUARD_KEY]) {
         tickChar: TICK_CHAR,
         nameWidth: NAME_WIDTH
       })
+
       const order = rankOrder(raceState)
       const winner = raceState[winnerIdx]
       const runnerUpIdx = (order[0] === winnerIdx) ? order[1] : order[0]
@@ -592,8 +587,8 @@ function _fmtPct (w, r) {
   return Math.round((wins / races) * 100) + '%'
 }
 function _fmtOdds (h) {
-  // Stats views should also use board-style fractional odds.
-  return lockBoardOdds(getCurrentOdds(h)).label
+  const decFair = getCurrentOdds(h)
+  return lockToteBoardOdds(decFair, { minProfit: 2.0 }).oddsLabel
 }
 function _fmtLine (h, idx = null) {
   const tag = (idx != null) ? `${String(idx + 1).padStart(2, ' ')}.` : '•'
@@ -629,129 +624,4 @@ export async function handleMyHorsesCommand (ctx) {
   const header = `🐴 **${nick}’s Stable** (${arranged.length})`
   const body = ['```', header, ...lines, '```'].join('\n')
   await postMessage({ room: ROOM, message: body })
-}
-
-export async function handleHorseStatsCommand (ctx) {
-  const room = ctx?.room || ROOM
-  const text = String(ctx?.message || '').trim()
-  // FIX: this should be \s not \\s
-  const nameArg = (text.match(/^\/horsestats\s+(.+)/i) || [])[1]
-
-  const all = await getAllHorses()
-  const horsesList = Array.isArray(all) ? all : []
-
-  if (!nameArg) {
-    const topWins = horsesList.slice()
-      .sort((a, b) => Number(b?.wins || 0) - Number(a?.wins || 0))
-      .slice(0, 10)
-
-    const topPct = horsesList.slice()
-      .filter(h => Number(h?.racesParticipated || 0) >= 5)
-      .sort((a, b) => {
-        const ap = Number(a?.wins || 0) / Math.max(1, Number(a?.racesParticipated || 0))
-        const bp = Number(b?.wins || 0) / Math.max(1, Number(b?.racesParticipated || 0))
-        return bp - ap
-      })
-      .slice(0, 10)
-
-    const linesWins = topWins.map((h, i) => _fmtLine(h, i))
-    const linesPct = topPct.map((h, i) => _fmtLine(h, i))
-
-    const msg = [
-      ' **Horse Stats**',
-      '',
-      ' Top Wins',
-      ...linesWins,
-      '',
-      ' Best Win% (min 5 starts)',
-      ...linesPct
-    ].join('\n')
-
-    await postMessage({ room, message: '```\n' + msg + '\n```' })
-    return
-  }
-
-  const needle = nameArg.toLowerCase()
-  const match = horsesList.find(h => String(h?.name || '').toLowerCase() === needle) ||
-                 horsesList.find(h => String(h?.name || '').toLowerCase().includes(needle))
-
-  if (!match) {
-    await postMessage({ room, message: `❗ Couldn’t find a horse named **${nameArg}**.` })
-    return
-  }
-
-  const races = Number(match?.racesParticipated || 0)
-  const wins = Number(match?.wins || 0)
-  const pct = _fmtPct(wins, races)
-  const owner = match?.ownerId ? `<@uid:${match.ownerId}>` : 'House'
-
-  const limit = careerLimitFor(match)
-  const left = Number.isFinite(limit) ? Math.max(limit - races, 0) : null
-
-  const details = [
-    ` **${match.name}**` + (match.retired ? ' (retired)' : ''),
-    `Owner: ${owner}`,
-    `Tier: ${String(match?.tier || '').toUpperCase() || '—'}`,
-    `Odds (current): ${_fmtOdds(match)}`,
-    `Record: ${wins} wins from ${races} starts (${pct})`,
-    Number.isFinite(limit)
-      ? `Career limit: ${limit} · Races left: ${left}`
-      : 'Career limit: —',
-    `Base odds: ${match?.baseOdds ?? '—'} · Volatility: ${match?.volatility ?? '—'}`
-  ].join('\n')
-
-  await postMessage({ room, message: '```\n' + details + '\n```' })
-}
-
-export async function handleTopHorsesCommand (ctx) {
-  const room = ctx?.room || ROOM
-  const all = await getAllHorses()
-  const list = Array.isArray(all) ? all : []
-
-  const allenIds = String(process.env.ALLEN_USER_IDS || process.env.CHAT_USER_ID || '')
-    .split(',')
-    .map(s => s.trim())
-    .filter(Boolean)
-
-  const userHorses = list.filter(h => {
-    const owner = h?.ownerId
-    if (!owner) return false
-    return !allenIds.includes(String(owner))
-  })
-
-  if (userHorses.length === 0) {
-    await postMessage({ room, message: '```\nNo user-owned horses found yet.\n```' })
-    return
-  }
-
-  const top = userHorses.slice()
-    .sort((a, b) => {
-      const dw = Number(b?.wins || 0) - Number(a?.wins || 0)
-      if (dw) return dw
-      const ap = Number(a?.wins || 0) / Math.max(1, Number(a?.racesParticipated || 0))
-      const bp = Number(b?.wins || 0) / Math.max(1, Number(b?.racesParticipated || 0))
-      return bp - ap
-    })
-    .slice(0, 10)
-
-  const lines = top.map((h, i) => _fmtLine(h, i))
-  await postMessage({ room, message: '```\n' + [' Top Horses by Wins', ...lines].join('\n') + '\n```' })
-}
-
-// ── Help command ─────────────────────────────────────────────────────────
-export async function handleHorseHelpCommand (ctx) {
-  const room = ctx?.room || ROOM
-  const helpLines = [
-    ' **Horse Race Commands**',
-    '',
-    '/buyhorse <tier> – Purchase a new horse. Tiers include champion, elite, pro, rookie and amateur.',
-    '/myhorses – List your owned horses with their race counts, wins and career limits.',
-    '/horsestats [name] – Show detailed stats for a specific horse by name, or view leaderboards when no name is given.',
-    '/tophorses – See the top user-owned horses ranked by wins and win percentage.',
-    '/horse <number> <amount> – Place a bet on a horse during the betting phase (use the number shown on the race card).',
-    '/horsehelp – Display this help message.',
-    '',
-    'Note: Horses have a finite career limit assigned when purchased. Once a horse reaches this limit, it will automatically retire and cannot enter new races.'
-  ]
-  await postMessage({ room, message: '```\n' + helpLines.join('\n') + '\n```' })
 }
