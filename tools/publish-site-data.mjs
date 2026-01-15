@@ -105,10 +105,13 @@ async function publishAlbumStats (state) {
        ORDER BY id ASC
     `).all();
 
-    // Compute review counts per albumId.  We alias albumId to "number" to
-    // match existing API responses.  SQLite will return a numeric count.
+    // Compute review counts per albumId.  The public site’s album tab
+    // expects each entry to expose its identifier under `albumId` (or `id` or
+    // `album_id`) and the count under `count` (or `reviews`/`c`).  Using
+    // `albumId` here ensures that getAlbumReviewCounts() in site/app.js
+    // recognizes the values.  SQLite will return a numeric count.
     const reviewCounts = db.prepare(`
-      SELECT albumId AS number,
+      SELECT albumId AS albumId,
              COUNT(*) AS count
         FROM album_reviews
        GROUP BY albumId
@@ -134,7 +137,7 @@ async function publishAlbumStats (state) {
   } catch (err) {
     console.warn('[publish] albumStats failed:', err?.message || err);
   } finally {
-  db.close();
+    db.close();
   }
 }
 
