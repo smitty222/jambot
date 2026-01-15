@@ -234,16 +234,29 @@ export async function runRace ({ horses, horseBets }) {
     console.warn('[simulation] updateHorseStats failed:', e?.message)
   }
 
-  // Award owner bonus (10% of price) if the winning horse has an owner and a price
-  let ownerBonus = null
-  const winner = horses[winnerIdx]
-  if (winner?.ownerId && Number(winner?.price) > 0) {
-    const bonus = Math.floor(Number(winner.price) * 0.10)
-    if (bonus > 0) {
-      await safeCall(addToUserWallet, [winner.ownerId, bonus])
-      ownerBonus = { ownerId: winner.ownerId, amount: bonus }
-    }
+
+
+let ownerBonus = null
+const winner = horses[winnerIdx]
+
+if (winner?.ownerId && Number(winner?.price) > 0) {
+  const pctRaw = Number(process.env.HORSE_OWNER_BONUS_PCT ?? 0.20)
+  const minRaw = Number(process.env.HORSE_OWNER_BONUS_MIN ?? 0)
+
+  // Guardrails: keep it sane
+  const pct = Number.isFinite(pctRaw) ? Math.max(0, Math.min(1, pctRaw)) : 0.20
+  const minBonus = Number.isFinite(minRaw) ? Math.max(0, Math.floor(minRaw)) : 0
+
+  const price = Number(winner.price)
+  const pctBonus = Math.floor(price * pct)
+  const bonus = Math.max(minBonus, pctBonus)
+
+  if (bonus > 0) {
+    await safeCall(addToUserWallet, [winner.ownerId, bonus])
+    ownerBonus = { ownerId: winner.ownerId, amount: bonus }
   }
+}
+
 
   // Emit race finished event
   bus.emit('raceFinished', {

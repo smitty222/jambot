@@ -105,7 +105,7 @@ export function renderProgress (
 
     const lane = String(i + 1).padStart(2, '0')
     const nameStr = truncName(h.name, nameWidth).padEnd(nameWidth, ' ')
-    const suffix = i === winnerIndex ? ' WIN' : '    '
+    const suffix = i === winnerIndex ? '🏆' : '    '
 
     return `${lane} ${barStr} ${nameStr}${suffix}`
   })
