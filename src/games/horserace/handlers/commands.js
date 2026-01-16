@@ -275,16 +275,26 @@ async function openBetsPhase () {
     // - h.odds (decimal) is used for simulation strength.
     // - h.oddsLabel / h.oddsFrac are used for the race card + bet settlement.
     horses = [...ownerHorses, ...bots].map(h => {
-      const decFair = getCurrentOdds(h)
-      const locked = lockToteBoardOdds(decFair, { minProfit: 2.0 })
-      return {
-        ...h,
-        odds: locked.decFair,
-        oddsLabel: locked.oddsLabel,
-        oddsFrac: locked.oddsFrac,
-        oddsDecLocked: locked.oddsDecLocked
-      }
-    })
+  const decFair = getCurrentOdds(h)
+  const locked = lockToteBoardOdds(decFair, { minProfit: 2.0 })
+
+  // CRITICAL: Prevent “underpriced favorite” exploit.
+  // Simulation strength should NEVER be stronger than the displayed odds.
+  // Since lower decimal = stronger, we take the max.
+  const decStrength = Math.max(locked.decFair, locked.oddsDecLocked)
+
+  return {
+    ...h,
+    // used by simulation speed scaling
+    odds: decStrength,
+
+    // display + settlement
+    oddsLabel: locked.oddsLabel,
+    oddsFrac: locked.oddsFrac,
+    oddsDecLocked: locked.oddsDecLocked
+  }
+})
+
 
     if (!horses.length) {
       await safeCall(postMessage, [{ room: ROOM, message: '❌ No eligible horses. Race canceled.' }])

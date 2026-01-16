@@ -18,7 +18,7 @@ const SOFT_CAP_FRACTION = 0.94
 
 // Movement dials
 const MOMENTUM_BLEND = 0.40
-const NOISE_SD = 0.04 // was 0.045
+const NOISE_SD = 0.045 
 const LEADER_PULL = 0.09
 const ENERGY_AMPLITUDE = 0.07
 const LANE_BIAS_RANGE = 0.012
@@ -46,8 +46,9 @@ function randn (mean = 0, sd = 1) {
 function speedFromOdds (decOdds) {
   // Compressed advantage band so favorites are more likely, but not locks.
   // Targets roughly ~30-45% win rates for typical favorites in a 6-horse field.
-  const f = 1.0 + (3.0 - Number(decOdds || 3.0)) * 0.05 // narrower than before
-  return Math.max(0.95, Math.min(1.07, f))
+  const f = 1.0 + (3.0 - Number(decOdds || 3.0)) * 0.04
+return Math.max(0.96, Math.min(1.06, f))
+
 }
 
 /**
