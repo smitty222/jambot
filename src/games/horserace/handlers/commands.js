@@ -696,7 +696,10 @@ export async function handleMyHorsesCommand (ctx) {
   const mine = await getUserHorses(userId)
 
   if (!mine || mine.length === 0) {
-    await postMessage({ room: ROOM, message: `${nick}, you don’t own any horses yet. Use **/buyhorse <tier>** to get started.` })
+    await postMessage({
+      room: ROOM,
+      message: `${nick}, you don’t own any horses yet. Use **/buyhorse <tier>** to get started.`
+    })
     return
   }
 
@@ -710,22 +713,68 @@ export async function handleMyHorsesCommand (ctx) {
     const bw = Number(b?.wins || 0)
     if (bw !== aw) return bw - aw
 
-    const ap = Number(a?.wins || 0) / Math.max(1, Number(a?.racesParticipated || 0))
-    const bp = Number(b?.wins || 0) / Math.max(1, Number(b?.racesParticipated || 0))
+    const ap = aw / Math.max(1, Number(a?.racesParticipated || 0))
+    const bp = bw / Math.max(1, Number(b?.racesParticipated || 0))
     return bp - ap
   })
 
-  // Optional HoF badge (remove if you don’t want it)
-  const rows = arranged.map(h => ({
-    horse: h,
-    hof: (h?.id ? isHorseInducted(h.id) : false)
-  }))
+  const W_NUM = 2
+  const W_NAME = 18
+  const W_TIER = 7
+  const W_REC = 7   // "11-20"
+  const W_PCT = 4
+  const W_LEFT = 4
+  const W_STAT = 6
+
+  const padR = (s, n) => String(s ?? '').padEnd(n, ' ')
+  const padL = (s, n) => String(s ?? '').padStart(n, ' ')
+  const clamp = (s, n) => {
+    s = String(s ?? '')
+    if (s.length <= n) return padR(s, n)
+    return padR(s.slice(0, n - 1) + '…', n)
+  }
+  const pct = (w, s) => {
+    w = Number(w || 0); s = Number(s || 0)
+    if (!s) return '0%'
+    return `${Math.round((w / s) * 100)}%`
+  }
+  const left = (h) => {
+    const races = Number(h?.racesParticipated || 0)
+    const limit = Number(h?.careerLength || 0)
+    if (!limit) return '—'
+    return String(Math.max(0, limit - races))
+  }
+  const stat = (h) => ((!!h?.retired || Number(h?.retired) === 1) ? 'RET' : '')
+
+  const header =
+    `${padL('#', W_NUM)} ` +
+    `${padR('Horse', W_NAME)} ` +
+    `${padR('Tier', W_TIER)} ` +
+    `${padR('W-S', W_REC)} ` +
+    `${padR('%', W_PCT)} ` +
+    `${padR('Left', W_LEFT)} ` +
+    `${padR('Status', W_STAT)}`
+
+  const line = '-'.repeat(header.length)
+
+  const rows = arranged.map((h, i) => {
+    const rec = `${Number(h?.wins || 0)}-${Number(h?.racesParticipated || 0)}`
+    return (
+      `${padL(String(i + 1), W_NUM)} ` +
+      `${clamp(h.name, W_NAME)} ` +
+      `${padR(String(h?.tier || '—').toUpperCase().slice(0, W_TIER), W_TIER)} ` +
+      `${padR(rec, W_REC)} ` +
+      `${padR(pct(h.wins, h.racesParticipated), W_PCT)} ` +
+      `${padR(left(h), W_LEFT)} ` +
+      `${padR(stat(h), W_STAT)}`
+    )
+  })
 
   const title = `${nick}'s Stable (${arranged.length})`
-  const table = renderHorseTable(rows, { title })
-
-  await postMessage({ room: ROOM, message: table })
+  const msg = ['```', title, header, line, ...rows, '```'].join('\n')
+  await postMessage({ room: ROOM, message: msg })
 }
+
 
 
 
@@ -832,9 +881,60 @@ export async function handleTopHorsesCommand (ctx) {
     })
     .slice(0, 10)
 
-  const lines = top.map((h, i) => _fmtLine(h, i))
-  await postMessage({ room, message: '```\n' + [' Top Horses by Wins', ...lines].join('\n') + '\n```' })
+  const W_NUM = 2
+  const W_NAME = 18
+  const W_TIER = 7
+  const W_REC = 7
+  const W_PCT = 4
+  const W_OWNER = 12
+
+  const padR = (s, n) => String(s ?? '').padEnd(n, ' ')
+  const padL = (s, n) => String(s ?? '').padStart(n, ' ')
+  const clamp = (s, n) => {
+    s = String(s ?? '')
+    if (s.length <= n) return padR(s, n)
+    return padR(s.slice(0, n - 1) + '…', n)
+  }
+  const pct = (w, s) => {
+    w = Number(w || 0); s = Number(s || 0)
+    if (!s) return '0%'
+    return `${Math.round((w / s) * 100)}%`
+  }
+
+  const header =
+    `${padL('#', W_NUM)} ` +
+    `${padR('Horse', W_NAME)} ` +
+    `${padR('Tier', W_TIER)} ` +
+    `${padR('W-S', W_REC)} ` +
+    `${padR('%', W_PCT)} ` +
+    `${padR('Owner', W_OWNER)}`
+
+  const line = '-'.repeat(header.length)
+
+  const rows = []
+  for (let i = 0; i < top.length; i++) {
+    const h = top[i]
+    const rec = `${Number(h?.wins || 0)}-${Number(h?.racesParticipated || 0)}`
+    const ownerNick = h?.ownerId
+      ? await safeCall(getUserNickname, [h.ownerId]).catch(() => null)
+      : null
+    const ownerLabel = (ownerNick ? String(ownerNick).replace(/^@/, '') : '—')
+
+    rows.push(
+      `${padL(String(i + 1), W_NUM)} ` +
+      `${clamp(h.name, W_NAME)} ` +
+      `${padR(String(h?.tier || '—').toUpperCase().slice(0, W_TIER), W_TIER)} ` +
+      `${padR(rec, W_REC)} ` +
+      `${padR(pct(h.wins, h.racesParticipated), W_PCT)} ` +
+      `${clamp(ownerLabel, W_OWNER)}`
+    )
+  }
+
+  const title = `Top Horses (User-Owned)`
+  const msg = ['```', title, header, line, ...rows, '```'].join('\n')
+  await postMessage({ room, message: msg })
 }
+
 
 // ── Help command ─────────────────────────────────────────────────────────
 export async function handleHorseHelpCommand (ctx) {

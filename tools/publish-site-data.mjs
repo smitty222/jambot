@@ -33,6 +33,8 @@ const COOLDOWN_MINUTES_STATS    = Number(process.env.PUBLISH_STATS_EVERY_MIN || 
 // the site within a short window without spamming the API.
 const COOLDOWN_MINUTES_ALBUMS   = Number(process.env.PUBLISH_ALBUMS_EVERY_MIN || 10);
 const COOLDOWN_MINUTES_SITEDATA = Number(process.env.PUBLISH_SITEDATA_EVERY_MIN || 10);
+const COOLDOWN_MINUTES_SONGS = Number(process.env.PUBLISH_SONGS_EVERY_MIN || 10);
+
 
 // Persist state on the volume so cooldowns survive restarts
 const STATE_FILE = process.env.PUBLISH_STATE_FILE
@@ -211,12 +213,59 @@ async function publishSiteData(state) {
     state.last.siteData = snapshot.updatedAt; saveState(state);
   } finally { db.close(); }
 }
+async function publishTopSongs (state) {
+  if (minutesSince(state.last?.topSongs) < COOLDOWN_MINUTES_SONGS) {
+    console.log('[publish] topSongs skipped (cooldown)');
+    return;
+  }
+
+  console.log('[publish] topSongs snapshot from', process.env.DB_PATH);
+  const db = new Database(process.env.DB_PATH, { readonly: true });
+
+  try {
+    // This matches what site/app.js expects from /api/db/top_songs
+    // (fields like title, artist, plays, avg, likes, dislikes, stars, lastPlayed)
+    const topSongs = db.prepare(`
+      SELECT
+        COALESCE(trackName, '')           AS title,
+        COALESCE(artistName, '')          AS artist,
+        COALESCE(playCount, 0)            AS plays,
+        COALESCE(averageReview, NULL)     AS avg,
+        COALESCE(likes, 0)                AS likes,
+        COALESCE(dislikes, 0)             AS dislikes,
+        COALESCE(stars, 0)                AS stars,
+        COALESCE(lastPlayed, NULL)        AS lastPlayed
+      FROM room_stats
+      WHERE trackName IS NOT NULL
+        AND TRIM(trackName) <> ''
+        AND LOWER(TRIM(trackName)) <> 'unknown'
+      ORDER BY plays DESC, lastPlayed DESC
+      LIMIT 5000
+    `).all();
+
+    await postJson('/api/publishDb', {
+      tables: { top_songs: topSongs },
+      public: ['top_songs']
+    });
+
+    state.last.topSongs = new Date().toISOString();
+    saveState(state);
+
+    console.log('[publish] topSongs published:', topSongs.length, 'rows');
+  } catch (err) {
+    console.warn('[publish] topSongs failed:', err?.message || err);
+  } finally {
+    db.close();
+  }
+}
+
 
 // ── Main ─────────────────────────────────────────────────────
 const main = async () => {
   const state = loadState();
   await publishCommands(state);
   await publishDb(state);
+  await publishTopSongs(state);
   await publishStats(state);
   await publishSiteData(state);
   // Publish album review statistics after other tasks.  This runs on its own
