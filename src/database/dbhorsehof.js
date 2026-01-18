@@ -1,20 +1,32 @@
 // src/database/dbhorsehof.js
 //
 // Horse Hall of Fame (HoF) storage + queries.
-// Keeps HoF logic isolated from dbhorses.js to avoid turning it into a grab bag.
 //
-// Induction criteria (tunable in one place):
-// - starts >= 20 AND (wins >= 8 OR winPct >= 35%)
-// Default: owner horses only (bots excluded). You can flip INCLUDE_BOTS below.
+// NEW REQUIREMENTS (per your request):
+// - NO minimum races
+// - Horse MUST be retired
+// - Horse must have win% >= threshold
+//
+// Also includes an automatic one-time sweep:
+// - On first HoF usage, we scan existing retired horses and induct
+//   any that qualify, so your current retired legends get added.
+//
+// Bots:
+// - Default excludes bots (owner horses only). Flip INCLUDE_BOTS = true
+//   if you want "House legends" as well.
 
 import db from './db.js'
 
-const INCLUDE_BOTS = false // set true if you ever want "House legends" in HoF
+const INCLUDE_BOTS = false
 
-// Induction thresholds
-const MIN_STARTS = 20
-const MIN_WINS = 8
-const MIN_WIN_PCT = 0.35
+// Win% threshold to be inducted (default 35%).
+// You can override via env: HORSE_HOF_MIN_WIN_PCT="0.40" (for 40%)
+const MIN_WIN_PCT = (() => {
+  const raw = Number(process.env.HORSE_HOF_MIN_WIN_PCT ?? 0.35)
+  return Number.isFinite(raw) ? Math.max(0, Math.min(1, raw)) : 0.35
+})()
+
+const SWEEP_GUARD_KEY = '__JAMBOT_HORSE_HOF_SWEEP__'
 
 function ensureTable () {
   db.prepare(`
@@ -25,6 +37,18 @@ function ensureTable () {
       snapshot_json TEXT NOT NULL
     )
   `).run()
+
+  // One-time per process: sweep existing retired horses into HoF.
+  // This makes sure your current retired horses get inducted immediately.
+  if (!globalThis[SWEEP_GUARD_KEY]) {
+    globalThis[SWEEP_GUARD_KEY] = true
+    try {
+      sweepRetiredHorsesIntoHof()
+    } catch (e) {
+      // Never crash the bot over HoF
+      console.warn('[horse_hof] sweep failed:', e?.message)
+    }
+  }
 }
 
 function nowIso () {
@@ -43,21 +67,30 @@ function isOwnerHorse (h) {
   return true
 }
 
-function qualifies (h) {
-  const starts = Number(h?.racesParticipated ?? 0)
+function winPct (h) {
   const wins = Number(h?.wins ?? 0)
-  if (!Number.isFinite(starts) || !Number.isFinite(wins)) return false
-  if (starts < MIN_STARTS) return false
-  const pct = starts > 0 ? wins / starts : 0
-  return (wins >= MIN_WINS) || (pct >= MIN_WIN_PCT)
+  const starts = Number(h?.racesParticipated ?? 0)
+  if (!Number.isFinite(wins) || !Number.isFinite(starts) || starts <= 0) return 0
+  return wins / starts
+}
+
+function qualifies (h) {
+  // Must be retired
+  const retired = !!h?.retired || Number(h?.retired) === 1
+  if (!retired) return false
+
+  // Bots excluded by default
+  if (!INCLUDE_BOTS && !isOwnerHorse(h)) return false
+
+  // Must meet win% threshold (no min races per your request)
+  return winPct(h) >= MIN_WIN_PCT
 }
 
 function buildReason (h) {
   const starts = Number(h?.racesParticipated ?? 0)
   const wins = Number(h?.wins ?? 0)
-  const pct = starts > 0 ? (wins / starts) : 0
-  if (wins >= MIN_WINS) return `Reached ${MIN_WINS}+ wins (${wins}W/${starts}S)`
-  return `Win% >= ${(MIN_WIN_PCT * 100).toFixed(0)}% (${Math.round(pct * 100)}% on ${starts} starts)`
+  const pct = winPct(h)
+  return `Retired with ${Math.round(pct * 100)}% win rate (${wins}W/${starts}S)`
 }
 
 function snapshot (h) {
@@ -110,8 +143,6 @@ export function maybeInductHorse (horseRow) {
   ensureTable()
 
   if (!horseRow?.id) return { inducted: false }
-  if (!INCLUDE_BOTS && !isOwnerHorse(horseRow)) return { inducted: false }
-
   if (!qualifies(horseRow)) return { inducted: false }
 
   const existing = getHofEntryByHorseId(horseRow.id)
@@ -127,15 +158,39 @@ export function maybeInductHorse (horseRow) {
   return { inducted: true, entry, reason }
 }
 
-// --- Query helpers for /hof -------------------------------------------
+// --- One-time sweep -----------------------------------------------------
 
 /**
- * Returns a list of HoF horses joined with the current horses table.
- * sort:
- * - 'newest' (default)
- * - 'wins'
- * - 'winpct' (min starts still applies for induction, but winpct is computed live)
+ * Sweep all currently retired horses and induct qualifying ones.
+ * This is called automatically once per process from ensureTable().
+ *
+ * Returns { scanned, inducted }.
  */
+export function sweepRetiredHorsesIntoHof () {
+  ensureTable()
+
+  // NOTE: retired stored as 1/0 in your schema
+  const retiredHorses = db.prepare(`SELECT * FROM horses WHERE retired = 1`).all()
+  let inducted = 0
+
+  for (const h of retiredHorses) {
+    if (!h?.id) continue
+    if (getHofEntryByHorseId(h.id)) continue
+    if (!qualifies(h)) continue
+
+    inductHorse({
+      horseId: h.id,
+      reason: buildReason(h),
+      snapshotObj: snapshot(h)
+    })
+    inducted++
+  }
+
+  return { scanned: retiredHorses.length, inducted }
+}
+
+// --- Query helpers for /hof -------------------------------------------
+
 export function getHofList ({ limit = 10, sort = 'newest' } = {}) {
   ensureTable()
   const lim = Math.max(1, Math.min(50, Number(limit) || 10))
@@ -165,10 +220,6 @@ export function getHofList ({ limit = 10, sort = 'newest' } = {}) {
   `).all(lim)
 }
 
-/**
- * Find a HoF entry by horse name (case-insensitive).
- * Returns the join row or null.
- */
 export function getHofEntryByHorseName (name) {
   ensureTable()
   const needle = String(name || '').trim().toLowerCase()
