@@ -17,19 +17,14 @@ import { logger } from '../utils/logging.js'
 // running, it will wait its turn. Use updateRecentSongs() as an async
 // function; it returns a promise that resolves once the entry has
 // been persisted.
+//
+// NOTE: recent_songs is intentionally kept small (trimmed to 30).
+// For analytics (Wrapped), we ALSO log an append-only row into
+// song_plays (created in initdb.js).
 
-// A FIFO queue of pending song updates. Each entry is a tuple of
-// `{ newSong, resolve, reject }` corresponding to the update request and
-// its promise handlers.
 const _updateQueue = []
-
-// Indicates whether an update is currently in progress.
 let _updateInProgress = false
 
-// Kick off processing of the next item in the queue if not already
-// running. This is called after each update completes or when a new
-// entry is enqueued. It processes one item at a time to avoid
-// overlapping external API calls.
 async function _processNext () {
   if (_updateInProgress) return
   const next = _updateQueue.shift()
@@ -43,19 +38,13 @@ async function _processNext () {
     reject(err)
   } finally {
     _updateInProgress = false
-    // Defer to the event loop before processing the next item
     setImmediate(_processNext)
   }
 }
 
-// Internal helper that performs the actual update logic: fetches
-// similar tracks, writes to the database and trims old entries. Not
-// intended to be called directly.
 async function _performUpdate (newSong) {
-  // Guard against invalid input
-  if (!newSong || !newSong.trackName || !newSong.artistName) {
-    return
-  }
+  if (!newSong || !newSong.trackName || !newSong.artistName) return
+
   // Attempt to fetch similar tracks from the primary source
   let similarTracks = []
   try {
@@ -65,8 +54,7 @@ async function _performUpdate (newSong) {
     similarTracks = []
   }
 
-  // Fallback: use the top tracks API if no results. This also
-  // gracefully handles errors by logging and moving on.
+  // Fallback: use the top tracks API if no results.
   if (!Array.isArray(similarTracks) || similarTracks.length === 0) {
     try {
       const topTracks = await getTopArtistTracks(newSong.artistName)
@@ -87,11 +75,8 @@ async function _performUpdate (newSong) {
     }
   }
 
-  // Persist the song along with its similar tracks. Use parameter
-  // bindings to avoid SQL injection and ensure the date is recorded
-  // with SQLite’s datetime('now') function. Default values are used
-  // for missing properties.
   try {
+    // 1) recent_songs: small UX list (trimmed)
     db.prepare(
       `INSERT INTO recent_songs (
         trackName,
@@ -121,16 +106,44 @@ async function _performUpdate (newSong) {
       const toDelete = total - 30
       db.prepare(
         `DELETE FROM recent_songs
-        WHERE id IN (
-          SELECT id FROM recent_songs
-          ORDER BY playedAt ASC
-          LIMIT ?
-        )`
+         WHERE id IN (
+           SELECT id FROM recent_songs
+           ORDER BY playedAt ASC
+           LIMIT ?
+         )`
       ).run(toDelete)
     }
+
+    // 2) song_plays: append-only analytics log for Wrapped (do NOT trim)
+    // This is intentionally lightweight. Missing fields are stored as NULL.
+    try {
+      db.prepare(
+        `INSERT INTO song_plays (
+          trackName,
+          artistName,
+          albumName,
+          songId,
+          spotifyTrackId,
+          djUuid,
+          djNickname,
+          playedAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+      ).run(
+        newSong.trackName,
+        newSong.artistName,
+        newSong.albumName || 'Unknown',
+        newSong.songId || null,
+        newSong.spotifyTrackId || null,
+        newSong.djUuid || null,
+        newSong.djNickname || newSong.dj || 'unknown'
+      )
+    } catch (err) {
+      // Non-fatal: wrapped can still work even if this fails occasionally
+      logger.warn('[RecentSongs] song_plays insert failed', { err: err?.message || err })
+    }
+
     logger.info('[RecentSongs] Stored song', { track: newSong.trackName, artist: newSong.artistName })
   } catch (err) {
-    // Log the error but do not rethrow; the caller will still resolve
     logger.error('[RecentSongs] DB update failed', { err: err?.message || err })
   }
 }
@@ -147,7 +160,6 @@ function deserializeSimilarTracks (jsonStr) {
   }
 }
 
-// ✅ Read N most recent songs from DB
 export function readRecentSongs (limit = 30) {
   const rows = db.prepare(`
     SELECT *
@@ -162,17 +174,6 @@ export function readRecentSongs (limit = 30) {
   }))
 }
 
-// ✅ Insert a new song into recent_songs
-/**
- * Queue and persist a new song into the recent_songs table. This
- * function returns a Promise that resolves when the entry has been
- * processed. Calls are serialized via an internal queue to avoid
- * overlapping external API calls. See the module-level comment for
- * details.
- *
- * @param {Object} newSong
- * @returns {Promise<void>}
- */
 export function updateRecentSongs (newSong) {
   return new Promise((resolve, reject) => {
     _updateQueue.push({ newSong, resolve, reject })

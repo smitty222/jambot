@@ -34,6 +34,8 @@ const COOLDOWN_MINUTES_STATS    = Number(process.env.PUBLISH_STATS_EVERY_MIN || 
 const COOLDOWN_MINUTES_ALBUMS   = Number(process.env.PUBLISH_ALBUMS_EVERY_MIN || 10);
 const COOLDOWN_MINUTES_SITEDATA = Number(process.env.PUBLISH_SITEDATA_EVERY_MIN || 10);
 const COOLDOWN_MINUTES_SONGS = Number(process.env.PUBLISH_SONGS_EVERY_MIN || 10);
+const COOLDOWN_MINUTES_WRAPPED  = Number(process.env.PUBLISH_WRAPPED_EVERY_MIN || 60);
+
 
 
 // Persist state on the volume so cooldowns survive restarts
@@ -225,7 +227,7 @@ async function publishTopSongs (state) {
   try {
     // We publish a blended dataset so new songs always appear even if they
     // have low plays. Keep total payload capped for safety.
-    const MAX_ROWS = Number(process.env.TOP_SONGS_LIMIT || 5000);
+    const MAX_ROWS = Number(process.env.TOP_SONGS_LIMIT || 15000);
     const TOP_PLAYS_N = Number(process.env.TOP_SONGS_TOP_PLAYS_N || 3500);
     const RECENT_N = Number(process.env.TOP_SONGS_RECENT_N || 2500);
 
@@ -315,6 +317,90 @@ async function publishTopSongs (state) {
     db.close();
   }
 }
+async function publishWrapped2026 (state) {
+  if (minutesSince(state.last?.wrapped2026) < COOLDOWN_MINUTES_WRAPPED) {
+    console.log('[publish] wrapped2026 skipped (cooldown)');
+    return;
+  }
+
+  console.log('[publish] wrapped2026 snapshot from', process.env.DB_PATH);
+  const db = new Database(process.env.DB_PATH, { readonly: true });
+
+  try {
+    // Date window for 2026
+    const START = '2026-01-01';
+    const END   = '2027-01-01';
+
+    const LIMIT_SONGS   = Number(process.env.WRAPPED_TOP_SONGS_LIMIT || 200);
+    const LIMIT_ARTISTS = Number(process.env.WRAPPED_TOP_ARTISTS_LIMIT || 200);
+    const LIMIT_DJS     = Number(process.env.WRAPPED_TOP_DJS_LIMIT || 100);
+
+    // Top songs (by plays)
+    const topSongs = db.prepare(`
+      SELECT
+        trackName AS title,
+        artistName AS artist,
+        COUNT(*) AS plays
+      FROM song_plays
+      WHERE playedAt >= ? AND playedAt < ?
+      GROUP BY trackName, artistName
+      ORDER BY plays DESC
+      LIMIT ?
+    `).all(START, END, LIMIT_SONGS);
+
+    // Top artists (by plays)
+    const topArtists = db.prepare(`
+      SELECT
+        artistName AS artist,
+        COUNT(*) AS plays
+      FROM song_plays
+      WHERE playedAt >= ? AND playedAt < ?
+      GROUP BY artistName
+      ORDER BY plays DESC
+      LIMIT ?
+    `).all(START, END, LIMIT_ARTISTS);
+
+    // Top DJs (by plays). Prefer djNickname for display, keep djUuid if present.
+    const topDjs = db.prepare(`
+      SELECT
+        djUuid AS djUuid,
+        COALESCE(NULLIF(TRIM(djNickname), ''), 'unknown') AS dj,
+        COUNT(*) AS plays
+      FROM song_plays
+      WHERE playedAt >= ? AND playedAt < ?
+      GROUP BY djUuid, dj
+      ORDER BY plays DESC
+      LIMIT ?
+    `).all(START, END, LIMIT_DJS);
+
+    await postJson('/api/publishDb', {
+      tables: {
+        wrapped_2026_top_songs: topSongs,
+        wrapped_2026_top_artists: topArtists,
+        wrapped_2026_top_djs: topDjs
+      },
+      public: [
+        'wrapped_2026_top_songs',
+        'wrapped_2026_top_artists',
+        'wrapped_2026_top_djs'
+      ]
+    });
+
+    state.last.wrapped2026 = new Date().toISOString();
+    saveState(state);
+
+    console.log('[publish] wrapped2026 published:',
+      topSongs.length, 'songs,',
+      topArtists.length, 'artists,',
+      topDjs.length, 'djs'
+    );
+  } catch (err) {
+    console.warn('[publish] wrapped2026 failed:', err?.message || err);
+  } finally {
+    db.close();
+  }
+}
+
 
 
 
@@ -329,6 +415,8 @@ const main = async () => {
   // Publish album review statistics after other tasks.  This runs on its own
   // cooldown separate from the overall site snapshot to avoid undue load.
   await publishAlbumStats(state);
+  await publishWrapped2026(state);
+
   console.log('[publish] done');
 };
 

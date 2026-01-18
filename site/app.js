@@ -53,6 +53,16 @@ const els = {
   crapsRecord: $("crapsRecord"),
   lotteryWinners: $("lotteryWinners"),
 
+    // wrapped
+  tabWrapped: $("tabWrapped"),
+  viewWrapped: $("viewWrapped"),
+  wrappedYear: $("wrappedYear"),
+  wrappedRefresh: $("wrappedRefresh"),
+  wrappedTopSongs: $("wrappedTopSongs"),
+  wrappedTopArtists: $("wrappedTopArtists"),
+  wrappedTopDjs: $("wrappedTopDjs"),
+
+
   // data browsing
   publicTables: $("publicTables"),   // ensure this exists in JS
   modTables: $("modTables"),
@@ -134,6 +144,7 @@ const TAB_MAP = {
   tabSongs:    "viewSongs",
   tabGames:    "viewGames",
   tabLottery:  "viewLottery",
+  tabWrapped:  "viewWrapped",
   tabSettings: "viewSettings",
 };
 function showTab(tid) {
@@ -163,7 +174,7 @@ function setupTabs() {
 }
 // Safe fallback in case something overlays clicks: delegate on document too
 document.addEventListener("click", (e) => {
-  const t = e.target?.closest?.("#tabCommands, #tabData, #tabStats, #tabAlbums, #tabSongs, #tabLottery, #tabSettings");
+  const t = e.target?.closest?.("#tabCommands, #tabData, #tabStats, #tabAlbums, #tabSongs, #tabWrapped, #tabLottery, #tabSettings, #tabGames");
   if (!t) return;
   e.preventDefault(); e.stopPropagation();
   showTab(t.id);
@@ -823,6 +834,79 @@ async function refreshLottery(){
     els.lotteryBalls.innerHTML = `<div class="muted small">Error: ${escapeHtml(e.message)}</div>`;
   }
 }
+// ------------- Wrapped (2026) -------------
+function renderWrappedTable(container, rows, cols) {
+  if (!container) return;
+  if (!Array.isArray(rows) || rows.length === 0) {
+    container.innerHTML = `<div class="muted small">No data yet.</div>`;
+    return;
+  }
+
+  const header = cols.map(c => `<th>${escapeHtml(c.label)}</th>`).join("");
+  const body = rows.slice(0, 50).map((r, i) => {
+    const tds = cols.map(c => `<td>${escapeHtml(String(r[c.key] ?? ""))}</td>`).join("");
+    return `<tr><td style="text-align:center;">${i + 1}</td>${tds}</tr>`;
+  }).join("");
+
+  container.innerHTML = `
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr><th style="width:56px;text-align:center;">#</th>${header}</tr>
+        </thead>
+        <tbody>${body}</tbody>
+      </table>
+      <div class="muted small" style="margin-top:6px;">Showing top ${Math.min(50, rows.length)}.</div>
+    </div>
+  `;
+}
+
+async function refreshWrapped() {
+  const year = String(els.wrappedYear?.value || "2026").trim();
+
+  // Your publisher is creating these exact public tables:
+  // wrapped_2026_top_songs, wrapped_2026_top_artists, wrapped_2026_top_djs
+  const tSongs = `wrapped_${year}_top_songs`;
+  const tArtists = `wrapped_${year}_top_artists`;
+  const tDjs = `wrapped_${year}_top_djs`;
+
+  if (els.wrappedTopSongs) els.wrappedTopSongs.innerHTML = `<div class="muted small">Loading…</div>`;
+  if (els.wrappedTopArtists) els.wrappedTopArtists.innerHTML = `<div class="muted small">Loading…</div>`;
+  if (els.wrappedTopDjs) els.wrappedTopDjs.innerHTML = `<div class="muted small">Loading…</div>`;
+
+  try {
+    const [songs, artists, djs] = await Promise.all([
+      apiGet(`/api/db/${tSongs}`, false).catch(() => []),
+      apiGet(`/api/db/${tArtists}`, false).catch(() => []),
+      apiGet(`/api/db/${tDjs}`, false).catch(() => []),
+    ]);
+
+    renderWrappedTable(els.wrappedTopSongs, songs, [
+      { key: "title", label: "Song" },
+      { key: "artist", label: "Artist" },
+      { key: "plays", label: "Plays" },
+    ]);
+
+    renderWrappedTable(els.wrappedTopArtists, artists, [
+      { key: "artist", label: "Artist" },
+      { key: "plays", label: "Plays" },
+    ]);
+
+    renderWrappedTable(els.wrappedTopDjs, djs, [
+      { key: "dj", label: "DJ" },
+      { key: "plays", label: "Plays" },
+    ]);
+  } catch (e) {
+    const msg = `<div class="muted small">Error: ${escapeHtml(e.message)}</div>`;
+    if (els.wrappedTopSongs) els.wrappedTopSongs.innerHTML = msg;
+    if (els.wrappedTopArtists) els.wrappedTopArtists.innerHTML = msg;
+    if (els.wrappedTopDjs) els.wrappedTopDjs.innerHTML = msg;
+  }
+}
+
+if (els.wrappedRefresh) els.wrappedRefresh.addEventListener("click", refreshWrapped);
+if (els.wrappedYear) els.wrappedYear.addEventListener("change", refreshWrapped);
+
 
 // ------------- Boot -------------
 async function refreshAll() {
@@ -834,6 +918,7 @@ async function refreshAll() {
     refreshAlbums(),
     refreshSongs(),
     refreshLottery(),
+    refreshWrapped(),
   ]);
 }
 
@@ -847,6 +932,8 @@ async function refreshAll() {
     setInterval(refreshLottery, 30000);
     setInterval(refreshAlbums, 60000);
     setInterval(refreshSongs, 60000);
+    setInterval(refreshWrapped, 60000);
+
   } catch (e) {
     console.error("[jj] init failed", e);
     toast("Init failed: " + e.message);

@@ -96,6 +96,29 @@ db.exec(`
     UNIQUE(songId, userId)
   )
 `)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS song_plays (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    playedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+
+    -- Identity
+    trackName TEXT NOT NULL,
+    artistName TEXT NOT NULL,
+    albumName TEXT,
+    songId TEXT,
+    spotifyTrackId TEXT,
+
+    -- Who played it
+    djUuid TEXT,
+    djNickname TEXT
+  )
+`)
+
+// Helpful indexes for Wrapped queries
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_song_plays_playedAt ON song_plays(playedAt)') } catch (e) { console.warn('⚠️ Could not create idx_song_plays_playedAt:', e.message) }
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_song_plays_track_artist ON song_plays(trackName, artistName)') } catch (e) { console.warn('⚠️ Could not create idx_song_plays_track_artist:', e.message) }
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_song_plays_artist ON song_plays(artistName)') } catch (e) { console.warn('⚠️ Could not create idx_song_plays_artist:', e.message) }
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_song_plays_djUuid ON song_plays(djUuid)') } catch (e) { console.warn('⚠️ Could not create idx_song_plays_djUuid:', e.message) }
 
 // Albums
 db.exec(`
