@@ -11,7 +11,7 @@ import { bus, safeCall } from '../service.js'
 import { runRace, LEGS } from '../simulation.js'
 import { getCurrentOdds, lockToteBoardOdds } from '../utils/odds.js'
 import { renderProgress, renderRacecard } from '../utils/progress.js'
-import { getHofList, getHofEntryByHorseName } from '../../../database/dbhorsehof.js'
+import { getHofList, getHofEntryByHorseName, isHorseInducted } from '../../../database/dbhorsehof.js'
 
 const ROOM = process.env.ROOM_UUID
 
@@ -614,29 +614,125 @@ function _fmtLine (h, idx = null) {
   return `${tag} ${h.name}${retired}${tier} — Odds ${_fmtOdds(h)} · Races ${raceInfo} · Wins ${wins} (${pct})`
 }
 
+function padR (s, n) { return String(s ?? '').padEnd(n, ' ') }
+function padL (s, n) { return String(s ?? '').padStart(n, ' ') }
+
+function clampName (s, n) {
+  s = String(s ?? '')
+  if (s.length <= n) return padR(s, n)
+  return padR(s.slice(0, Math.max(0, n - 1)) + '…', n)
+}
+
+function fmtPct (wins, starts) {
+  const w = Number(wins || 0)
+  const s = Number(starts || 0)
+  if (!s) return '0%'
+  return `${Math.round((w / s) * 100)}%`
+}
+
+function tierTag (tier) {
+  const t = String(tier || '').toUpperCase()
+  // keep short for table
+  if (!t) return '—'
+  if (t.length <= 7) return t
+  return t.slice(0, 7)
+}
+
+function statusTag (h, hof = false) {
+  const retired = !!h?.retired || Number(h?.retired) === 1
+  if (retired) return hof ? '🏆 RET' : 'RET'
+  return hof ? '🏆' : ''
+}
+
+function careerLeft (h) {
+  const races = Number(h?.racesParticipated || 0)
+  const limit = Number.isFinite(Number(h?.careerLength)) ? Number(h.careerLength) : null
+  if (!limit || limit <= 0) return '—'
+  return String(Math.max(0, limit - races))
+}
+
+function renderHorseTable (rows, { title = '', showOwner = false } = {}) {
+  // Column widths tuned for CometChat
+  const W_NUM = 2
+  const W_NAME = showOwner ? 18 : 22
+  const W_TIER = 7
+  const W_REC = 9   // "12-34"
+  const W_PCT = 4   // "45%"
+  const W_LEFT = 4  // races left
+  const W_STAT = 6  // status / hof badge
+
+  const header =
+    `${padL('#', W_NUM)} ` +
+    `${padR('Horse', W_NAME)} ` +
+    `${padR('Tier', W_TIER)} ` +
+    `${padR('W-S', W_REC)} ` +
+    `${padR('%', W_PCT)} ` +
+    `${padR('Left', W_LEFT)} ` +
+    `${padR('Status', W_STAT)}` +
+    (showOwner ? ` ${padR('Owner', 14)}` : '')
+
+  const line = '-'.repeat(header.length)
+
+  const body = rows.map((r, idx) => {
+    const h = r.horse || r
+    const num = padL(String(idx + 1), W_NUM)
+    const name = clampName(h.name, W_NAME)
+    const tier = padR(tierTag(h.tier), W_TIER)
+    const rec = padR(`${Number(h.wins || 0)}-${Number(h.racesParticipated || 0)}`, W_REC)
+    const pct = padR(fmtPct(h.wins, h.racesParticipated), W_PCT)
+    const left = padR(careerLeft(h), W_LEFT)
+    const stat = padR(statusTag(h, !!r.hof), W_STAT)
+    const owner = showOwner ? ` ${padR(String(r.ownerLabel || '—'), 14)}` : ''
+    return `${num} ${name} ${tier} ${rec} ${pct} ${left} ${stat}${owner}`
+  })
+
+  const parts = []
+  if (title) parts.push(title)
+  parts.push(header)
+  parts.push(line)
+  parts.push(...body)
+
+  return '```\n' + parts.join('\n') + '\n```'
+}
+
+
 export async function handleMyHorsesCommand (ctx) {
   const userId = ctx?.sender || ctx?.userId || ctx?.uid
   const nick = await getUserNickname(userId)
   const mine = await getUserHorses(userId)
+
   if (!mine || mine.length === 0) {
     await postMessage({ room: ROOM, message: `${nick}, you don’t own any horses yet. Use **/buyhorse <tier>** to get started.` })
     return
   }
 
+  // Sort: active first, then wins, then win%
   const arranged = mine.slice().sort((a, b) => {
+    const ar = (!!a.retired || Number(a.retired) === 1) ? 1 : 0
+    const br = (!!b.retired || Number(b.retired) === 1) ? 1 : 0
+    if (ar !== br) return ar - br
+
     const aw = Number(a?.wins || 0)
     const bw = Number(b?.wins || 0)
     if (bw !== aw) return bw - aw
-    const ap = (Number(a?.wins || 0) / Math.max(1, Number(a?.racesParticipated || 0)))
-    const bp = (Number(b?.wins || 0) / Math.max(1, Number(b?.racesParticipated || 0)))
+
+    const ap = Number(a?.wins || 0) / Math.max(1, Number(a?.racesParticipated || 0))
+    const bp = Number(b?.wins || 0) / Math.max(1, Number(b?.racesParticipated || 0))
     return bp - ap
   })
 
-  const lines = arranged.map((h, i) => _fmtLine(h, i))
-  const header = `🐴 **${nick}’s Stable** (${arranged.length})`
-  const body = ['```', header, ...lines, '```'].join('\n')
-  await postMessage({ room: ROOM, message: body })
+  // Optional HoF badge (remove if you don’t want it)
+  const rows = arranged.map(h => ({
+    horse: h,
+    hof: (h?.id ? isHorseInducted(h.id) : false)
+  }))
+
+  const title = `${nick}'s Stable (${arranged.length})`
+  const table = renderHorseTable(rows, { title })
+
+  await postMessage({ room: ROOM, message: table })
 }
+
 
 
 export async function handleHorseStatsCommand (ctx) {
