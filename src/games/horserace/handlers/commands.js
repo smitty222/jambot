@@ -11,6 +11,7 @@ import { bus, safeCall } from '../service.js'
 import { runRace, LEGS } from '../simulation.js'
 import { getCurrentOdds, lockToteBoardOdds } from '../utils/odds.js'
 import { renderProgress, renderRacecard } from '../utils/progress.js'
+import { getHofList, getHofEntryByHorseName } from '../../../database/dbhorsehof.js'
 
 const ROOM = process.env.ROOM_UUID
 
@@ -762,3 +763,100 @@ export async function handleHorseHelpCommand (ctx) {
   ]
   await postMessage({ room, message: '```\n' + helpLines.join('\n') + '\n```' })
 }
+
+function fmtPct (wins, starts) {
+  const w = Number(wins || 0)
+  const s = Number(starts || 0)
+  if (!s) return '0%'
+  return `${Math.round((w / s) * 100)}%`
+}
+
+function fmtDate (iso) {
+  try {
+    const d = new Date(iso)
+    return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: '2-digit' })
+  } catch {
+    return String(iso || '')
+  }
+}
+
+/**
+ * /hof [newest|wins|winpct]
+ */
+export async function handleHofCommand (ctx) {
+  const room = ctx?.room || ROOM
+  const text = String(ctx?.message || '').trim()
+
+  const arg = (text.match(/^\/hof\s*(.*)$/i) || [])[1]?.trim().toLowerCase()
+  const sort = (arg === 'wins' || arg === 'winpct') ? arg : 'newest'
+
+  const rows = getHofList({ limit: 10, sort })
+  if (!rows || rows.length === 0) {
+    await postMessage({ room, message: '```\n🏆 Horse Hall of Fame\n(no inductees yet)\n```' })
+    return
+  }
+
+  const lines = rows.map((r, i) => {
+    const num = String(i + 1).padStart(2, '0')
+    const name = String(r.name || '').padEnd(22, ' ')
+    const tier = String(r.tier || '').toUpperCase().padEnd(9, ' ')
+    const rec = `${Number(r.wins || 0)}W/${Number(r.racesParticipated || 0)}S`.padEnd(9, ' ')
+    const pct = fmtPct(r.wins, r.racesParticipated).padEnd(4, ' ')
+    const date = fmtDate(r.inducted_at)
+    return `${num}. ${name} ${tier} ${rec} ${pct}  Inducted ${date}`
+  })
+
+  const header = sort === 'wins'
+    ? '🏆 Horse Hall of Fame (Top Wins)'
+    : sort === 'winpct'
+      ? '🏆 Horse Hall of Fame (Top Win%)'
+      : '🏆 Horse Hall of Fame (Newest)'
+
+  const msg = [
+    header,
+    '',
+    ...lines,
+    '',
+    'Tip: /hof <horse name>  (plaque)'
+  ].join('\n')
+
+  await postMessage({ room, message: '```\n' + msg + '\n```' })
+}
+
+/**
+ * /hof <horse name>
+ */
+export async function handleHofPlaqueCommand (ctx) {
+  const room = ctx?.room || ROOM
+  const text = String(ctx?.message || '').trim()
+  const nameArg = (text.match(/^\/hof\s+(.+)/i) || [])[1]?.trim()
+
+  // If they typed /hof wins or /hof newest, that's the list command.
+  if (!nameArg || nameArg.toLowerCase() === 'wins' || nameArg.toLowerCase() === 'winpct' || nameArg.toLowerCase() === 'newest') {
+    return handleHofCommand(ctx)
+  }
+
+  const row = getHofEntryByHorseName(nameArg)
+  if (!row) {
+    await postMessage({ room, message: `❗ **${nameArg}** is not in the Hall of Fame (or name not found).` })
+    return
+  }
+
+  const owner = row?.ownerId ? `<@uid:${row.ownerId}>` : 'House'
+  const starts = Number(row.racesParticipated || 0)
+  const wins = Number(row.wins || 0)
+  const pct = fmtPct(wins, starts)
+
+  const plaque = [
+    '🏆 HALL OF FAME PLAQUE',
+    `Name:   ${row.name}`,
+    `Owner:  ${owner}`,
+    `Tier:   ${String(row.tier || '').toUpperCase() || '—'}`,
+    `Record: ${wins} wins / ${starts} starts (${pct})`,
+    `Inducted: ${fmtDate(row.inducted_at)}`,
+    `Reason: ${row.reason || '—'}`
+  ].join('\n')
+
+  await postMessage({ room, message: '```\n' + plaque + '\n```' })
+}
+

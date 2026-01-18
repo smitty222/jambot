@@ -59,6 +59,7 @@ import { usersToBeRemoved } from '../utils/usersToBeRemoved.js'
 import { parseTipAmount, randomTipGif, splitEvenly, naturalJoin, getSenderNickname } from '../utils/helpers.js'
 import { handleBuyHorse } from '../games/horserace/horseManager.js'
 import { handleAddMoneyCommand } from './addMoney.js'
+import { handleHofPlaqueCommand } from '../games/horserace/handlers/commands.js'
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
 export const /* deprecated_roomThemes */roomThemes = {}
@@ -194,6 +195,10 @@ export default async (payload, room, state, roomBot) => {
   if (typeof payload.message === 'string' && payload.message.startsWith('/horsestats')) { await handleHorseStatsCommand(payload); return }
   if (typeof payload.message === 'string' && payload.message.startsWith('/tophorses')) return handleTopHorsesCommand(payload)
 
+  if (/^\/hof\b/i.test(txt)) {
+    await handleHofPlaqueCommand(ctx)
+    return
+  }
   // ─── END HORSE‐RACE BLOCK ────────────────────────────────────────────────
 
   if (
