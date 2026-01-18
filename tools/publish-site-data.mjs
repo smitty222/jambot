@@ -223,41 +223,99 @@ async function publishTopSongs (state) {
   const db = new Database(process.env.DB_PATH, { readonly: true });
 
   try {
-    // This matches what site/app.js expects from /api/db/top_songs
-    // (fields like title, artist, plays, avg, likes, dislikes, stars, lastPlayed)
-    const topSongs = db.prepare(`
+    // We publish a blended dataset so new songs always appear even if they
+    // have low plays. Keep total payload capped for safety.
+    const MAX_ROWS = Number(process.env.TOP_SONGS_LIMIT || 5000);
+    const TOP_PLAYS_N = Number(process.env.TOP_SONGS_TOP_PLAYS_N || 3500);
+    const RECENT_N = Number(process.env.TOP_SONGS_RECENT_N || 2500);
+
+    const baseSelect = `
       SELECT
-        COALESCE(trackName, '')           AS title,
-        COALESCE(artistName, '')          AS artist,
-        COALESCE(playCount, 0)            AS plays,
-        COALESCE(averageReview, NULL)     AS avg,
-        COALESCE(likes, 0)                AS likes,
-        COALESCE(dislikes, 0)             AS dislikes,
-        COALESCE(stars, 0)                AS stars,
-        COALESCE(lastPlayed, NULL)        AS lastPlayed
+        COALESCE(trackName, '')       AS title,
+        COALESCE(artistName, '')      AS artist,
+        COALESCE(playCount, 0)        AS plays,
+        COALESCE(averageReview, NULL) AS avg,
+        COALESCE(likes, 0)            AS likes,
+        COALESCE(dislikes, 0)         AS dislikes,
+        COALESCE(stars, 0)            AS stars,
+        COALESCE(lastPlayed, NULL)    AS lastPlayed
       FROM room_stats
       WHERE trackName IS NOT NULL
         AND TRIM(trackName) <> ''
         AND LOWER(TRIM(trackName)) <> 'unknown'
+    `;
+
+    // Bucket 1: top by plays
+    const topByPlays = db.prepare(`
+      ${baseSelect}
       ORDER BY plays DESC, lastPlayed DESC
-      LIMIT 5000
-    `).all();
+      LIMIT ?
+    `).all(TOP_PLAYS_N);
+
+    // Bucket 2: most recent (ensures new songs appear)
+    const mostRecent = db.prepare(`
+      ${baseSelect}
+      ORDER BY
+        CASE WHEN lastPlayed IS NULL OR TRIM(lastPlayed) = '' THEN 0 ELSE 1 END DESC,
+        lastPlayed DESC
+      LIMIT ?
+    `).all(RECENT_N);
+
+    // Deduplicate by normalized (title|artist) key; keep the "best" record.
+    // If a song appears in both buckets, prefer higher plays, then more recent.
+    const keyOf = (r) => `${String(r.title || '').trim().toLowerCase()}|${String(r.artist || '').trim().toLowerCase()}`;
+    const toTime = (x) => {
+      if (!x) return 0;
+      const t = new Date(x).getTime();
+      return Number.isFinite(t) ? t : 0;
+    };
+
+    const map = new Map();
+    for (const r of [...topByPlays, ...mostRecent]) {
+      const k = keyOf(r);
+      if (!k || k === '|' ) continue;
+
+      const prev = map.get(k);
+      if (!prev) { map.set(k, r); continue; }
+
+      const rPlays = Number(r.plays || 0);
+      const pPlays = Number(prev.plays || 0);
+      const rT = toTime(r.lastPlayed);
+      const pT = toTime(prev.lastPlayed);
+
+      // keep whichever seems more "authoritative"
+      if (rPlays > pPlays) map.set(k, r);
+      else if (rPlays === pPlays && rT > pT) map.set(k, r);
+    }
+
+    let rows = Array.from(map.values());
+
+    // Final cap: sort by plays desc, then recency desc (stable output)
+    rows.sort((a, b) => {
+      const ap = Number(a.plays || 0), bp = Number(b.plays || 0);
+      if (bp !== ap) return bp - ap;
+      return toTime(b.lastPlayed) - toTime(a.lastPlayed);
+    });
+
+    if (rows.length > MAX_ROWS) rows = rows.slice(0, MAX_ROWS);
 
     await postJson('/api/publishDb', {
-      tables: { top_songs: topSongs },
+      tables: { top_songs: rows },
       public: ['top_songs']
     });
 
     state.last.topSongs = new Date().toISOString();
     saveState(state);
 
-    console.log('[publish] topSongs published:', topSongs.length, 'rows');
+    console.log('[publish] topSongs published:', rows.length, 'rows',
+      `(topByPlays=${topByPlays.length}, recent=${mostRecent.length})`);
   } catch (err) {
     console.warn('[publish] topSongs failed:', err?.message || err);
   } finally {
     db.close();
   }
 }
+
 
 
 // ── Main ─────────────────────────────────────────────────────
