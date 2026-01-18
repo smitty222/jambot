@@ -623,12 +623,6 @@ function clampName (s, n) {
   return padR(s.slice(0, Math.max(0, n - 1)) + '…', n)
 }
 
-function fmtPct (wins, starts) {
-  const w = Number(wins || 0)
-  const s = Number(starts || 0)
-  if (!s) return '0%'
-  return `${Math.round((w / s) * 100)}%`
-}
 
 function tierTag (tier) {
   const t = String(tier || '').toUpperCase()
