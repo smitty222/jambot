@@ -194,11 +194,12 @@ export default async (payload, room, state, roomBot) => {
   if (typeof payload.message === 'string' && payload.message.startsWith('/horseinfo')) { await handleHorseHelpCommand(payload); return }
   if (typeof payload.message === 'string' && payload.message.startsWith('/horsestats')) { await handleHorseStatsCommand(payload); return }
   if (typeof payload.message === 'string' && payload.message.startsWith('/tophorses')) return handleTopHorsesCommand(payload)
-
-  if (/^\/hof\b/i.test(txt)) {
-    await handleHofPlaqueCommand(ctx)
-    return
+  if (typeof payload.message === 'string' && payload.message.startsWith('/hof')) {
+  await handleHofPlaqueCommand(payload)
+  return
   }
+
+
   // ─── END HORSE‐RACE BLOCK ────────────────────────────────────────────────
 
   if (
