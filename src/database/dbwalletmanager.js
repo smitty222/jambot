@@ -78,32 +78,37 @@ function roundToTenth (amount) {
  * @param {string|null|undefined} nickname The raw nickname from a source event
  */
 export function addOrUpdateUser (userUUID, nickname = null) {
+  if (!userUUID) return
+
   const clean = sanitizeNickname(nickname)
-  // Fetch the current nickname (if any) from the database. We treat
-  // stored mention tokens like "<@uid:abcd>" as no nickname so that
-  // callers don't persist these robot strings. When deciding on the
-  // final nickname we prioritise a non‑empty cleaned nickname from the
-  // caller; otherwise we retain an existing human nickname if one is
-  // present; if neither exists, we use the user UUID as a fallback.
+
+  // Pull existing nickname so we don't overwrite a good one with junk
   const existingRow = db.prepare('SELECT nickname FROM users WHERE uuid = ?').get(userUUID)
   let existing = existingRow?.nickname
-  // Normalise the existing nickname: treat mention tokens as empty.
-  if (existing && /^<@uid:[^>]+>$/.test(String(existing).trim())) {
-    existing = ''
-  }
+
+  // Treat stored mention tokens as empty
+  if (existing && /^<@uid:[^>]+>$/.test(String(existing).trim())) existing = ''
+
   const finalNickname = clean || existing || userUUID
+
   try {
     db.prepare(`
-  INSERT INTO users (uuid, nickname, balance, nicknameUpdatedAt)
-  VALUES (?, ?, COALESCE((SELECT balance FROM users WHERE uuid=?), 0), CURRENT_TIMESTAMP)
-  ON CONFLICT(uuid) DO UPDATE SET
-    nickname = excluded.nickname,
-    nicknameUpdatedAt = CURRENT_TIMESTAMP
-`).run(uuid, safeNick, uuid)
+      INSERT INTO users (uuid, nickname, balance, nicknameUpdatedAt)
+      VALUES (
+        ?,
+        ?,
+        COALESCE((SELECT balance FROM users WHERE uuid = ?), 0),
+        CURRENT_TIMESTAMP
+      )
+      ON CONFLICT(uuid) DO UPDATE SET
+        nickname = excluded.nickname,
+        nicknameUpdatedAt = CURRENT_TIMESTAMP
+    `).run(userUUID, finalNickname, userUUID)
   } catch (err) {
     logger.error('[addOrUpdateUser] Failed to upsert user', { err: err?.message || err })
   }
 }
+
 
 export function loadWallets () {
   ensureWalletCache()

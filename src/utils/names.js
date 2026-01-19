@@ -56,11 +56,14 @@ export function parseMention (mention) {
 export function sanitizeNickname (nickname) {
   if (!nickname) return ''
   const s = String(nickname).trim()
-  // If the entire string is a mention token (e.g. <@uid:abcd>) treat as no nickname
   if (/^<@uid:[^>]+>$/.test(s)) return ''
-  // Remove leading @ (from @username) and any stray angle brackets
-  return s.replace(/^@/, '').replace(/[<>]/g, '').trim()
+  const cleaned = s.replace(/^@/, '').replace(/[<>]/g, '').trim()
+  if (!cleaned) return ''
+  // Optional guard: avoid storing generic placeholder names
+  if (cleaned.toLowerCase() === 'user') return ''
+  return cleaned
 }
+
 
 /**
  * Lookup a user's display name from the database. Given a UUID, this
