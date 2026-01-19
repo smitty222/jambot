@@ -3427,13 +3427,15 @@ Set with: /infotone <tone>`
       const avgLive = (avgRow?.avg != null) ? Number(avgRow.avg).toFixed(1) : null
 
 
-      // First played (by names)
+       // First played (true all-time) — use append-only song_plays analytics log
       const bounds = db.prepare(`
-      SELECT MIN(playedAt) AS firstPlayed
-      FROM recent_songs
-      WHERE LOWER(TRIM(trackName))  = LOWER(TRIM(?))
-        AND LOWER(TRIM(artistName)) = LOWER(TRIM(?))
-    `).get(songStats.trackName, songStats.artistName) || {}
+        SELECT MIN(playedAt) AS firstPlayed
+        FROM song_plays
+        WHERE LOWER(TRIM(trackName))  = LOWER(TRIM(?))
+         AND LOWER(TRIM(artistName)) = LOWER(TRIM(?))
+      `).get(songStats.trackName, songStats.artistName) || {}
+
+
 
       const plays = songStats.playCount ?? 0
       const likes = songStats.likes ?? 0
