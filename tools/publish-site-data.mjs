@@ -360,18 +360,32 @@ async function publishWrapped2026 (state) {
       LIMIT ?
     `).all(START, END, LIMIT_ARTISTS);
 
-    // Top DJs (by plays). Prefer djNickname for display, keep djUuid if present.
+        // Top DJs (by plays).
+    // Prefer users.nickname (stable + current) when djUuid is present.
+    // Fall back to stored djNickname when djUuid is missing.
     const topDjs = db.prepare(`
       SELECT
-        djUuid AS djUuid,
-        COALESCE(NULLIF(TRIM(djNickname), ''), 'unknown') AS dj,
+        COALESCE(sp.djUuid, NULL) AS djUuid,
+        COALESCE(
+          NULLIF(TRIM(u.nickname), ''),
+          NULLIF(TRIM(sp.djNickname), ''),
+          'unknown'
+        ) AS dj,
         COUNT(*) AS plays
-      FROM song_plays
-      WHERE playedAt >= ? AND playedAt < ?
-      GROUP BY djUuid, dj
+      FROM song_plays sp
+      LEFT JOIN users u
+        ON u.uuid = sp.djUuid
+      WHERE sp.playedAt >= ? AND sp.playedAt < ?
+      GROUP BY
+        -- Group by stable identity when possible, otherwise by nickname.
+        CASE
+          WHEN sp.djUuid IS NOT NULL AND TRIM(sp.djUuid) <> '' THEN sp.djUuid
+          ELSE COALESCE(NULLIF(TRIM(sp.djNickname), ''), 'unknown')
+        END
       ORDER BY plays DESC
       LIMIT ?
     `).all(START, END, LIMIT_DJS);
+
 
     await postJson('/api/publishDb', {
       tables: {
