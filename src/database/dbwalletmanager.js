@@ -93,11 +93,13 @@ export function addOrUpdateUser (userUUID, nickname = null) {
   }
   const finalNickname = clean || existing || userUUID
   try {
-    db.prepare(
-      `INSERT INTO users (uuid, nickname)
-       VALUES (?, ?)
-       ON CONFLICT(uuid) DO UPDATE SET nickname = excluded.nickname`
-    ).run(userUUID, finalNickname)
+    db.prepare(`
+  INSERT INTO users (uuid, nickname, balance, nicknameUpdatedAt)
+  VALUES (?, ?, COALESCE((SELECT balance FROM users WHERE uuid=?), 0), CURRENT_TIMESTAMP)
+  ON CONFLICT(uuid) DO UPDATE SET
+    nickname = excluded.nickname,
+    nicknameUpdatedAt = CURRENT_TIMESTAMP
+`).run(uuid, safeNick, uuid)
   } catch (err) {
     logger.error('[addOrUpdateUser] Failed to upsert user', { err: err?.message || err })
   }

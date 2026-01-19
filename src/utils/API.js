@@ -616,11 +616,26 @@ export async function fetchUserProfileByUuid (uuid) {
 }
 
 
-
 export async function getUserNicknameByUuid (uuid) {
   if (!uuid) return null
 
-  // 1) API lookup (authoritative)
+  const TTL_MS = Number(process.env.NICKNAME_TTL_MS || 6 * 60 * 60 * 1000) // 6h default
+  const now = Date.now()
+
+  // 1) DB first if fresh enough
+  try {
+    const row = db.prepare(
+      'SELECT nickname, nicknameUpdatedAt FROM users WHERE uuid = ?'
+    ).get(uuid)
+
+    const nick = row?.nickname?.trim()
+    const ts = row?.nicknameUpdatedAt ? new Date(row.nicknameUpdatedAt).getTime() : 0
+    const fresh = ts && (now - ts) < TTL_MS
+
+    if (fresh && nick && !MENTION_RE.test(nick)) return nick
+  } catch {}
+
+  // 2) API lookup (authoritative)
   try {
     const profile = await fetchUserProfileByUuid(uuid)
     const nick = profile?.nickname?.trim()
@@ -631,23 +646,17 @@ export async function getUserNicknameByUuid (uuid) {
     }
   } catch {}
 
-  // 2) DB fallback
+  // 3) DB fallback
   try {
     const row = db.prepare(
       'SELECT nickname FROM users WHERE uuid = ?'
     ).get(uuid)
 
-    if (row?.nickname && !MENTION_RE.test(row.nickname)) {
-      return row.nickname
-    }
+    if (row?.nickname && !MENTION_RE.test(row.nickname)) return row.nickname
   } catch {}
 
-  // 3) Absolute fallback
   return uuid
 }
-
-
-
 
 
 const USER_ROLES_URL = `${cfg.ttGateway}/api/room-service/roomUserRoles/${cfg.roomSlug}`

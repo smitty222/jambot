@@ -331,6 +331,19 @@ try {
   console.warn('⚠️ Could not add canonSongKey or backfill:', e.message)
 }
 
+// users.nicknameUpdatedAt
+try {
+  if (!hasColumn('users', 'nicknameUpdatedAt')) {
+    db.exec('ALTER TABLE users ADD COLUMN nicknameUpdatedAt TEXT;')
+    console.log('✅ Added users.nicknameUpdatedAt')
+    // backfill existing rows so TTL logic has something
+    db.exec(`UPDATE users SET nicknameUpdatedAt = COALESCE(nicknameUpdatedAt, CURRENT_TIMESTAMP)`)
+  }
+} catch (e) {
+  console.warn('⚠️ Could not add users.nicknameUpdatedAt:', e.message)
+}
+
+
 // Create indexes to speed up common queries. These calls are wrapped
 // in try/catch so they fail gracefully on older SQLite versions.
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_room_stats_songId ON room_stats(songId)') } catch (e) { console.warn('⚠️ Could not create idx_room_stats_songId:', e.message) }
