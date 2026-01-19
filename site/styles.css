@@ -296,31 +296,55 @@ button:focus-visible, .input:focus-visible, a:focus-visible{
   gap:12px;
 }
 
-/* Allow the list of lottery winners to scroll if it grows too long.  The
-   `winners-scroll` class is applied on the container by app.js. */
-.winners-scroll{
-  max-height: 300px;
+/* Games > Lottery winners list */
+.winners-scroll {
+  width: 100%;
+  max-height: 420px;     /* increase this if you want taller */
   overflow-y: auto;
-  /* Add a small right padding so the scrollbar doesnâ€™t cover content */
-  padding-right: 4px;
+  padding-right: 6px;    /* keep scrollbar from overlapping content */
 }
-.winner-card{
-  background: var(--bg-elev);
-  border:1px solid var(--border);
-  border-radius:12px;
-  padding:10px;
-  text-align:center;
-  box-shadow: var(--shadow);
+
+.winner-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  margin: 8px 0;
+  background: rgba(255,255,255,0.03);
 }
-.winner-name{
-  font-weight:600;
-  margin-bottom:4px;
+
+.winner-left {
+  min-width: 0;
+  flex: 1 1 auto;
 }
-.winner-amount{
-  font-size:18px;
-  font-weight:700;
-  color:var(--ok);
+
+.winner-name {
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+
+.winner-when {
+  margin-top: 2px;
+}
+
+.winner-right {
+  flex: 0 0 auto;
+}
+
+.winner-num {
+  font-weight: 800;
+  font-size: 16px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.10);
+}
+
 
 /* ===== Songs tab styling ===== */
 #viewSongs .table-wrap{ max-height: 70vh } /* taller for songs list */

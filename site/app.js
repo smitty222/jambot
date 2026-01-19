@@ -648,38 +648,47 @@ async function refreshGames() {
 
 
   // Lottery winners
-  try {
-    const winners = await apiGet("/api/db/lottery_winners_public");
-    const container = els.gamesLotteryWinners;
-    if (!container) return;
-    if (!Array.isArray(winners) || winners.length === 0) {
-      container.innerHTML = `<div class="muted small">No winners yet.</div>`;
-    } else {
-      // Sort winners so that the most recent appear first.  Each row from the
-      // API includes a timestamp field; fall back to other common names.  Then
-      // build a card for each winner, using displayName when available to
-      // display a human‑friendly name.  We no longer slice the list, so all
-      // winners will be displayed.
-      const sorted = [...winners].sort((a, b) => {
-        const aTime = new Date(a.timestamp || a.time || a.createdAt || 0);
-        const bTime = new Date(b.timestamp || b.time || b.createdAt || 0);
-        return bTime - aTime;
-      });
-      const html = sorted.map(w => {
-        const name = escapeHtml(w.displayName || w.nickname || "—");
-        const amt  = escapeHtml(String(w.amountWon ?? w.amount_won ?? ""));
-        return `
-          <div class="winner-card">
+try {
+  const winners = await apiGet("/api/db/lottery_winners_public");
+  const container = els.gamesLotteryWinners;
+  if (!container) return;
+
+  if (!Array.isArray(winners) || winners.length === 0) {
+    container.innerHTML = `<div class="muted small">No winners yet.</div>`;
+  } else {
+    // Most recent first
+    const sorted = [...winners].sort((a, b) => {
+      const aTime = new Date(a.timestamp || a.time || a.createdAt || 0);
+      const bTime = new Date(b.timestamp || b.time || b.createdAt || 0);
+      return bTime - aTime;
+    });
+
+    // Render using the full card width and show winning number
+    const html = sorted.map(w => {
+      const name = escapeHtml(w.displayName || w.nickname || "—");
+      const num  = escapeHtml(String(w.winningNumber ?? w.winning_number ?? "—"));
+      const when = w.timestamp ? briefDate(w.timestamp) : "";
+
+      return `
+        <div class="winner-row">
+          <div class="winner-left">
             <div class="winner-name">${name}</div>
-            <div class="winner-amount">$${amt}</div>
-          </div>`;
-      }).join("");
-      container.innerHTML = `<div class="winners-grid winners-scroll">${html}</div>`;
-    }
-  } catch (e) {
-    const container = els.gamesLotteryWinners;
-    if (container) container.innerHTML = `<div class="muted small">Error: ${escapeHtml(e.message)}</div>`;
+            ${when ? `<div class="winner-when muted small">${escapeHtml(when)}</div>` : ``}
+          </div>
+          <div class="winner-right">
+            <div class="winner-num" title="Winning number">🎱 ${num}</div>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    // IMPORTANT: use the whole container width + add scroll when needed
+    container.innerHTML = `<div class="winners-scroll">${html}</div>`;
   }
+} catch (e) {
+  const container = els.gamesLotteryWinners;
+  if (container) container.innerHTML = `<div class="muted small">Error: ${escapeHtml(e.message)}</div>`;
+}
 }
 
 // ------------- Albums (Top 5 + Rest) -------------

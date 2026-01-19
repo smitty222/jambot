@@ -77,6 +77,7 @@ async function postJson(pathname, payload) {
 }
 
 // ── Publish: Craps records (public) ───────────────────────────
+// ── Publish: Craps records (public) ───────────────────────────
 async function publishCrapsRecords (state) {
   if (minutesSince(state.last?.craps) < COOLDOWN_MINUTES_STATS) {
     console.log('[publish] crapsRecords skipped (cooldown)')
@@ -89,13 +90,21 @@ async function publishCrapsRecords (state) {
   try {
     const rows = db.prepare(`
       SELECT
-        roomId,
-        maxRolls,
-        shooterNickname,
-        achievedAt
-      FROM craps_records
-      WHERE maxRolls > 0
-      ORDER BY maxRolls DESC
+        cr.maxRolls,
+
+        -- Shooter display name (canonical)
+        COALESCE(
+          NULLIF(TRIM(u.nickname), ''),
+          NULLIF(TRIM(cr.shooterNickname), ''),
+          'unknown'
+        ) AS shooterName,
+
+        cr.achievedAt
+      FROM craps_records cr
+      LEFT JOIN users u
+        ON u.uuid = cr.shooterId
+      WHERE cr.maxRolls > 0
+      ORDER BY cr.maxRolls DESC
     `).all()
 
     await postJson('/api/publishDb', {
@@ -115,6 +124,7 @@ async function publishCrapsRecords (state) {
     db.close()
   }
 }
+
 // ── Publish: Horse Hall of Fame (public) ──────────────────────
 async function publishHorseHallOfFame (state) {
   // Use the same cooldown as stats/games, or create a dedicated one if you prefer
