@@ -77,7 +77,6 @@ async function postJson(pathname, payload) {
 }
 
 // ── Publish: Craps records (public) ───────────────────────────
-// ── Publish: Craps records (public) ───────────────────────────
 async function publishCrapsRecords (state) {
   if (minutesSince(state.last?.craps) < COOLDOWN_MINUTES_STATS) {
     console.log('[publish] crapsRecords skipped (cooldown)')
@@ -127,7 +126,6 @@ async function publishCrapsRecords (state) {
 
 // ── Publish: Horse Hall of Fame (public) ──────────────────────
 async function publishHorseHallOfFame (state) {
-  // Use the same cooldown as stats/games, or create a dedicated one if you prefer
   if (minutesSince(state.last?.horseHof) < COOLDOWN_MINUTES_STATS) {
     console.log('[publish] horseHof skipped (cooldown)')
     return
@@ -137,10 +135,16 @@ async function publishHorseHallOfFame (state) {
   const db = new Database(process.env.DB_PATH, { readonly: true })
 
   try {
-    // Define “Hall of Fame” as the top horses by wins (with a small min-races gate)
-    // so 1-for-1 horses don’t dominate.
-    const MIN_RACES = Number(process.env.HORSE_HOF_MIN_RACES || 3)
-    const LIMIT = Number(process.env.HORSE_HOF_LIMIT || 12)
+    const LIMIT = Number(process.env.HORSE_HOF_LIMIT || 50)
+
+    // Match dbhorsehof.js defaults/behavior:
+    // - exclude bots/house by default (ownerId must be present)
+    // - must be retired
+    // - win% must meet threshold
+    const MIN_WIN_PCT = (() => {
+      const raw = Number(process.env.HORSE_HOF_MIN_WIN_PCT ?? 0.35)
+      return Number.isFinite(raw) ? Math.max(0, Math.min(1, raw)) : 0.35
+    })()
 
     const rows = db.prepare(`
       SELECT
@@ -148,35 +152,34 @@ async function publishHorseHallOfFame (state) {
         h.name,
         h.emoji,
         h.tier,
-        h.racesParticipated AS races,
+        h.ownerId,
+        COALESCE(NULLIF(TRIM(u.nickname), ''), NULLIF(TRIM(h.nickname), ''), NULLIF(TRIM(h.owner), ''), 'Unknown') AS ownerName,
         h.wins,
-        ROUND(
-          CASE WHEN COALESCE(h.racesParticipated, 0) > 0
-            THEN (CAST(h.wins AS REAL) / CAST(h.racesParticipated AS REAL)) * 100
-            ELSE 0
-          END
-        , 1) AS winRatePct,
+        h.racesParticipated AS races,
+        ROUND(CASE WHEN COALESCE(h.racesParticipated, 0) > 0
+          THEN (CAST(h.wins AS REAL) / CAST(h.racesParticipated AS REAL)) * 100
+          ELSE 0 END, 1) AS winRatePct,
+        h.retired,
+        hh.inducted_at AS inductedAt,
+        hh.reason
+      FROM horse_hof hh
+      JOIN horses h ON h.id = hh.horse_id
+      LEFT JOIN users u ON u.uuid = h.ownerId
+      WHERE
+        -- Exclude House/Bots: ownerId must exist (matches isOwnerHorse + INCLUDE_BOTS=false)
+        h.ownerId IS NOT NULL AND TRIM(h.ownerId) <> ''
 
-        -- Owner display name: prefer users.nickname (by ownerId), then horse nickname, then horse.owner label
-        COALESCE(
-          NULLIF(TRIM(u.nickname), ''),
-          NULLIF(TRIM(h.nickname), ''),
-          NULLIF(TRIM(h.owner), ''),
-          'House'
-        ) AS ownerName,
+        -- Must be retired (matches qualifies())
+        AND COALESCE(h.retired, 0) = 1
 
-        h.ownerId
+        -- Must meet win% threshold (matches qualifies())
+        AND (CASE WHEN COALESCE(h.racesParticipated, 0) > 0
+          THEN (CAST(h.wins AS REAL) / CAST(h.racesParticipated AS REAL))
+          ELSE 0 END) >= ?
 
-      FROM horses h
-      LEFT JOIN users u
-        ON u.uuid = h.ownerId
-      WHERE COALESCE(h.racesParticipated, 0) >= ?
-      ORDER BY
-        COALESCE(h.wins, 0) DESC,
-        COALESCE(h.racesParticipated, 0) DESC,
-        h.name ASC
+      ORDER BY datetime(hh.inducted_at) DESC, h.wins DESC
       LIMIT ?
-    `).all(MIN_RACES, LIMIT)
+    `).all(MIN_WIN_PCT, LIMIT)
 
     await postJson('/api/publishDb', {
       tables: { horses_hof_public: rows },
@@ -185,7 +188,6 @@ async function publishHorseHallOfFame (state) {
 
     state.last.horseHof = new Date().toISOString()
     saveState(state)
-
     console.log('[publish] horseHof published:', rows.length)
   } catch (err) {
     console.warn('[publish] horseHof failed:', err?.message || err)
@@ -193,6 +195,72 @@ async function publishHorseHallOfFame (state) {
     db.close()
   }
 }
+
+// ── Publish: User-owned horses (public) ───────────────────────
+async function publishUserOwnedHorses (state) {
+  if (minutesSince(state.last?.userHorses) < COOLDOWN_MINUTES_STATS) {
+    console.log('[publish] userHorses skipped (cooldown)')
+    return
+  }
+
+  console.log('[publish] userHorses snapshot from', process.env.DB_PATH)
+  const db = new Database(process.env.DB_PATH, { readonly: true })
+
+  try {
+    const LIMIT = Number(process.env.USER_HORSES_LIMIT || 1000)
+
+    const rows = db.prepare(`
+      SELECT
+        h.id,
+        h.name,
+        h.emoji,
+        h.tier,
+        h.price,
+        h.baseOdds,
+        h.volatility,
+        h.ownerId,
+        COALESCE(NULLIF(TRIM(u.nickname), ''), NULLIF(TRIM(h.nickname), ''), NULLIF(TRIM(h.owner), ''), 'Unknown') AS ownerName,
+        h.wins,
+        h.racesParticipated AS races,
+        ROUND(CASE WHEN COALESCE(h.racesParticipated, 0) > 0
+          THEN (CAST(h.wins AS REAL) / CAST(h.racesParticipated AS REAL)) * 100
+          ELSE 0 END, 1) AS winRatePct,
+        CASE WHEN COALESCE(h.retired, 0) = 1 THEN 'retired' ELSE 'active' END AS status,
+
+        -- helpful: whether they are inducted into HoF
+        CASE WHEN hh.horse_id IS NOT NULL THEN 1 ELSE 0 END AS inducted,
+        hh.inducted_at AS inductedAt
+      FROM horses h
+      LEFT JOIN users u ON u.uuid = h.ownerId
+      LEFT JOIN horse_hof hh ON hh.horse_id = h.id
+      WHERE
+        -- ignore house/bot horses: must have an ownerId
+        h.ownerId IS NOT NULL AND TRIM(h.ownerId) <> ''
+      ORDER BY
+        status ASC,          -- active first
+        inducted DESC,       -- inductees bubble up
+        h.wins DESC,
+        h.racesParticipated DESC,
+        h.name ASC
+      LIMIT ?
+    `).all(LIMIT)
+
+    await postJson('/api/publishDb', {
+      tables: { user_horses_public: rows },
+      public: ['user_horses_public']
+    })
+
+    state.last.userHorses = new Date().toISOString()
+    saveState(state)
+    console.log('[publish] userHorses published:', rows.length)
+  } catch (err) {
+    console.warn('[publish] userHorses failed:', err?.message || err)
+  } finally {
+    db.close()
+  }
+}
+
+
 
 // ── Publish: Lottery winners (public) ─────────────────────────
 async function publishLotteryWinners (state) {
@@ -691,6 +759,8 @@ const main = async () => {
   await publishLotteryWinners(state)
   await publishCrapsRecords(state);
   await publishHorseHallOfFame(state);
+  await publishHorseHallOfFame(state)
+  await publishUserOwnedHorses(state)
   console.log('[publish] done');
 };
 
