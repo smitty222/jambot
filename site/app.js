@@ -67,6 +67,9 @@ const els = {
   djWrappedSummary: $("djWrappedSummary"),
   djWrappedTopSongs: $("djWrappedTopSongs"),
   djWrappedTopArtists: $("djWrappedTopArtists"),
+// Horse Hall of Fame
+  gamesHorseHof: $("gamesHorseHof"),
+
 
 
   // data browsing
@@ -599,6 +602,50 @@ async function refreshGames() {
     const container = els.gamesCrapsRecord;
     if (container) container.innerHTML = `<div class="muted small">Error: ${escapeHtml(e.message)}</div>`;
   }
+
+    // Horse Hall of Fame
+  try {
+    const hof = await apiGet("/api/db/horses_hof_public");
+    const container = els.gamesHorseHof;
+    if (!container) return;
+
+    if (!Array.isArray(hof) || hof.length === 0) {
+      container.innerHTML = `<div class="muted small">No Hall of Fame horses yet.</div>`;
+    } else {
+      const rows = [...hof].map((h, idx) => {
+        const name = h.name || "—";
+        const emoji = h.emoji || "🐎";
+        const owner = h.ownerName || "House";
+        const wins = Number(h.wins ?? 0);
+        const races = Number(h.races ?? h.racesParticipated ?? 0);
+        const wr = (h.winRatePct != null) ? `${h.winRatePct}%` : (races > 0 ? `${Math.round((wins / races) * 1000) / 10}%` : "0%");
+        const tier = h.tier ? String(h.tier) : "";
+
+        return `
+          <div class="card" style="margin:8px 0;">
+            <div class="row" style="justify-content:space-between; gap:12px;">
+              <div style="font-weight:700;">
+                ${idx + 1}. ${escapeHtml(emoji)} ${escapeHtml(name)}
+                ${tier ? `<span class="tag" style="margin-left:8px;">${escapeHtml(tier)}</span>` : ""}
+              </div>
+              <div class="muted small" title="Wins / Races / Win rate">
+                ${wins}W / ${races}R • ${escapeHtml(wr)}
+              </div>
+            </div>
+            <div class="muted small" style="margin-top:6px;">
+              Owner: <strong>${escapeHtml(owner)}</strong>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      container.innerHTML = rows;
+    }
+  } catch (e) {
+    const container = els.gamesHorseHof;
+    if (container) container.innerHTML = `<div class="muted small">Error: ${escapeHtml(e.message)}</div>`;
+  }
+
 
   // Lottery winners
   try {

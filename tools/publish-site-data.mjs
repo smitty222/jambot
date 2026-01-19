@@ -76,21 +76,165 @@ async function postJson(pathname, payload) {
   return res.json();
 }
 
-// ── Publish: Album review stats ────────────────────────────────
-// The public site shows a list of reviewed albums.  Historically this data
-// has been published from within the Turntable bot using ad‑hoc scripts, so
-// it wasn’t obvious when new reviews stopped appearing.  To make the
-// publishing explicit and reproducible, we derive two simple datasets from
-// the local SQLite database:
-//   • album_stats_public: one row per album with its name, artist, artwork and
-//     average rating (id is preserved to merge with review counts)
-//   • album_review_counts_public: one row per albumId with the number of
-//     reviews it has received
-// These tables mirror the schema expected by site/app.js.  Both tables are
-// uploaded via /api/publishDb with the `public` flag so that they become
-// accessible under /api/db/album_stats_public and
-// /api/db/album_review_counts_public.  A configurable cooldown prevents
-// excessive updates.
+// ── Publish: Craps records (public) ───────────────────────────
+async function publishCrapsRecords (state) {
+  if (minutesSince(state.last?.craps) < COOLDOWN_MINUTES_STATS) {
+    console.log('[publish] crapsRecords skipped (cooldown)')
+    return
+  }
+
+  console.log('[publish] crapsRecords snapshot from', process.env.DB_PATH)
+  const db = new Database(process.env.DB_PATH, { readonly: true })
+
+  try {
+    const rows = db.prepare(`
+      SELECT
+        roomId,
+        maxRolls,
+        shooterNickname,
+        achievedAt
+      FROM craps_records
+      WHERE maxRolls > 0
+      ORDER BY maxRolls DESC
+    `).all()
+
+    await postJson('/api/publishDb', {
+      tables: {
+        craps_records_public: rows
+      },
+      public: ['craps_records_public']
+    })
+
+    state.last.craps = new Date().toISOString()
+    saveState(state)
+
+    console.log('[publish] crapsRecords published:', rows.length)
+  } catch (err) {
+    console.warn('[publish] crapsRecords failed:', err?.message || err)
+  } finally {
+    db.close()
+  }
+}
+// ── Publish: Horse Hall of Fame (public) ──────────────────────
+async function publishHorseHallOfFame (state) {
+  // Use the same cooldown as stats/games, or create a dedicated one if you prefer
+  if (minutesSince(state.last?.horseHof) < COOLDOWN_MINUTES_STATS) {
+    console.log('[publish] horseHof skipped (cooldown)')
+    return
+  }
+
+  console.log('[publish] horseHof snapshot from', process.env.DB_PATH)
+  const db = new Database(process.env.DB_PATH, { readonly: true })
+
+  try {
+    // Define “Hall of Fame” as the top horses by wins (with a small min-races gate)
+    // so 1-for-1 horses don’t dominate.
+    const MIN_RACES = Number(process.env.HORSE_HOF_MIN_RACES || 3)
+    const LIMIT = Number(process.env.HORSE_HOF_LIMIT || 12)
+
+    const rows = db.prepare(`
+      SELECT
+        h.id,
+        h.name,
+        h.emoji,
+        h.tier,
+        h.racesParticipated AS races,
+        h.wins,
+        ROUND(
+          CASE WHEN COALESCE(h.racesParticipated, 0) > 0
+            THEN (CAST(h.wins AS REAL) / CAST(h.racesParticipated AS REAL)) * 100
+            ELSE 0
+          END
+        , 1) AS winRatePct,
+
+        -- Owner display name: prefer users.nickname (by ownerId), then horse nickname, then horse.owner label
+        COALESCE(
+          NULLIF(TRIM(u.nickname), ''),
+          NULLIF(TRIM(h.nickname), ''),
+          NULLIF(TRIM(h.owner), ''),
+          'House'
+        ) AS ownerName,
+
+        h.ownerId
+
+      FROM horses h
+      LEFT JOIN users u
+        ON u.uuid = h.ownerId
+      WHERE COALESCE(h.racesParticipated, 0) >= ?
+      ORDER BY
+        COALESCE(h.wins, 0) DESC,
+        COALESCE(h.racesParticipated, 0) DESC,
+        h.name ASC
+      LIMIT ?
+    `).all(MIN_RACES, LIMIT)
+
+    await postJson('/api/publishDb', {
+      tables: { horses_hof_public: rows },
+      public: ['horses_hof_public']
+    })
+
+    state.last.horseHof = new Date().toISOString()
+    saveState(state)
+
+    console.log('[publish] horseHof published:', rows.length)
+  } catch (err) {
+    console.warn('[publish] horseHof failed:', err?.message || err)
+  } finally {
+    db.close()
+  }
+}
+
+// ── Publish: Lottery winners (public) ─────────────────────────
+async function publishLotteryWinners (state) {
+  // Reuse the games/stats cooldown or make a dedicated one if you prefer
+  if (minutesSince(state.last?.lotteryWinners) < COOLDOWN_MINUTES_STATS) {
+    console.log('[publish] lotteryWinners skipped (cooldown)')
+    return
+  }
+
+  console.log('[publish] lotteryWinners snapshot from', process.env.DB_PATH)
+  const db = new Database(process.env.DB_PATH, { readonly: true })
+
+  try {
+    const rows = db.prepare(`
+      SELECT
+        lw.id,
+        lw.userId,
+        lw.winningNumber,
+        lw.amountWon,
+        lw.timestamp,
+
+        -- Always provide a good displayName for the site
+        COALESCE(
+          NULLIF(TRIM(lw.displayName), ''),
+          NULLIF(TRIM(u.nickname), ''),
+          NULLIF(TRIM(lw.nickname), ''),
+          'unknown'
+        ) AS displayName
+
+      FROM lottery_winners lw
+      LEFT JOIN users u
+        ON u.uuid = lw.userId
+      ORDER BY
+        datetime(lw.timestamp) DESC, lw.id DESC
+    `).all()
+
+    await postJson('/api/publishDb', {
+      tables: { lottery_winners_public: rows },
+      public: ['lottery_winners_public']
+    })
+
+    state.last.lotteryWinners = new Date().toISOString()
+    saveState(state)
+
+    console.log('[publish] lotteryWinners published:', rows.length)
+  } catch (err) {
+    console.warn('[publish] lotteryWinners failed:', err?.message || err)
+  } finally {
+    db.close()
+  }
+}
+
 async function publishAlbumStats (state) {
   // Respect configured cooldowns
   if (minutesSince(state.last?.albumStats) < COOLDOWN_MINUTES_ALBUMS) {
@@ -534,7 +678,9 @@ const main = async () => {
   // cooldown separate from the overall site snapshot to avoid undue load.
   await publishAlbumStats(state);
   await publishWrapped2026(state);
-
+  await publishLotteryWinners(state)
+  await publishCrapsRecords(state);
+  await publishHorseHallOfFame(state);
   console.log('[publish] done');
 };
 
