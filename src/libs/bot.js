@@ -16,14 +16,15 @@ import {
   fetchCurrentUsers,
   spotifyTrackInfo,
   fetchCurrentlyPlayingSong,
-  fetchSongData
+  fetchSongData,
+  getUserNicknameByUuid
 } from '../utils/API.js'
 import { postVoteCountsForLastSong } from '../utils/voteCounts.js'
 import { roomThemes } from '../utils/roomThemes.js'
 import { escortUserFromDJStand } from '../utils/escortDJ.js'
 import handleUserJoinedWithStatePatch from '../handlers/userJoined.js'
 import { handleAlbumTheme } from '../handlers/playedSong.js'
-import { songPayment } from '../database/dbwalletmanager.js'
+import { songPayment, addOrUpdateUser } from '../database/dbwalletmanager.js'
 import { updateRecentSongs } from '../database/dbrecentsongsmanager.js'
 import { getPopularSpotifyTrackID } from '../utils/autoDJ.js'
 import { getMarkedUser, unmarkUser } from '../utils/removalQueue.js'
@@ -990,20 +991,47 @@ export class Bot {
           updateLastPlayed(this.currentSong)
 
           try {
-            const djType = whoIsCurrentDJ(this.state)
-            const s = this.currentSong
-            await updateRecentSongs({
-              trackName: s.trackName || 'Unknown',
-              artistName: s.artistName || 'Unknown',
-              albumName: s.albumName || 'Unknown',
-              releaseDate: s.releaseDate || 'Unknown',
-              spotifyUrl: s.spotifyUrl || '',
-              popularity: s.popularity || 0,
-              dj: djType
-            })
-          } catch (error) {
-            logger.error('Error updating recent songs:', error)
-          }
+  const s = this.currentSong
+
+  // Determine the actual DJ UUID for this play.
+  // In TT, getCurrentDJ(state) returns the UUID of the "current" DJ.
+  const djUuid = getCurrentDJ(this.state) || null
+  const isBotDj = djUuid && djUuid === this.userUUID
+  // Resolve a human nickname (best effort). This will also update users table.
+  let djNickname = null
+  if (djUuid) {
+    try {
+      djNickname = await getUserNicknameByUuid(djUuid)
+      // Keep users table fresh for site display / joins
+      try { addOrUpdateUser(djUuid, djNickname) } catch {}
+    } catch (e) {
+      // non-fatal
+      djNickname = null
+    }
+  }
+
+  await updateRecentSongs({
+    trackName: s.trackName || 'Unknown',
+    artistName: s.artistName || 'Unknown',
+    albumName: s.albumName || 'Unknown',
+    releaseDate: s.releaseDate || 'Unknown',
+    spotifyUrl: s.spotifyUrl || '',
+    popularity: s.popularity || 0,
+
+    songId: s.songId || null,
+    spotifyTrackId: s.spotifyTrackId || null,
+
+    // ✅ critical for Wrapped
+    djUuid: djUuid || null,
+    djNickname: djNickname || null,
+
+    // keep legacy field for recent_songs UX
+    dj: djNickname || 'unknown'
+  })
+} catch (error) {
+  logger.error('Error updating recent songs:', error)
+}
+
 
           const djList = getCurrentDJUUIDs(this.state)
           const botIndex = djList.indexOf(this.userUUID)
