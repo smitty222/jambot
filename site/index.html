@@ -159,39 +159,68 @@
     </section>
 
     <!-- WRAPPED -->
-    <section id="viewWrapped" class="view">
-      <div class="card">
-        <div class="section-title">
-          <div class="row" style="gap:12px; align-items:center;">
-            <strong>Wrapped</strong>
-            <select id="wrappedYear" class="input" style="width:140px">
-              <option value="2026" selected>2026</option>
-            </select>
-            <button id="wrappedRefresh" class="button secondary small" type="button">Refresh</button>
-          </div>
-          <div class="muted small" style="margin-top:6px;">
-            Generated from in-room plays. Updated on publisher schedule.
-          </div>
-        </div>
+<section id="viewWrapped" class="view">
+  <div class="card">
+    <div class="section-title">
+      <div class="row" style="gap:12px; align-items:center;">
+        <strong>Wrapped</strong>
+        <select id="wrappedYear" class="input" style="width:140px">
+          <option value="2026" selected>2026</option>
+        </select>
+        <button id="wrappedRefresh" class="button secondary small" type="button">Refresh</button>
+      </div>
+      <div class="muted small" style="margin-top:6px;">
+        Generated from in-room plays. Updated on publisher schedule.
+      </div>
+    </div>
 
-        <div class="row" style="gap:12px; flex-wrap:wrap;">
-          <div class="card" style="flex:1 1 420px; min-width:320px;">
-            <div class="section-title"><strong>Top Songs</strong></div>
-            <div id="wrappedTopSongs"><div class="muted small">Loading…</div></div>
-          </div>
+    <!-- Room Wrapped -->
+    <div class="row" style="gap:12px; flex-wrap:wrap;">
+      <div class="card" style="flex:1 1 420px; min-width:320px;">
+        <div class="section-title"><strong>Top Songs</strong></div>
+        <div id="wrappedTopSongs"><div class="muted small">Loading…</div></div>
+      </div>
 
-          <div class="card" style="flex:1 1 420px; min-width:320px;">
-            <div class="section-title"><strong>Top Artists</strong></div>
-            <div id="wrappedTopArtists"><div class="muted small">Loading…</div></div>
-          </div>
+      <div class="card" style="flex:1 1 420px; min-width:320px;">
+        <div class="section-title"><strong>Top Artists</strong></div>
+        <div id="wrappedTopArtists"><div class="muted small">Loading…</div></div>
+      </div>
 
-          <div class="card" style="flex:1 1 420px; min-width:320px;">
-            <div class="section-title"><strong>Top DJs</strong></div>
-            <div id="wrappedTopDjs"><div class="muted small">Loading…</div></div>
-          </div>
+      <div class="card" style="flex:1 1 420px; min-width:320px;">
+        <div class="section-title"><strong>Top DJs</strong></div>
+        <div id="wrappedTopDjs"><div class="muted small">Loading…</div></div>
+      </div>
+    </div>
+
+    <!-- DJ Wrapped (new) -->
+    <div class="card" style="margin-top:12px;">
+      <div class="section-title">
+        <div class="row" style="gap:12px; align-items:center; flex-wrap:wrap;">
+          <strong>DJ Wrapped</strong>
+          <select id="djWrappedSelect" class="input" style="min-width:260px; width:260px;">
+            <option value="">Loading DJs…</option>
+          </select>
+          <span class="muted small">Pick a DJ to see their 2026 recap.</span>
         </div>
       </div>
-    </section>
+
+      <div id="djWrappedSummary"><div class="muted small">Select a DJ to view their stats.</div></div>
+
+      <div class="row" style="gap:12px; flex-wrap:wrap; margin-top:10px;">
+        <div class="card" style="flex:1 1 520px; min-width:320px;">
+          <div class="section-title"><strong>Top Songs Played</strong></div>
+          <div id="djWrappedTopSongs"><div class="muted small">Select a DJ…</div></div>
+        </div>
+
+        <div class="card" style="flex:1 1 520px; min-width:320px;">
+          <div class="section-title"><strong>Top Artists Played</strong></div>
+          <div id="djWrappedTopArtists"><div class="muted small">Select a DJ…</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
 
     <!-- LOTTERY -->
     <section id="viewLottery" class="view">
@@ -222,6 +251,6 @@
     </section>
   </div>
 
-  <script src="/app.js?v=modern9" defer></script>
+  <script src="/app.js?v=modern10" defer></script>
 </body>
 </html>

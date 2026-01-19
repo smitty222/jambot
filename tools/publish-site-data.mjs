@@ -35,6 +35,11 @@ const COOLDOWN_MINUTES_ALBUMS   = Number(process.env.PUBLISH_ALBUMS_EVERY_MIN ||
 const COOLDOWN_MINUTES_SITEDATA = Number(process.env.PUBLISH_SITEDATA_EVERY_MIN || 10);
 const COOLDOWN_MINUTES_SONGS = Number(process.env.PUBLISH_SONGS_EVERY_MIN || 10);
 const COOLDOWN_MINUTES_WRAPPED  = Number(process.env.PUBLISH_WRAPPED_EVERY_MIN || 60);
+// DJ wrapped limits (safe defaults)
+const WRAPPED_DJ_LIMIT          = Number(process.env.WRAPPED_DJ_LIMIT || 200);        // how many DJs we track per year
+const WRAPPED_DJ_TOP_SONGS      = Number(process.env.WRAPPED_DJ_TOP_SONGS || 50);     // per DJ
+const WRAPPED_DJ_TOP_ARTISTS    = Number(process.env.WRAPPED_DJ_TOP_ARTISTS || 50);  // per DJ
+
 
 
 
@@ -331,11 +336,14 @@ async function publishWrapped2026 (state) {
     const START = '2026-01-01';
     const END   = '2027-01-01';
 
+    // Room-level Wrapped limits
     const LIMIT_SONGS   = Number(process.env.WRAPPED_TOP_SONGS_LIMIT || 200);
     const LIMIT_ARTISTS = Number(process.env.WRAPPED_TOP_ARTISTS_LIMIT || 200);
     const LIMIT_DJS     = Number(process.env.WRAPPED_TOP_DJS_LIMIT || 100);
 
-    // Top songs (by plays)
+    // ─────────────────────────────────────────────────────────────
+    // Room Wrapped (existing)
+    // ─────────────────────────────────────────────────────────────
     const topSongs = db.prepare(`
       SELECT
         trackName AS title,
@@ -348,7 +356,6 @@ async function publishWrapped2026 (state) {
       LIMIT ?
     `).all(START, END, LIMIT_SONGS);
 
-    // Top artists (by plays)
     const topArtists = db.prepare(`
       SELECT
         artistName AS artist,
@@ -360,9 +367,7 @@ async function publishWrapped2026 (state) {
       LIMIT ?
     `).all(START, END, LIMIT_ARTISTS);
 
-        // Top DJs (by plays).
-    // Prefer users.nickname (stable + current) when djUuid is present.
-    // Fall back to stored djNickname when djUuid is missing.
+    // Top DJs (room-level): prefer users.nickname when djUuid exists
     const topDjs = db.prepare(`
       SELECT
         COALESCE(sp.djUuid, NULL) AS djUuid,
@@ -377,7 +382,6 @@ async function publishWrapped2026 (state) {
         ON u.uuid = sp.djUuid
       WHERE sp.playedAt >= ? AND sp.playedAt < ?
       GROUP BY
-        -- Group by stable identity when possible, otherwise by nickname.
         CASE
           WHEN sp.djUuid IS NOT NULL AND TRIM(sp.djUuid) <> '' THEN sp.djUuid
           ELSE COALESCE(NULLIF(TRIM(sp.djNickname), ''), 'unknown')
@@ -386,17 +390,113 @@ async function publishWrapped2026 (state) {
       LIMIT ?
     `).all(START, END, LIMIT_DJS);
 
+    // ─────────────────────────────────────────────────────────────
+    // DJ Wrapped (new)
+    // ─────────────────────────────────────────────────────────────
+    // 1) Per-DJ totals (use djUuid where possible; fallback to nickname)
+    const djTotals = db.prepare(`
+      SELECT
+        COALESCE(sp.djUuid, NULL) AS djUuid,
+        COALESCE(
+          NULLIF(TRIM(u.nickname), ''),
+          NULLIF(TRIM(sp.djNickname), ''),
+          'unknown'
+        ) AS dj,
+        COUNT(*) AS plays,
+        COUNT(DISTINCT LOWER(TRIM(sp.trackName)) || '|' || LOWER(TRIM(sp.artistName))) AS uniqueSongs,
+        COUNT(DISTINCT LOWER(TRIM(sp.artistName))) AS uniqueArtists
+      FROM song_plays sp
+      LEFT JOIN users u
+        ON u.uuid = sp.djUuid
+      WHERE sp.playedAt >= ? AND sp.playedAt < ?
+      GROUP BY
+        CASE
+          WHEN sp.djUuid IS NOT NULL AND TRIM(sp.djUuid) <> '' THEN sp.djUuid
+          ELSE COALESCE(NULLIF(TRIM(sp.djNickname), ''), 'unknown')
+        END
+      ORDER BY plays DESC
+      LIMIT ?
+    `).all(START, END, WRAPPED_DJ_LIMIT);
+
+    // 2) Per-DJ top songs + top artists (bounded per DJ)
+    // We only compute these for DJs included in djTotals to keep payload bounded.
+    const djTopSongs = [];
+    const djTopArtists = [];
+
+    const topSongsStmt = db.prepare(`
+      SELECT
+        sp.trackName AS title,
+        sp.artistName AS artist,
+        COUNT(*) AS plays
+      FROM song_plays sp
+      WHERE sp.playedAt >= ? AND sp.playedAt < ?
+        AND sp.djUuid = ?
+      GROUP BY sp.trackName, sp.artistName
+      ORDER BY plays DESC
+      LIMIT ?
+    `);
+
+    const topArtistsStmt = db.prepare(`
+      SELECT
+        sp.artistName AS artist,
+        COUNT(*) AS plays
+      FROM song_plays sp
+      WHERE sp.playedAt >= ? AND sp.playedAt < ?
+        AND sp.djUuid = ?
+      GROUP BY sp.artistName
+      ORDER BY plays DESC
+      LIMIT ?
+    `);
+
+    for (const dj of djTotals) {
+      const djUuid = dj.djUuid;
+
+      // If we don't have a djUuid (only nickname fallback), we can’t reliably filter
+      // per DJ without collisions. We still include totals, but skip top lists.
+      if (!djUuid || String(djUuid).trim() === '') continue;
+
+      const songs = topSongsStmt.all(START, END, djUuid, WRAPPED_DJ_TOP_SONGS);
+      for (const r of songs) {
+        djTopSongs.push({
+          djUuid,
+          dj: dj.dj,
+          title: r.title,
+          artist: r.artist,
+          plays: r.plays
+        });
+      }
+
+      const artists = topArtistsStmt.all(START, END, djUuid, WRAPPED_DJ_TOP_ARTISTS);
+      for (const r of artists) {
+        djTopArtists.push({
+          djUuid,
+          dj: dj.dj,
+          artist: r.artist,
+          plays: r.plays
+        });
+      }
+    }
 
     await postJson('/api/publishDb', {
       tables: {
+        // room wrapped (existing)
         wrapped_2026_top_songs: topSongs,
         wrapped_2026_top_artists: topArtists,
-        wrapped_2026_top_djs: topDjs
+        wrapped_2026_top_djs: topDjs,
+
+        // dj wrapped (new)
+        wrapped_2026_dj_totals: djTotals,
+        wrapped_2026_dj_top_songs: djTopSongs,
+        wrapped_2026_dj_top_artists: djTopArtists
       },
       public: [
         'wrapped_2026_top_songs',
         'wrapped_2026_top_artists',
-        'wrapped_2026_top_djs'
+        'wrapped_2026_top_djs',
+
+        'wrapped_2026_dj_totals',
+        'wrapped_2026_dj_top_songs',
+        'wrapped_2026_dj_top_artists'
       ]
     });
 
@@ -404,9 +504,12 @@ async function publishWrapped2026 (state) {
     saveState(state);
 
     console.log('[publish] wrapped2026 published:',
-      topSongs.length, 'songs,',
-      topArtists.length, 'artists,',
-      topDjs.length, 'djs'
+      topSongs.length, 'room songs,',
+      topArtists.length, 'room artists,',
+      topDjs.length, 'room djs;',
+      djTotals.length, 'dj totals,',
+      djTopSongs.length, 'dj song rows,',
+      djTopArtists.length, 'dj artist rows'
     );
   } catch (err) {
     console.warn('[publish] wrapped2026 failed:', err?.message || err);
@@ -414,6 +517,7 @@ async function publishWrapped2026 (state) {
     db.close();
   }
 }
+
 
 
 

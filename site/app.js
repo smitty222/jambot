@@ -1,5 +1,5 @@
-// site/app.js (modern8)
-const APP_VER = "modern8";
+// site/app.js (modern10)
+const APP_VER = "modern10";
 console.log("[jj] app.js booted", APP_VER, new Date().toISOString());
 
 // --- tiny error reporter so we see issues on the page ---
@@ -61,6 +61,12 @@ const els = {
   wrappedTopSongs: $("wrappedTopSongs"),
   wrappedTopArtists: $("wrappedTopArtists"),
   wrappedTopDjs: $("wrappedTopDjs"),
+
+  // DJ wrapped
+  djWrappedSelect: $("djWrappedSelect"),
+  djWrappedSummary: $("djWrappedSummary"),
+  djWrappedTopSongs: $("djWrappedTopSongs"),
+  djWrappedTopArtists: $("djWrappedTopArtists"),
 
 
   // data browsing
@@ -174,7 +180,7 @@ function setupTabs() {
 }
 // Safe fallback in case something overlays clicks: delegate on document too
 document.addEventListener("click", (e) => {
-  const t = e.target?.closest?.("#tabCommands, #tabData, #tabStats, #tabAlbums, #tabSongs, #tabWrapped, #tabLottery, #tabSettings, #tabGames");
+  const t = e.target?.closest?.("#tabCommands, #tabData, #tabStats, #tabAlbums, #tabSongs, #tabWrapped, #tabGames #tabLottery, #tabSettings, #tabGames");
   if (!t) return;
   e.preventDefault(); e.stopPropagation();
   showTab(t.id);
@@ -205,6 +211,167 @@ async function saveTokenHandler() {
   try { await refreshMod(); setTokenStatus(val ? "Saved. If mod still says Unauthorized, double-check the token." : "Cleared.", true); }
   catch { setTokenStatus("Saved, but error loading mod data.", false); }
 }
+
+// ─────────────────────────────────────────────────────────────
+// DJ Wrapped (2026) — per-DJ recap
+// ─────────────────────────────────────────────────────────────
+let _djTotals = [];
+let _djTopSongsRows = [];
+let _djTopArtistsRows = [];
+
+function renderSimpleTable(container, rows, cols, maxRows = 25) {
+  if (!container) return;
+  if (!Array.isArray(rows) || rows.length === 0) {
+    container.innerHTML = `<div class="muted small">No data yet.</div>`;
+    return;
+  }
+
+  const header = cols.map(c => `<th>${escapeHtml(c.label)}</th>`).join("");
+  const body = rows.slice(0, maxRows).map((r, i) => {
+    const tds = cols.map(c => `<td>${escapeHtml(String(r[c.key] ?? ""))}</td>`).join("");
+    return `<tr><td style="text-align:center;">${i + 1}</td>${tds}</tr>`;
+  }).join("");
+
+  container.innerHTML = `
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th style="width:56px;text-align:center;">#</th>${header}</tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+      <div class="muted small" style="margin-top:6px;">Showing top ${Math.min(maxRows, rows.length)}.</div>
+    </div>
+  `;
+}
+
+function renderDjWrappedSummary(djRow) {
+  if (!els.djWrappedSummary) return;
+  if (!djRow) {
+    els.djWrappedSummary.innerHTML = `<div class="muted small">Select a DJ to view their stats.</div>`;
+    return;
+  }
+
+  const plays = Number(djRow.plays ?? 0);
+  const uniqueSongs = Number(djRow.uniqueSongs ?? 0);
+  const uniqueArtists = Number(djRow.uniqueArtists ?? 0);
+
+  els.djWrappedSummary.innerHTML = `
+    <div class="row" style="gap:14px; flex-wrap:wrap;">
+      <div class="card" style="flex:1 1 240px; min-width:220px;">
+        <div class="muted small">DJ</div>
+        <div style="font-weight:700; font-size:18px;">${escapeHtml(djRow.dj || "unknown")}</div>
+      </div>
+      <div class="card" style="flex:1 1 180px; min-width:180px;">
+        <div class="muted small">Total plays</div>
+        <div style="font-weight:800; font-size:22px;">${plays}</div>
+      </div>
+      <div class="card" style="flex:1 1 180px; min-width:180px;">
+        <div class="muted small">Unique songs</div>
+        <div style="font-weight:800; font-size:22px;">${uniqueSongs}</div>
+      </div>
+      <div class="card" style="flex:1 1 180px; min-width:180px;">
+        <div class="muted small">Unique artists</div>
+        <div style="font-weight:800; font-size:22px;">${uniqueArtists}</div>
+      </div>
+    </div>
+  `;
+}
+
+function populateDjWrappedSelect() {
+  if (!els.djWrappedSelect) return;
+
+  if (!Array.isArray(_djTotals) || _djTotals.length === 0) {
+    els.djWrappedSelect.innerHTML = `<option value="">No DJs yet</option>`;
+    return;
+  }
+
+  const opts = _djTotals.map(r => {
+    const uuid = String(r.djUuid || "");
+    const name = String(r.dj || "unknown");
+    const plays = Number(r.plays || 0);
+    const label = `${name} (${plays})`;
+    return `<option value="${escapeHtml(uuid)}">${escapeHtml(label)}</option>`;
+  }).join("");
+
+  els.djWrappedSelect.innerHTML = `<option value="">Select a DJ…</option>${opts}`;
+}
+
+function renderDjWrappedFor(uuid) {
+  const djRow = _djTotals.find(r => String(r.djUuid || "") === String(uuid || ""));
+  renderDjWrappedSummary(djRow);
+
+  if (!uuid) {
+    if (els.djWrappedTopSongs) els.djWrappedTopSongs.innerHTML = `<div class="muted small">Select a DJ…</div>`;
+    if (els.djWrappedTopArtists) els.djWrappedTopArtists.innerHTML = `<div class="muted small">Select a DJ…</div>`;
+    return;
+  }
+
+  const songs = _djTopSongsRows
+    .filter(r => String(r.djUuid || "") === String(uuid))
+    .sort((a,b) => Number(b.plays||0) - Number(a.plays||0));
+
+  const artists = _djTopArtistsRows
+    .filter(r => String(r.djUuid || "") === String(uuid))
+    .sort((a,b) => Number(b.plays||0) - Number(a.plays||0));
+
+  renderSimpleTable(els.djWrappedTopSongs, songs, [
+    { key: "title", label: "Song" },
+    { key: "artist", label: "Artist" },
+    { key: "plays", label: "Plays" },
+  ], 25);
+
+  renderSimpleTable(els.djWrappedTopArtists, artists, [
+    { key: "artist", label: "Artist" },
+    { key: "plays", label: "Plays" },
+  ], 25);
+}
+
+async function refreshDjWrapped() {
+  const year = String(els.wrappedYear?.value || "2026").trim();
+
+  const tTotals = `wrapped_${year}_dj_totals`;
+  const tSongs = `wrapped_${year}_dj_top_songs`;
+  const tArtists = `wrapped_${year}_dj_top_artists`;
+
+  // Reset UI states
+  if (els.djWrappedSummary) els.djWrappedSummary.innerHTML = `<div class="muted small">Loading…</div>`;
+  if (els.djWrappedTopSongs) els.djWrappedTopSongs.innerHTML = `<div class="muted small">Loading…</div>`;
+  if (els.djWrappedTopArtists) els.djWrappedTopArtists.innerHTML = `<div class="muted small">Loading…</div>`;
+
+  try {
+    const [totals, songs, artists] = await Promise.all([
+      apiGet(`/api/db/${tTotals}`, false).catch(() => []),
+      apiGet(`/api/db/${tSongs}`, false).catch(() => []),
+      apiGet(`/api/db/${tArtists}`, false).catch(() => []),
+    ]);
+
+    _djTotals = Array.isArray(totals) ? totals : [];
+    _djTopSongsRows = Array.isArray(songs) ? songs : [];
+    _djTopArtistsRows = Array.isArray(artists) ? artists : [];
+
+    populateDjWrappedSelect();
+
+    // Auto-select first DJ if none selected
+    const current = els.djWrappedSelect?.value || "";
+    const next = current || (String(_djTotals[0]?.djUuid || "") || "");
+    if (els.djWrappedSelect) els.djWrappedSelect.value = next;
+    renderDjWrappedFor(next);
+  } catch (e) {
+    const msg = `<div class="muted small">Error: ${escapeHtml(e.message)}</div>`;
+    if (els.djWrappedSummary) els.djWrappedSummary.innerHTML = msg;
+    if (els.djWrappedTopSongs) els.djWrappedTopSongs.innerHTML = msg;
+    if (els.djWrappedTopArtists) els.djWrappedTopArtists.innerHTML = msg;
+  }
+  await refreshDjWrapped();
+
+}
+
+if (els.djWrappedSelect) {
+  els.djWrappedSelect.addEventListener("change", () => {
+    const uuid = els.djWrappedSelect.value || "";
+    renderDjWrappedFor(uuid);
+  });
+}
+
 function clearTokenHandler() {
   setToken(""); if (els.tokenInput) els.tokenInput.value = ""; setTokenStatus("Cleared."); toast("Token cleared"); refreshMod();
 }
