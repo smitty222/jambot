@@ -89,21 +89,20 @@ async function publishCrapsRecords (state) {
   try {
     const rows = db.prepare(`
       SELECT
-        cr.maxRolls,
+  cr.maxRolls,
+  cr.shooterId,
+  COALESCE(
+    NULLIF(TRIM(u.nickname), ''),
+    NULLIF(TRIM(cr.shooterNickname), ''),
+    cr.shooterId,
+    '—'
+  ) AS shooterNickname,
+  cr.achievedAt
+FROM craps_records cr
+LEFT JOIN users u ON u.uuid = cr.shooterId
+WHERE cr.maxRolls > 0
+ORDER BY cr.maxRolls DESC
 
-        -- Shooter display name (canonical)
-        COALESCE(
-          NULLIF(TRIM(u.nickname), ''),
-          NULLIF(TRIM(cr.shooterNickname), ''),
-          'unknown'
-        ) AS shooterName,
-
-        cr.achievedAt
-      FROM craps_records cr
-      LEFT JOIN users u
-        ON u.uuid = cr.shooterId
-      WHERE cr.maxRolls > 0
-      ORDER BY cr.maxRolls DESC
     `).all()
 
     await postJson('/api/publishDb', {

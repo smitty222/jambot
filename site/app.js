@@ -587,16 +587,18 @@ async function refreshGames() {
       const maxRolls = Number(r.maxRolls ?? r.max_rolls ?? 0);
       const shooter  = r.shooterNickname || r.shooter || "—";
       const achieved = r.achievedAt || r.achieved_at || "";
-      const room     = r.roomId || r.room || "—";
       container.innerHTML = `
-        <div class="games-record">
-          <div class="record-value">${maxRolls}</div>
-          <div class="record-label">Max Rolls</div>
-          <div class="record-player"><strong>Shooter:</strong> ${escapeHtml(shooter)}</div>
-          <div class="record-room"><strong>Room:</strong> <code class="tag">${escapeHtml(room)}</code></div>
-          <div class="record-date muted small">${escapeHtml(achieved)}</div>
-        </div>
-      `;
+  <div class="craps-compact">
+    <div class="craps-left">
+      <div class="record-value">${maxRolls}</div>
+      <div class="record-label">Max Rolls</div>
+    </div>
+    <div class="craps-right">
+      <div class="record-player"><strong>Shooter:</strong> ${escapeHtml(shooter)}</div>
+      <div class="record-date muted small">${escapeHtml(achieved)}</div>
+    </div>
+  </div>
+`;
     }
   } catch (e) {
     const container = els.gamesCrapsRecord;
@@ -1040,13 +1042,26 @@ async function refreshLottery(){
     const raw = Array.isArray(data?.lottery?.stats) ? data.lottery.stats : [];
     const stats = raw.map(b => ({ number: Number(b.number), count: Number(b.count) || 0 }));
     const byNum = new Map(stats.map(({ number, count }) => [number, count]));
-    const MAX_BALL = 99;
+
+    // ✅ Fix: 1–100 (not 1–99)
+    const MAX_BALL = 100;
+
+    // ✅ Heatmap bins (match your CSS .bin-0..4)
+    const toBin = (c) => {
+      c = Number(c) || 0;
+      if (c >= 10) return 4;
+      if (c >= 6)  return 3;
+      if (c >= 3)  return 2;
+      if (c >= 1)  return 1;
+      return 0;
+    };
 
     const html = Array.from({ length: MAX_BALL }, (_, i) => {
       const n = i + 1;
       const c = byNum.get(n) ?? 0;
-      const cls = c >= 3 ? 'count-3' : (c === 2 ? 'count-2' : (c === 1 ? 'count-1' : ''));
-      return `<div class="ball ${cls}" data-ball="${n}" data-count="${c}">
+      const bin = toBin(c);
+
+      return `<div class="ball bin-${bin}" data-ball="${n}" data-count="${c}">
                 <div class="num">${n}</div>
                 <div class="cnt">${c}</div>
               </div>`;
@@ -1057,6 +1072,7 @@ async function refreshLottery(){
     els.lotteryBalls.innerHTML = `<div class="muted small">Error: ${escapeHtml(e.message)}</div>`;
   }
 }
+
 // ------------- Wrapped (2026) -------------
 function renderWrappedTable(container, rows, cols) {
   if (!container) return;

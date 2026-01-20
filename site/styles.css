@@ -293,6 +293,48 @@ button:focus-visible, .input:focus-visible, a:focus-visible{
   font-size:12px;
   color:var(--muted);
 }
+/* Compact Craps record card (matches Lottery vibe) */
+.craps-compact{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  padding: 10px 4px;
+}
+
+.craps-left{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+
+.craps-right{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  text-align:right;
+}
+
+.craps-compact .record-value{
+  font-size:36px;
+  font-weight:900;
+  line-height:1;
+  color: var(--brand);
+}
+
+.craps-compact .record-label{
+  font-size:12px;
+  color: var(--muted);
+}
+
+.craps-compact .record-player{
+  font-size:14px;
+}
+
+.craps-compact .record-date{
+  font-size:12px;
+}
+
 
 /* Make the lottery winners container fill the card width */
 #gamesLotteryWinners{
