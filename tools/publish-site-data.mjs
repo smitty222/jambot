@@ -281,12 +281,22 @@ async function publishLotteryWinners (state) {
         lw.amountWon,
         lw.timestamp,
 
-        -- Always provide a good displayName for the site
+        -- ✅ Prefer CURRENT users.nickname first (so joins/renames fix the site)
         COALESCE(
-          NULLIF(TRIM(lw.displayName), ''),
           NULLIF(TRIM(u.nickname), ''),
+
+          -- If lw.displayName is just a UUID fallback, ignore it
+          CASE
+            WHEN lw.displayName IS NULL THEN NULL
+            WHEN TRIM(lw.displayName) = '' THEN NULL
+            WHEN TRIM(lw.displayName) = TRIM(lw.userId) THEN NULL
+            ELSE TRIM(lw.displayName)
+          END,
+
           NULLIF(TRIM(lw.nickname), ''),
-          'unknown'
+
+          -- Final fallback: show userId rather than "unknown"
+          lw.userId
         ) AS displayName
 
       FROM lottery_winners lw
@@ -311,6 +321,7 @@ async function publishLotteryWinners (state) {
     db.close()
   }
 }
+
 
 async function publishAlbumStats (state) {
   // Respect configured cooldowns
