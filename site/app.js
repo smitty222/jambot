@@ -183,7 +183,7 @@ function setupTabs() {
 }
 // Safe fallback in case something overlays clicks: delegate on document too
 document.addEventListener("click", (e) => {
-  const t = e.target?.closest?.("#tabCommands, #tabData, #tabStats, #tabAlbums, #tabSongs, #tabWrapped, #tabGames #tabLottery, #tabSettings, #tabGames");
+  const t = e.target?.closest?.("#tabCommands, #tabData, #tabStats, #tabAlbums, #tabSongs, #tabWrapped, #tabGames, #tabLottery, #tabSettings, #tabGames");
   if (!t) return;
   e.preventDefault(); e.stopPropagation();
   showTab(t.id);
@@ -336,6 +336,10 @@ async function refreshDjWrapped() {
   const tArtists = `wrapped_${year}_dj_top_artists`;
 
   // Reset UI states
+  if (els.djWrappedSelect) {
+    els.djWrappedSelect.innerHTML = `<option value="">Loading DJs...</option>`;
+    els.djWrappedSelect.disabled = true;
+  }
   if (els.djWrappedSummary) els.djWrappedSummary.innerHTML = `<div class="muted small">Loading…</div>`;
   if (els.djWrappedTopSongs) els.djWrappedTopSongs.innerHTML = `<div class="muted small">Loading…</div>`;
   if (els.djWrappedTopArtists) els.djWrappedTopArtists.innerHTML = `<div class="muted small">Loading…</div>`;
@@ -353,20 +357,26 @@ async function refreshDjWrapped() {
 
     populateDjWrappedSelect();
 
+    if (els.djWrappedSelect) els.djWrappedSelect.disabled = false;
+
     // Auto-select first DJ if none selected
     const current = els.djWrappedSelect?.value || "";
     const next = current || (String(_djTotals[0]?.djUuid || "") || "");
     if (els.djWrappedSelect) els.djWrappedSelect.value = next;
     renderDjWrappedFor(next);
+
   } catch (e) {
     const msg = `<div class="muted small">Error: ${escapeHtml(e.message)}</div>`;
     if (els.djWrappedSummary) els.djWrappedSummary.innerHTML = msg;
     if (els.djWrappedTopSongs) els.djWrappedTopSongs.innerHTML = msg;
     if (els.djWrappedTopArtists) els.djWrappedTopArtists.innerHTML = msg;
+    if (els.djWrappedSelect) {
+      els.djWrappedSelect.innerHTML = `<option value="">Failed to load DJs</option>`;
+      els.djWrappedSelect.disabled = true;
+    }
   }
-  await refreshDjWrapped();
-
 }
+
 
 if (els.djWrappedSelect) {
   els.djWrappedSelect.addEventListener("change", () => {
@@ -1158,6 +1168,7 @@ async function refreshAll() {
     refreshSongs(),
     refreshLottery(),
     refreshWrapped(),
+    refreshDjWrapped(),
   ]);
 }
 
@@ -1172,6 +1183,7 @@ async function refreshAll() {
     setInterval(refreshAlbums, 60000);
     setInterval(refreshSongs, 60000);
     setInterval(refreshWrapped, 60000);
+    setInterval(refreshDjWrapped, 60000);
 
   } catch (e) {
     console.error("[jj] init failed", e);
