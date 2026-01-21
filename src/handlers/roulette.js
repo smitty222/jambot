@@ -1,8 +1,8 @@
 import { postMessage } from '../libs/cometchat.js'
 import {
   getUserWallet,
-  addToUserWallet,
-  removeFromUserWallet
+  creditGameWin,
+  debitGameBet
 } from '../database/dbwalletmanager.js'
 import { getUserNickname } from '../utils/nickname.js' // <- avoid circular import
 
@@ -125,7 +125,7 @@ async function drawWinningNumber () {
     const nickname = await getUserNickname(user)
 
     if (totalWinnings > 0) {
-      await addToUserWallet(user, totalWinnings)
+      await creditGameWin(user, totalWinnings)
       await postMessage({ room, message: `💰 ${nickname} won $${totalWinnings}!` })
     } else if (userBets.length) {
       await postMessage({ room, message: `😢 ${nickname} did not win this round.` })
@@ -203,7 +203,7 @@ export async function handleRouletteBet (payload) {
     return postMessage({ room, message: `${nickname}, insufficient funds. Balance: $${balance}.` })
   }
 
-  const ok = await removeFromUserWallet(user, amt)
+  const ok = await debitGameBet(user, amt)
   if (!ok) {
     return postMessage({ room, message: `${nickname}, failed to place bet (wallet issue).` })
   }

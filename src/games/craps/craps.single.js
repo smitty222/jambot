@@ -11,15 +11,14 @@
 
 import { postMessage } from '../../libs/cometchat.js'
 import {
-  addToUserWallet,
-  removeFromUserWallet,
   getUserWallet,
-  addOrUpdateUser
+  addOrUpdateUser,
+  debitGameBet, 
+  creditGameWin
 } from '../../database/dbwalletmanager.js'
 import { PHASES } from './crapsState.js'
 import db from '../../database/db.js'
-import { getSenderNickname } from '../../utils/helpers.js'
-import { getDisplayName, sanitizeNickname } from '../../utils/names.js'
+import { sanitizeNickname } from '../../utils/names.js'
 import { getUserNicknameByUuid } from '../../utils/API.js'
 
 /* ───────────────────────── Records (DB) ───────────────────────── */
@@ -210,30 +209,30 @@ function hasAnyBets (st) {
 async function refundAllBets (st) {
   // line
   for (const [u, amt] of Object.entries(st.pass)) {
-    await addToUserWallet(u, amt)
+    await creditGameWin(u, amt)
   }
   for (const [u, amt] of Object.entries(st.dontPass)) {
-    await addToUserWallet(u, amt)
+    await creditGameWin(u, amt)
   }
 
   // come/dont come waiting + point
   for (const [u, amt] of Object.entries(st.comeWaiting)) {
-    await addToUserWallet(u, amt)
+    await creditGameWin(u, amt)
   }
   for (const [u, amt] of Object.entries(st.dontComeWaiting)) {
-    await addToUserWallet(u, amt)
+    await creditGameWin(u, amt)
   }
   for (const [u, o] of Object.entries(st.comePoint)) {
-    if (o?.amt) await addToUserWallet(u, o.amt)
+    if (o?.amt) await creditGameWin(u, o.amt)
   }
   for (const [u, o] of Object.entries(st.dontComePoint)) {
-    if (o?.amt) await addToUserWallet(u, o.amt)
+    if (o?.amt) await creditGameWin(u, o.amt)
   }
 
   // place
   for (const n of PLACES) {
     for (const [u, amt] of Object.entries(st.place[n] || {})) {
-      await addToUserWallet(u, amt)
+      await creditGameWin(u, amt)
     }
   }
 
@@ -487,7 +486,7 @@ async function placeLineBet (kind, user, amount, room) {
     return
   }
 
-  const ok = await removeFromUserWallet(user, amt)
+  const ok = await debitGameBet(user, amt)
   if (!ok) { await say(room, `${mention(user)} wallet error. Bet not placed.`); return }
 
   book[user] = amt
@@ -520,7 +519,7 @@ async function placeComeBet (kind, user, amount, room) {
   const bal = await getUserWallet(user)
   if (Number(bal) < amt) { await say(room, `${mention(user)} insufficient funds. Balance ${fmtMoney(bal)}.`); return }
 
-  const ok = await removeFromUserWallet(user, amt)
+  const ok = await debitGameBet(user, amt)
   if (!ok) { await say(room, `${mention(user)} wallet error. Bet not placed.`); return }
 
   waiting[user] = amt
@@ -558,7 +557,7 @@ async function placePlaceBet (num, user, amount, room) {
     await say(room, `${mention(user)} insufficient funds. Balance ${fmtMoney(bal)}.`)
     return
   }
-  const ok = await removeFromUserWallet(user, amt)
+  const ok = await debitGameBet(user, amt)
   if (!ok) { await say(room, `${mention(user)} wallet error. Bet not placed.`); return }
 
   st.place[n][user] = amt
@@ -583,7 +582,7 @@ async function removePlaceBet (num, user, room) {
     return
   }
   delete st.place[n][user]
-  await addToUserWallet(user, amt)
+  await creditGameWin(user, amt)
   await say(room, `↩️ ${mention(user)} removed place ${n}, returned ${fmtMoney(amt)}.`)
 }
 
@@ -710,11 +709,11 @@ async function settlePass (st, outcome) {
   const lines = []
   for (const [u, amt] of Object.entries(st.pass)) {
     if (outcome === 'win') {
-      await addToUserWallet(u, amt * 2)
+      await creditGameWin(u, amt * 2)
       addRoundResult(st, u, amt)
       lines.push(`${mention(u)} **+${fmtMoney(amt)}**`)
     } else if (outcome === 'push') {
-      await addToUserWallet(u, amt)
+      await creditGameWin(u, amt)
       lines.push(`${mention(u)} push (${fmtMoney(amt)})`)
     } else {
       addRoundResult(st, u, -amt)
@@ -729,11 +728,11 @@ async function settleDontPass (st, outcome) {
   const lines = []
   for (const [u, amt] of Object.entries(st.dontPass)) {
     if (outcome === 'win') {
-      await addToUserWallet(u, amt * 2)
+      await creditGameWin(u, amt * 2)
       addRoundResult(st, u, amt)
       lines.push(`${mention(u)} **+${fmtMoney(amt)}**`)
     } else if (outcome === 'push') {
-      await addToUserWallet(u, amt)
+      await creditGameWin(u, amt)
       lines.push(`${mention(u)} push (${fmtMoney(amt)})`)
     } else {
       addRoundResult(st, u, -amt)
@@ -749,12 +748,12 @@ async function resolveComeWaiting (total, st) {
 
   for (const [u, amt] of Object.entries(st.comeWaiting)) {
     if (total === 7 || total === 11) {
-      await addToUserWallet(u, amt * 2)
+      await creditGameWin(u, amt * 2)
       addRoundResult(st, u, amt)
       lines.push(`${mention(u)} COME **+${fmtMoney(amt)}**`)
     } else if ([2, 3, 12].includes(total)) {
       if (total === 12) {
-        await addToUserWallet(u, amt)
+        await creditGameWin(u, amt)
         lines.push(`${mention(u)} COME push (${fmtMoney(amt)})`)
       } else {
         addRoundResult(st, u, -amt)
@@ -769,11 +768,11 @@ async function resolveComeWaiting (total, st) {
 
   for (const [u, amt] of Object.entries(st.dontComeWaiting)) {
     if ([2, 3].includes(total)) {
-      await addToUserWallet(u, amt * 2)
+      await creditGameWin(u, amt * 2)
       addRoundResult(st, u, amt)
       lines.push(`${mention(u)} DON'T COME **+${fmtMoney(amt)}**`)
     } else if (total === 12) {
-      await addToUserWallet(u, amt)
+      await creditGameWin(u, amt)
       lines.push(`${mention(u)} DON'T COME push (${fmtMoney(amt)})`)
     } else if (total === 7 || total === 11) {
       addRoundResult(st, u, -amt)
@@ -793,7 +792,7 @@ async function resolveComePoints (total, st) {
 
   for (const [u, o] of Object.entries(st.comePoint)) {
     if (total === o.num) {
-      await addToUserWallet(u, o.amt * 2)
+      await creditGameWin(u, o.amt * 2)
       addRoundResult(st, u, o.amt)
       lines.push(`${mention(u)} COME on ${o.num} **+${fmtMoney(o.amt)}**`)
       delete st.comePoint[u]
@@ -806,7 +805,7 @@ async function resolveComePoints (total, st) {
 
   for (const [u, o] of Object.entries(st.dontComePoint)) {
     if (total === 7) {
-      await addToUserWallet(u, o.amt * 2)
+      await creditGameWin(u, o.amt * 2)
       addRoundResult(st, u, o.amt)
       lines.push(`${mention(u)} DON'T COME vs ${o.num} **+${fmtMoney(o.amt)}**`)
       delete st.dontComePoint[u]
@@ -839,7 +838,7 @@ async function resolvePlace (total, st) {
     for (const [u, amt] of Object.entries(book)) {
       const profit = placeProfit(total, amt)
       if (profit > 0) {
-        await addToUserWallet(u, profit)
+        await creditGameWin(u, profit)
         addRoundResult(st, u, profit)
         const p = Number.isInteger(profit) ? profit.toString() : profit.toFixed(2)
         lines.push(`${mention(u)} place ${total} win → **+$${p}**`)

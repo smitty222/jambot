@@ -1,4 +1,4 @@
-import { addToUserWallet, getUserWallet, removeFromUserWallet } from '../database/dbwalletmanager.js'
+import { debitGameBet,creditGameWin, getUserWallet } from '../database/dbwalletmanager.js'
 import db from '../database/db.js'
 
 // ───────────────────────────────────────────────────────────
@@ -401,7 +401,7 @@ async function spinBonusOnce (userUUID) {
   totalPct = Math.min(totalPct, BONUS_MAX_TOTAL_PERCENT)
   const jackpotWon = lockedJackpot * (totalPct / 100)
 
-  if (jackpotWon > 0) await addToUserWallet(userUUID, jackpotWon)
+  if (jackpotWon > 0) await creditGameWin(userUUID, jackpotWon)
 
   const currentJackpot = getJackpotValue()
   const newJackpot = Math.max(JACKPOT_SEED, currentJackpot - jackpotWon)
@@ -527,7 +527,7 @@ async function spinFeatureOnce (userUUID) {
 
   if (win > 0) {
     totalWon += win
-    await addToUserWallet(userUUID, win)
+    await creditGameWin(userUUID, win)
   }
 
   spinsLeft -= 1
@@ -714,7 +714,7 @@ async function applyCollectionProgress (userUUID, spins) {
   saveUserCollection(userUUID, { counts, tiers, halfNotifs })
 
   if (totalReward > 0) {
-    await addToUserWallet(userUUID, totalReward)
+    await creditGameWin(userUUID, totalReward)
   }
 
   return { unlockedLines: unlocked, progressLines: progress, rewardTotal: totalReward }
@@ -753,7 +753,7 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
       return `Invalid bet amount. Your balance is $${formatBalance(balance)}.`
     }
 
-    await removeFromUserWallet(userUUID, bet)
+    await debitGameBet(userUUID, bet)
 
     let jackpot = getJackpotValue()
     const beforeJackpot = jackpot
@@ -839,7 +839,7 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
     playOneSpin('🎰 SLOTS')
 
     if (totalWinnings > 0) {
-      await addToUserWallet(userUUID, totalWinnings)
+      await creditGameWin(userUUID, totalWinnings)
     }
 
     const resetInfo = maybeResetCollectionsMonthly()

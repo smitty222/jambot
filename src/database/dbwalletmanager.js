@@ -1,4 +1,11 @@
 // src/libs/dbWalletManager.js
+
+// NOTE: this file is generated as part of the assistant's update.  It
+// replicates the existing wallet manager logic and introduces helper
+// functions for tracking lifetime net gains/losses without altering
+// existing balance functionality.  See the accompanying report for
+// details on how to update game modules to use these helpers.
+
 import db from './db.js'
 // Helpers for working with mentions and nicknames. We avoid storing
 // mention strings (e.g. `<@uid:abcd>`) in the users table. Instead we
@@ -108,7 +115,6 @@ export function addOrUpdateUser (userUUID, nickname = null) {
     logger.error('[addOrUpdateUser] Failed to upsert user', { err: err?.message || err })
   }
 }
-
 
 export function loadWallets () {
   ensureWalletCache()
@@ -277,4 +283,84 @@ export async function songPayment () {
   } catch (error) {
     logger.error('Error in songPayment', { err: error?.message || error })
   }
+}
+
+// ---------------------------------------------------------------------------
+// Lifetime net helpers
+//
+// These helpers enable the site to track the cumulative net gain or loss
+// for each user across game sessions.  They do not modify the existing
+// wallet cache logic, so all current wallet operations continue to work
+// as before.  Only game modules should call these helpers when money
+// changes hands for bets and payouts.
+
+/**
+ * Adjust a user’s lifetime net total by a positive or negative amount.
+ * If the user does not exist, insert a new row with the given amount.
+ *
+ * @param {string} userUUID
+ * @param {number} amount A positive or negative number representing the change in net
+ */
+function updateLifetimeNet (userUUID, amount) {
+  if (!Number.isFinite(amount) || amount === 0) return
+  try {
+    db.prepare(`
+      INSERT INTO users (uuid, nickname, balance, lifetime_net)
+      VALUES (?, ?, 0, ?)
+      ON CONFLICT(uuid) DO UPDATE SET
+        lifetime_net = COALESCE(lifetime_net, 0) + excluded.lifetime_net
+    `).run(userUUID, userUUID, amount)
+  } catch (err) {
+    logger.error('[updateLifetimeNet] failed', { err: err?.message || err })
+  }
+}
+
+/**
+ * Remove a game bet from the user’s wallet and record a negative net.
+ * Returns true on success (sufficient funds), false otherwise.
+ *
+ * @param {string} userUUID
+ * @param {number} amount A positive number representing the bet
+ */
+export function debitGameBet (userUUID, amount) {
+  if (!Number.isFinite(amount) || amount <= 0) return false
+  const success = removeFromUserWallet(userUUID, amount)
+  if (success) updateLifetimeNet(userUUID, -amount)
+  return success
+}
+
+/**
+ * Credit a game win to the user’s wallet and record a positive net.
+ * Returns true on success.
+ *
+ * @param {string} userUUID
+ * @param {number} amount A positive number representing the winnings
+ * @param {string|null} nickname Optional nickname to update in users table
+ */
+export async function creditGameWin (userUUID, amount, nickname = null) {
+  if (!Number.isFinite(amount) || amount <= 0) return false
+  const success = await addToUserWallet(userUUID, amount, nickname)
+  if (success) updateLifetimeNet(userUUID, amount)
+  return success
+}
+
+/**
+ * Retrieve a user’s lifetime net total.
+ *
+ * @param {string} userUUID
+ * @returns {number} The net gain (positive) or loss (negative)
+ */
+export function getLifetimeNet (userUUID) {
+  const row = db.prepare('SELECT lifetime_net FROM users WHERE uuid = ?').get(userUUID)
+  return row?.lifetime_net ?? 0
+}
+
+/**
+ * Retrieve an array of all users and their lifetime net totals.
+ *
+ * @returns {Array<{uuid: string, lifetime_net: number}>}
+ */
+export function getAllNetTotals () {
+  const rows = db.prepare('SELECT uuid, lifetime_net FROM users').all()
+  return rows.map(({ uuid, lifetime_net }) => ({ uuid, lifetime_net }))
 }

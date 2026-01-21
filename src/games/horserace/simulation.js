@@ -3,7 +3,7 @@
 // (existing header comments omitted for brevity)
 
 import { bus, safeCall } from './service.js'
-import { addToUserWallet } from '../../database/dbwalletmanager.js'
+import { creditGameWin } from '../../database/dbwalletmanager.js'
 import { updateHorseStats } from '../../database/dbhorses.js'
 import { maybeInductHorse } from '../../database/dbhorsehof.js'
 import { postMessage } from '../../libs/cometchat.js'
@@ -153,7 +153,7 @@ export async function runRace ({ horses, horseBets }) {
     }
     if (sum > 0) {
       payouts[userId] = (payouts[userId] || 0) + sum
-      await safeCall(addToUserWallet, [userId, sum])
+      await safeCall(creditGameWin, [userId, sum])
     }
   }
 
@@ -234,7 +234,7 @@ try {
     const bonus = Math.max(minBonus, pctBonus)
 
     if (bonus > 0) {
-      await safeCall(addToUserWallet, [winner.ownerId, bonus])
+      await safeCall(creditGameWin, [winner.ownerId, bonus])
       ownerBonus = { ownerId: winner.ownerId, amount: bonus }
     }
   }

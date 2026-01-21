@@ -11,9 +11,18 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     uuid TEXT PRIMARY KEY,
     nickname TEXT NOT NULL,
-    balance REAL DEFAULT 0
+    balance REAL DEFAULT 0,
+    lifetime_net REAL DEFAULT 0
   )
 `)
+
+// For existing tables, add the column if it doesn't exist.
+try {
+  db.exec('ALTER TABLE users ADD COLUMN lifetime_net REAL DEFAULT 0')
+} catch (err) {
+  // Swallow the error if the column already exists
+}
+
 
 // Wallets
 //

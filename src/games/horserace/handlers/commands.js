@@ -2,7 +2,7 @@
 
 
 import { postMessage } from '../../../libs/cometchat.js'
-import { getUserWallet, removeFromUserWallet } from '../../../database/dbwalletmanager.js'
+import { getUserWallet, debitGameBet } from '../../../database/dbwalletmanager.js'
 import { getUserNickname } from '../../../utils/nickname.js'
 import { getAllHorses, getUserHorses } from '../../../database/dbhorses.js'
 import { fetchCurrentUsers } from '../../../utils/API.js'
@@ -217,7 +217,7 @@ export async function handleHorseBet (ctx) {
     return
   }
 
-  await safeCall(removeFromUserWallet, [sender, amt])
+  await safeCall(debitGameBet, [sender, amt])
   ;(horseBets[sender] ||= []).push({ horseIndex: idx, amount: amt })
 
   const h = horses[idx]

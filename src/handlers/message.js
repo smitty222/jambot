@@ -26,7 +26,8 @@ import {
   removeFromUserWallet,
   getUserWallet,
   transferTip,
-  addOrUpdateUser
+  addOrUpdateUser,
+  getLifetimeNet,
 } from '../database/dbwalletmanager.js'
 import { getJackpotValue, handleSlotsCommand, formatBalance} from './slots.js'
 import {
@@ -1897,6 +1898,22 @@ Please refresh your page for the queue to update`
       })
     }
   }
+  if (payload.message.startsWith('/career')) {
+  // Look up the user's lifetime net win/loss (positive or negative)
+  const userId   = payload.sender
+  const nickname = await getUserNickname(userId)
+  const net      = getLifetimeNet(userId)
+
+  // Round to whole dollars and format with sign and commas
+  const rounded  = Math.round(net)
+  const absNet   = Math.abs(rounded).toLocaleString('en-US')
+  const sign     = rounded >= 0 ? '+' : '-'
+
+  await postMessage({
+    room: process.env.ROOM_UUID,
+    message: `${nickname}, your career net total is ${sign}$${absNet}.`
+  })
+}
 
   if (payload.message.startsWith('/getwallet')) {
     const userId = payload.sender // Get the user's ID from the payload

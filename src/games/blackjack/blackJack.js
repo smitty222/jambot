@@ -1,5 +1,5 @@
 // src/games/blackjack/blackJack.js
-import { addToUserWallet, removeFromUserWallet, getUserWallet } from '../../database/dbwalletmanager.js'
+import { getUserWallet, debitGameBet, creditGameWin } from '../../database/dbwalletmanager.js'
 import { postMessage } from '../../libs/cometchat.js'
 import { getUserNickname } from '../../handlers/message.js'
 
@@ -11,7 +11,7 @@ const BETTING_WINDOW_MS   = Number(process.env.BJ_BETTING_WINDOW_MS   ?? 30_000)
 const EARLY_BET_CLOSE     = true
 
 const DECKS               = Number(process.env.BJ_DECKS ?? 6)
-const HIT_SOFT_17         = true // dealer stands on soft 17
+const HIT_SOFT_17         = false // dealer stands on soft 17
 
 const RESHUFFLE_FRAC      = Number(process.env.BJ_RESHUFFLE_FRAC ?? 0.25)
 const RESHUFFLE_MIN       = Number(process.env.BJ_RESHUFFLE_MIN  ?? 52)
@@ -148,9 +148,9 @@ function clearAllTimers (st) {
 
 // Wallet helpers: tolerate sync OR async implementations.
 async function maybeAwait (v) { return (v && typeof v.then === 'function') ? await v : v }
-async function walletRemove (uuid, amt) { return await maybeAwait(removeFromUserWallet(uuid, amt)) }
-async function walletAdd (uuid, amt) { return await maybeAwait(addToUserWallet(uuid, amt)) }
 async function walletGet (uuid) { return await maybeAwait(getUserWallet(uuid)) }
+async function walletBet (uuid, amt) { return await maybeAwait(debitGameBet(uuid, amt)) }
+async function walletPayout (uuid, amt, nickname = null) { return await maybeAwait(creditGameWin(uuid, amt, nickname)) }
 
 // Mention helper: ALWAYS use the shared getUserNickname() for in-chat pings.
 async function mention (userId) {
@@ -362,7 +362,6 @@ async function promptTurn (ctx, id, { rePrompt = false } = {}) {
 
   const p = st.players.get(id)
   const actions = eligibleActions(p)
-  const hv = handValue(p.hand).total
 
   // CometChat-friendly layout to avoid weird wraps + keep density low
   const snap = []
@@ -480,7 +479,7 @@ export async function leaveTable (userUUID, ctx) {
   if (st.phase === 'betting' && p.bet > 0) {
     const refund = p.bet
     p.bet = 0
-    await walletAdd(userUUID, refund)
+    await walletPayout(userUUID, refund) // ✅ lifetime_net: +refund
     st.handOrder = st.handOrder.filter(id => id !== userUUID)
     await postMessage({ room: ctx.room, message: `↩️ ${await mention(userUUID)} left during betting — refunded ${fmtMoney(refund)}.` })
   }
@@ -576,7 +575,7 @@ export async function handleBlackjackBet (userUUID, amountStr, nickname, ctx) {
     return
   }
 
-  const ok = await walletRemove(userUUID, amount)
+  const ok = await walletBet(userUUID, amount) // ✅ lifetime_net: -amount
   if (!ok) {
     await postMessage({ room: ctx.room, message: `${await mention(userUUID)} unable to place bet (insufficient funds).` })
     return
@@ -688,7 +687,6 @@ async function dealInitial (ctx) {
   await advanceIfDoneAndPrompt(ctx)
 }
 
-
 async function advanceIfDoneAndPrompt (ctx) {
   const st = getTable(ctx)
   while (st.turnIndex < st.handOrder.length) {
@@ -780,7 +778,7 @@ export async function handleDouble (userUUID, nickname, ctx) {
     return promptTurn(ctx, userUUID, { rePrompt: true })
   }
 
-  const ok = await walletRemove(userUUID, p.bet)
+  const ok = await walletBet(userUUID, p.bet) // ✅ lifetime_net: -(original bet amount)
   if (!ok) {
     await postMessage({ room: ctx.room, message: `${await mention(userUUID)} unable to double at this time.` })
     return promptTurn(ctx, userUUID, { rePrompt: true })
@@ -827,7 +825,7 @@ export async function handleSurrender (userUUID, nickname, ctx) {
   p.done = true
 
   const refund = Math.floor(p.bet / 2)
-  await walletAdd(userUUID, refund)
+  await walletPayout(userUUID, refund) // ✅ lifetime_net: +refund (net becomes -bet/2)
 
   await postMessage({ room: ctx.room, message: `🏳️ ${await mention(userUUID)} surrenders → refund ${fmtMoney(refund)}.` })
   await beat(350, 650)
@@ -954,8 +952,11 @@ async function settleRound (ctx) {
       biggestThisHand = { uuid: id, profit }
     }
 
+    // NOTE:
+    // - surrender refund is paid in handleSurrender (so skip here)
+    // - otherwise, pay back the full "returned" amount (push, win, blackjack)
     if (!p.surrendered && returned > 0) {
-      await walletAdd(id, Math.round(returned))
+      await walletPayout(id, Math.round(returned)) // ✅ lifetime_net: +returned
     }
 
     const nm = nameInBlock(st, id)
