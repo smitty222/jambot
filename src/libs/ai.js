@@ -11,15 +11,15 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY
 // Keys are *normalized* (see normalizeModelName).
 // ───────────────────────────────────────────────────────────
 const MODEL_LIMITS = {
-  'gemini-2.5-pro':                { rpm: 5,  tpm: 250_000, rpd: 100 },
-  'gemini-2.5-flash':              { rpm: 10, tpm: 250_000, rpd: 250 },
-  'gemini-2.5-flash-lite':         { rpm: 15, tpm: 250_000, rpd: 1_000 },
-  'gemini-2.0-flash':              { rpm: 15, tpm: 1_000_000, rpd: 200 },
-  'gemini-2.0-flash-lite':         { rpm: 30, tpm: 1_000_000, rpd: 200 },
+  'gemini-2.5-pro': { rpm: 5, tpm: 250_000, rpd: 100 },
+  'gemini-2.5-flash': { rpm: 10, tpm: 250_000, rpd: 250 },
+  'gemini-2.5-flash-lite': { rpm: 15, tpm: 250_000, rpd: 1_000 },
+  'gemini-2.0-flash': { rpm: 15, tpm: 1_000_000, rpd: 200 },
+  'gemini-2.0-flash-lite': { rpm: 30, tpm: 1_000_000, rpd: 200 },
 
   // Treat preview aliases like their base
-  'gemini-2.5-flash-preview':      { rpm: 10, tpm: 250_000, rpd: 250 },
-  'gemini-2.5-flash-lite-preview': { rpm: 15, tpm: 250_000, rpd: 1_000 },
+  'gemini-2.5-flash-preview': { rpm: 10, tpm: 250_000, rpd: 250 },
+  'gemini-2.5-flash-lite-preview': { rpm: 15, tpm: 250_000, rpd: 1_000 }
 }
 
 // ───────────────────────────────────────────────────────────
@@ -57,7 +57,7 @@ const isDebug = LOG_LEVEL === 'debug'
 const LOG_PROMPT = ['1', 'true', 'on', 'yes'].includes(String(process.env.AI_LOG_PROMPT || '').toLowerCase())
 const PROMPT_MAX = Math.max(80, parseInt(process.env.AI_PROMPT_MAX_CHARS || '600', 10) || 600)
 
-const info  = (...a) => { if (isInfo)  console.log('[AI]', ...a) }
+const info = (...a) => { if (isInfo) console.log('[AI]', ...a) }
 const debug = (...a) => { if (isDebug) console.debug('[AI]', ...a) }
 function preview (str, max = PROMPT_MAX) {
   const s = String(str ?? '').replace(/\r/g, '').replace(/\t/g, ' ')
@@ -75,15 +75,15 @@ const isTransientAiError = (err) => {
 // Tunables
 // ───────────────────────────────────────────────────────────
 const AI_REQUEST_TIMEOUT_MS = Number(process.env.AI_REQUEST_TIMEOUT_MS ?? 30_000)
-const AI_IMAGE_TIMEOUT_MS   = Number(process.env.AI_IMAGE_TIMEOUT_MS   ?? 45_000)
-const AI_RETRIES            = Number(process.env.AI_RETRIES            ?? 3)
-const AI_BACKOFF_MS         = Number(process.env.AI_BACKOFF_MS         ?? 800)
+const AI_IMAGE_TIMEOUT_MS = Number(process.env.AI_IMAGE_TIMEOUT_MS ?? 45_000)
+const AI_RETRIES = Number(process.env.AI_RETRIES ?? 3)
+const AI_BACKOFF_MS = Number(process.env.AI_BACKOFF_MS ?? 800)
 
 // Global free-tier cool-off default if Retry-After not parseable
 const GLOBAL_429_DEFAULT_WAIT_MS = Number(process.env.AI_GLOBAL_429_DEFAULT_WAIT_MS ?? 60_000)
 
 // Local token-bucket (global) to smooth spikes hitting askQuestion
-const AI_LOCAL_RL_TOKENS    = Number(process.env.AI_LOCAL_RL_TOKENS    ?? 6)
+const AI_LOCAL_RL_TOKENS = Number(process.env.AI_LOCAL_RL_TOKENS ?? 6)
 const AI_LOCAL_RL_WINDOW_MS = Number(process.env.AI_LOCAL_RL_WINDOW_MS ?? 30_000)
 const rlBucket = { tokens: AI_LOCAL_RL_TOKENS, lastRefill: Date.now() }
 function rlRefill () {
@@ -96,7 +96,7 @@ function rlRefill () {
 function rlTryTake () { rlRefill(); if (rlBucket.tokens > 0) { rlBucket.tokens--; return true } return false }
 
 // In-memory response cache
-const AI_CACHE_TTL_MS   = Number(process.env.AI_CACHE_TTL_MS   ?? 300_000) // 5m
+const AI_CACHE_TTL_MS = Number(process.env.AI_CACHE_TTL_MS ?? 300_000) // 5m
 const AI_CACHE_MAX_SIZE = Number(process.env.AI_CACHE_MAX_SIZE ?? 50)
 const aiCache = new Map()
 function getCachedResponse (key) {
@@ -119,21 +119,20 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 async function fetchWithTimeout (url, opts = {}, ms = 30_000) {
   const controller = new AbortController()
   const t = setTimeout(() => controller.abort(), ms)
-  try { return await fetch(url, { ...opts, signal: controller.signal }) }
-  finally { clearTimeout(t) }
+  try { return await fetch(url, { ...opts, signal: controller.signal }) } finally { clearTimeout(t) }
 }
 
 // ───────────────────────────────────────────────────────────
 // Name normalization & discovery
 // ───────────────────────────────────────────────────────────
-function normalizeModelName(name) {
+function normalizeModelName (name) {
   return String(name || '')
     .replace(/^models\//i, '')
     .replace(/-latest$/i, '')
     .replace(/-stable$/i, '')
-    .replace(/-(?:\d+|0\d\d)$/i, '')                 // -001, -002
-    .replace(/-preview(?:-[0-9-]+)?$/i, '-preview')  // preview→canonical
-    .replace(/-exp(?:erimental)?$/i, '')             // experimental→base
+    .replace(/-(?:\d+|0\d\d)$/i, '') // -001, -002
+    .replace(/-preview(?:-[0-9-]+)?$/i, '-preview') // preview→canonical
+    .replace(/-exp(?:erimental)?$/i, '') // experimental→base
     .trim()
 }
 
@@ -195,10 +194,10 @@ function msUntilModelReady (modelName) {
 
 // Global free-tier cooldown (server-wide “free_tier_requests” window)
 let GLOBAL_FREE_TIER_COOLDOWN_UNTIL = 0
-function globalCooldownMsLeft() {
+function globalCooldownMsLeft () {
   return Math.max(0, GLOBAL_FREE_TIER_COOLDOWN_UNTIL - Date.now())
 }
-function armGlobalCooldown(waitMs) {
+function armGlobalCooldown (waitMs) {
   GLOBAL_FREE_TIER_COOLDOWN_UNTIL = Date.now() + Math.max(0, waitMs)
   info('[AI][rate-limit][global] cooling', { ms: waitMs })
 }
@@ -209,19 +208,19 @@ function armGlobalCooldown(waitMs) {
 // ───────────────────────────────────────────────────────────
 const rateState = new Map() // model -> { minute:{startTs,count,tokens}, day:{date,count} }
 
-function nowMinuteKey() { const d = new Date(); d.setSeconds(0, 0); return d.getTime() }
-function todayKey()     { const d = new Date(); d.setHours(0,0,0,0); return d.getTime() }
+function nowMinuteKey () { const d = new Date(); d.setSeconds(0, 0); return d.getTime() }
+function todayKey () { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime() }
 
-function estTokensFromPrompt(prompt, maxOutputTokens) {
+function estTokensFromPrompt (prompt, maxOutputTokens) {
   // Rough char→token approximation; good enough to budget TPM
-  const inputTokens  = Math.ceil(String(prompt || '').length / 4)
+  const inputTokens = Math.ceil(String(prompt || '').length / 4)
   const outputTokens = Number.isFinite(maxOutputTokens) ? maxOutputTokens : 512
   return { inputTokens, outputTokens, total: inputTokens + outputTokens }
 }
 
-function getModelLimits(norm) { return MODEL_LIMITS[norm] || null }
+function getModelLimits (norm) { return MODEL_LIMITS[norm] || null }
 
-function getRateState(modelNorm) {
+function getRateState (modelNorm) {
   let st = rateState.get(modelNorm)
   if (!st) {
     st = { minute: { startTs: nowMinuteKey(), count: 0, tokens: 0 }, day: { date: todayKey(), count: 0 } }
@@ -236,7 +235,7 @@ function getRateState(modelNorm) {
   return st
 }
 
-function modelLocalCapacityOk(modelNorm, tokenBudget) {
+function modelLocalCapacityOk (modelNorm, tokenBudget) {
   const lim = getModelLimits(modelNorm)
   if (!lim) return true // unknown model → don't block locally
   const st = getRateState(modelNorm)
@@ -248,19 +247,19 @@ function modelLocalCapacityOk(modelNorm, tokenBudget) {
   const tpmOk = willTok <= lim.tpm
   return rpmOk && rpdOk && tpmOk
 }
-function noteModelUsage(modelNorm, tokenBudget) {
+function noteModelUsage (modelNorm, tokenBudget) {
   const lim = getModelLimits(modelNorm)
   const st = getRateState(modelNorm)
   st.minute.count++
   st.day.count++
   if (lim) st.minute.tokens += (tokenBudget?.total ?? 0)
 }
-function nextLocalReadyDelayMs(modelNorm, tokenBudget) {
+function nextLocalReadyDelayMs (modelNorm, tokenBudget) {
   const lim = getModelLimits(modelNorm)
   if (!lim) return 0
   const st = getRateState(modelNorm)
   const msToNextMinute = st.minute.startTs + 60_000 - Date.now()
-  const msToNextDay    = st.day.date     + 86_400_000 - Date.now()
+  const msToNextDay = st.day.date + 86_400_000 - Date.now()
   if (st.minute.count >= lim.rpm || st.minute.tokens + (tokenBudget?.total ?? 0) > lim.tpm) {
     return Math.max(0, msToNextMinute)
   }
@@ -295,14 +294,14 @@ async function generateTextREST (modelName, prompt, genCfg = {}, timeoutMs = AI_
     throw e
   }
 
-  const cand  = data?.candidates?.[0]
+  const cand = data?.candidates?.[0]
   const parts = cand?.content?.parts || []
-  const out   = parts.map(p => p?.text || '').join('').trim()
+  const out = parts.map(p => p?.text || '').join('').trim()
 
   if (!out) {
     const fr = String(cand?.finishReason || '').toUpperCase()
     if (fr.includes('SAFETY') || fr.includes('BLOCKLIST') || fr.includes('OTHER')) {
-      return "I can’t answer that as asked. Try rephrasing or asking for general info."
+      return 'I can’t answer that as asked. Try rephrasing or asking for general info.'
     }
   }
   return out
@@ -324,7 +323,7 @@ async function generateTextWithRetries (prompt, {
   // If the whole project is in a free-tier cooldown window, fail fast
   const globalMs = globalCooldownMsLeft()
   if (globalMs > 0) {
-    const e = new Error(`Gemini text API error 429: global free tier cooling; retry in ${Math.ceil(globalMs/1000)}s.`)
+    const e = new Error(`Gemini text API error 429: global free tier cooling; retry in ${Math.ceil(globalMs / 1000)}s.`)
     e.status = 429
     throw e
   }
@@ -380,8 +379,8 @@ async function generateTextWithRetries (prompt, {
 
         const genCfg = {}
         if (temperature !== undefined) genCfg.temperature = temperature
-        if (topP !== undefined)        genCfg.topP       = topP
-        if (maxTokens !== undefined)   genCfg.maxOutputTokens = maxTokens
+        if (topP !== undefined) genCfg.topP = topP
+        if (maxTokens !== undefined) genCfg.maxOutputTokens = maxTokens
 
         // Note local usage before hitting API to avoid race-bursts in same minute
         noteModelUsage(modelNorm, tokenBudget)
@@ -394,8 +393,8 @@ async function generateTextWithRetries (prompt, {
       } catch (e) {
         lastErr = e
         const code = e?.status || e?.code
-        const msg  = (e?.message || '')
-        const low  = msg.toLowerCase()
+        const msg = (e?.message || '')
+        const low = msg.toLowerCase()
         const transient = isTransientAiError(e)
         console.warn('[AI][error]', { model: modelName, attempt, code, msg: low, transient })
 
@@ -408,7 +407,7 @@ async function generateTextWithRetries (prompt, {
 
         // 429 handling
         if (code === 429) {
-          const waitS = parseRetryAfterSeconds(e) || Math.ceil(GLOBAL_429_DEFAULT_WAIT_MS/1000)
+          const waitS = parseRetryAfterSeconds(e) || Math.ceil(GLOBAL_429_DEFAULT_WAIT_MS / 1000)
           // If it's the *global* free-tier counter, arm a global cool-off too
           if (/generate_content_free_tier_requests|free[\s_-]?tier/i.test(low)) {
             armGlobalCooldown(waitS * 1000)
@@ -587,7 +586,7 @@ export async function askQuestion (question, opts = {}) {
     // If the whole project is cooling due to free-tier 429, short-circuit here
     const globalMs = globalCooldownMsLeft()
     if (globalMs > 0) {
-      return { text: `Rate limited (free tier). I’ll be ready again in about ${Math.ceil(globalMs/1000)}s.` }
+      return { text: `Rate limited (free tier). I’ll be ready again in about ${Math.ceil(globalMs / 1000)}s.` }
     }
 
     const key = String(question).replace(/\s+/g, ' ').trim().toLowerCase()
@@ -603,9 +602,9 @@ export async function askQuestion (question, opts = {}) {
     if (returnApologyOnError) {
       const code = error?.status || error?.code
       if (code === 401 || code === 403) return { text: "I couldn't access the AI service (auth/permissions). Try again in a bit, and make sure the API key is set." }
-      if (code === 404)             return { text: "That model isn't available on this key. I'll fall back to a supported one next time." }
+      if (code === 404) return { text: "That model isn't available on this key. I'll fall back to a supported one next time." }
       if (code === 429) {
-        const waitS = parseRetryAfterSeconds(error) || Math.ceil(globalCooldownMsLeft()/1000) || Math.ceil(GLOBAL_429_DEFAULT_WAIT_MS/1000)
+        const waitS = parseRetryAfterSeconds(error) || Math.ceil(globalCooldownMsLeft() / 1000) || Math.ceil(GLOBAL_429_DEFAULT_WAIT_MS / 1000)
         // Arm a global cool-off if not already (defensive)
         if (globalCooldownMsLeft() === 0) armGlobalCooldown(waitS * 1000)
         return { text: `Rate limited (free tier). I’ll be ready again in about ${waitS}s.` }
@@ -617,8 +616,7 @@ export async function askQuestion (question, opts = {}) {
 }
 
 export const chatWithBot = async (userMessage) => {
-  try { return await askQuestion(userMessage) }
-  catch { return { text: 'Sorry, something went wrong.' } }
+  try { return await askQuestion(userMessage) } catch { return { text: 'Sorry, something went wrong.' } }
 }
 
 // ───────────────────────────────────────────────────────────
@@ -675,9 +673,9 @@ function isImageIntent (raw) {
   let q = raw.toLowerCase().trim()
   if (/\b(how to|how do i|explain|what is|tell me about|define|history of|lyrics|instructions)\b/.test(q)) return false
   q = q.replace(/\b(can you|could you|would you|please|plz|kindly)\b/g, '')
-       .replace(/\b(for (me|us)|me|us)\b/g, ' ')
-       .replace(/\s+/g, ' ')
-       .trim()
+    .replace(/\b(for (me|us)|me|us)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
   if (/(make|create|generate|draw|paint|illustrate|render|sketch)\s+(an?|the)?\s*(image|picture|pic|photo|poster|logo|graphic)?\s*(of|about)\s+\S/.test(q)) return true
   if (/(make|create|generate|draw|paint|illustrate|render|sketch)\s+(an?|the)?\s*(image|picture|pic|photo|poster|logo|graphic)\b/.test(q)) return true
   if (/^(image|picture|pic|photo|poster|logo|graphic)\b.*\b(of|that says)\b/.test(q)) return true

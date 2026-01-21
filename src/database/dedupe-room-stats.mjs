@@ -15,9 +15,9 @@ import { buildNormKey, isFuzzyMatch } from './normalizeSong.js'
 function ensureColumns () {
   const cols = db.prepare('PRAGMA table_info(room_stats)').all().map(c => c.name)
   const actions = []
-  if (!cols.includes('normTrack')) actions.push("ALTER TABLE room_stats ADD COLUMN normTrack TEXT")
-  if (!cols.includes('normArtist')) actions.push("ALTER TABLE room_stats ADD COLUMN normArtist TEXT")
-  if (!cols.includes('normSongKey')) actions.push("ALTER TABLE room_stats ADD COLUMN normSongKey TEXT")
+  if (!cols.includes('normTrack')) actions.push('ALTER TABLE room_stats ADD COLUMN normTrack TEXT')
+  if (!cols.includes('normArtist')) actions.push('ALTER TABLE room_stats ADD COLUMN normArtist TEXT')
+  if (!cols.includes('normSongKey')) actions.push('ALTER TABLE room_stats ADD COLUMN normSongKey TEXT')
   actions.forEach(sql => db.exec(sql))
 }
 
@@ -102,7 +102,7 @@ function exactPass () {
 // isFuzzyMatch from normalizeSong.js to group near-duplicate titles.
 function fuzzyPass () {
   // Get distinct normalised artists
-  const artists = db.prepare(`SELECT DISTINCT normArtist FROM room_stats WHERE normArtist IS NOT NULL AND normArtist <> ''`).all()
+  const artists = db.prepare('SELECT DISTINCT normArtist FROM room_stats WHERE normArtist IS NOT NULL AND normArtist <> \'\'').all()
   for (const a of artists) {
     const list = db.prepare('SELECT id, trackName, artistName FROM room_stats WHERE normArtist = ?').all(a.normArtist)
     const used = new Set()

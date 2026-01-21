@@ -7,13 +7,13 @@
 // CoinGecko are rate-limited; caching avoids hitting their public limits.
 
 const PRICE_TTL_MS = 30_000 // 30 seconds
-const LIST_TTL_MS = 60_000  // 60 seconds for "top" & "trending" lists
+const LIST_TTL_MS = 60_000 // 60 seconds for "top" & "trending" lists
 
 const priceCache = new Map() // coinId → { price: Number, ts: Number }
 
 // Small caches for list endpoints
-const topCache = { ts: 0, data: null }       // { ts, data: Array }
-const trendingCache = { ts: 0, data: null }  // { ts, data: Array }
+const topCache = { ts: 0, data: null } // { ts, data: Array }
+const trendingCache = { ts: 0, data: null } // { ts, data: Array }
 
 // Known aliases. Feel free to extend this object with more symbols as your
 // community requests them. Keys and values should be lowercase.
@@ -87,13 +87,13 @@ export async function getTopCoins ({ limit = 10 } = {}) {
 
   const perPage = Math.max(1, Math.min(250, Number(limit) || 10))
   const url =
-    `https://api.coingecko.com/api/v3/coins/markets` +
-    `?vs_currency=usd` +
-    `&order=market_cap_desc` +
+    'https://api.coingecko.com/api/v3/coins/markets' +
+    '?vs_currency=usd' +
+    '&order=market_cap_desc' +
     `&per_page=${perPage}` +
-    `&page=1` +
-    `&sparkline=false` +
-    `&price_change_percentage=24h`
+    '&page=1' +
+    '&sparkline=false' +
+    '&price_change_percentage=24h'
 
   const res = await fetch(url)
   if (!res.ok) throw new Error(`CoinGecko responded with status ${res.status}`)
@@ -115,7 +115,7 @@ export async function getTrendingCoins ({ limit = 10 } = {}) {
     return trendingCache.data.slice(0, limit)
   }
 
-  const url = `https://api.coingecko.com/api/v3/search/trending`
+  const url = 'https://api.coingecko.com/api/v3/search/trending'
   const res = await fetch(url)
   if (!res.ok) throw new Error(`CoinGecko responded with status ${res.status}`)
   const data = await res.json()

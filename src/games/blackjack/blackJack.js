@@ -6,34 +6,34 @@ import { getUserNickname } from '../../handlers/message.js'
 // ─────────────────────────────────────────────────────────────
 // Config
 // ─────────────────────────────────────────────────────────────
-const JOIN_WINDOW_MS      = Number(process.env.BJ_JOIN_WINDOW_MS      ?? 30_000)
-const BETTING_WINDOW_MS   = Number(process.env.BJ_BETTING_WINDOW_MS   ?? 30_000)
-const EARLY_BET_CLOSE     = true
+const JOIN_WINDOW_MS = Number(process.env.BJ_JOIN_WINDOW_MS ?? 30_000)
+const BETTING_WINDOW_MS = Number(process.env.BJ_BETTING_WINDOW_MS ?? 30_000)
+const EARLY_BET_CLOSE = true
 
-const DECKS               = Number(process.env.BJ_DECKS ?? 6)
-const HIT_SOFT_17         = false // dealer stands on soft 17
+const DECKS = Number(process.env.BJ_DECKS ?? 6)
+const HIT_SOFT_17 = false // dealer stands on soft 17
 
-const RESHUFFLE_FRAC      = Number(process.env.BJ_RESHUFFLE_FRAC ?? 0.25)
-const RESHUFFLE_MIN       = Number(process.env.BJ_RESHUFFLE_MIN  ?? 52)
+const RESHUFFLE_FRAC = Number(process.env.BJ_RESHUFFLE_FRAC ?? 0.25)
+const RESHUFFLE_MIN = Number(process.env.BJ_RESHUFFLE_MIN ?? 52)
 
 // UX pacing (base)
-const SUSPENSE_MS         = Number(process.env.BJ_SUSPENSE_MS         ?? 700)
-const DRAW_PAUSE_MS       = Number(process.env.BJ_DRAW_PAUSE_MS       ?? 650)
+const SUSPENSE_MS = Number(process.env.BJ_SUSPENSE_MS ?? 700)
+const DRAW_PAUSE_MS = Number(process.env.BJ_DRAW_PAUSE_MS ?? 650)
 
 // Cinematic beats (optional overrides)
-const BEAT_MIN_MS         = Number(process.env.BJ_BEAT_MIN_MS         ?? 450)
-const BEAT_MAX_MS         = Number(process.env.BJ_BEAT_MAX_MS         ?? 900)
-const BIG_BEAT_MIN_MS     = Number(process.env.BJ_BIG_BEAT_MIN_MS     ?? 850)
-const BIG_BEAT_MAX_MS     = Number(process.env.BJ_BIG_BEAT_MAX_MS     ?? 1300)
+const BEAT_MIN_MS = Number(process.env.BJ_BEAT_MIN_MS ?? 450)
+const BEAT_MAX_MS = Number(process.env.BJ_BEAT_MAX_MS ?? 900)
+const BIG_BEAT_MIN_MS = Number(process.env.BJ_BIG_BEAT_MIN_MS ?? 850)
+const BIG_BEAT_MAX_MS = Number(process.env.BJ_BIG_BEAT_MAX_MS ?? 1300)
 
 // Turn timers (actual)
-const TURN_NUDGE_MS       = Number(process.env.BJ_TURN_NUDGE_MS       ?? 15_000)
+const TURN_NUDGE_MS = Number(process.env.BJ_TURN_NUDGE_MS ?? 15_000)
 // Actual: 35s, Display: 30s
-const TURN_AUTOSTAND_MS   = Number(process.env.BJ_TURN_AUTOSTAND_MS   ?? 35_000)
+const TURN_AUTOSTAND_MS = Number(process.env.BJ_TURN_AUTOSTAND_MS ?? 35_000)
 const TURN_AUTOSTAND_DISPLAY_S = Number(process.env.BJ_TURN_AUTOSTAND_DISPLAY_S ?? 30)
 
 // Formatting
-const NAME_PAD            = Number(process.env.BJ_NAME_PAD ?? 14)
+const NAME_PAD = Number(process.env.BJ_NAME_PAD ?? 14)
 
 // ─────────────────────────────────────────────────────────────
 // Internal state
@@ -136,13 +136,13 @@ function getTable (ctx) {
 
 function clearTimer (t) { if (t) clearTimeout(t) }
 function clearTurnTimers (st) {
-  clearTimer(st.turnNudgeTimer);  st.turnNudgeTimer  = null
+  clearTimer(st.turnNudgeTimer); st.turnNudgeTimer = null
   clearTimer(st.turnExpireTimer); st.turnExpireTimer = null
   st.turnFor = null
 }
 function clearAllTimers (st) {
   clearTimer(st.joinTimer); st.joinTimer = null
-  clearTimer(st.betTimer);  st.betTimer  = null
+  clearTimer(st.betTimer); st.betTimer = null
   clearTurnTimers(st)
 }
 
@@ -226,8 +226,8 @@ function formatHand (cards) {
 }
 
 function newShoe (deckCount = DECKS) {
-  const ranks = ['A','2','3','4','5','6','7','8','9','10','J','Q','K']
-  const suits = ['♠','♥','♦','♣']
+  const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']
+  const suits = ['♠', '♥', '♦', '♣']
   const cards = []
   for (let d = 0; d < deckCount; d++) {
     for (const r of ranks) for (const s of suits) cards.push({ r, s })
@@ -251,8 +251,7 @@ function handValue (cards) {
   let total = 0
   let acesAs11 = 0
   for (const c of cards) {
-    if (c.r === 'A') { acesAs11++; total += 11 }
-    else if (c.r === 'K' || c.r === 'Q' || c.r === 'J' || c.r === '10') total += 10
+    if (c.r === 'A') { acesAs11++; total += 11 } else if (c.r === 'K' || c.r === 'Q' || c.r === 'J' || c.r === '10') total += 10
     else total += Number(c.r)
   }
   while (total > 21 && acesAs11 > 0) { total -= 10; acesAs11-- }
@@ -367,15 +366,15 @@ async function promptTurn (ctx, id, { rePrompt = false } = {}) {
   const snap = []
   snap.push(`👉 TURN: ${nicknameOf(st, id)}`)
   snap.push(`Hand: ${formatHand(p.hand)}  |  Bet: ${fmtMoney(p.bet)}`)
-  snap.push(``)
-  snap.push(`*/bj hit* | */bj stand*`)
+  snap.push('')
+  snap.push('*/bj hit* | */bj stand*')
   if (actions.includes('double') || actions.includes('surrender')) {
     const right = []
-    if (actions.includes('double')) right.push(`*/bj double*`)
-    if (actions.includes('surrender')) right.push(`*/bj surrender*`)
+    if (actions.includes('double')) right.push('*/bj double*')
+    if (actions.includes('surrender')) right.push('*/bj surrender*')
     snap.push(right.join(' | '))
   }
-  snap.push(``)
+  snap.push('')
   snap.push(`⏱ Auto-stand in ${TURN_AUTOSTAND_DISPLAY_S}s`)
   await postSnapshot(ctx, snap)
 
@@ -397,7 +396,7 @@ async function dealOnce (ctx, { announce = false } = {}) {
   st.phase = 'dealing'
   clearTimer(st.betTimer); st.betTimer = null
 
-  if (announce) await postMessage({ room: ctx.room, message: `✅ All bets in. Dealing…` })
+  if (announce) await postMessage({ room: ctx.room, message: '✅ All bets in. Dealing…' })
   if (SUSPENSE_MS) await sleep(Math.min(1200, SUSPENSE_MS))
   await beat(350, 650)
 
@@ -437,13 +436,16 @@ export async function openJoin (ctx) {
   st.shuffleAnnouncedThisHand = false
 
   // Manual line breaks to avoid CometChat mid-line wraps
-  await postMessage({ room: ctx.room, message: [
+  await postMessage({
+    room: ctx.room,
+    message: [
     `🃏 *Blackjack* table is open for *${Math.round(JOIN_WINDOW_MS / 1000)}s*!`,
-    `Type */bj join* to take a seat.`,
-    ``,
-    `After join:`,
+    'Type */bj join* to take a seat.',
+    '',
+    'After join:',
     `• ${Math.round(BETTING_WINDOW_MS / 1000)}s to bet with */bj bet <amount>*`
-  ].join('\n') })
+    ].join('\n')
+  })
 
   st.joinTimer = setTimeout(() => concludeJoin(ctx), JOIN_WINDOW_MS)
 }
@@ -495,7 +497,7 @@ async function concludeJoin (ctx) {
   st.handOrder = seatedPlayers(st)
   if (st.handOrder.length === 0) {
     st.phase = 'idle'
-    await postMessage({ room: ctx.room, message: `No players joined. Start again with */bj* when ready.` })
+    await postMessage({ room: ctx.room, message: 'No players joined. Start again with */bj* when ready.' })
     return
   }
 
@@ -520,11 +522,14 @@ async function startBetting (ctx) {
   }
 
   const playerMentions = await Promise.all(st.handOrder.map(id => mention(id)))
-  await postMessage({ room: ctx.room, message: [
+  await postMessage({
+    room: ctx.room,
+    message: [
     `💰 *Betting open* for ${Math.round(BETTING_WINDOW_MS / 1000)}s.`,
     `Players: ${playerMentions.join(', ')}`,
-    `Place your bet with */bj bet <amount>*.`
-  ].join('\n') })
+    'Place your bet with */bj bet <amount>*.'
+    ].join('\n')
+  })
 
   clearTimer(st.betTimer)
   st.betTimer = setTimeout(() => concludeBetting(ctx), BETTING_WINDOW_MS)
@@ -541,7 +546,7 @@ async function concludeBetting (ctx) {
 
   if (st.handOrder.length === 0) {
     st.phase = 'idle'
-    await postMessage({ room: ctx.room, message: `No valid bets. Round canceled.` })
+    await postMessage({ room: ctx.room, message: 'No valid bets. Round canceled.' })
     clearTimer(st.betTimer); st.betTimer = null
     return
   }
@@ -605,12 +610,12 @@ async function dealInitial (ctx) {
     st.deck = newShoe()
     if (!st.shuffleAnnouncedThisHand) {
       st.shuffleAnnouncedThisHand = true
-      await postMessage({ room: ctx.room, message: `🔄 Shuffling the shoe…` })
+      await postMessage({ room: ctx.room, message: '🔄 Shuffling the shoe…' })
       await beat(450, 850)
     }
   }
 
-  await postMessage({ room: ctx.room, message: `🃏 Dealing…` })
+  await postMessage({ room: ctx.room, message: '🃏 Dealing…' })
   await beat(450, 850)
 
   st.dealerHand = []
@@ -632,9 +637,9 @@ async function dealInitial (ctx) {
   // Initial deal snapshot (nickname/mention token fallback)
   const up = fmtCard(st.dealerHand[0])
   const snap = []
-  snap.push(`🃏 BLACKJACK — Initial Deal`)
+  snap.push('🃏 BLACKJACK — Initial Deal')
   snap.push(`Dealer: ${up}  ??`)
-  snap.push(`----------------------------------------`)
+  snap.push('----------------------------------------')
   for (const id of st.handOrder) {
     const p = st.players.get(id)
     const nm = nameInBlock(st, id)
@@ -666,14 +671,14 @@ async function dealInitial (ctx) {
   const upRank = st.dealerHand[0]?.r
   const peekEligible = (upRank === 'A' || upRank === '10' || upRank === 'J' || upRank === 'Q' || upRank === 'K')
   if (peekEligible) {
-    await postMessage({ room: ctx.room, message: `🕵️ Dealer checks…` })
+    await postMessage({ room: ctx.room, message: '🕵️ Dealer checks…' })
     await beat(550, 950)
     if (isBlackjack(st.dealerHand)) {
-      await postMessage({ room: ctx.room, message: `🂠 Dealer has *BLACKJACK*.` })
+      await postMessage({ room: ctx.room, message: '🂠 Dealer has *BLACKJACK*.' })
       await bigBeat()
       return settleRound(ctx)
     } else {
-      await postMessage({ room: ctx.room, message: `✅ No dealer blackjack.` })
+      await postMessage({ room: ctx.room, message: '✅ No dealer blackjack.' })
       await beat(350, 700)
     }
   }
@@ -851,7 +856,7 @@ async function dealerPlay (ctx) {
   st.phase = 'dealer'
   clearTurnTimers(st)
 
-  await postMessage({ room: ctx.room, message: `🂠 Dealer flips the hole card…` })
+  await postMessage({ room: ctx.room, message: '🂠 Dealer flips the hole card…' })
   await bigBeat()
   await postMessage({ room: ctx.room, message: `🂠 Dealer: ${formatHand(st.dealerHand)}` })
   await beat(450, 850)
@@ -860,7 +865,7 @@ async function dealerPlay (ctx) {
   const drawLog = []
 
   while (total < 17 || (total === 17 && soft === true && HIT_SOFT_17)) {
-    await postMessage({ room: ctx.room, message: `🎲 Dealer draws…` })
+    await postMessage({ room: ctx.room, message: '🎲 Dealer draws…' })
     await beat(550, 950)
 
     st.dealerHand.push(draw(st))
@@ -888,16 +893,16 @@ async function settleRound (ctx) {
   st.phase = 'payout'
   clearTurnTimers(st)
 
-  await postMessage({ room: ctx.room, message: `📊 Settling bets…` })
+  await postMessage({ room: ctx.room, message: '📊 Settling bets…' })
   await bigBeat()
 
   const dealerVal = handValue(st.dealerHand).total
   const dealerBJ = isBlackjack(st.dealerHand)
 
   const snap = []
-  snap.push(`📊 RESULTS`)
+  snap.push('📊 RESULTS')
   snap.push(`Dealer: ${formatHand(st.dealerHand)}${dealerBJ ? '  (BJ)' : ''}`)
-  snap.push(`----------------------------------------`)
+  snap.push('----------------------------------------')
 
   for (const id of st.handOrder) {
     const p = st.players.get(id)
@@ -962,9 +967,11 @@ async function settleRound (ctx) {
     const nm = nameInBlock(st, id)
     const pvStr = String(pv).padStart(2, ' ')
     const profStr =
-      profit > 0 ? `+${fmtMoney(profit)}` :
-      profit < 0 ? `-${fmtMoney(Math.abs(profit))}` :
-      `+${fmtMoney(0)}`
+      profit > 0
+        ? `+${fmtMoney(profit)}`
+        : profit < 0
+          ? `-${fmtMoney(Math.abs(profit))}`
+          : `+${fmtMoney(0)}`
     const retStr = fmtMoney(returned)
 
     snap.push(`${nm}  ${pad(outcome, 10)}  hand ${pvStr}  profit ${pad(profStr, 12)}  return ${pad(retStr, 10)}`)
@@ -994,7 +1001,7 @@ async function settleRound (ctx) {
   st.turnIndex = 0
   clearAllTimers(st)
 
-  await postMessage({ room: ctx.room, message: `Type */bj* to open a new table.` })
+  await postMessage({ room: ctx.room, message: 'Type */bj* to open a new table.' })
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1008,9 +1015,9 @@ export function getFullTableView (ctx) {
   if (st.phase === 'join') out.push(`Join closes in: ${Math.max(0, Math.ceil((st.joinDeadline - Date.now()) / 1000))}s`)
   if (st.phase === 'betting') out.push(`Betting closes in: ${Math.max(0, Math.ceil((st.betDeadline - Date.now()) / 1000))}s`)
   out.push(`Shoe: ${st.deck?.length ?? 0} cards remaining`)
-  out.push(`----------------------------------------`)
+  out.push('----------------------------------------')
 
-  if (st.order.length === 0) out.push(`(no one has ever sat down at this table yet)`)
+  if (st.order.length === 0) out.push('(no one has ever sat down at this table yet)')
 
   for (const id of st.order) {
     const p = st.players.get(id)

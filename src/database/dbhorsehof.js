@@ -111,7 +111,7 @@ function snapshot (h) {
 
 export function getHofEntryByHorseId (horseId) {
   ensureTable()
-  return db.prepare(`SELECT * FROM horse_hof WHERE horse_id = ?`).get(Number(horseId))
+  return db.prepare('SELECT * FROM horse_hof WHERE horse_id = ?').get(Number(horseId))
 }
 
 export function isHorseInducted (horseId) {
@@ -170,7 +170,7 @@ export function sweepRetiredHorsesIntoHof () {
   ensureTable()
 
   // NOTE: retired stored as 1/0 in your schema
-  const retiredHorses = db.prepare(`SELECT * FROM horses WHERE retired = 1`).all()
+  const retiredHorses = db.prepare('SELECT * FROM horses WHERE retired = 1').all()
   let inducted = 0
 
   for (const h of retiredHorses) {
@@ -195,9 +195,9 @@ export function getHofList ({ limit = 10, sort = 'newest' } = {}) {
   ensureTable()
   const lim = Math.max(1, Math.min(50, Number(limit) || 10))
 
-  let orderBy = `hh.inducted_at DESC`
-  if (sort === 'wins') orderBy = `h.wins DESC, hh.inducted_at DESC`
-  if (sort === 'winpct') orderBy = `(CAST(h.wins AS REAL) / MAX(1, h.racesParticipated)) DESC, hh.inducted_at DESC`
+  let orderBy = 'hh.inducted_at DESC'
+  if (sort === 'wins') orderBy = 'h.wins DESC, hh.inducted_at DESC'
+  if (sort === 'winpct') orderBy = '(CAST(h.wins AS REAL) / MAX(1, h.racesParticipated)) DESC, hh.inducted_at DESC'
 
   return db.prepare(`
     SELECT

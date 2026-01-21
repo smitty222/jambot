@@ -13,7 +13,7 @@ import { postMessage } from '../../libs/cometchat.js'
 import {
   getUserWallet,
   addOrUpdateUser,
-  debitGameBet, 
+  debitGameBet,
   creditGameWin
 } from '../../database/dbwalletmanager.js'
 import { PHASES } from './crapsState.js'
@@ -82,10 +82,10 @@ if (!ROOM_DEFAULT) console.warn('[craps] ROOM_UUID not set — room state may re
 
 const mention = (uuid) => `<@uid:${uuid}>`
 
-const MIN_BET   = Number(process.env.CRAPS_MIN_BET ?? 5)
-const MAX_BET   = Number(process.env.CRAPS_MAX_BET ?? 10000)
+const MIN_BET = Number(process.env.CRAPS_MIN_BET ?? 5)
+const MAX_BET = Number(process.env.CRAPS_MAX_BET ?? 10000)
 const JOIN_SECS = Number(process.env.CRAPS_JOIN_SECS ?? 30)
-const BET_SECS  = Number(process.env.CRAPS_BET_SECS  ?? 30)
+const BET_SECS = Number(process.env.CRAPS_BET_SECS ?? 30)
 const ROLL_SECS = Number(process.env.CRAPS_ROLL_SECS ?? 45)
 
 const PLACES = [4, 5, 6, 8, 9, 10]
@@ -123,10 +123,10 @@ function freshState () {
 
     comeWaiting: Object.create(null),
     dontComeWaiting: Object.create(null),
-    comePoint: Object.create(null),      // uuid -> { num, amt }
+    comePoint: Object.create(null), // uuid -> { num, amt }
     dontComePoint: Object.create(null),
 
-    place: { 4:{}, 5:{}, 6:{}, 8:{}, 9:{}, 10:{} },
+    place: { 4: {}, 5: {}, 6: {}, 8: {}, 9: {}, 10: {} },
 
     timers: { join: null, bet: null, roll: null }
   }
@@ -140,7 +140,7 @@ async function say (room, message) {
 
 const d = () => 1 + Math.floor(Math.random() * 6)
 function dice () {
-  const a = d(), b = d()
+  const a = d(); const b = d()
   return [a, b, a + b]
 }
 
@@ -153,7 +153,7 @@ function isShooter (uuid, st) {
 }
 
 function clearTimers (st) {
-  for (const k of ['join','bet','roll']) {
+  for (const k of ['join', 'bet', 'roll']) {
     const t = st.timers[k]
     if (t) { clearTimeout(t); st.timers[k] = null }
   }
@@ -166,7 +166,7 @@ function resetAllBets (st) {
   st.dontComeWaiting = Object.create(null)
   st.comePoint = Object.create(null)
   st.dontComePoint = Object.create(null)
-  st.place = { 4:{}, 5:{}, 6:{}, 8:{}, 9:{}, 10:{} }
+  st.place = { 4: {}, 5: {}, 6: {}, 8: {}, 9: {}, 10: {} }
 }
 
 function fmtMoney (n) {
@@ -184,10 +184,10 @@ function addRoundResult (st, uuid, amt) {
 
 function lineBetsSummary (st) {
   const show = (book, label) => {
-    const items = Object.entries(book).map(([u,a]) => `${mention(u)} ${fmtMoney(a)}`)
+    const items = Object.entries(book).map(([u, a]) => `${mention(u)} ${fmtMoney(a)}`)
     return items.length ? `${label}: ${items.join(', ')}` : null
   }
-  return [show(st.pass,'Pass'), show(st.dontPass,"Don't Pass")].filter(Boolean).join('\n') || 'No line bets.'
+  return [show(st.pass, 'Pass'), show(st.dontPass, "Don't Pass")].filter(Boolean).join('\n') || 'No line bets.'
 }
 
 // NEW: detect whether ANY bets exist (so we can allow “no line bet” come-outs)
@@ -266,7 +266,7 @@ async function openJoinWindow (room, starterUuid) {
   await say(
     room,
     `🎲 **Craps** table is open for **${JOIN_SECS}s**!\n` +
-    `Type **/craps join** to take a seat. Then place **/pass <amt>** or **/dontpass <amt>** during betting.`
+    'Type **/craps join** to take a seat. Then place **/pass <amt>** or **/dontpass <amt>** during betting.'
   )
 
   st.timers.join = setTimeout(async () => {
@@ -293,7 +293,7 @@ async function openInterHandJoin (room) {
     room,
     `🧾 Hand over. Next shooter will be ${shooter ? mention(shooter) : '—'}.\n` +
     `🪑 **Join window open** for **${JOIN_SECS}s** (current seats: ${seated}).\n` +
-    `Type **/craps join** to sit. Betting opens when join closes.`
+    'Type **/craps join** to sit. Betting opens when join closes.'
   )
 
   st.timers.join = setTimeout(async () => {
@@ -306,7 +306,7 @@ async function closeJoinOpenBetting (room) {
   const st = S(room)
   if (!st.tableUsers.length) {
     st.phase = PHASES.IDLE
-    await say(room, `⏱️ Join closed — nobody seated. Table closed.`)
+    await say(room, '⏱️ Join closed — nobody seated. Table closed.')
     return
   }
 
@@ -337,7 +337,7 @@ async function openComeOutBetting (room, reasonLine = '') {
   await say(
     room,
     `${prefix}💰 **Come-out betting open** for **${BET_SECS}s**.\n` +
-    `Place **/pass <amt>** or **/dontpass <amt>**. (Other bets stay working.)`
+    'Place **/pass <amt>** or **/dontpass <amt>**. (Other bets stay working.)'
   )
 
   st.timers.bet = setTimeout(async () => {
@@ -352,7 +352,7 @@ async function closeBettingBeginComeOut (room) {
   // If literally nobody has ANY bets working, end it.
   if (!hasAnyBets(st)) {
     st.phase = PHASES.IDLE
-    await say(room, `No active bets. Table closed.`)
+    await say(room, 'No active bets. Table closed.')
     return
   }
 
@@ -360,7 +360,7 @@ async function closeBettingBeginComeOut (room) {
   if (anyLine) {
     await say(room, `📋 **Line bets locked:**\n${lineBetsSummary(st)}`)
   } else {
-    await say(room, `📋 No Pass/Don't Pass bets this come-out.`)
+    await say(room, '📋 No Pass/Don\'t Pass bets this come-out.')
   }
 
   st.phase = PHASES.COME_OUT
@@ -400,7 +400,7 @@ async function handleShooterNoRollTimeout (room) {
   const sh = shooterUuid(st)
   if (!sh) {
     st.phase = PHASES.IDLE
-    await say(room, `Shooter missing — table closed.`)
+    await say(room, 'Shooter missing — table closed.')
     return
   }
 
@@ -409,7 +409,7 @@ async function handleShooterNoRollTimeout (room) {
     await say(
       room,
       `⏱️ ${mention(sh)} didn’t roll in time.\n` +
-      `Since you’re the only player seated and no roll happened, the round is cancelled and **all bets are refunded**.`
+      'Since you’re the only player seated and no roll happened, the round is cancelled and **all bets are refunded**.'
     )
     await refundAllBets(st)
     stopRollTimer(room)
@@ -418,7 +418,7 @@ async function handleShooterNoRollTimeout (room) {
     st.point = null
     st.rollCount = 0
     st.roundResults = Object.create(null)
-    await say(room, `Table closed. Type **/craps** to start again.`)
+    await say(room, 'Table closed. Type **/craps** to start again.')
     return
   }
 
@@ -432,10 +432,10 @@ async function handleShooterNoRollTimeout (room) {
 
   // If something weird happened and table is empty now, refund (no roll) and close.
   if (!st.tableUsers.length) {
-    await say(room, `No players seated. Cancelling round and refunding bets.`)
+    await say(room, 'No players seated. Cancelling round and refunding bets.')
     await refundAllBets(st)
     st.phase = PHASES.IDLE
-    await say(room, `Type **/craps** to open a new table.`)
+    await say(room, 'Type **/craps** to open a new table.')
     return
   }
 
@@ -444,7 +444,7 @@ async function handleShooterNoRollTimeout (room) {
   await say(
     room,
     `⏱️ ${mention(sh)} didn’t roll in time — **passing the dice** to the next shooter.\n` +
-    `✅ **All existing bets stay working.**\n` +
+    '✅ **All existing bets stay working.**\n' +
     `🎯 Next shooter: ${mention(next)} — you have **${ROLL_SECS}s** to **/roll**.`
   )
 
@@ -502,7 +502,7 @@ async function placeComeBet (kind, user, amount, room) {
     return
   }
   if (st.phase !== PHASES.POINT) {
-    await say(room, `Come/Don't Come only during POINT.`)
+    await say(room, 'Come/Don\'t Come only during POINT.')
     return
   }
   if (!Number.isFinite(amt) || amt < MIN_BET || amt > MAX_BET) {
@@ -536,7 +536,7 @@ async function placePlaceBet (num, user, amount, room) {
     return
   }
   if (st.phase !== PHASES.POINT) {
-    await say(room, `Place bets only during POINT.`)
+    await say(room, 'Place bets only during POINT.')
     return
   }
   if (!PLACES.includes(n)) {
@@ -601,7 +601,7 @@ async function shooterRoll (user, room) {
   const st = S(room)
 
   if (!isShooter(user, st)) { await say(room, `${mention(user)} only the shooter may roll.`); return }
-  if (![PHASES.COME_OUT, PHASES.POINT].includes(st.phase)) { await say(room, `Not a rolling phase.`); return }
+  if (![PHASES.COME_OUT, PHASES.POINT].includes(st.phase)) { await say(room, 'Not a rolling phase.'); return }
 
   // Shooter rolled — stop the “must roll” timer (only applies before first roll)
   stopRollTimer(room)
@@ -654,7 +654,7 @@ async function shooterRoll (user, room) {
     st.point = total
     st.phase = PHASES.POINT
     recap.push(`🟢 **Point established:** **${st.point}**`)
-    recap.push(`You may add **/come <amt>**, **/dontcome <amt>**, **/place <num> <amt>**, or **/removeplace <num>**.`)
+    recap.push('You may add **/come <amt>**, **/dontcome <amt>**, **/place <num> <amt>**, or **/removeplace <num>**.')
     await say(room, recap.join('\n'))
     return
   }
@@ -681,7 +681,7 @@ async function shooterRoll (user, room) {
 
     st.point = null
     await say(room, recap.join('\n'))
-    await openComeOutBetting(room, `✅ Point made! **Same shooter** — come-out is next.`)
+    await openComeOutBetting(room, '✅ Point made! **Same shooter** — come-out is next.')
     return
   }
 
@@ -695,7 +695,7 @@ async function shooterRoll (user, room) {
     if (lineRes.length) recap.push(`💀 **Seven-out:**\n${lineRes.join('\n')}`)
 
     await say(room, recap.join('\n'))
-    await endHand(room, `seven-out.`)
+    await endHand(room, 'seven-out.')
     return
   }
 
@@ -860,7 +860,7 @@ async function endHand (room, reason) {
   const st = S(room)
   const shooter = shooterUuid(st)
 
-  await say(room, reason ? `🧾 Hand over — ${reason}` : `🧾 Hand over.`)
+  await say(room, reason ? `🧾 Hand over — ${reason}` : '🧾 Hand over.')
 
   // Totals for the hand
   const rrKeys = Object.keys(st.roundResults || {})
@@ -943,7 +943,7 @@ export async function routeCrapsMessage (payload) {
 
   // Allow "/join craps|cr" during JOIN window
   if (/^\/join\s+(craps|cr)\b/i.test(low)) {
-    if (S(room).phase !== PHASES.JOIN) { await postMessage({ room, message: `You can only join during the join window.` }); return true }
+    if (S(room).phase !== PHASES.JOIN) { await postMessage({ room, message: 'You can only join during the join window.' }); return true }
     await joinTable(uuid, room)
     return true
   }
@@ -955,23 +955,23 @@ export async function routeCrapsMessage (payload) {
     const parts = raw.split(/\s+/)
     parts.shift()
     switch (cmd) {
-      case 'pass':       await placeLineBet('pass', uuid, parts[0], room); return true
-      case 'dontpass':   await placeLineBet('dont', uuid, parts[0], room); return true
-      case 'come':       await placeComeBet('come', uuid, parts[0], room); return true
-      case 'dontcome':   await placeComeBet('dontcome', uuid, parts[0], room); return true
+      case 'pass': await placeLineBet('pass', uuid, parts[0], room); return true
+      case 'dontpass': await placeLineBet('dont', uuid, parts[0], room); return true
+      case 'come': await placeComeBet('come', uuid, parts[0], room); return true
+      case 'dontcome': await placeComeBet('dontcome', uuid, parts[0], room); return true
       case 'place': {
         const [num, amt] = parts
-        if (!num || !amt) { await postMessage({ room, message: `Usage: /place <4|5|6|8|9|10> <amount>` }); return true }
+        if (!num || !amt) { await postMessage({ room, message: 'Usage: /place <4|5|6|8|9|10> <amount>' }); return true }
         await placePlaceBet(Number(num), uuid, amt, room)
         return true
       }
       case 'removeplace': {
         const [num] = parts
-        if (!num) { await postMessage({ room, message: `Usage: /removeplace <4|5|6|8|9|10>` }); return true }
+        if (!num) { await postMessage({ room, message: 'Usage: /removeplace <4|5|6|8|9|10>' }); return true }
         await removePlaceBet(Number(num), uuid, room)
         return true
       }
-      case 'roll':       await shooterRoll(uuid, room); return true
+      case 'roll': await shooterRoll(uuid, room); return true
     }
   }
 
@@ -985,7 +985,7 @@ export async function routeCrapsMessage (payload) {
       if (S(room).phase === PHASES.IDLE) {
         await openJoinWindow(room, uuid)
       } else {
-        await postMessage({ room, message: `Craps is running. Use **/craps join** during join windows, or **/craps bets** to see your bets.` })
+        await postMessage({ room, message: 'Craps is running. Use **/craps join** during join windows, or **/craps bets** to see your bets.' })
       }
       return true
     }
@@ -995,7 +995,7 @@ export async function routeCrapsMessage (payload) {
       return true
 
     case 'join':
-      if (S(room).phase !== PHASES.JOIN) { await postMessage({ room, message: `You can only join during the join window.` }); return true }
+      if (S(room).phase !== PHASES.JOIN) { await postMessage({ room, message: 'You can only join during the join window.' }); return true }
       await joinTable(uuid, room)
       return true
 
@@ -1033,7 +1033,7 @@ If the shooter fails to roll before the first roll of a round:
       return true
 
     default:
-      await postMessage({ room, message: `Unknown craps subcommand. Try **/craps help**.` })
+      await postMessage({ room, message: 'Unknown craps subcommand. Try **/craps help**.' })
       return true
   }
 }

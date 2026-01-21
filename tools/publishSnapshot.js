@@ -12,7 +12,7 @@ import url from 'url'
 // Environment/config
 // ---------------------------
 const DB_PATH = process.env.DB_PATH || '/data/app.db'
-const OUTPUT_DIR = process.env.OUTPUT_DIR || '/data/app'     // where to write JSON
+const OUTPUT_DIR = process.env.OUTPUT_DIR || '/data/app' // where to write JSON
 const OUTPUT_FILE = process.env.OUTPUT_FILE || 'db_raw.json' // filename inside OUTPUT_DIR
 const PRETTY = process.env.PUBLISH_JSON_PRETTY === '1'
 
@@ -136,7 +136,7 @@ export async function writeRawSnapshotToDisk ({
 // 3. POST it to the external API (if that succeeds)
 // 4. NOT crash the whole cron job if the POST fails
 //
-export async function publishDbSnapshot({
+export async function publishDbSnapshot ({
   db,
   havePublishConfig,
   logger,

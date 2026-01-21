@@ -1,4 +1,4 @@
-import { debitGameBet,creditGameWin, getUserWallet } from '../database/dbwalletmanager.js'
+import { debitGameBet, creditGameWin, getUserWallet } from '../database/dbwalletmanager.js'
 import db from '../database/db.js'
 
 // ───────────────────────────────────────────────────────────
@@ -365,7 +365,7 @@ function clearBonusSession (userUUID) {
 
 async function spinBonusOnce (userUUID) {
   const session = getBonusSession(userUUID)
-  if (!session) return `No active bonus round. Hit 💎💎💎 to trigger one!`
+  if (!session) return 'No active bonus round. Hit 💎💎💎 to trigger one!'
 
   let { spinsLeft, spinsTotal, totalPct, lockedJackpot, startedAt } = session
 
@@ -376,7 +376,7 @@ async function spinBonusOnce (userUUID) {
 
   if (spinsLeft <= 0 || spinsTotal <= 0 || lockedJackpot <= 0) {
     clearBonusSession(userUUID)
-    return `Bonus session expired.`
+    return 'Bonus session expired.'
   }
 
   const spinNumber = (spinsTotal - spinsLeft) + 1
@@ -389,8 +389,8 @@ async function spinBonusOnce (userUUID) {
 
   const lines = []
   lines.push(`🎁 BONUS SPIN ${spinNumber}/${spinsTotal}: +${pick.pct}%  🧮 Total: ${cappedTotal}%`)
-  if (pick.pct >= 25) lines.push(`🔥 MASSIVE HIT! 25% spin!`)
-  else if (pick.pct >= 20) lines.push(`🚨 BIG HIT! 20% spin!`)
+  if (pick.pct >= 25) lines.push('🔥 MASSIVE HIT! 25% spin!')
+  else if (pick.pct >= 20) lines.push('🚨 BIG HIT! 20% spin!')
 
   if (spinsLeft > 0) {
     saveBonusSession(userUUID, { spinsLeft, spinsTotal, totalPct, lockedJackpot, startedAt })
@@ -503,7 +503,7 @@ async function spinFeatureOnce (userUUID) {
 
   if (spinsLeft <= 0 || spinsTotal <= 0) {
     clearFeatureSession(userUUID)
-    return `Feature session expired.`
+    return 'Feature session expired.'
   }
 
   const spinNumber = (spinsTotal - spinsLeft) + 1
@@ -541,12 +541,12 @@ async function spinFeatureOnce (userUUID) {
 
   if (win > 0) {
     lines.push(`💥 FEATURE WIN: +$${formatMoney(win)}`)
-    if (win >= 4000 * FEATURE_PAYOUT_MULTIPLIER) lines.push(`🚨 MEGA HIT! 💎💎💎`)
-    else if (win >= 2200 * FEATURE_PAYOUT_MULTIPLIER) lines.push(`🔥 HUGE HIT! ⭐⭐⭐`)
-    else if (win >= 1400 * FEATURE_PAYOUT_MULTIPLIER) lines.push(`🔔 BIG WIN!`)
-    else if (outcome.type === 'ANY') lines.push(`✨ PREMIUM SYMBOL HIT!`)
+    if (win >= 4000 * FEATURE_PAYOUT_MULTIPLIER) lines.push('🚨 MEGA HIT! 💎💎💎')
+    else if (win >= 2200 * FEATURE_PAYOUT_MULTIPLIER) lines.push('🔥 HUGE HIT! ⭐⭐⭐')
+    else if (win >= 1400 * FEATURE_PAYOUT_MULTIPLIER) lines.push('🔔 BIG WIN!')
+    else if (outcome.type === 'ANY') lines.push('✨ PREMIUM SYMBOL HIT!')
   } else {
-    lines.push(`— NO WIN —`)
+    lines.push('— NO WIN —')
   }
 
   if (spinsLeft > 0) {
@@ -730,7 +730,7 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
   const activeBonus = getBonusSession(userUUID)
   if (activeBonus) {
     return [
-      `🚨 You have an active 💎 BONUS ROUND!`,
+      '🚨 You have an active 💎 BONUS ROUND!',
       `👉 Type /slots bonus to spin (${activeBonus.spinsLeft} left).`
     ].join('\n')
   }
@@ -738,7 +738,7 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
   const activeFeature = getFeatureSession(userUUID)
   if (activeFeature) {
     return [
-      `🎟️ You’re in FREE SPINS FEATURE MODE!`,
+      '🎟️ You’re in FREE SPINS FEATURE MODE!',
       `👉 Type '/slots free' to spin (${activeFeature.spinsLeft} left).`
     ].join('\n')
   }
@@ -802,7 +802,7 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
         })
 
         bonusTriggerMessage = [
-          `\n🚨 💎💎💎 BONUS TRIGGERED 💎💎💎 🚨`,
+          '\n🚨 💎💎💎 BONUS TRIGGERED 💎💎💎 🚨',
           `🎁 FEATURE ROUND UNLOCKED: ${spinsTotal} BONUS SPINS`,
           `💰 Locked Jackpot: $${formatMoney(lockedJackpot)}`,
           `👉 Type '/slots bonus' to start (Spin 1/${spinsTotal}).`
@@ -826,7 +826,7 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
           })
 
           featureTriggerMessage = [
-            `\n🎟️ FREE SPINS FEATURE UNLOCKED 🎟️`,
+            '\n🎟️ FREE SPINS FEATURE UNLOCKED 🎟️',
             `🎁 You won ${spinsTotal} FEATURE SPIN${spinsTotal === 1 ? '' : 'S'}`,
             `👉 Type '/slots free' to start (Spin 1/${spinsTotal}).`
           ].join('\n')
@@ -854,7 +854,7 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
     const didWin = totalWinnings > 0
     const resultLine = didWin
       ? `\n💥 WIN: +$${formatMoney(totalWinnings)}`
-      : `\n— NO WIN —`
+      : '\n— NO WIN —'
 
     const balanceLine = `🪙 BALANCE: $${formatBalance(balance)}`
     const jackpotLine = `💰 JACKPOT: $${formatMoney(jackpot)}  📈 +$${formatMoney(jackpotIncrement)}`
@@ -879,8 +879,8 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
       bonusTriggerMessage,
       featureTriggerMessage,
       collectionLines,
-      ' ',          // spacer line (survives filter(Boolean))
-      jackpotLine   // jackpot at very bottom
+      ' ', // spacer line (survives filter(Boolean))
+      jackpotLine // jackpot at very bottom
     ].filter(Boolean).join('\n')
   } catch (err) {
     console.error('Slots error:', err)

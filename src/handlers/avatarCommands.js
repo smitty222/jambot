@@ -7,8 +7,8 @@ const userTokenMap = {
   '210141ad-6b01-4665-84dc-e47ea7c27dcb': process.env.SMITTY_USER_TOKEN,
   '92302b7d-ae5e-466f-975b-d3fee461f13f': process.env.CAM_USER_TOKEN,
   'fd2f1b47-b1d4-4100-8f88-6e56aa82e13f': process.env.GAB_USER_TOKEN,
-  'a122488b-d9ec-4d2f-97bf-9d9472d299a0': process.env.ALEX_USER_TOKEN,
-  
+  'a122488b-d9ec-4d2f-97bf-9d9472d299a0': process.env.ALEX_USER_TOKEN
+
 }
 
 const randomColors = [
@@ -162,7 +162,6 @@ export async function handleBotPenguinCommand (room, postMessage, isUserAuthoriz
   }
 }
 
-
 export async function handleBot2Command (room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
   const isMod = await isUserAuthorized(senderUuid, ttlUserToken)
   if (!isMod) {
@@ -182,7 +181,7 @@ export async function handleBot2Command (room, postMessage, isUserAuthorized, se
   }
 }
 
-export async function handleBotStaffCommand(
+export async function handleBotStaffCommand (
   room,
   postMessage,
   isUserAuthorized,
@@ -209,7 +208,7 @@ export async function handleBotStaffCommand(
     'mod-bear-black': '#1A1A1AFF',
     'mod-bear-orange': '#FF6A00FF',
     'staff-bear': '#FFC300FF',
-    'staff': '#1A1A1AFF'
+    staff: '#1A1A1AFF'
   }
 
   const BOUNCER_COLORS = [
@@ -225,7 +224,7 @@ export async function handleBotStaffCommand(
       '🟠 Floor Security Bot online. Badge visible, attitude checked, behave in the booth.',
     'staff-bear':
       '💛 Staff Bear Bot reporting in — cute face, zero tolerance.',
-    'staff':
+    staff:
       '👔 Venue Staff Bot present. Keep the energy up and the drama down.'
   }
 
@@ -292,13 +291,12 @@ export async function handleBotStaffCommand(
     })
   }
 
-  function slugToTitle(s) {
+  function slugToTitle (s) {
     return s
       .replace(/-/g, ' ')
       .replace(/\b\w/g, c => c.toUpperCase())
   }
 }
-
 
 export async function handleBot3Command (room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
   const isMod = await isUserAuthorized(senderUuid, ttlUserToken)
@@ -360,17 +358,17 @@ export async function handleBotSpookyCommand (
   ]
 
   const COLOR_BY_SLUG = {
-    'harvest-08':    '#FF6A00FF',
-    'harvest-07':    '#FFB84BFF',
-    'harvest-06':    '#FFB84BFF',
-    'harvest-05':    '#00FF66FF',
-    'dj-mummyv1-1':  '#C9C9C9FF',
-    'dj-mummyv2-1':  '#FFF4CCFF',
-    'ghost':         '#FFFFFFFF',
+    'harvest-08': '#FF6A00FF',
+    'harvest-07': '#FFB84BFF',
+    'harvest-06': '#FFB84BFF',
+    'harvest-05': '#00FF66FF',
+    'dj-mummyv1-1': '#C9C9C9FF',
+    'dj-mummyv2-1': '#FFF4CCFF',
+    ghost: '#FFFFFFFF',
     'dj-vamplife-1': '#B00020FF',
-    'dj-witchv1-1':  '#32C24DFF',
-    'dj-witchv2-1':  '#FF7A1CFF',
-    'dj-malezombie-1':   '#7FBF3FFF',
+    'dj-witchv1-1': '#32C24DFF',
+    'dj-witchv2-1': '#FF7A1CFF',
+    'dj-malezombie-1': '#7FBF3FFF',
     'dj-femalezombie-1': '#8BD1A2FF'
   }
 
@@ -383,17 +381,17 @@ export async function handleBotSpookyCommand (
   ]
 
   const SPOOKY_LINES = {
-    'harvest-08':   '🎃 Pumpkin Beast online. The candle’s real, the smile is not.',
-    'harvest-07':   '🕯️ Harvest Lantern lit. Cozy vibe, suspicious grin.',
-    'harvest-06':   '🌾 Field Watcher reports in. Stitch-smile, zero heartbeat.',
-    'harvest-05':   '🌽 Haunted Scarecrow rises — eyes glowing green, birds evacuated.',
+    'harvest-08': '🎃 Pumpkin Beast online. The candle’s real, the smile is not.',
+    'harvest-07': '🕯️ Harvest Lantern lit. Cozy vibe, suspicious grin.',
+    'harvest-06': '🌾 Field Watcher reports in. Stitch-smile, zero heartbeat.',
+    'harvest-05': '🌽 Haunted Scarecrow rises — eyes glowing green, birds evacuated.',
     'dj-mummyv1-1': '🧻 Ancient Wrap v1 awakened. Do not tug the bandages.',
     'dj-mummyv2-1': '🧟‍♂️ Experimental Wrap v2 online. Extra stitches, extra curse.',
-    'ghost':        '👻 Friendly Ghost materialized. Floating. Watching. Vibing.',
-    'dj-vamplife-1':'🩸 Vamplife engaged. Pale face, dark night, louder than midnight.',
+    ghost: '👻 Friendly Ghost materialized. Floating. Watching. Vibing.',
+    'dj-vamplife-1': '🩸 Vamplife engaged. Pale face, dark night, louder than midnight.',
     'dj-witchv1-1': '🧪 Swamp Witch enters the booth — cauldron bass only.',
     'dj-witchv2-1': '🧹 Midnight Witch glides in. Hat sharp, spell sharper.',
-    'dj-malezombie-1':   '🧟‍♂️ Male Zombie staggers into the booth — smell of bass and decay.',
+    'dj-malezombie-1': '🧟‍♂️ Male Zombie staggers into the booth — smell of bass and decay.',
     'dj-femalezombie-1': '🧟‍♀️ Undead Diva awakens — beats fresher than her complexion.'
   }
 
@@ -475,8 +473,6 @@ export async function handleBotSpookyCommand (
   }
 }
 
-
-
 export async function handleBot1Command (room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
   const isMod = await isUserAuthorized(senderUuid, ttlUserToken)
   if (!isMod) {
@@ -522,7 +518,7 @@ export async function handleDinoCommand (senderUuid, room, postMessage) {
     'jurassic-03': '#9B5DE5FF', // neon purple visor-energy sunglasses vibe
     'jurassic-05': '#FFB347FF', // amber/golden caramel shell
     'jurassic-06': '#FFECC2FF', // horn/bone ivory accent on the tough brown one
-    'jurassic-07': '#FFD500FF'  // bright crest yellow on the baby dino
+    'jurassic-07': '#FFD500FF' // bright crest yellow on the baby dino
   }
 
   const DINO_COLORS = [
@@ -531,7 +527,7 @@ export async function handleDinoCommand (senderUuid, room, postMessage) {
     '#9B5DE5FF', // violet
     '#FFB347FF', // amber
     '#FFECC2FF', // bone/ivory
-    '#FFD500FF'  // crest yellow
+    '#FFD500FF' // crest yellow
   ]
 
   const DINO_LINES = {
@@ -645,17 +641,17 @@ export async function handleBouncerCommand (senderUuid, room, postMessage) {
   // - staff-bear       → bright yellow hair buns
   // - staff            → black STAFF jumpsuit
   const COLOR_BY_SLUG = {
-    'mod-bear-black':  '#1A1A1AFF',  // deep charcoal / "night security"
-    'mod-bear-orange': '#FF6A00FF',  // vivid hazard orange / radio earpiece
-    'staff-bear':      '#FFC300FF',  // bright golden staff hair
-    'staff':           '#1A1A1AFF'   // black STAFF uniform
+    'mod-bear-black': '#1A1A1AFF', // deep charcoal / "night security"
+    'mod-bear-orange': '#FF6A00FF', // vivid hazard orange / radio earpiece
+    'staff-bear': '#FFC300FF', // bright golden staff hair
+    staff: '#1A1A1AFF' // black STAFF uniform
   }
 
   // backup palette if we somehow don't have a color
   const BOUNCER_COLORS = [
-    '#1A1A1AFF',  // blackout
-    '#FF6A00FF',  // warning orange
-    '#FFC300FF'   // high-vis yellow
+    '#1A1A1AFF', // blackout
+    '#FF6A00FF', // warning orange
+    '#FFC300FF' // high-vis yellow
   ]
 
   // 🗣 per-avatar announcement line for chat
@@ -667,7 +663,7 @@ export async function handleBouncerCommand (senderUuid, room, postMessage) {
       '🟠 Floor Security online. Badge visible, attitude checked, behave in the booth.',
     'staff-bear':
       '💛 Staff Bear reporting in — cute face, zero tolerance.',
-    'staff':
+    staff:
       '👔 Venue Staff present. Keep the energy up and the drama down.'
   }
 
@@ -749,7 +745,6 @@ export async function handleBouncerCommand (senderUuid, room, postMessage) {
   }
 }
 
-
 export async function handleSpookyCommand (senderUuid, room, postMessage) {
   const userToken = userTokenMap[senderUuid]
   if (!userToken) {
@@ -772,23 +767,23 @@ export async function handleSpookyCommand (senderUuid, room, postMessage) {
     'dj-vamplife-1',
     'dj-witchv1-1',
     'dj-witchv2-1',
-    'dj-malezombie-1',    
-  'dj-femalezombie-1'   
+    'dj-malezombie-1',
+    'dj-femalezombie-1'
   ]
 
   const COLOR_BY_SLUG = {
-    'harvest-08':    '#FF6A00FF', // vivid jack-o-lantern orange glow
-    'harvest-07':    '#FFB84BFF', // softer harvest pumpkin / candy corn yellow-orange
-    'harvest-06':    '#FFB84BFF', // straw yellow / autumn hat band orange
-    'harvest-05':    '#00FF66FF', // cursed neon green eyes
-    'dj-mummyv1-1':  '#C9C9C9FF', // bandage gray-white w/ spooky purple eye
-    'dj-mummyv2-1':  '#FFF4CCFF', // warmer bandage + yellow eye
-    'ghost':         '#FFFFFFFF', // pure spectral white
+    'harvest-08': '#FF6A00FF', // vivid jack-o-lantern orange glow
+    'harvest-07': '#FFB84BFF', // softer harvest pumpkin / candy corn yellow-orange
+    'harvest-06': '#FFB84BFF', // straw yellow / autumn hat band orange
+    'harvest-05': '#00FF66FF', // cursed neon green eyes
+    'dj-mummyv1-1': '#C9C9C9FF', // bandage gray-white w/ spooky purple eye
+    'dj-mummyv2-1': '#FFF4CCFF', // warmer bandage + yellow eye
+    ghost: '#FFFFFFFF', // pure spectral white
     'dj-vamplife-1': '#B00020FF', // deep blood red
-    'dj-witchv1-1':  '#32C24DFF', // witch skin toxic green
-    'dj-witchv2-1':  '#FF7A1CFF',  // orange hat band / warm charm
-    'dj-malezombie-1':   '#7FBF3FFF',  // sickly green skin tone
-    'dj-femalezombie-1': '#8BD1A2FF'   // pale mint undead hue
+    'dj-witchv1-1': '#32C24DFF', // witch skin toxic green
+    'dj-witchv2-1': '#FF7A1CFF', // orange hat band / warm charm
+    'dj-malezombie-1': '#7FBF3FFF', // sickly green skin tone
+    'dj-femalezombie-1': '#8BD1A2FF' // pale mint undead hue
   }
 
   // 🩸 spooky fallback palette if a slug is missing a mapping
@@ -797,23 +792,23 @@ export async function handleSpookyCommand (senderUuid, room, postMessage) {
     '#00FF66FF', // toxic green
     '#FFFFFFFF', // ghost white
     '#B00020FF', // blood red
-    '#C9C9C9FF'  // linen mummy wrap
+    '#C9C9C9FF' // linen mummy wrap
   ]
 
   // 👻 Per-avatar chat voice lines
   // Short, punchy, flavor-y. Mentions vibe of each avatar.
   const SPOOKY_LINES = {
-    'harvest-08':   '🎃 Pumpkin Beast online. The candle’s real, the smile is not.',
-    'harvest-07':   '🕯️ Harvest Lantern lit. Cozy vibe, suspicious grin.',
-    'harvest-06':   '🌾 Field Watcher reports in. Stitch-smile, zero heartbeat.',
-    'harvest-05':   '🌽 Haunted Scarecrow rises — eyes glowing green, birds evacuated.',
+    'harvest-08': '🎃 Pumpkin Beast online. The candle’s real, the smile is not.',
+    'harvest-07': '🕯️ Harvest Lantern lit. Cozy vibe, suspicious grin.',
+    'harvest-06': '🌾 Field Watcher reports in. Stitch-smile, zero heartbeat.',
+    'harvest-05': '🌽 Haunted Scarecrow rises — eyes glowing green, birds evacuated.',
     'dj-mummyv1-1': '🧻 Ancient Wrap v1 awakened. Do not tug the bandages.',
     'dj-mummyv2-1': '🧟‍♂️ Experimental Wrap v2 online. Extra stitches, extra curse.',
-    'ghost':        '👻 Friendly Ghost materialized. Floating. Watching. Vibing.',
-    'dj-vamplife-1':'🩸 Vamplife engaged. Pale face, dark night, louder than midnight.',
+    ghost: '👻 Friendly Ghost materialized. Floating. Watching. Vibing.',
+    'dj-vamplife-1': '🩸 Vamplife engaged. Pale face, dark night, louder than midnight.',
     'dj-witchv1-1': '🧪 Swamp Witch enters the booth — cauldron bass only.',
     'dj-witchv2-1': '🧹 Midnight Witch glides in. Hat sharp, spell sharper.',
-    'dj-malezombie-1':   '🧟‍♂️ Male Zombie staggers into the booth — smell of bass and decay.',
+    'dj-malezombie-1': '🧟‍♂️ Male Zombie staggers into the booth — smell of bass and decay.',
     'dj-femalezombie-1': '🧟‍♀️ Undead Diva awakens — beats fresher than her complexion.'
   }
 
@@ -896,7 +891,7 @@ export async function handleSpookyCommand (senderUuid, room, postMessage) {
   }
 }
 
-export async function handleGrimehouseCommand(senderUuid, room, postMessage) {
+export async function handleGrimehouseCommand (senderUuid, room, postMessage) {
   const userToken = userTokenMap[senderUuid]
   if (!userToken) {
     await postMessage({
@@ -1052,8 +1047,6 @@ export async function handleJukeboxCommand (senderUuid, room, postMessage) {
   }
 }
 
-
-
 export async function handleDuckCommand (senderUuid, room, postMessage) {
   const userToken = userTokenMap[senderUuid]
   if (!userToken) {
@@ -1175,7 +1168,7 @@ export async function handleAlien2Command (senderUuid, room, postMessage) {
     await postMessage({ room, message: 'Something went wrong transforming you into an alien' })
   }
 }
-export async function handleRoyCommand(senderUuid, room, postMessage) {
+export async function handleRoyCommand (senderUuid, room, postMessage) {
   const userToken = userTokenMap[senderUuid]
   if (!userToken) {
     await postMessage({
@@ -1209,7 +1202,6 @@ export async function handleRoyCommand(senderUuid, room, postMessage) {
       room,
       message: line
     })
-
   } catch (error) {
     console.error('[handleRoyCommand] update failed', {
       senderUuid,
@@ -1636,7 +1628,7 @@ export async function handleRandomLovableCommand (senderUuid, room, postMessage)
     return s.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
   }
 }
-export async function handleBearPartyCommand(senderUuid, room, postMessage) {
+export async function handleBearPartyCommand (senderUuid, room, postMessage) {
   const userToken = userTokenMap[senderUuid]
   if (!userToken) {
     await postMessage({
@@ -1657,7 +1649,7 @@ export async function handleBearPartyCommand(senderUuid, room, postMessage) {
     'cosmic-alien-bear',
     'cosmic-galactic-bear',
     '19', // NEW — black bear w/ red eyes
-    '20'  // NEW — yellow bear
+    '20' // NEW — yellow bear
   ]
 
   // 🎨 Color mappings per-bear
@@ -1672,8 +1664,8 @@ export async function handleBearPartyCommand(senderUuid, room, postMessage) {
     'cosmic-galactic-bear': '#B6E3FFFF',
 
     // NEW SLUGS:
-    '19': '#FF1A1AFF',  // red-eye glow against dark bear
-    '20': '#FFD500FF'   // bright honey-yellow bear
+    19: '#FF1A1AFF', // red-eye glow against dark bear
+    20: '#FFD500FF' // bright honey-yellow bear
   }
 
   // fallback palette
@@ -1700,8 +1692,8 @@ export async function handleBearPartyCommand(senderUuid, room, postMessage) {
     'cosmic-galactic-bear': '🌌 Galactic Bear materializes — entire star systems feeling the groove.',
 
     // NEW SLUGS:
-    '19': '🐻‍🔥 Red-Eyed Shadow Bear emerges — watching… always.',
-    '20': '💛 Honey Glow Bear arrives — sweet vibes, sticky bass.'
+    19: '🐻‍🔥 Red-Eyed Shadow Bear emerges — watching… always.',
+    20: '💛 Honey Glow Bear arrives — sweet vibes, sticky bass.'
   }
 
   const filtered = getAvatarsBySlugs(allowedSlugs)
@@ -1763,7 +1755,7 @@ export async function handleBearPartyCommand(senderUuid, room, postMessage) {
     })
   }
 
-  function slugToTitle(s) {
+  function slugToTitle (s) {
     return s
       .replace(/-/g, ' ')
       .replace(/\b\w/g, c => c.toUpperCase())
@@ -1807,7 +1799,7 @@ export async function handleWinterCommand (senderUuid, room, postMessage) {
     '#DDEBFFFF', // powder blue
     '#A7D2CBFF', // cold mint
     '#F0F8FFFF', // alice blue
-    '#FFFFFFFF'  // snow white
+    '#FFFFFFFF' // snow white
   ]
 
   const filtered = getAvatarsBySlugs(allowedSlugs)
@@ -1904,7 +1896,7 @@ export async function handleBotWinterCommand (
     '#DDEBFFFF', // powder blue
     '#A7D2CBFF', // cold mint
     '#F0F8FFFF', // alice blue
-    '#FFFFFFFF'  // snow white
+    '#FFFFFFFF' // snow white
   ]
 
   const filtered = getAvatarsBySlugs(allowedSlugs)
@@ -1963,5 +1955,3 @@ export async function handleBotWinterCommand (
     })
   }
 }
-
-

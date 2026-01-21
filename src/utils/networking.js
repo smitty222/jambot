@@ -4,9 +4,9 @@
 // installing external packages.  When run in environments like browsers or
 // older Node versions without fetch, set global.fetch yourself or install
 // node-fetch as a dependency.
-const fetch = globalThis.fetch
 import https from 'https'
 import http from 'http'
+const fetch = globalThis.fetch
 
 /**
  * Tunables (override via env if you want)

@@ -158,66 +158,64 @@ export async function runRace ({ horses, horseBets }) {
   }
 
   // --- update stats + retirement + HoF induction ---
-try {
-  for (let i = 0; i < horses.length; i++) {
-    const src = horses[i]
-    const isWin = i === winnerIdx
-    const newRaces = (src.racesParticipated || 0) + 1
-    const newWins = (src.wins || 0) + (isWin ? 1 : 0)
+  try {
+    for (let i = 0; i < horses.length; i++) {
+      const src = horses[i]
+      const isWin = i === winnerIdx
+      const newRaces = (src.racesParticipated || 0) + 1
+      const newWins = (src.wins || 0) + (isWin ? 1 : 0)
 
-    const update = { racesParticipated: newRaces, wins: newWins }
+      const update = { racesParticipated: newRaces, wins: newWins }
 
-    const limit = Number(src.careerLength)
-    const shouldRetire = Number.isFinite(limit) && newRaces >= limit
+      const limit = Number(src.careerLength)
+      const shouldRetire = Number.isFinite(limit) && newRaces >= limit
 
-    if (shouldRetire && !src.retired) {
-      update.retired = true
+      if (shouldRetire && !src.retired) {
+        update.retired = true
 
-      if (src.ownerId) {
-        try {
-          const nick = await safeCall(getUserNickname, [src.ownerId]).catch(() => null)
-          const ownerTag = nick || `<@uid:${src.ownerId}>`
-          const message = `🏁 ${ownerTag}, your horse **${src.name}** has reached its career limit (${limit} races) and has retired.`
-          await safeCall(postMessage, [{ room: ROOM, message }])
-        } catch (err) {
-          console.warn('[simulation] failed to notify owner about retirement:', err?.message)
+        if (src.ownerId) {
+          try {
+            const nick = await safeCall(getUserNickname, [src.ownerId]).catch(() => null)
+            const ownerTag = nick || `<@uid:${src.ownerId}>`
+            const message = `🏁 ${ownerTag}, your horse **${src.name}** has reached its career limit (${limit} races) and has retired.`
+            await safeCall(postMessage, [{ room: ROOM, message }])
+          } catch (err) {
+            console.warn('[simulation] failed to notify owner about retirement:', err?.message)
+          }
+        }
+      }
+
+      // Only update DB-backed horses
+      if (src?.id) {
+        await safeCall(updateHorseStats, [src.id, update])
+
+        const retiredNow = !!update.retired || !!src.retired
+        if (retiredNow) {
+          const hofCheck = maybeInductHorse({
+            ...src,
+            wins: newWins,
+            racesParticipated: newRaces,
+            retired: true
+          })
+
+          if (hofCheck?.inducted) {
+            const nick = src?.ownerId
+              ? await safeCall(getUserNickname, [src.ownerId]).catch(() => null)
+              : null
+
+            const ownerTag = nick || (src?.ownerId ? `<@uid:${src.ownerId}>` : 'House')
+
+            await safeCall(postMessage, [{
+              room: ROOM,
+              message: `🏆 **HALL OF FAME INDUCTION!** **${src.name}** (${ownerTag}) — ${hofCheck.reason}`
+            }])
+          }
         }
       }
     }
-
-    // Only update DB-backed horses
-    if (src?.id) {
-      await safeCall(updateHorseStats, [src.id, update])
-
-      const retiredNow = !!update.retired || !!src.retired
-      if (retiredNow) {
-        const hofCheck = maybeInductHorse({
-          ...src,
-          wins: newWins,
-          racesParticipated: newRaces,
-          retired: true
-        })
-
-        if (hofCheck?.inducted) {
-          const nick = src?.ownerId
-            ? await safeCall(getUserNickname, [src.ownerId]).catch(() => null)
-            : null
-
-          const ownerTag = nick || (src?.ownerId ? `<@uid:${src.ownerId}>` : 'House')
-
-          await safeCall(postMessage, [{
-            room: ROOM,
-            message: `🏆 **HALL OF FAME INDUCTION!** **${src.name}** (${ownerTag}) — ${hofCheck.reason}`
-          }])
-        }
-      }
-    }
+  } catch (e) {
+    console.warn('[simulation] updateHorseStats/HOF failed:', e?.message)
   }
-} catch (e) {
-  console.warn('[simulation] updateHorseStats/HOF failed:', e?.message)
-}
-
-
 
   // Owner bonus (you can keep your increased version here if you already changed it)
   let ownerBonus = null

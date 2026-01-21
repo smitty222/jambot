@@ -19,6 +19,20 @@
  * @param {string} uuid The unique identifier for the user
  * @returns {string} A Turntable mention like `<@uid:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx>`
  */
+/**
+ * Lookup a user's display name from the database. Given a UUID, this
+ * helper fetches the stored nickname from the users table. If no
+ * record exists or the nickname column is null/empty, the UUID is
+ * returned as a fallback. This should be used when you need a
+ * human‑friendly name (e.g. for site display) rather than a raw
+ * Turntable mention. Note: This function performs a synchronous
+ * SQLite query; avoid calling it in tight loops on the hot path.
+ *
+ * @param {string} userId The unique identifier for the user
+ * @returns {string} The user’s stored nickname or their UUID
+ */
+import db from '../database/db.js'
+
 export function formatMention (uuid) {
   return `<@uid:${uuid}>`
 }
@@ -63,21 +77,6 @@ export function sanitizeNickname (nickname) {
   if (cleaned.toLowerCase() === 'user') return ''
   return cleaned
 }
-
-
-/**
- * Lookup a user's display name from the database. Given a UUID, this
- * helper fetches the stored nickname from the users table. If no
- * record exists or the nickname column is null/empty, the UUID is
- * returned as a fallback. This should be used when you need a
- * human‑friendly name (e.g. for site display) rather than a raw
- * Turntable mention. Note: This function performs a synchronous
- * SQLite query; avoid calling it in tight loops on the hot path.
- *
- * @param {string} userId The unique identifier for the user
- * @returns {string} The user’s stored nickname or their UUID
- */
-import db from '../database/db.js'
 
 export function getDisplayName (userId) {
   try {

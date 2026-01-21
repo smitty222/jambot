@@ -25,7 +25,7 @@ const STOPWORDS = new Set([
 
 function normalizeWord (word) {
   if (!word) return ''
-  let w = word.toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, '')
+  const w = word.toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, '')
   if (!w) return ''
   if (STOPWORDS.has(w)) return ''
   return w
@@ -105,10 +105,13 @@ function formatLeaderboard () {
     .sort((a, b) => b[1] - a[1])
     .map(([uid, score], index) => {
       const medal =
-        index === 0 ? '🥇'
-          : index === 1 ? '🥈'
-          : index === 2 ? '🥉'
-          : '🎵'
+        index === 0
+          ? '🥇'
+          : index === 1
+            ? '🥈'
+            : index === 2
+              ? '🥉'
+              : '🎵'
       return `${medal} <@uid:${uid}> — ${score} point(s)`
     })
 
@@ -156,9 +159,9 @@ export async function handleSongChainPlay (bot) {
       await postMessage({
         room: bot.roomUUID,
         message:
-          `🧩 **Song Chain started!**\n` +
+          '🧩 **Song Chain started!**\n' +
           `Starting with *${trackName}* by *${artistName}*.\n` +
-          `Next DJ: link your song title or artist with at least **one shared word** from this track!`
+          'Next DJ: link your song title or artist with at least **one shared word** from this track!'
       })
       return
     }
@@ -172,9 +175,9 @@ export async function handleSongChainPlay (bot) {
       await postMessage({
         room: bot.roomUUID,
         message:
-          `🚫 **Chain broken!**\n` +
+          '🚫 **Chain broken!**\n' +
           `<@uid:${djUUID}> played *${trackName}* by *${artistName}* — no shared words with the previous song.\n` +
-          `🧱 A new chain starts from here!`
+          '🧱 A new chain starts from here!'
       })
 
       lastSong = curr
@@ -228,7 +231,7 @@ export async function handleSongChainPlay (bot) {
     await postMessage({
       room: bot.roomUUID,
       message:
-        `✅ **Song Chain link!**\n` +
+        '✅ **Song Chain link!**\n' +
         `<@uid:${djUUID}> earned **${score}** point(s) for *${trackName}* by *${artistName}*.\n` +
         `Matched word(s): **${matches.join(', ')}**\n` +
         `${breakdown.map(b => `• ${b}`).join('\n')}\n` +

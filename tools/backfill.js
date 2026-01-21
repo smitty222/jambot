@@ -21,8 +21,8 @@ import { sanitizeNickname } from '../src/utils/names.js'
 
 function sleep (ms) { return new Promise(r => setTimeout(r, ms)) }
 
-const BATCH = 25        // TT handles 25-50 comfortably; keep gentle
-const PAUSE_MS = 400    // small pause between batches
+const BATCH = 25 // TT handles 25-50 comfortably; keep gentle
+const PAUSE_MS = 400 // small pause between batches
 
 // 0) Safety: make sure the core tables exist (no-ops if they already do)
 db.exec(`
@@ -46,66 +46,66 @@ db.exec(`
     shooterNickname TEXT,
     achievedAt TEXT
   );
-`);
+`)
 
 // 1) Ensure all referenced UUIDs exist in `users` (seed nickname with uuid)
 db.prepare(`
   INSERT OR IGNORE INTO users (uuid, nickname, balance)
   SELECT DISTINCT lw.userId, lw.userId, 0 FROM lottery_winners lw
-`).run();
+`).run()
 
 db.prepare(`
   INSERT OR IGNORE INTO users (uuid, nickname, balance)
   SELECT DISTINCT cr.shooterId, cr.shooterId, 0 FROM craps_records cr
   WHERE cr.shooterId IS NOT NULL AND cr.shooterId <> ''
-`).run();
+`).run()
 
 // 2) Find users needing hydration (nickname empty or equals uuid)
 const need = db.prepare(`
   SELECT uuid
   FROM users
   WHERE nickname IS NULL OR nickname='' OR nickname = uuid
-`).all();
+`).all()
 
 if (need.length === 0) {
-  console.log('Nothing to hydrate — all users have nicknames. ✅');
+  console.log('Nothing to hydrate — all users have nicknames. ✅')
 } else {
-  console.log(`Users needing hydration: ${need.length}`);
+  console.log(`Users needing hydration: ${need.length}`)
 
-  const uuids = need.map(r => r.uuid);
-  let updated = 0, attempted = 0;
+  const uuids = need.map(r => r.uuid)
+  let updated = 0; let attempted = 0
 
   for (let i = 0; i < uuids.length; i += BATCH) {
-    const chunk = uuids.slice(i, i + BATCH);
-    attempted += chunk.length;
+    const chunk = uuids.slice(i, i + BATCH)
+    attempted += chunk.length
 
     try {
-      const profiles = await fetchUserData(chunk); // returns array of userProfile objects (with .uuid, .nickname)
-      const byId = new Map();
+      const profiles = await fetchUserData(chunk) // returns array of userProfile objects (with .uuid, .nickname)
+      const byId = new Map()
       for (const p of profiles || []) {
-        if (p?.uuid) byId.set(p.uuid, sanitizeNickname(p.nickname));
+        if (p?.uuid) byId.set(p.uuid, sanitizeNickname(p.nickname))
       }
 
       db.transaction(() => {
         for (const id of chunk) {
-          const nick = byId.get(id);
+          const nick = byId.get(id)
           if (nick) {
-            db.prepare('UPDATE users SET nickname = ? WHERE uuid = ?').run(nick, id);
-            updated++;
+            db.prepare('UPDATE users SET nickname = ? WHERE uuid = ?').run(nick, id)
+            updated++
           }
         }
-      })();
+      })()
 
-      const got = [...byId.values()].filter(Boolean).length;
-      console.log(`Batch ${Math.floor(i / BATCH) + 1}: updated ${got}/${chunk.length}`);
+      const got = [...byId.values()].filter(Boolean).length
+      console.log(`Batch ${Math.floor(i / BATCH) + 1}: updated ${got}/${chunk.length}`)
     } catch (e) {
-      console.error(`Batch failed (${i}-${i + chunk.length}):`, e?.message || e);
+      console.error(`Batch failed (${i}-${i + chunk.length}):`, e?.message || e)
     }
 
-    await sleep(PAUSE_MS);
+    await sleep(PAUSE_MS)
   }
 
-  console.log(`\n✅ Users hydration complete. Attempted=${attempted}, Updated=${updated}`);
+  console.log(`\n✅ Users hydration complete. Attempted=${attempted}, Updated=${updated}`)
 }
 
 // 3) Optional: fill missing display names in winners/craps from `users`
@@ -115,7 +115,7 @@ const fillWinners = db.prepare(`
     SELECT u.nickname FROM users u WHERE u.uuid = lottery_winners.userId
   )
   WHERE (nickname IS NULL OR nickname = '' OR nickname LIKE '<@uid:%>')
-`).run();
+`).run()
 
 const fillCraps = db.prepare(`
   UPDATE craps_records
@@ -124,9 +124,9 @@ const fillCraps = db.prepare(`
   )
   WHERE (shooterNickname IS NULL OR shooterNickname = '' OR shooterNickname LIKE '<@uid:%>')
     AND shooterId IS NOT NULL AND shooterId <> ''
-`).run();
+`).run()
 
-console.log(`Winners updated: ${fillWinners.changes || 0}`);
-console.log(`Craps records updated: ${fillCraps.changes || 0}`);
+console.log(`Winners updated: ${fillWinners.changes || 0}`)
+console.log(`Craps records updated: ${fillCraps.changes || 0}`)
 
-console.log('\nAll done. 🎉');
+console.log('\nAll done. 🎉')

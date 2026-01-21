@@ -9,8 +9,8 @@ const ROOM = process.env.ROOM_UUID
 
 // Define the available horse tiers.  Prices scale with power: basic < elite < champion.
 const HORSE_TIERS = {
-  basic:    { price: 2000,  oddsRange: [6.0, 9.0], volatilityRange: [1.5, 2.5], careerLength: [8, 12],  emoji: '' },
-  elite:    { price: 7000,  oddsRange: [4.0, 7.0], volatilityRange: [1.0, 2.0], careerLength: [12, 18], emoji: '' },
+  basic: { price: 2000, oddsRange: [6.0, 9.0], volatilityRange: [1.5, 2.5], careerLength: [8, 12], emoji: '' },
+  elite: { price: 7000, oddsRange: [4.0, 7.0], volatilityRange: [1.0, 2.0], careerLength: [12, 18], emoji: '' },
   // Champion horses are top tier. Their price should be significantly higher than basic and elite tiers.
   // Align the cost with other tiers (2000 for basic, 7000 for elite). Set champion price to 15000.
   champion: { price: 15000, oddsRange: [2.5, 5.0], volatilityRange: [0.5, 1.5], careerLength: [18, 24], emoji: '' }
@@ -25,25 +25,25 @@ function randomInt (min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min
 }
 
-const NAME_PREFIXES = ['Star','Night','Silver','Thunder','Lucky','Crimson','Rocket','River','Ghost','Blue']
-const NAME_SUFFIXES = [' Dancer',' Arrow',' Spirit',' Runner',' Blaze',' Mirage',' Glory',' Wind',' Monarch',' Clover']
+const NAME_PREFIXES = ['Star', 'Night', 'Silver', 'Thunder', 'Lucky', 'Crimson', 'Rocket', 'River', 'Ghost', 'Blue']
+const NAME_SUFFIXES = [' Dancer', ' Arrow', ' Spirit', ' Runner', ' Blaze', ' Mirage', ' Glory', ' Wind', ' Monarch', ' Clover']
 function generateHorseName (existing) {
-  const syll = ['ra','in','do','ver','la','mi','ko','zi','ta','shi','na','qu','fo','rum','lux','tor','vin','sol','mer','kai']
+  const syll = ['ra', 'in', 'do', 'ver', 'la', 'mi', 'ko', 'zi', 'ta', 'shi', 'na', 'qu', 'fo', 'rum', 'lux', 'tor', 'vin', 'sol', 'mer', 'kai']
   for (let i = 0; i < 1000; i++) {
     const useTable = Math.random() < 0.8
     const name = useTable
-      ? NAME_PREFIXES[Math.floor(Math.random()*NAME_PREFIXES.length)]
-        + NAME_SUFFIXES[Math.floor(Math.random()*NAME_SUFFIXES.length)]
-      : Array.from({ length: 2 + Math.floor(Math.random()*2) }, () => syll[Math.floor(Math.random()*syll.length)])
-          .join('')
-          .replace(/^./, c => c.toUpperCase())
+      ? NAME_PREFIXES[Math.floor(Math.random() * NAME_PREFIXES.length)] +
+        NAME_SUFFIXES[Math.floor(Math.random() * NAME_SUFFIXES.length)]
+      : Array.from({ length: 2 + Math.floor(Math.random() * 2) }, () => syll[Math.floor(Math.random() * syll.length)])
+        .join('')
+        .replace(/^./, c => c.toUpperCase())
     if (!existing.includes(name)) return name
   }
   throw new Error('Unable to generate unique horse name.')
 }
 
 function horseShopMessage () {
-  const b = HORSE_TIERS.basic, e = HORSE_TIERS.elite, c = HORSE_TIERS.champion
+  const b = HORSE_TIERS.basic; const e = HORSE_TIERS.elite; const c = HORSE_TIERS.champion
   return [
     ' **Horse Shop** — buy a racehorse and enter our races!',
     '',

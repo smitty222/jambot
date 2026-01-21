@@ -1,79 +1,76 @@
 // tools/publish-site-data.mjs
-import fs from 'fs';
-import path from 'path';
-import Database from 'better-sqlite3';
-import process from 'process';
-import {publishDbSnapshot} from './publishSnapshot.js';
+import fs from 'fs'
+import path from 'path'
+import Database from 'better-sqlite3'
+import process from 'process'
+import { publishDbSnapshot } from './publishSnapshot.js'
 
 // ── Resolve API + auth ───────────────────────────────────────
-const API_BASE = process.env.API_BASE;
-const PUBLISH_TOKEN = process.env.PUBLISH_TOKEN;
+const API_BASE = process.env.API_BASE
+const PUBLISH_TOKEN = process.env.PUBLISH_TOKEN
 
 // ── Resolve DB path robustly (prefer Fly volume) ─────────────
-const FLY_DATA_DIR = '/data';
+const FLY_DATA_DIR = '/data'
 const RESOLVED_DB_PATH =
-  process.env.DB_PATH
-  || (fs.existsSync(FLY_DATA_DIR) ? path.join(FLY_DATA_DIR, 'app.db') : path.resolve('src/data/app.db'));
+  process.env.DB_PATH ||
+  (fs.existsSync(FLY_DATA_DIR) ? path.join(FLY_DATA_DIR, 'app.db') : path.resolve('src/data/app.db'))
 
 // make it visible to anything we import
-process.env.DB_PATH = RESOLVED_DB_PATH;
-console.log('[publish] Using DB_PATH =', process.env.DB_PATH);
+process.env.DB_PATH = RESOLVED_DB_PATH
+console.log('[publish] Using DB_PATH =', process.env.DB_PATH)
 
 // Ensure schema/migrations are loaded for this process too
 // (IMPORTANT: path must match actual file name exactly on Linux)
-await import(new URL('../src/database/initdb.js', import.meta.url));
+await import(new URL('../src/database/initdb.js', import.meta.url))
 
 // ── Cooldowns ────────────────────────────────────────────────
-const COOLDOWN_MINUTES_DB       = Number(process.env.PUBLISH_DB_EVERY_MIN    || 240);
-const COOLDOWN_MINUTES_COMMANDS = Number(process.env.PUBLISH_CMDS_EVERY_MIN  || 240);
-const COOLDOWN_MINUTES_STATS    = Number(process.env.PUBLISH_STATS_EVERY_MIN || 240);
+const COOLDOWN_MINUTES_DB = Number(process.env.PUBLISH_DB_EVERY_MIN || 240)
+const COOLDOWN_MINUTES_COMMANDS = Number(process.env.PUBLISH_CMDS_EVERY_MIN || 240)
+const COOLDOWN_MINUTES_STATS = Number(process.env.PUBLISH_STATS_EVERY_MIN || 240)
 // Publish album stats more frequently to keep the website up‑to‑date.  This can
 // be overridden via the PUBLISH_ALBUMS_EVERY_MIN environment variable.  A
 // reasonable default of 10 minutes means that new reviews will be visible on
 // the site within a short window without spamming the API.
-const COOLDOWN_MINUTES_ALBUMS   = Number(process.env.PUBLISH_ALBUMS_EVERY_MIN || 10);
-const COOLDOWN_MINUTES_SITEDATA = Number(process.env.PUBLISH_SITEDATA_EVERY_MIN || 10);
-const COOLDOWN_MINUTES_SONGS = Number(process.env.PUBLISH_SONGS_EVERY_MIN || 10);
-const COOLDOWN_MINUTES_WRAPPED  = Number(process.env.PUBLISH_WRAPPED_EVERY_MIN || 60);
+const COOLDOWN_MINUTES_ALBUMS = Number(process.env.PUBLISH_ALBUMS_EVERY_MIN || 10)
+const COOLDOWN_MINUTES_SITEDATA = Number(process.env.PUBLISH_SITEDATA_EVERY_MIN || 10)
+const COOLDOWN_MINUTES_SONGS = Number(process.env.PUBLISH_SONGS_EVERY_MIN || 10)
+const COOLDOWN_MINUTES_WRAPPED = Number(process.env.PUBLISH_WRAPPED_EVERY_MIN || 60)
 // DJ wrapped limits (safe defaults)
-const WRAPPED_DJ_LIMIT          = Number(process.env.WRAPPED_DJ_LIMIT || 200);        // how many DJs we track per year
-const WRAPPED_DJ_TOP_SONGS      = Number(process.env.WRAPPED_DJ_TOP_SONGS || 50);     // per DJ
-const WRAPPED_DJ_TOP_ARTISTS    = Number(process.env.WRAPPED_DJ_TOP_ARTISTS || 50);  // per DJ
-
-
-
+const WRAPPED_DJ_LIMIT = Number(process.env.WRAPPED_DJ_LIMIT || 200) // how many DJs we track per year
+const WRAPPED_DJ_TOP_SONGS = Number(process.env.WRAPPED_DJ_TOP_SONGS || 50) // per DJ
+const WRAPPED_DJ_TOP_ARTISTS = Number(process.env.WRAPPED_DJ_TOP_ARTISTS || 50) // per DJ
 
 // Persist state on the volume so cooldowns survive restarts
-const STATE_FILE = process.env.PUBLISH_STATE_FILE
-  || (fs.existsSync(FLY_DATA_DIR) ? path.join(FLY_DATA_DIR, '.publish-state.json') : path.resolve('.publish-state.json'));
+const STATE_FILE = process.env.PUBLISH_STATE_FILE ||
+  (fs.existsSync(FLY_DATA_DIR) ? path.join(FLY_DATA_DIR, '.publish-state.json') : path.resolve('.publish-state.json'))
 
-function loadState() {
-  try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8')); } catch { return { last: {} }; }
+function loadState () {
+  try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8')) } catch { return { last: {} } }
 }
-function saveState(state) {
-  try { fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2)); } catch {}
+function saveState (state) {
+  try { fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2)) } catch {}
 }
-function minutesSince(ts) {
-  if (!ts) return Infinity;
-  const diffMs = Date.now() - new Date(ts).getTime();
-  return diffMs / 60000;
+function minutesSince (ts) {
+  if (!ts) return Infinity
+  const diffMs = Date.now() - new Date(ts).getTime()
+  return diffMs / 60000
 }
 
-function tryReadJson(p) { try { return JSON.parse(fs.readFileSync(p,'utf-8')); } catch { return null; } }
-const commands     = tryReadJson(process.env.COMMANDS_JSON     || 'site/commands.public.json') || [];
-const commands_mod = tryReadJson(process.env.COMMANDS_MOD_JSON || 'site/commands.mod.json')    || [];
+function tryReadJson (p) { try { return JSON.parse(fs.readFileSync(p, 'utf-8')) } catch { return null } }
+const commands = tryReadJson(process.env.COMMANDS_JSON || 'site/commands.public.json') || []
+const commands_mod = tryReadJson(process.env.COMMANDS_MOD_JSON || 'site/commands.mod.json') || []
 
-async function postJson(pathname, payload) {
+async function postJson (pathname, payload) {
   if (!API_BASE || !PUBLISH_TOKEN) {
-    throw new Error('Missing API_BASE or PUBLISH_TOKEN');
+    throw new Error('Missing API_BASE or PUBLISH_TOKEN')
   }
   const res = await fetch(`${API_BASE}${pathname}`, {
     method: 'POST',
-    headers: { 'content-type':'application/json', 'authorization': `Bearer ${PUBLISH_TOKEN}` },
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${PUBLISH_TOKEN}` },
     body: JSON.stringify(payload)
-  });
-  if (!res.ok) throw new Error(`${pathname} ${res.status}: ${await res.text()}`);
-  return res.json();
+  })
+  if (!res.ok) throw new Error(`${pathname} ${res.status}: ${await res.text()}`)
+  return res.json()
 }
 
 // ── Publish: Craps records (public) ───────────────────────────
@@ -259,8 +256,6 @@ async function publishUserOwnedHorses (state) {
   }
 }
 
-
-
 // ── Publish: Lottery winners (public) ─────────────────────────
 async function publishLotteryWinners (state) {
   // Reuse the games/stats cooldown or make a dedicated one if you prefer
@@ -322,7 +317,7 @@ async function publishLotteryWinners (state) {
   }
 }
 
-// ── Publish: Career leaders (lifetimeNet) ─────────────────────
+// ── Publish: Career leaders (lifetime_net) ─────────────────────
 async function publishCareerLeaders (state) {
   if (minutesSince(state.last?.career) < COOLDOWN_MINUTES_STATS) {
     console.log('[publish] career skipped (cooldown)')
@@ -333,25 +328,34 @@ async function publishCareerLeaders (state) {
   const db = new Database(process.env.DB_PATH, { readonly: true })
 
   try {
-    // NOTE: assumes users.lifetimeNet exists
+    // IMPORTANT: schema is users.lifetime_net (snake_case)
+    // We publish it as lifetimeNet (camelCase) for the site.
     const rows = db.prepare(`
       SELECT
         u.uuid,
         COALESCE(NULLIF(TRIM(u.nickname), ''), u.uuid, 'Unknown') AS nickname,
         COALESCE(u.balance, 0) AS balance,
-        COALESCE(u.lifetimeNet, 0) AS lifetimeNet
+        COALESCE(u.lifetime_net, 0) AS lifetimeNet
       FROM users u
-      WHERE COALESCE(u.lifetimeNet, 0) != 0
-      ORDER BY u.lifetimeNet DESC
+      WHERE COALESCE(u.lifetime_net, 0) != 0
+      ORDER BY lifetimeNet DESC
       LIMIT 1000
     `).all()
 
     const topGainer = rows.length ? rows[0] : null
-    const topLoser  = rows.length ? rows[rows.length - 1] : null
+
+    // compute loser explicitly (most negative)
+    let topLoser = null
+    if (rows.length) {
+      topLoser = rows.reduce((min, r) =>
+        (min == null || Number(r.lifetimeNet) < Number(min.lifetimeNet)) ? r : min
+      , null)
+    }
 
     await postJson('/api/publishDb', {
       tables: {
         career_leaderboard_public: rows,
+        // Keep this as an object; your worker should store it fine.
         career_extremes_public: { topGainer, topLoser }
       },
       public: ['career_leaderboard_public', 'career_extremes_public']
@@ -368,18 +372,15 @@ async function publishCareerLeaders (state) {
   }
 }
 
-
-
-
 async function publishAlbumStats (state) {
   // Respect configured cooldowns
   if (minutesSince(state.last?.albumStats) < COOLDOWN_MINUTES_ALBUMS) {
-    console.log('[publish] albumStats skipped (cooldown)');
-    return;
+    console.log('[publish] albumStats skipped (cooldown)')
+    return
   }
 
-  console.log('[publish] albumStats snapshot from', process.env.DB_PATH);
-  const db = new Database(process.env.DB_PATH, { readonly: true });
+  console.log('[publish] albumStats snapshot from', process.env.DB_PATH)
+  const db = new Database(process.env.DB_PATH, { readonly: true })
   try {
     // Extract core album stats needed by the website.  We select only the
     // columns that the frontend consumes.  Keep column names consistent with
@@ -392,7 +393,7 @@ async function publishAlbumStats (state) {
              averageReview
         FROM album_stats
        ORDER BY id ASC
-    `).all();
+    `).all()
 
     // Compute review counts per albumId.  The public site’s album tab
     // expects each entry to expose its identifier under `albumId` (or `id` or
@@ -405,7 +406,7 @@ async function publishAlbumStats (state) {
         FROM album_reviews
        GROUP BY albumId
        ORDER BY albumId ASC
-    `).all();
+    `).all()
 
     // Post both tables to the worker.  We declare them public so the
     // Cloudflare worker stores them under the "db:" namespace (mirrored to
@@ -416,105 +417,105 @@ async function publishAlbumStats (state) {
         album_review_counts_public: reviewCounts
       },
       public: ['album_stats_public', 'album_review_counts_public']
-    });
+    })
 
     // Record timestamp so we respect the cooldown on the next run
-    state.last.albumStats = new Date().toISOString();
-    saveState(state);
+    state.last.albumStats = new Date().toISOString()
+    saveState(state)
     console.log('[publish] albumStats published:', albumStats.length,
-                'albums and', reviewCounts.length, 'review counts');
+      'albums and', reviewCounts.length, 'review counts')
   } catch (err) {
-    console.warn('[publish] albumStats failed:', err?.message || err);
+    console.warn('[publish] albumStats failed:', err?.message || err)
   } finally {
-    db.close();
+    db.close()
   }
 }
 
 // ── Publish: Commands ────────────────────────────────────────
-async function publishCommands(state) {
-  if (!commands.length && !commands_mod.length) return;
+async function publishCommands (state) {
+  if (!commands.length && !commands_mod.length) return
   if (minutesSince(state.last?.commands) < COOLDOWN_MINUTES_COMMANDS) {
-    console.log('[publish] commands skipped (cooldown)'); return;
+    console.log('[publish] commands skipped (cooldown)'); return
   }
-  const nextHash = JSON.stringify([commands, commands_mod]);
+  const nextHash = JSON.stringify([commands, commands_mod])
   if (state.last?.commandsHash === nextHash) {
-    console.log('[publish] commands unchanged; skipped');
-    state.last.commands = new Date().toISOString(); saveState(state); return;
+    console.log('[publish] commands unchanged; skipped')
+    state.last.commands = new Date().toISOString(); saveState(state); return
   }
-  console.log('[publish] commands');
-  await postJson('/api/publishCommands', { commands, commands_mod });
-  state.last.commands = new Date().toISOString();
-  state.last.commandsHash = nextHash; saveState(state);
+  console.log('[publish] commands')
+  await postJson('/api/publishCommands', { commands, commands_mod })
+  state.last.commands = new Date().toISOString()
+  state.last.commandsHash = nextHash; saveState(state)
 }
 
 // ── Publish: Per-table DB mirrors ────────────────────────────
-async function publishDb(state) {
+async function publishDb (state) {
   if (minutesSince(state.last?.db) < COOLDOWN_MINUTES_DB) {
-    console.log('[publish] db skipped (cooldown)'); return;
+    console.log('[publish] db skipped (cooldown)'); return
   }
-  console.log('[publish] db snapshots from', process.env.DB_PATH);
-  const db = new Database(process.env.DB_PATH, { readonly: true });
+  console.log('[publish] db snapshots from', process.env.DB_PATH)
+  const db = new Database(process.env.DB_PATH, { readonly: true })
   try {
     await publishDbSnapshot({
       db,
       havePublishConfig: () => true,
       logger: console,
       postJson: async (pathname, payload) => postJson(pathname, payload)
-    });
-    state.last.db = new Date().toISOString(); saveState(state);
-  } finally { db.close(); }
+    })
+    state.last.db = new Date().toISOString(); saveState(state)
+  } finally { db.close() }
 }
 
 // ── Publish: Stats (placeholder) ─────────────────────────────
-async function publishStats(state) {
+async function publishStats (state) {
   if (minutesSince(state.last?.stats) < COOLDOWN_MINUTES_STATS) {
-    console.log('[publish] stats skipped (cooldown)'); return;
+    console.log('[publish] stats skipped (cooldown)'); return
   }
-  const now = new Date().toISOString();
+  const now = new Date().toISOString()
   try {
-    await postJson('/api/publishStats', { totals: { updatedAt: now }, topSongs: [], topAlbums: [] });
-    state.last.stats = now; saveState(state);
-  } catch (e) { console.warn('[publish] stats failed:', e?.message || e); }
+    await postJson('/api/publishStats', { totals: { updatedAt: now }, topSongs: [], topAlbums: [] })
+    state.last.stats = now; saveState(state)
+  } catch (e) { console.warn('[publish] stats failed:', e?.message || e) }
 }
 
 // ── Publish: siteData snapshot ───────────────────────────────
-function fill1toN(list, n, toKey = x => x.number, toVal = x => x.count) {
-  const map = new Map(list.map(x => [Number(toKey(x)), Number(toVal(x)) || 0]));
-  const out = []; for (let i = 1; i <= n; i++) out.push({ number: i, count: map.get(i) ?? 0 }); return out;
+function fill1toN (list, n, toKey = x => x.number, toVal = x => x.count) {
+  const map = new Map(list.map(x => [Number(toKey(x)), Number(toVal(x)) || 0]))
+  const out = []; for (let i = 1; i <= n; i++) out.push({ number: i, count: map.get(i) ?? 0 }); return out
 }
-async function publishSiteData(state) {
+async function publishSiteData (state) {
   if (minutesSince(state.last?.siteData) < COOLDOWN_MINUTES_SITEDATA) {
-    console.log('[publish] siteData skipped (cooldown)'); return;
+    console.log('[publish] siteData skipped (cooldown)'); return
   }
-  console.log('[publish] siteData snapshot from', process.env.DB_PATH);
-  const db = new Database(process.env.DB_PATH, { readonly: true });
+  console.log('[publish] siteData snapshot from', process.env.DB_PATH)
+  const db = new Database(process.env.DB_PATH, { readonly: true })
   try {
-    const lotteryRows = db.prepare(`SELECT number, count FROM lottery_stats ORDER BY number ASC`).all();
-    const lotteryStats = fill1toN(lotteryRows || [], 99, r => r.number, r => r.count);
+    const lotteryRows = db.prepare('SELECT number, count FROM lottery_stats ORDER BY number ASC').all()
+    const lotteryStats = fill1toN(lotteryRows || [], 99, r => r.number, r => r.count)
     const snapshot = {
       schemaVersion: 1,
       updatedAt: new Date().toISOString(),
       lottery: { stats: lotteryStats }
-    };
-    await postJson('/api/siteData', snapshot);
-    state.last.siteData = snapshot.updatedAt; saveState(state);
-  } finally { db.close(); }
+    }
+    await postJson('/api/siteData', snapshot)
+    state.last.siteData = snapshot.updatedAt; saveState(state)
+  } finally { db.close() }
 }
 async function publishTopSongs (state) {
   if (minutesSince(state.last?.topSongs) < COOLDOWN_MINUTES_SONGS) {
-    console.log('[publish] topSongs skipped (cooldown)');
-    return;
+    console.log('[publish] topSongs skipped (cooldown)')
+    return
   }
 
-  console.log('[publish] topSongs snapshot from', process.env.DB_PATH);
-  const db = new Database(process.env.DB_PATH, { readonly: true });
+  console.log('[publish] topSongs snapshot from', process.env.DB_PATH)
+  const db = new Database(process.env.DB_PATH, { readonly: true })
 
   try {
     // We publish a blended dataset so new songs always appear even if they
     // have low plays. Keep total payload capped for safety.
-    const MAX_ROWS = Number(process.env.TOP_SONGS_LIMIT || 15000);
-    const TOP_PLAYS_N = Number(process.env.TOP_SONGS_TOP_PLAYS_N || 3500);
-    const RECENT_N = Number(process.env.TOP_SONGS_RECENT_N || 2500);
+    const MAX_ROWS = Number(process.env.TOP_SONGS_LIMIT || 15000)
+    const TOP_PLAYS_N = Number(process.env.TOP_SONGS_TOP_PLAYS_N || 3500)
+    const RECENT_N = Number(process.env.TOP_SONGS_RECENT_N || 2500)
 
     const baseSelect = `
       SELECT
@@ -530,14 +531,14 @@ async function publishTopSongs (state) {
       WHERE trackName IS NOT NULL
         AND TRIM(trackName) <> ''
         AND LOWER(TRIM(trackName)) <> 'unknown'
-    `;
+    `
 
     // Bucket 1: top by plays
     const topByPlays = db.prepare(`
       ${baseSelect}
       ORDER BY plays DESC, lastPlayed DESC
       LIMIT ?
-    `).all(TOP_PLAYS_N);
+    `).all(TOP_PLAYS_N)
 
     // Bucket 2: most recent (ensures new songs appear)
     const mostRecent = db.prepare(`
@@ -546,80 +547,80 @@ async function publishTopSongs (state) {
         CASE WHEN lastPlayed IS NULL OR TRIM(lastPlayed) = '' THEN 0 ELSE 1 END DESC,
         lastPlayed DESC
       LIMIT ?
-    `).all(RECENT_N);
+    `).all(RECENT_N)
 
     // Deduplicate by normalized (title|artist) key; keep the "best" record.
     // If a song appears in both buckets, prefer higher plays, then more recent.
-    const keyOf = (r) => `${String(r.title || '').trim().toLowerCase()}|${String(r.artist || '').trim().toLowerCase()}`;
+    const keyOf = (r) => `${String(r.title || '').trim().toLowerCase()}|${String(r.artist || '').trim().toLowerCase()}`
     const toTime = (x) => {
-      if (!x) return 0;
-      const t = new Date(x).getTime();
-      return Number.isFinite(t) ? t : 0;
-    };
-
-    const map = new Map();
-    for (const r of [...topByPlays, ...mostRecent]) {
-      const k = keyOf(r);
-      if (!k || k === '|' ) continue;
-
-      const prev = map.get(k);
-      if (!prev) { map.set(k, r); continue; }
-
-      const rPlays = Number(r.plays || 0);
-      const pPlays = Number(prev.plays || 0);
-      const rT = toTime(r.lastPlayed);
-      const pT = toTime(prev.lastPlayed);
-
-      // keep whichever seems more "authoritative"
-      if (rPlays > pPlays) map.set(k, r);
-      else if (rPlays === pPlays && rT > pT) map.set(k, r);
+      if (!x) return 0
+      const t = new Date(x).getTime()
+      return Number.isFinite(t) ? t : 0
     }
 
-    let rows = Array.from(map.values());
+    const map = new Map()
+    for (const r of [...topByPlays, ...mostRecent]) {
+      const k = keyOf(r)
+      if (!k || k === '|') continue
+
+      const prev = map.get(k)
+      if (!prev) { map.set(k, r); continue }
+
+      const rPlays = Number(r.plays || 0)
+      const pPlays = Number(prev.plays || 0)
+      const rT = toTime(r.lastPlayed)
+      const pT = toTime(prev.lastPlayed)
+
+      // keep whichever seems more "authoritative"
+      if (rPlays > pPlays) map.set(k, r)
+      else if (rPlays === pPlays && rT > pT) map.set(k, r)
+    }
+
+    let rows = Array.from(map.values())
 
     // Final cap: sort by plays desc, then recency desc (stable output)
     rows.sort((a, b) => {
-      const ap = Number(a.plays || 0), bp = Number(b.plays || 0);
-      if (bp !== ap) return bp - ap;
-      return toTime(b.lastPlayed) - toTime(a.lastPlayed);
-    });
+      const ap = Number(a.plays || 0); const bp = Number(b.plays || 0)
+      if (bp !== ap) return bp - ap
+      return toTime(b.lastPlayed) - toTime(a.lastPlayed)
+    })
 
-    if (rows.length > MAX_ROWS) rows = rows.slice(0, MAX_ROWS);
+    if (rows.length > MAX_ROWS) rows = rows.slice(0, MAX_ROWS)
 
     await postJson('/api/publishDb', {
       tables: { top_songs: rows },
       public: ['top_songs']
-    });
+    })
 
-    state.last.topSongs = new Date().toISOString();
-    saveState(state);
+    state.last.topSongs = new Date().toISOString()
+    saveState(state)
 
     console.log('[publish] topSongs published:', rows.length, 'rows',
-      `(topByPlays=${topByPlays.length}, recent=${mostRecent.length})`);
+      `(topByPlays=${topByPlays.length}, recent=${mostRecent.length})`)
   } catch (err) {
-    console.warn('[publish] topSongs failed:', err?.message || err);
+    console.warn('[publish] topSongs failed:', err?.message || err)
   } finally {
-    db.close();
+    db.close()
   }
 }
 async function publishWrapped2026 (state) {
   if (minutesSince(state.last?.wrapped2026) < COOLDOWN_MINUTES_WRAPPED) {
-    console.log('[publish] wrapped2026 skipped (cooldown)');
-    return;
+    console.log('[publish] wrapped2026 skipped (cooldown)')
+    return
   }
 
-  console.log('[publish] wrapped2026 snapshot from', process.env.DB_PATH);
-  const db = new Database(process.env.DB_PATH, { readonly: true });
+  console.log('[publish] wrapped2026 snapshot from', process.env.DB_PATH)
+  const db = new Database(process.env.DB_PATH, { readonly: true })
 
   try {
     // Date window for 2026
-    const START = '2026-01-01';
-    const END   = '2027-01-01';
+    const START = '2026-01-01'
+    const END = '2027-01-01'
 
     // Room-level Wrapped limits
-    const LIMIT_SONGS   = Number(process.env.WRAPPED_TOP_SONGS_LIMIT || 200);
-    const LIMIT_ARTISTS = Number(process.env.WRAPPED_TOP_ARTISTS_LIMIT || 200);
-    const LIMIT_DJS     = Number(process.env.WRAPPED_TOP_DJS_LIMIT || 100);
+    const LIMIT_SONGS = Number(process.env.WRAPPED_TOP_SONGS_LIMIT || 200)
+    const LIMIT_ARTISTS = Number(process.env.WRAPPED_TOP_ARTISTS_LIMIT || 200)
+    const LIMIT_DJS = Number(process.env.WRAPPED_TOP_DJS_LIMIT || 100)
 
     // ─────────────────────────────────────────────────────────────
     // Room Wrapped (existing)
@@ -634,7 +635,7 @@ async function publishWrapped2026 (state) {
       GROUP BY trackName, artistName
       ORDER BY plays DESC
       LIMIT ?
-    `).all(START, END, LIMIT_SONGS);
+    `).all(START, END, LIMIT_SONGS)
 
     const topArtists = db.prepare(`
       SELECT
@@ -645,7 +646,7 @@ async function publishWrapped2026 (state) {
       GROUP BY artistName
       ORDER BY plays DESC
       LIMIT ?
-    `).all(START, END, LIMIT_ARTISTS);
+    `).all(START, END, LIMIT_ARTISTS)
 
     // Top DJs (room-level): prefer users.nickname when djUuid exists
     const topDjs = db.prepare(`
@@ -668,7 +669,7 @@ async function publishWrapped2026 (state) {
         END
       ORDER BY plays DESC
       LIMIT ?
-    `).all(START, END, LIMIT_DJS);
+    `).all(START, END, LIMIT_DJS)
 
     // ─────────────────────────────────────────────────────────────
     // DJ Wrapped (new)
@@ -696,12 +697,12 @@ async function publishWrapped2026 (state) {
         END
       ORDER BY plays DESC
       LIMIT ?
-    `).all(START, END, WRAPPED_DJ_LIMIT);
+    `).all(START, END, WRAPPED_DJ_LIMIT)
 
     // 2) Per-DJ top songs + top artists (bounded per DJ)
     // We only compute these for DJs included in djTotals to keep payload bounded.
-    const djTopSongs = [];
-    const djTopArtists = [];
+    const djTopSongs = []
+    const djTopArtists = []
 
     const topSongsStmt = db.prepare(`
       SELECT
@@ -714,7 +715,7 @@ async function publishWrapped2026 (state) {
       GROUP BY sp.trackName, sp.artistName
       ORDER BY plays DESC
       LIMIT ?
-    `);
+    `)
 
     const topArtistsStmt = db.prepare(`
       SELECT
@@ -726,16 +727,16 @@ async function publishWrapped2026 (state) {
       GROUP BY sp.artistName
       ORDER BY plays DESC
       LIMIT ?
-    `);
+    `)
 
     for (const dj of djTotals) {
-      const djUuid = dj.djUuid;
+      const djUuid = dj.djUuid
 
       // If we don't have a djUuid (only nickname fallback), we can’t reliably filter
       // per DJ without collisions. We still include totals, but skip top lists.
-      if (!djUuid || String(djUuid).trim() === '') continue;
+      if (!djUuid || String(djUuid).trim() === '') continue
 
-      const songs = topSongsStmt.all(START, END, djUuid, WRAPPED_DJ_TOP_SONGS);
+      const songs = topSongsStmt.all(START, END, djUuid, WRAPPED_DJ_TOP_SONGS)
       for (const r of songs) {
         djTopSongs.push({
           djUuid,
@@ -743,17 +744,17 @@ async function publishWrapped2026 (state) {
           title: r.title,
           artist: r.artist,
           plays: r.plays
-        });
+        })
       }
 
-      const artists = topArtistsStmt.all(START, END, djUuid, WRAPPED_DJ_TOP_ARTISTS);
+      const artists = topArtistsStmt.all(START, END, djUuid, WRAPPED_DJ_TOP_ARTISTS)
       for (const r of artists) {
         djTopArtists.push({
           djUuid,
           dj: dj.dj,
           artist: r.artist,
           plays: r.plays
-        });
+        })
       }
     }
 
@@ -778,10 +779,10 @@ async function publishWrapped2026 (state) {
         'wrapped_2026_dj_top_songs',
         'wrapped_2026_dj_top_artists'
       ]
-    });
+    })
 
-    state.last.wrapped2026 = new Date().toISOString();
-    saveState(state);
+    state.last.wrapped2026 = new Date().toISOString()
+    saveState(state)
 
     console.log('[publish] wrapped2026 published:',
       topSongs.length, 'room songs,',
@@ -790,35 +791,31 @@ async function publishWrapped2026 (state) {
       djTotals.length, 'dj totals,',
       djTopSongs.length, 'dj song rows,',
       djTopArtists.length, 'dj artist rows'
-    );
+    )
   } catch (err) {
-    console.warn('[publish] wrapped2026 failed:', err?.message || err);
+    console.warn('[publish] wrapped2026 failed:', err?.message || err)
   } finally {
-    db.close();
+    db.close()
   }
 }
 
-
-
-
-
 // ── Main ─────────────────────────────────────────────────────
 const main = async () => {
-  const state = loadState();
-  await publishCommands(state);
-  await publishDb(state);
-  await publishTopSongs(state);
-  await publishStats(state);
-  await publishSiteData(state);
-  await publishCareerLeaders(state);
-  await publishAlbumStats(state);
-  await publishWrapped2026(state);
+  const state = loadState()
+  await publishCommands(state)
+  await publishDb(state)
+  await publishTopSongs(state)
+  await publishStats(state)
+  await publishSiteData(state)
+  await publishCareerLeaders(state)
+  await publishAlbumStats(state)
+  await publishWrapped2026(state)
   await publishLotteryWinners(state)
-  await publishCrapsRecords(state);
-  await publishHorseHallOfFame(state);
+  await publishCrapsRecords(state)
+  await publishHorseHallOfFame(state)
   await publishHorseHallOfFame(state)
   await publishUserOwnedHorses(state)
-  console.log('[publish] done');
-};
+  console.log('[publish] done')
+}
 
-main().catch(err => { console.error('[publish] ERROR:', err); process.exit(1); });
+main().catch(err => { console.error('[publish] ERROR:', err); process.exit(1) })

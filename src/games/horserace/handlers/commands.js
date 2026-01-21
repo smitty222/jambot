@@ -1,6 +1,5 @@
 // src/games/horserace/handlers/commands.js
 
-
 import { postMessage } from '../../../libs/cometchat.js'
 import { getUserWallet, debitGameBet } from '../../../database/dbwalletmanager.js'
 import { getUserNickname } from '../../../utils/nickname.js'
@@ -37,7 +36,7 @@ const SILKS = [
   '🟪', // purple
   '🟫', // brown
   '⬛', // black
-  '⬜'  // white
+  '⬜' // white
 ]
 const silk = (i) => SILKS[i % SILKS.length]
 
@@ -71,7 +70,7 @@ function generateHorseName (usedNames) {
     const name = `${adj} ${noun}`
     if (!usedNames.has(name)) return name
   }
-  let base = `${HORSE_ADJECTIVES[0]} ${HORSE_NOUNS[0]}`
+  const base = `${HORSE_ADJECTIVES[0]} ${HORSE_NOUNS[0]}`
   let suffix = 1
   let unique = base
   while (usedNames.has(unique)) unique = `${base} ${suffix++}`
@@ -86,12 +85,12 @@ const BET_MS = 45_000
 const DELAY = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
 const RESULTS_PACING = {
-  preResultBeatMs: 900,                 // after finish gif
+  preResultBeatMs: 900, // after finish gif
   photoFinishBeatMs: PHOTO_SUSPENSE_MS, // if tight margin
-  officialBeatMs: 1100,                 // before announcing winner
-  standingsBeatMs: 900,                 // before posting final standings card
-  payoutLineBeatMs: 700,                // between payout lines (per-user)
-  ownerBonusBeatMs: 900                 // before owner bonus line
+  officialBeatMs: 1100, // before announcing winner
+  standingsBeatMs: 900, // before posting final standings card
+  payoutLineBeatMs: 700, // between payout lines (per-user)
+  ownerBonusBeatMs: 900 // before owner bonus line
 }
 
 // ── Post-time countdown ────────────────────────────────────────────────
@@ -276,26 +275,25 @@ async function openBetsPhase () {
     // - h.odds (decimal) is used for simulation strength.
     // - h.oddsLabel / h.oddsFrac are used for the race card + bet settlement.
     horses = [...ownerHorses, ...bots].map(h => {
-  const decFair = getCurrentOdds(h)
-  const locked = lockToteBoardOdds(decFair, { minProfit: 2.0 })
+      const decFair = getCurrentOdds(h)
+      const locked = lockToteBoardOdds(decFair, { minProfit: 2.0 })
 
-  // CRITICAL: Prevent “underpriced favorite” exploit.
-  // Simulation strength should NEVER be stronger than the displayed odds.
-  // Since lower decimal = stronger, we take the max.
-  const decStrength = Math.max(locked.decFair, locked.oddsDecLocked)
+      // CRITICAL: Prevent “underpriced favorite” exploit.
+      // Simulation strength should NEVER be stronger than the displayed odds.
+      // Since lower decimal = stronger, we take the max.
+      const decStrength = Math.max(locked.decFair, locked.oddsDecLocked)
 
-  return {
-    ...h,
-    // used by simulation speed scaling
-    odds: decStrength,
+      return {
+        ...h,
+        // used by simulation speed scaling
+        odds: decStrength,
 
-    // display + settlement
-    oddsLabel: locked.oddsLabel,
-    oddsFrac: locked.oddsFrac,
-    oddsDecLocked: locked.oddsDecLocked
-  }
-})
-
+        // display + settlement
+        oddsLabel: locked.oddsLabel,
+        oddsFrac: locked.oddsFrac,
+        oddsDecLocked: locked.oddsDecLocked
+      }
+    })
 
     if (!horses.length) {
       await safeCall(postMessage, [{ room: ROOM, message: '❌ No eligible horses. Race canceled.' }])
@@ -331,7 +329,7 @@ async function openBetsPhase () {
       if (isBettingOpen) {
         safeCall(postMessage, [{
           room: ROOM,
-          message: `⌛ Halfway to post! Place your bet now using /horse <number> <amount> (e.g., /horse 1 25).`
+          message: '⌛ Halfway to post! Place your bet now using /horse <number> <amount> (e.g., /horse 1 25).'
         }])
       }
     }, BET_MS / 2)
@@ -441,7 +439,7 @@ function makeTurnCommentary (legIndex, raceState, prevState, finishDistance, pre
   if (late) {
     options.push(
       `🏁 Down the **Stretch** — **${leader.name}** digs in, **${second.name}** charging!`,
-      `🏁 Final strides — they’re all out!`
+      '🏁 Final strides — they’re all out!'
     )
   }
   if (prevOrder[0] !== order[0]) {
@@ -496,13 +494,16 @@ if (!globalThis[LISTENER_GUARD_KEY]) {
     _lastLine = comment
 
     if (TV_MODE) {
-      await postMessage({ room: ROOM, message: [
-        '```',
+      await postMessage({
+        room: ROOM,
+        message: [
+          '```',
         ` Leg ${turnIndex + 1} of ${LEGS}`,
         track,
         '```',
         comment
-      ].join('\n') })
+        ].join('\n')
+      })
     }
   })
 
@@ -623,7 +624,6 @@ function clampName (s, n) {
   return padR(s.slice(0, Math.max(0, n - 1)) + '…', n)
 }
 
-
 function tierTag (tier) {
   const t = String(tier || '').toUpperCase()
   // keep short for table
@@ -650,10 +650,10 @@ function renderHorseTable (rows, { title = '', showOwner = false } = {}) {
   const W_NUM = 2
   const W_NAME = showOwner ? 18 : 22
   const W_TIER = 7
-  const W_REC = 9   // "12-34"
-  const W_PCT = 4   // "45%"
-  const W_LEFT = 4  // races left
-  const W_STAT = 6  // status / hof badge
+  const W_REC = 9 // "12-34"
+  const W_PCT = 4 // "45%"
+  const W_LEFT = 4 // races left
+  const W_STAT = 6 // status / hof badge
 
   const header =
     `${padL('#', W_NUM)} ` +
@@ -689,7 +689,6 @@ function renderHorseTable (rows, { title = '', showOwner = false } = {}) {
   return '```\n' + parts.join('\n') + '\n```'
 }
 
-
 export async function handleMyHorsesCommand (ctx) {
   const userId = ctx?.sender || ctx?.userId || ctx?.uid
   const nick = await getUserNickname(userId)
@@ -721,7 +720,7 @@ export async function handleMyHorsesCommand (ctx) {
   const W_NUM = 2
   const W_NAME = 18
   const W_TIER = 7
-  const W_REC = 7   // "11-20"
+  const W_REC = 7 // "11-20"
   const W_PCT = 4
   const W_LEFT = 4
   const W_STAT = 6
@@ -774,9 +773,6 @@ export async function handleMyHorsesCommand (ctx) {
   const msg = ['```', title, header, line, ...rows, '```'].join('\n')
   await postMessage({ room: ROOM, message: msg })
 }
-
-
-
 
 export async function handleHorseStatsCommand (ctx) {
   const room = ctx?.room || ROOM
@@ -930,11 +926,10 @@ export async function handleTopHorsesCommand (ctx) {
     )
   }
 
-  const title = `Top Horses (User-Owned)`
+  const title = 'Top Horses (User-Owned)'
   const msg = ['```', title, header, line, ...rows, '```'].join('\n')
   await postMessage({ room, message: msg })
 }
-
 
 // ── Help command ─────────────────────────────────────────────────────────
 export async function handleHorseHelpCommand (ctx) {
@@ -1049,4 +1044,3 @@ export async function handleHofPlaqueCommand (ctx) {
 
   await postMessage({ room, message: '```\n' + plaque + '\n```' })
 }
-

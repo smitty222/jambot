@@ -688,18 +688,18 @@ export class Bot {
 
             this.addDMPeer(sender)
 
-                // Schedule message handling asynchronously so that long-running commands
-                // do not block the poll loop.
-                handlers.message(
-                  { message: text, sender, receiverType: 'group' },
-                  this.roomUUID,
-                  this.state,
-                  this
-                ).catch((err) => {
-                  logger.error('processNewMessages[group] handler error', { err })
-                })
-                processed++
-                await this._cooperativeYieldIfNeeded(processed, batchSize)
+            // Schedule message handling asynchronously so that long-running commands
+            // do not block the poll loop.
+            handlers.message(
+              { message: text, sender, receiverType: 'group' },
+              this.roomUUID,
+              this.state,
+              this
+            ).catch((err) => {
+              logger.error('processNewMessages[group] handler error', { err })
+            })
+            processed++
+            await this._cooperativeYieldIfNeeded(processed, batchSize)
           } catch (err) {
             logger.error('processNewMessages[group] per-message error', { err })
           }
@@ -822,14 +822,14 @@ export class Bot {
             }
 
             const senderName = 'Unknown'
-                // Schedule DM handling asynchronously to avoid blocking on slow commands.
-                handlers.message(
-                  { message: text, sender: peerUid, senderName, receiverType: 'user' },
-                  peerUid,
-                  this.state
-                ).catch((err) => {
-                  logger.error('processNewMessages[user] handler error', { err })
-                })
+            // Schedule DM handling asynchronously to avoid blocking on slow commands.
+            handlers.message(
+              { message: text, sender: peerUid, senderName, receiverType: 'user' },
+              peerUid,
+              this.state
+            ).catch((err) => {
+              logger.error('processNewMessages[user] handler error', { err })
+            })
 
             processed++
             await this._cooperativeYieldIfNeeded(processed, batchSize)
@@ -991,47 +991,46 @@ export class Bot {
           updateLastPlayed(this.currentSong)
 
           try {
-  const s = this.currentSong
+            const s = this.currentSong
 
-  // Determine the actual DJ UUID for this play.
-  // In TT, getCurrentDJ(state) returns the UUID of the "current" DJ.
-  const djUuid = getCurrentDJ(this.state) || null
-  const isBotDj = djUuid && djUuid === this.userUUID
-  // Resolve a human nickname (best effort). This will also update users table.
-  let djNickname = null
-  if (djUuid) {
-    try {
-      djNickname = await getUserNicknameByUuid(djUuid)
-      // Keep users table fresh for site display / joins
-      try { addOrUpdateUser(djUuid, djNickname) } catch {}
-    } catch (e) {
-      // non-fatal
-      djNickname = null
-    }
-  }
+            // Determine the actual DJ UUID for this play.
+            // In TT, getCurrentDJ(state) returns the UUID of the "current" DJ.
+            const djUuid = getCurrentDJ(this.state) || null
+            const isBotDj = djUuid && djUuid === this.userUUID
+            // Resolve a human nickname (best effort). This will also update users table.
+            let djNickname = null
+            if (djUuid) {
+              try {
+                djNickname = await getUserNicknameByUuid(djUuid)
+                // Keep users table fresh for site display / joins
+                try { addOrUpdateUser(djUuid, djNickname) } catch {}
+              } catch (e) {
+                // non-fatal
+                djNickname = null
+              }
+            }
 
-  await updateRecentSongs({
-    trackName: s.trackName || 'Unknown',
-    artistName: s.artistName || 'Unknown',
-    albumName: s.albumName || 'Unknown',
-    releaseDate: s.releaseDate || 'Unknown',
-    spotifyUrl: s.spotifyUrl || '',
-    popularity: s.popularity || 0,
+            await updateRecentSongs({
+              trackName: s.trackName || 'Unknown',
+              artistName: s.artistName || 'Unknown',
+              albumName: s.albumName || 'Unknown',
+              releaseDate: s.releaseDate || 'Unknown',
+              spotifyUrl: s.spotifyUrl || '',
+              popularity: s.popularity || 0,
 
-    songId: s.songId || null,
-    spotifyTrackId: s.spotifyTrackId || null,
+              songId: s.songId || null,
+              spotifyTrackId: s.spotifyTrackId || null,
 
-    // ✅ critical for Wrapped
-    djUuid: djUuid || null,
-    djNickname: djNickname || null,
+              // ✅ critical for Wrapped
+              djUuid: djUuid || null,
+              djNickname: djNickname || null,
 
-    // keep legacy field for recent_songs UX
-    dj: djNickname || 'unknown'
-  })
-} catch (error) {
-  logger.error('Error updating recent songs:', error)
-}
-
+              // keep legacy field for recent_songs UX
+              dj: djNickname || 'unknown'
+            })
+          } catch (error) {
+            logger.error('Error updating recent songs:', error)
+          }
 
           const djList = getCurrentDJUUIDs(this.state)
           const botIndex = djList.indexOf(this.userUUID)
@@ -1276,21 +1275,21 @@ export class Bot {
     // fetch tracks from each playlist and deduplicate
     const trackIds = new Set()
     for (const pid of this.discoverPlaylists) {
-  try {
-    const tracks = await fetchSpotifyPlaylistTracks(pid);
-    console.log(`Loaded ${tracks.length} items from playlist ${pid}`);
-    if (Array.isArray(tracks)) {
-      for (const item of tracks) {
-        const tid = item?.track?.id || item?.id;
-        if (tid) trackIds.add(tid);
+      try {
+        const tracks = await fetchSpotifyPlaylistTracks(pid)
+        console.log(`Loaded ${tracks.length} items from playlist ${pid}`)
+        if (Array.isArray(tracks)) {
+          for (const item of tracks) {
+            const tid = item?.track?.id || item?.id
+            if (tid) trackIds.add(tid)
+          }
+        }
+      } catch (err) {
+        logger.error('Error fetching discover playlist tracks', { pid, err: err?.message || err })
       }
     }
-  } catch (err) {
-    logger.error('Error fetching discover playlist tracks', { pid, err: err?.message || err });
-  }
-}
-this.discoverSongQueue = Array.from(trackIds);
-console.log(`Discover queue now contains ${this.discoverSongQueue.length} unique track IDs`);
+    this.discoverSongQueue = Array.from(trackIds)
+    console.log(`Discover queue now contains ${this.discoverSongQueue.length} unique track IDs`)
   }
 
   /**

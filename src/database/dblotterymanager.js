@@ -19,13 +19,12 @@ const LOTTERY_WIN_AMOUNT = 100000
 const lotteryEntries = {}
 let LotteryGameActive = false
 
-
-function generateRandomNumber(min, max) {
+function generateRandomNumber (min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min
 }
 
 // ✅ Start the lottery game
-export async function handleLotteryCommand(payload) {
+export async function handleLotteryCommand (payload) {
   LotteryGameActive = true
   const room = process.env.ROOM_UUID
 
@@ -44,7 +43,7 @@ export async function handleLotteryCommand(payload) {
 }
 
 // ✅ Player picks a number
-export async function handleLotteryNumber(payload) {
+export async function handleLotteryNumber (payload) {
   if (!LotteryGameActive) return
 
   const number = parseInt(payload.message)
@@ -76,7 +75,7 @@ export async function handleLotteryNumber(payload) {
 }
 
 // ✅ Draw and process winning number
-async function drawWinningNumber() {
+async function drawWinningNumber () {
   const room = process.env.ROOM_UUID
   const winningNumber = generateRandomNumber(MIN_NUMBER, MAX_NUMBER)
 
@@ -159,18 +158,17 @@ export function getLotteryWinners (limit = 20) {
   `).all(limit)
 
   return rows.map(row => ({
-  userId: row.userId,
-  displayName: row.displayName,
-  mention: formatMention(row.userId),
-  winningNumber: row.winningNumber,
-  amountWon: row.amountWon,
-  date: row.date // ← already YYYY-MM-DD
-}))
-
+    userId: row.userId,
+    displayName: row.displayName,
+    mention: formatMention(row.userId),
+    winningNumber: row.winningNumber,
+    amountWon: row.amountWon,
+    date: row.date // ← already YYYY-MM-DD
+  }))
 }
 
 // ✅ Top drawn numbers
-export function getLotteryNumberStats(limit = 5) {
+export function getLotteryNumberStats (limit = 5) {
   return db.prepare(`
     SELECT * FROM lottery_stats
     ORDER BY count DESC
@@ -179,7 +177,7 @@ export function getLotteryNumberStats(limit = 5) {
 }
 
 // ✅ Handle "/lotto #69"
-export async function handleSingleNumberQuery(room, message) {
+export async function handleSingleNumberQuery (room, message) {
   const match = message.match(/\/lotto\s+#?(\d{1,3})/)
   if (!match) return
 
@@ -200,7 +198,7 @@ export async function handleSingleNumberQuery(room, message) {
 }
 
 // ✅ Show top stats
-export async function handleTopLotteryStatsCommand(room) {
+export async function handleTopLotteryStatsCommand (room) {
   const stats = getLotteryNumberStats()
   if (!stats.length) {
     return await postMessage({ room, message: ' No lottery history yet!' })
@@ -211,7 +209,7 @@ export async function handleTopLotteryStatsCommand(room) {
 }
 
 // ✅ Check if user has won before
-export async function handleLotteryCheck(room, userCandidate) {
+export async function handleLotteryCheck (room, userCandidate) {
   const user = userCandidate.userId ? userCandidate : findUserIdAndNickname(userCandidate.nickname)
 
   if (!user) {

@@ -149,7 +149,7 @@ export async function saveSongReview ({ currentSong, rating, userId }) {
     const { songId } = currentSong || {}
 
     // normalize rating to 1–10, one decimal
-    let r = Number.isFinite(rating) ? Math.round(rating * 10) / 10 : NaN
+    const r = Number.isFinite(rating) ? Math.round(rating * 10) / 10 : NaN
     if (!Number.isFinite(r) || r < 1 || r > 10) return { success: false, reason: 'bad_input' }
     if (!songId || !userId) return { success: false, reason: 'bad_input' }
 

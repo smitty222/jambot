@@ -170,7 +170,7 @@ export async function announceNowPlaying (room) {
     }
 
     // ── 1) Always build & POST the base line first (no dependencies)
-    const title  = safeText(decodeEntities(song.trackName))
+    const title = safeText(decodeEntities(song.trackName))
     const artist = safeText(decodeEntities(song.artistName))
     const base = `🎧 Now playing: “${title}” by ${artist}`
     await postWithRetry({ room, message: base })
@@ -243,7 +243,6 @@ export async function announceNowPlaying (room) {
 
     // ── 3) AI/Genius blurb is DISABLED in this build.
     debug('[NowPlaying] AI/Genius blurb disabled')
-
   } catch (err) {
     // Even if a top-level error happens after base, it won’t retract the already-sent base message
     console.error('Error in announceNowPlaying:', err)

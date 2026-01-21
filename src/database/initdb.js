@@ -23,7 +23,6 @@ try {
   // Swallow the error if the column already exists
 }
 
-
 // Wallets
 //
 // Historically balances were stored in a separate wallets table. To
@@ -250,7 +249,7 @@ db.exec(`
   )
 `)
 // Ensure singleton row exists
-db.exec(`INSERT OR IGNORE INTO current_state (id) VALUES (1)`)
+db.exec('INSERT OR IGNORE INTO current_state (id) VALUES (1)')
 
 // Craps records (per room)
 db.exec(`
@@ -346,12 +345,11 @@ try {
     db.exec('ALTER TABLE users ADD COLUMN nicknameUpdatedAt TEXT;')
     console.log('✅ Added users.nicknameUpdatedAt')
     // backfill existing rows so TTL logic has something
-    db.exec(`UPDATE users SET nicknameUpdatedAt = COALESCE(nicknameUpdatedAt, CURRENT_TIMESTAMP)`)
+    db.exec('UPDATE users SET nicknameUpdatedAt = COALESCE(nicknameUpdatedAt, CURRENT_TIMESTAMP)')
   }
 } catch (e) {
   console.warn('⚠️ Could not add users.nicknameUpdatedAt:', e.message)
 }
-
 
 // Create indexes to speed up common queries. These calls are wrapped
 // in try/catch so they fail gracefully on older SQLite versions.
@@ -382,11 +380,10 @@ try { db.exec('CREATE INDEX IF NOT EXISTS idx_room_stats_normArtist ON room_stat
 
 console.log('✅ Database initialized')
 
-
 // --- Ratings migration: ensure rating columns are REAL and scale is 1–10 ---
 try {
-  const srCols = db.prepare("PRAGMA table_info(song_reviews)").all();
-  const srRating = srCols.find(c => c.name === 'rating');
+  const srCols = db.prepare('PRAGMA table_info(song_reviews)').all()
+  const srRating = srCols.find(c => c.name === 'rating')
   if (srRating && srRating.type && srRating.type.toUpperCase() !== 'REAL') {
     db.exec(`
       BEGIN TRANSACTION;
@@ -403,11 +400,11 @@ try {
       DROP TABLE song_reviews;
       ALTER TABLE song_reviews_new RENAME TO song_reviews;
       COMMIT;
-    `);
+    `)
   }
 
-  const arCols = db.prepare("PRAGMA table_info(album_reviews)").all();
-  const arRating = arCols.find(c => c.name === 'rating');
+  const arCols = db.prepare('PRAGMA table_info(album_reviews)').all()
+  const arRating = arCols.find(c => c.name === 'rating')
   if (arRating && arRating.type && arRating.type.toUpperCase() !== 'REAL') {
     db.exec(`
       BEGIN TRANSACTION;
@@ -423,11 +420,11 @@ try {
       DROP TABLE album_reviews;
       ALTER TABLE album_reviews_new RENAME TO album_reviews;
       COMMIT;
-    `);
+    `)
   }
 } catch (e) {
   // Non-fatal: log and continue
-  console.error('[initdb] ratings migration check failed:', e?.message || e);
+  console.error('[initdb] ratings migration check failed:', e?.message || e)
 }
 
 // ───────────────────────────────────────────────────────────────────────

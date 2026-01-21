@@ -62,7 +62,6 @@ function coinLabel (symbol) {
   return `${sym} ${coinEmoji(symbol)}`
 }
 
-
 // Format a crypto quantity with commas and up to 6 decimals (good for trades)
 function formatQty (amount) {
   return Number(amount).toLocaleString(undefined, {

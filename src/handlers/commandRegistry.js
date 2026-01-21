@@ -146,7 +146,6 @@ const commandRegistry = {
   bets: async ({ room }) => {
     if (!rouletteGameActive) {
       await postMessage({ room, message: 'No active roulette game.' })
-      return
     }
   },
 

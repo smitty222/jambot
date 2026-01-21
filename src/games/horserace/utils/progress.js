@@ -2,8 +2,8 @@
 
 const FILL = '='
 const EMPTY = '-'
-const MARKER = 'o>'           // 2-char horse marker
-const BAR_LENGTH = 14         // default bar length
+const MARKER = 'o>' // 2-char horse marker
+const BAR_LENGTH = 14 // default bar length
 
 function clamp01 (x) {
   return Math.max(0, Math.min(1, x))

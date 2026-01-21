@@ -1,6 +1,5 @@
 // src/games/horserace/utils/odds.js
 
-
 function roundTo (value, step = 0.05) {
   return Math.round(value / step) * step
 }

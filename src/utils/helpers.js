@@ -8,12 +8,12 @@ export function parseTipAmount (raw) {
 
 export function randomTipGif () {
   const gifs = [
-    'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdXd5bWFsN3g5eXh3YXFqYXByZXQxejJlbzdkZDltd2V6Zmoybzh0NSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/gTURHJs4e2Ies/giphy.gif',     
-    'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdXd5bWFsN3g5eXh3YXFqYXByZXQxejJlbzdkZDltd2V6Zmoybzh0NSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/l41lZccR1oUigYeNa/giphy.gif',    
+    'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdXd5bWFsN3g5eXh3YXFqYXByZXQxejJlbzdkZDltd2V6Zmoybzh0NSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/gTURHJs4e2Ies/giphy.gif',
+    'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdXd5bWFsN3g5eXh3YXFqYXByZXQxejJlbzdkZDltd2V6Zmoybzh0NSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/l41lZccR1oUigYeNa/giphy.gif',
     'https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3M3pyeG9jbjE1bmdqNmc5NWZtejVqY3JqNzhzN24yams1dTMwZnBmaCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/dU5n2SWrCZDhx4Y2Oe/giphy.gif',
     'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExbTViZnUxZ2w3MnBqbDJ5ejR5aWFsdWx4c2J4aDRjMXNjZG81MjN1aSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/3o6gDWzmAzrpi5DQU8/giphy.gif',
     'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExcXJidHZiZTI2YWVka2hqaXR0dGRid3Y2MGJ0bGxuM2c5cGp2YnRtbiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/MAA3oWobZycms/giphy.gif',
-    'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExcXJidHZiZTI2YWVka2hqaXR0dGRid3Y2MGJ0bGxuM2c5cGp2YnRtbiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/MAA3oWobZycms/giphy.gif',
+    'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExcXJidHZiZTI2YWVka2hqaXR0dGRid3Y2MGJ0bGxuM2c5cGp2YnRtbiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/MAA3oWobZycms/giphy.gif'
   ]
   return gifs[Math.floor(Math.random() * gifs.length)]
 }

@@ -12,9 +12,9 @@ const repoDefault = path.join(__dirname, '../data/app.db')
 const flyDir = '/data'
 
 const candidates = [
-  process.env.DB_PATH,                                        // e.g. /data/app.db (Fly)
+  process.env.DB_PATH, // e.g. /data/app.db (Fly)
   fs.existsSync(flyDir) ? path.join(flyDir, 'app.db') : null, // auto-pick /data if mounted
-  repoDefault,                                                // local dev fallback
+  repoDefault // local dev fallback
 ].filter(Boolean)
 
 const DB_PATH = candidates[0]
