@@ -48,6 +48,12 @@ const els = {
   // craps & lottery containers now live in the Games tab
   gamesCrapsRecord: $("gamesCrapsRecord"),
   gamesLotteryWinners: $("gamesLotteryWinners"),
+    // career (lifetimeNet)
+  gamesCareerTopGainer: $("gamesCareerTopGainer"),
+  gamesCareerTopLoser: $("gamesCareerTopLoser"),
+  gamesCareerSelect: $("gamesCareerSelect"),
+  gamesCareerResult: $("gamesCareerResult"),
+  gamesCareerUpdated: $("gamesCareerUpdated"),
 
   // old stats elements retained for back-compat but unused
   crapsRecord: $("crapsRecord"),
@@ -570,6 +576,79 @@ async function refreshStats() {
     if (els.totals) els.totals.innerHTML = `<div class='muted small'>Error: Failed to fetch (${escapeHtml(e.message)})</div>`;
   }
 }
+function moneySigned(n){
+  const v = Math.round(Number(n) || 0);
+  const sign = v > 0 ? "+" : v < 0 ? "-" : "";
+  return `${sign}$${Math.abs(v).toLocaleString()}`;
+}
+
+let _careerRows = [];
+
+function renderCareerUI(extremes, rows){
+  const topG = extremes?.topGainer;
+  const topL = extremes?.topLoser;
+
+  if (els.gamesCareerTopGainer) {
+    els.gamesCareerTopGainer.textContent = topG
+      ? `${topG.nickname} (${moneySigned(topG.lifetimeNet)})`
+      : "—";
+  }
+
+  if (els.gamesCareerTopLoser) {
+    els.gamesCareerTopLoser.textContent = topL
+      ? `${topL.nickname} (${moneySigned(topL.lifetimeNet)})`
+      : "—";
+  }
+
+  if (els.gamesCareerUpdated) {
+    // just show “updated” timestamp if you want; otherwise leave blank
+    els.gamesCareerUpdated.textContent = rows?.length ? `• ${rows.length} players` : "";
+  }
+
+  // dropdown
+  if (els.gamesCareerSelect) {
+    const list = Array.isArray(rows) ? rows.slice() : [];
+    list.sort((a,b) => String(a.nickname||"").localeCompare(String(b.nickname||""), undefined, { sensitivity:"base" }));
+
+    els.gamesCareerSelect.innerHTML =
+      `<option value="">Select a player…</option>` +
+      list.map(u => {
+        const uuid = String(u.uuid || "");
+        const label = String(u.nickname || "Unknown");
+        return `<option value="${escapeHtml(uuid)}">${escapeHtml(label)}</option>`;
+      }).join("");
+
+    // preserve selection if possible
+    const cur = els.gamesCareerSelect.value || "";
+    if (cur && list.some(x => String(x.uuid) === cur)) els.gamesCareerSelect.value = cur;
+  }
+
+  // default result
+  if (els.gamesCareerResult) els.gamesCareerResult.textContent = "—";
+}
+
+function wireCareerSelect(){
+  if (!els.gamesCareerSelect || !els.gamesCareerResult) return;
+
+  // avoid double-binding if refreshGames runs repeatedly
+  if (els.gamesCareerSelect._wired) return;
+  els.gamesCareerSelect._wired = true;
+
+  els.gamesCareerSelect.addEventListener("change", () => {
+    const uuid = els.gamesCareerSelect.value || "";
+    if (!uuid) { els.gamesCareerResult.textContent = "—"; return; }
+
+    const u = (_careerRows || []).find(r => String(r.uuid || "") === String(uuid));
+    if (!u) { els.gamesCareerResult.textContent = "—"; return; }
+
+    const wallet = Math.round(Number(u.balance || 0));
+    const net = Number(u.lifetimeNet || 0);
+
+    els.gamesCareerResult.textContent =
+      `${u.nickname}: ${moneySigned(net)} (wallet: $${wallet.toLocaleString()})`;
+  });
+}
+
 
 // Refresh games: craps record and lottery winners
 async function refreshGames() {
@@ -701,6 +780,24 @@ try {
   const container = els.gamesLotteryWinners;
   if (container) container.innerHTML = `<div class="muted small">Error: ${escapeHtml(e.message)}</div>`;
 }
+
+  // Career (lifetimeNet)
+  try {
+    // if your HTML section isn't present, skip quietly
+    if (els.gamesCareerTopGainer || els.gamesCareerSelect) {
+      const [extremes, rows] = await Promise.all([
+        apiGet("/api/db/career_extremes_public").catch(() => null),
+        apiGet("/api/db/career_leaderboard_public").catch(() => []),
+      ]);
+
+      _careerRows = Array.isArray(rows) ? rows : [];
+      renderCareerUI(extremes, _careerRows);
+      wireCareerSelect();
+    }
+  } catch (e) {
+    if (els.gamesCareerResult) els.gamesCareerResult.textContent = `Error: ${e.message}`;
+  }
+
 }
 
 // ------------- Albums (Top 5 + Rest) -------------

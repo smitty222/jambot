@@ -322,6 +322,54 @@ async function publishLotteryWinners (state) {
   }
 }
 
+// ── Publish: Career leaders (lifetimeNet) ─────────────────────
+async function publishCareerLeaders (state) {
+  if (minutesSince(state.last?.career) < COOLDOWN_MINUTES_STATS) {
+    console.log('[publish] career skipped (cooldown)')
+    return
+  }
+
+  console.log('[publish] career snapshot from', process.env.DB_PATH)
+  const db = new Database(process.env.DB_PATH, { readonly: true })
+
+  try {
+    // NOTE: assumes users.lifetimeNet exists
+    const rows = db.prepare(`
+      SELECT
+        u.uuid,
+        COALESCE(NULLIF(TRIM(u.nickname), ''), u.uuid, 'Unknown') AS nickname,
+        COALESCE(u.balance, 0) AS balance,
+        COALESCE(u.lifetimeNet, 0) AS lifetimeNet
+      FROM users u
+      WHERE COALESCE(u.lifetimeNet, 0) != 0
+      ORDER BY u.lifetimeNet DESC
+      LIMIT 1000
+    `).all()
+
+    const topGainer = rows.length ? rows[0] : null
+    const topLoser  = rows.length ? rows[rows.length - 1] : null
+
+    await postJson('/api/publishDb', {
+      tables: {
+        career_leaderboard_public: rows,
+        career_extremes_public: { topGainer, topLoser }
+      },
+      public: ['career_leaderboard_public', 'career_extremes_public']
+    })
+
+    state.last.career = new Date().toISOString()
+    saveState(state)
+
+    console.log('[publish] career published:', rows.length)
+  } catch (err) {
+    console.warn('[publish] career failed:', err?.message || err)
+  } finally {
+    db.close()
+  }
+}
+
+
+
 
 async function publishAlbumStats (state) {
   // Respect configured cooldowns
@@ -762,8 +810,7 @@ const main = async () => {
   await publishTopSongs(state);
   await publishStats(state);
   await publishSiteData(state);
-  // Publish album review statistics after other tasks.  This runs on its own
-  // cooldown separate from the overall site snapshot to avoid undue load.
+  await publishCareerLeaders(state);
   await publishAlbumStats(state);
   await publishWrapped2026(state);
   await publishLotteryWinners(state)

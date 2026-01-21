@@ -1911,7 +1911,7 @@ Please refresh your page for the queue to update`
 
   await postMessage({
     room: process.env.ROOM_UUID,
-    message: `${nickname}, your career net total is ${sign}$${absNet}.`
+    message: `${nickname}, your career gambling net total is ${sign}$${absNet}.`
   })
 }
 

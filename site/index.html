@@ -90,25 +90,65 @@
       </div>
     </section>
 
-    <!-- GAMES -->
-    <section id="viewGames" class="view">
+   <!-- GAMES -->
+<section id="viewGames" class="view">
   <div class="row" style="gap:12px; flex-wrap:wrap">
-    <div class="card games-card" style="flex:1 1 460px; min-width:320px;">
-      <div class="section-title"><strong>Craps Record</strong></div>
-      <div id="gamesCrapsRecord"><div class="muted small">Loading…</div></div>
+
+    <!-- LEFT COLUMN: Craps + Career stacked -->
+    <div style="flex:1 1 460px; min-width:320px; display:flex; flex-direction:column; gap:12px;">
+
+      <div class="card games-card" style="margin:0;">
+        <div class="section-title"><strong>Craps Record</strong></div>
+        <div id="gamesCrapsRecord"><div class="muted small">Loading…</div></div>
+      </div>
+
+      <!-- NEW: Career (Lifetime Net) -->
+      <div class="card games-card" style="margin:0;">
+        <div class="section-title">
+          <strong>Career (Lifetime Net)</strong>
+          <span id="gamesCareerUpdated" class="muted small"></span>
+        </div>
+
+        <div class="row" style="gap:12px; flex-wrap:wrap;">
+          <div class="card" style="flex:1 1 200px; min-width:180px; margin:0;">
+            <div class="muted small">Top earner</div>
+            <div id="gamesCareerTopGainer" style="font-weight:900; font-size:18px;">—</div>
+          </div>
+
+          <div class="card" style="flex:1 1 200px; min-width:180px; margin:0;">
+            <div class="muted small">Top loser</div>
+            <div id="gamesCareerTopLoser" style="font-weight:900; font-size:18px;">—</div>
+          </div>
+        </div>
+
+        <div style="margin-top:12px;">
+          <div class="muted small" style="margin-bottom:6px;">Lookup a player</div>
+          <div class="row" style="gap:10px; align-items:center; flex-wrap:wrap;">
+            <select id="gamesCareerSelect" class="input" style="min-width:260px; width:260px;">
+              <option value="">Loading…</option>
+            </select>
+            <div id="gamesCareerResult" class="muted small">—</div>
+          </div>
+        </div>
+      </div>
+
     </div>
 
+    <!-- RIGHT COLUMN: Lottery -->
     <div class="card games-card" style="flex:1 1 460px; min-width:320px;">
       <div class="section-title"><strong>Lottery Winners</strong></div>
       <div id="gamesLotteryWinners" class="winners-grid"><div class="muted small">Loading…</div></div>
     </div>
 
-    <div class="card games-card" style="flex:1 1 460px; min-width:320px;">
+    <!-- FULL WIDTH / NEXT ROW: Horse HOF -->
+    <div class="card games-card" style="flex:1 1 100%; min-width:320px;">
       <div class="section-title"><strong>Horse Hall of Fame</strong></div>
       <div id="gamesHorseHof"><div class="muted small">Loading…</div></div>
     </div>
+
   </div>
 </section>
+
 
 
     <!-- ALBUMS -->
