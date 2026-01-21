@@ -1839,6 +1839,113 @@ Please refresh your page for the queue to update`
   } catch (err) {
     console.error('Error handling /trash command:', err)
   }
+  } else if (payload.message.startsWith('/bonk')) {
+  try {
+    const bonkOptions = [
+      { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExb2U3dnhvdm1oZWVyMjJ4cGJ2NnU1cnV3eWFyZ3RvYzdtaTFwc2VwbyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/30lxTuJueXE7C/giphy.gif' }, 
+      { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExb2U3dnhvdm1oZWVyMjJ4cGJ2NnU1cnV3eWFyZ3RvYzdtaTFwc2VwbyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/HxMhuDg7O4pKOhhcRC/giphy.gif' }, 
+    ]
+
+    const randomBonkOption =
+      bonkOptions[Math.floor(Math.random() * bonkOptions.length)]
+
+    if (randomBonkOption.type === 'gif') {
+      await postMessage({
+        room,
+        message: '',
+        images: [randomBonkOption.value]
+      })
+    } else {
+      await postMessage({
+        room,
+        message: randomBonkOption.value
+      })
+    }
+  } catch (err) {
+    console.error('Error handling /bonk command:', err)
+  }
+  } else if (payload.message.startsWith('/rigged')) {
+  try {
+    const riggedOptions = [
+      { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExeWw3eDRlMmJxdTR1b3ppM240bmkxbWhoaDFpZ3czaG1wZDByb3hjMiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/mJhRSYXxzq6CA0ldkh/giphy.gif' }, 
+      { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExeWw3eDRlMmJxdTR1b3ppM240bmkxbWhoaDFpZ3czaG1wZDByb3hjMiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/fUpocChFusfX0sCkuG/giphy.gif' }, 
+      { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExeWw3eDRlMmJxdTR1b3ppM240bmkxbWhoaDFpZ3czaG1wZDByb3hjMiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/IWzAC2lMELuPQE1wWv/giphy.gif' }, 
+    ]
+
+    const randomRiggedOption =
+      riggedOptions[Math.floor(Math.random() * riggedOptions.length)]
+
+    if (randomRiggedOption.type === 'gif') {
+      await postMessage({
+        room,
+        message: '',
+        images: [randomRiggedOption.value]
+      })
+    } else {
+      await postMessage({
+        room,
+        message: randomRiggedOption.value
+      })
+    }
+  } catch (err) {
+    console.error('Error handling /rigged command:', err)
+  }
+  } else if (payload.message.startsWith('/banger')) {
+  try {
+    const bangerOptions = [
+      { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExcDlteDB1cmIwZjcxajBzcTVhc2x3dzkya3NzOW5mZTV4ZnA5M291aCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/YOqbsB7Ega18s/giphy.gif' }, 
+      { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExcDlteDB1cmIwZjcxajBzcTVhc2x3dzkya3NzOW5mZTV4ZnA5M291aCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/vwcnDMKml1udSvcNUx/giphy.gif' }, 
+      { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3NDYzdGdvMXFhdWNnY2Vsa3B2bnpkMmEyYjRkZjVjazZvY2pkY3V3ZyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/Op5wF3ZF35900Zjmdr/giphy.gif' }, 
+      { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExcDlteDB1cmIwZjcxajBzcTVhc2x3dzkya3NzOW5mZTV4ZnA5M291aCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/xDA8aFqZuAlWuu69Ed/giphy.gif' }, 
+      { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3NDYzdGdvMXFhdWNnY2Vsa3B2bnpkMmEyYjRkZjVjazZvY2pkY3V3ZyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/7AVv1sSY7quBwZSmCj/giphy.gif' }, 
+    ]
+
+    const randomBangerOption =
+      bangerOptions[Math.floor(Math.random() * bangerOptions.length)]
+
+    if (randomBangerOption.type === 'gif') {
+      await postMessage({
+        room,
+        message: '',
+        images: [randomBangerOption.value]
+      })
+    } else {
+      await postMessage({
+        room,
+        message: randomBangerOption.value
+      })
+    }
+  } catch (err) {
+    console.error('Error handling /banger command:', err)
+  }
+ } else if (payload.message.startsWith('/peace')) {
+  try {
+    const peaceOptions = [
+      { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExbWs3ZWRvZHJpZ2YyZXE2MGUwNnd6dDRybDB6OHRheWRxYzIydHkyOSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/rrLt0FcGrDeBq/giphy.gif' }, 
+      { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExbWs3ZWRvZHJpZ2YyZXE2MGUwNnd6dDRybDB6OHRheWRxYzIydHkyOSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/iVJEhiEdcMNQ4/giphy.gif' }, 
+      { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExd2NhMmhlYThiZ3Nhd2NrNDhhOHJuN3hscjdvd2swZDRqMWpudXVhNCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/QoesEe6tCbLyw/giphy.gif' }, 
+      { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExd2NhMmhlYThiZ3Nhd2NrNDhhOHJuN3hscjdvd2swZDRqMWpudXVhNCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/w89ak63KNl0nJl80ig/giphy.gif' }, 
+      { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExd2NhMmhlYThiZ3Nhd2NrNDhhOHJuN3hscjdvd2swZDRqMWpudXVhNCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/3o7qDEq2bMbcbPRQ2c/giphy.gif' }, 
+    ]
+
+    const randomPeaceOption =
+      peaceOptions[Math.floor(Math.random() * peaceOptions.length)]
+
+    if (randomPeaceOption.type === 'gif') {
+      await postMessage({
+        room,
+        message: '',
+        images: [randomPeaceOption.value]
+      })
+    } else {
+      await postMessage({
+        room,
+        message: randomPeaceOption.value
+      })
+    }
+  } catch (err) {
+    console.error('Error handling /peace command:', err)
+  }
 
   } else if (payload.message.startsWith('/tomatoes')) {
     try {

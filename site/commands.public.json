@@ -23,7 +23,11 @@
       "/fart",
       "/shred",
       "/tomatoes",
-      "/trash"
+      "/trash",
+      "/banger",
+      "/peace",
+      "/rigged",
+      "/bonk"
     ]
   },
   {
@@ -43,7 +47,8 @@
       "/balance",
       "/bankroll",
       "/getwallet",
-      "/tip <amount>"
+      "/tip <amount>",
+      "/career"
     ]
   },
   {
