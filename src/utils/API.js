@@ -384,17 +384,15 @@ export async function fetchSpotifyPlaylistTracks (playlistId) {
 }
 
 
-export async function getSpotifyNewReleases (country = 'US', limit = 10) {
-  const cc = String(country || 'US').toUpperCase()
+export async function getSpotifyNewAlbumsViaSearch (country = 'US', limit = 10) {
+  const market = String(country || 'US').toUpperCase()
   const n = Math.max(1, Math.min(50, Number(limit) || 10))
-  const key = `new-releases:albums:${cc}:${n}`
 
-  // ✅ TTL cache (10 minutes)
-  const TTL_MS = 10 * 60 * 1000
+  // New key so you don't collide with the old frozen browse cache
+  const key = `search:new-albums:${market}:${n}`
+
   const cached = spotifyCache.get(key)
-  if (cached && cached._ts && (Date.now() - cached._ts) < TTL_MS) {
-    return cached.data
-  }
+  if (cached) return cached
 
   function releaseDateToTs (dateStr, precision) {
     if (!dateStr) return 0
@@ -406,67 +404,69 @@ export async function getSpotifyNewReleases (country = 'US', limit = 10) {
     return Number.isFinite(ts) ? ts : 0
   }
 
-  const PER_PAGE = 50
-  const MAX_PAGES = 3
+  const url = withQuery('https://api.spotify.com/v1/search', {
+    // ✅ Spotify-documented filter for albums released in past 2 weeks
+    q: 'tag:new',
+    type: 'album',
+    market,
+    limit: 50,
+    // cache-buster in case spotifyRequest has URL caching
+    _ts: Date.now()
+  })
 
-  const data = await singleFlight(key, async () => {
-    const collected = []
-
-    for (let page = 0; page < MAX_PAGES && collected.length < n; page++) {
-      const url = withQuery('https://api.spotify.com/v1/browse/new-releases', {
-        country: cc,
-        limit: PER_PAGE,
-        offset: page * PER_PAGE
-      })
-
-      const { ok, data, status } = await spotifyRequest(url)
-      if (!ok) {
-        const msg =
-          data?.error?.message ||
-          (typeof data === 'string' ? data : JSON.stringify(data)) ||
-          'Unknown Spotify error'
-        throw new Error(`Spotify new-releases failed${status ? ` (${status})` : ''}: ${msg}`)
-      }
-
-      const items = data?.albums?.items || []
-      const albumsOnly = items.filter(a => String(a?.album_type || '').toLowerCase() === 'album')
-
-      for (const a of albumsOnly) {
-        const artists = Array.isArray(a?.artists) ? a.artists.map(x => x?.name).filter(Boolean) : []
-        collected.push({
-          id: a?.id || '',
-          name: a?.name || 'Unknown',
-          artist: artists.length ? artists.join(', ') : 'Unknown',
-          releaseDate: a?.release_date || null,
-          releasePrecision: a?.release_date_precision || null,
-          totalTracks: Number(a?.total_tracks ?? 0) || null,
-          image: a?.images?.[0]?.url || '',
-          spotifyUrl: a?.external_urls?.spotify || (a?.id ? `https://open.spotify.com/album/${a.id}` : ''),
-          albumType: a?.album_type || 'album'
-        })
-      }
+  const res = await singleFlight(key, async () => {
+    const { ok, data, status } = await spotifyRequest(url)
+    if (!ok) {
+      const msg =
+        data?.error?.message ||
+        (typeof data === 'string' ? data : JSON.stringify(data)) ||
+        'Unknown Spotify error'
+      throw new Error(`Spotify search tag:new failed${status ? ` (${status})` : ''}: ${msg}`)
     }
 
-    // de-dupe
+    const items = data?.albums?.items || []
+
+    // ✅ FULL ALBUMS ONLY
+    const albumsOnly = items.filter(a => String(a?.album_type || '').toLowerCase() === 'album')
+
+    // Map to your existing shape
+    const mapped = albumsOnly.map(a => {
+      const artists = Array.isArray(a?.artists) ? a.artists.map(x => x?.name).filter(Boolean) : []
+      return {
+        id: a?.id || '',
+        name: a?.name || 'Unknown',
+        artist: artists.length ? artists.join(', ') : 'Unknown',
+        releaseDate: a?.release_date || null,
+        releasePrecision: a?.release_date_precision || null,
+        totalTracks: Number(a?.total_tracks ?? 0) || null,
+        image: a?.images?.[0]?.url || '',
+        spotifyUrl: a?.external_urls?.spotify || (a?.id ? `https://open.spotify.com/album/${a.id}` : ''),
+        albumType: a?.album_type || 'album'
+      }
+    }).filter(x => x.id)
+
+    // De-dupe and sort newest first
     const seen = new Set()
     const deduped = []
-    for (const a of collected) {
-      if (!a?.id || seen.has(a.id)) continue
+    for (const a of mapped) {
+      if (seen.has(a.id)) continue
       seen.add(a.id)
       deduped.push(a)
     }
 
-    // newest first
     deduped.sort((a, b) => releaseDateToTs(b.releaseDate, b.releasePrecision) - releaseDateToTs(a.releaseDate, a.releasePrecision))
 
-    return deduped.slice(0, n)
+    const out = deduped.slice(0, n)
+
+    // Don’t cache empties forever
+    if (out.length) spotifyCache.set(key, out)
+
+    return out
   })
 
-  // ✅ cache with timestamp
-  spotifyCache.set(key, { _ts: Date.now(), data })
-
-  return data
+  return res
 }
+
 
 
 

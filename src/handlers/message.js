@@ -3,7 +3,7 @@ import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
 import { askQuestion, setCurrentSong } from '../libs/ai.js'
 import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, displayTriviaInfo } from '../handlers/triviaCommands.js'
 import { logger } from '../utils/logging.js'
-import { getAlbumsByArtist, getAlbumTracks, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSongData, updateRoomInfo, isUserOwner, searchSpotify, getMLBScores, getNHLScores, getNBAScores, getSimilarTracks, getTopChartTracks, addSongsToCrate, getUserToken, clearUserQueueCrate, getUserQueueCrateId, getRandomDogImage, getSpotifyUserId, getUserPlaylists, getPlaylistTracks, getSpotifyNewReleases } from '../utils/API.js'
+import { getAlbumsByArtist, getAlbumTracks, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSongData, updateRoomInfo, isUserOwner, searchSpotify, getMLBScores, getNHLScores, getNBAScores, getSimilarTracks, getTopChartTracks, addSongsToCrate, getUserToken, clearUserQueueCrate, getUserQueueCrateId, getRandomDogImage, getSpotifyUserId, getUserPlaylists, getPlaylistTracks, getSpotifyNewAlbumsViaSearch } from '../utils/API.js'
 import { handleLotteryCommand, handleLotteryNumber, handleTopLotteryStatsCommand, handleSingleNumberQuery, handleLotteryCheck, LotteryGameActive, getLotteryWinners } from '../database/dblotterymanager.js'
 import { formatMention } from '../utils/names.js'
 import { enableSongStats, disableSongStats, isSongStatsEnabled, saveSongReview, getAverageRating } from '../utils/voteCounts.js'
@@ -754,7 +754,7 @@ Please refresh your page for the queue to update`
 
   let albums
   try {
-    albums = await getSpotifyNewReleases(country, 6)
+    albums = await getSpotifyNewAlbumsViaSearch(country, 6)
     console.log('[newalbums] albums fetched:', albums?.length || 0)
   } catch (err) {
     console.error('[newalbums] fetch failed:', err)
