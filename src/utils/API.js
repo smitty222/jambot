@@ -387,65 +387,75 @@ export async function fetchSpotifyPlaylistTracks (playlistId) {
 export async function getSpotifyNewAlbumsViaSearch (country = 'US', limit = 10) {
   const market = String(country || 'US').toUpperCase()
   const n = Math.max(1, Math.min(50, Number(limit) || 10))
-
-  // New key so you don't collide with the old frozen browse cache
-  const key = `search:new-albums:${market}:${n}`
+  const key = `search:new-albums-30d:${market}:${n}`
 
   const cached = spotifyCache.get(key)
   if (cached) return cached
 
+  const now = Date.now()
+  const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
+  const cutoffTs = now - THIRTY_DAYS_MS
+  const currentYear = new Date().getFullYear()
+
   function releaseDateToTs (dateStr, precision) {
     if (!dateStr) return 0
-    const p = String(precision || '').toLowerCase()
     let iso = dateStr
-    if (p === 'year') iso = `${dateStr}-01-01`
-    else if (p === 'month') iso = `${dateStr}-01`
+    if (precision === 'year') iso = `${dateStr}-01-01`
+    else if (precision === 'month') iso = `${dateStr}-01`
     const ts = Date.parse(iso)
     return Number.isFinite(ts) ? ts : 0
   }
 
-  const url = withQuery('https://api.spotify.com/v1/search', {
-    // ✅ Spotify-documented filter for albums released in past 2 weeks
-    q: 'tag:new',
-    type: 'album',
-    market,
-    limit: 50,
-    // cache-buster in case spotifyRequest has URL caching
-    _ts: Date.now()
-  })
+  async function searchAlbums (q) {
+    const url = withQuery('https://api.spotify.com/v1/search', {
+      q,
+      type: 'album',
+      market,
+      limit: 50,
+      _ts: Date.now() // cache-buster
+    })
 
-  const res = await singleFlight(key, async () => {
     const { ok, data, status } = await spotifyRequest(url)
     if (!ok) {
       const msg =
         data?.error?.message ||
         (typeof data === 'string' ? data : JSON.stringify(data)) ||
         'Unknown Spotify error'
-      throw new Error(`Spotify search tag:new failed${status ? ` (${status})` : ''}: ${msg}`)
+      throw new Error(`Spotify search failed${status ? ` (${status})` : ''}: ${msg}`)
     }
 
-    const items = data?.albums?.items || []
+    return data?.albums?.items || []
+  }
 
-    // ✅ FULL ALBUMS ONLY
-    const albumsOnly = items.filter(a => String(a?.album_type || '').toLowerCase() === 'album')
+  const res = await singleFlight(key, async () => {
+    // 1️⃣ Freshest releases
+    const tagNew = await searchAlbums('tag:new')
 
-    // Map to your existing shape
-    const mapped = albumsOnly.map(a => {
-      const artists = Array.isArray(a?.artists) ? a.artists.map(x => x?.name).filter(Boolean) : []
-      return {
-        id: a?.id || '',
-        name: a?.name || 'Unknown',
-        artist: artists.length ? artists.join(', ') : 'Unknown',
-        releaseDate: a?.release_date || null,
-        releasePrecision: a?.release_date_precision || null,
-        totalTracks: Number(a?.total_tracks ?? 0) || null,
-        image: a?.images?.[0]?.url || '',
-        spotifyUrl: a?.external_urls?.spotify || (a?.id ? `https://open.spotify.com/album/${a.id}` : ''),
-        albumType: a?.album_type || 'album'
-      }
-    }).filter(x => x.id)
+    // 2️⃣ Broader net for recent albums
+    const yearSearch = await searchAlbums(`year:${currentYear}`)
 
-    // De-dupe and sort newest first
+    const combined = [...tagNew, ...yearSearch]
+
+    // Full albums only + map
+    const mapped = combined
+      .filter(a => String(a?.album_type || '').toLowerCase() === 'album')
+      .map(a => {
+        const artists = Array.isArray(a?.artists) ? a.artists.map(x => x?.name).filter(Boolean) : []
+        return {
+          id: a?.id || '',
+          name: a?.name || 'Unknown',
+          artist: artists.length ? artists.join(', ') : 'Unknown',
+          releaseDate: a?.release_date || null,
+          releasePrecision: a?.release_date_precision || null,
+          totalTracks: Number(a?.total_tracks ?? 0) || null,
+          image: a?.images?.[0]?.url || '',
+          spotifyUrl: a?.external_urls?.spotify || (a?.id ? `https://open.spotify.com/album/${a.id}` : ''),
+          albumType: a?.album_type || 'album'
+        }
+      })
+      .filter(a => a.id)
+
+    // De-dupe
     const seen = new Set()
     const deduped = []
     for (const a of mapped) {
@@ -454,18 +464,28 @@ export async function getSpotifyNewAlbumsViaSearch (country = 'US', limit = 10) 
       deduped.push(a)
     }
 
-    deduped.sort((a, b) => releaseDateToTs(b.releaseDate, b.releasePrecision) - releaseDateToTs(a.releaseDate, a.releasePrecision))
+    // Filter to last 30 days
+    const last30Days = deduped.filter(a => {
+      const ts = releaseDateToTs(a.releaseDate, a.releasePrecision)
+      return ts >= cutoffTs
+    })
 
-    const out = deduped.slice(0, n)
+    // Sort newest first
+    last30Days.sort(
+      (a, b) =>
+        releaseDateToTs(b.releaseDate, b.releasePrecision) -
+        releaseDateToTs(a.releaseDate, a.releasePrecision)
+    )
 
-    // Don’t cache empties forever
+    const out = last30Days.slice(0, n)
+
     if (out.length) spotifyCache.set(key, out)
-
     return out
   })
 
   return res
 }
+
 
 
 
