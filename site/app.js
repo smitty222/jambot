@@ -1,5 +1,5 @@
 // site/app.js (modern10)
-const APP_VER = 'modern10'
+const APP_VER = 'modern11'
 console.log('[jj] app.js booted', APP_VER, new Date().toISOString())
 
 // --- tiny error reporter so we see issues on the page ---
@@ -967,8 +967,6 @@ async function refreshAlbumQueue () {
     console.warn('[albums] queue failed:', e?.message || e)
   }
 }
-
-
 
 // ------------- Albums (Top 5 + Rest) -------------
 let _albumsRaw = []
