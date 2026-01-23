@@ -737,56 +737,68 @@ Please refresh your page for the queue to update`
 \`\`\`${error.message}\`\`\``
       })
     }
+  }
 
-    } else if (payload.message.startsWith('/newalbums')) {
+    
+  
+  else if (payload.message.startsWith('/newalbums')) {
   const room = payload.room
+  const raw = payload.message
 
-  // optional country code: /newreleases US
-  const args = payload.message.split(' ').slice(1)
+  console.log('[newalbums] command received:', raw)
+
+  // Optional country override: /newalbums US
+  const args = raw.split(' ').slice(1)
   const country = (args[0] || 'US').toUpperCase()
+
+  console.log('[newalbums] country:', country)
 
   let albums
   try {
-    albums = await getSpotifyNewReleases({ country, limit: 6 })
+    albums = await getSpotifyNewReleases(country, 6)
+    console.log('[newalbums] albums fetched:', albums?.length || 0)
   } catch (err) {
+    console.error('[newalbums] fetch failed:', err)
+
     await postMessage({
       room,
-      message: `❌ Failed to fetch new releases.\n\`${err.message}\``
+      message: `❌ Failed to fetch new albums.\n\`${err.message}\``
     })
     return
   }
 
   if (!albums || albums.length === 0) {
+    console.warn('[newalbums] no albums returned')
+
     await postMessage({
       room,
-      message: `No recent album releases found${country ? ` for ${country}` : ''}.`
+      message: `No recent full album releases found for ${country}.`
     })
     return
   }
 
   const blocks = albums.map((a, i) => {
     const num = i + 1
-    const artist = a.artistName || 'Unknown Artist'
-    const album = a.albumName || 'Unknown Album'
-    const date = a.releaseDate || '—'
-    const id = a.spotifyAlbumId || '—'
 
     return (
-`*${num}. ${artist}*
-_${album}_
-🗓 ${date}
-🆔 \`${id}\``
+`*${num}. ${a.artist || 'Unknown Artist'}*
+_${a.name || 'Unknown Album'}_
+🗓 ${a.releaseDate || '—'}
+🆔 \`${a.id || '—'}\``
     )
   }).join('\n\n')
+
+  console.log('[newalbums] posting message to room')
 
   await postMessage({
     room,
     message:
 `🆕 *New Album Releases* (${country})
+_Full albums only_
 
 ${blocks}
 
-➕ Save to Future Listening Queue with:
+➕ Save to Future Listening Queue:
 \`/albumadd <album id>\`
 `
   })
