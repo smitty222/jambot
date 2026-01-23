@@ -213,6 +213,13 @@ export default async (payload, room, state, roomBot) => {
 
   // ─── END CRAPS BLOCK ──────────────────────────
 
+    // ⛳ PGA Tour (unofficial) — leaderboard/results
+  if (/^\/pga\b/i.test(txt)) {
+    console.log('▶ dispatch → handlePgaUnofficial', txt)
+    await handlePgaUnofficial(payload, room) // NOTE: match handler signature below
+    return
+  }
+
   // Handle Gifs Sent in Chat
   if (payload?.message?.type === 'ChatGif') {
     logger.info('Received a GIF message:', payload.message)
@@ -1097,18 +1104,7 @@ ${blocks}
       message: 'testing!'
     })
 
-    const ctx = {
-  room: payload.roomId,
-  userId: payload.sender?.uid,
-  payload
-}
-
-} else if (text.startsWith('/pga')) {
-  console.log('[pga] command received:', text, 'roomId:', payload.roomId, 'room:', payload.room)
-  await postMessage({ room: process.env.ROOM_UUID, message: '⛳️ /pga routing hit' })
-  await handlePgaUnofficial(ctx, payload)
-  return
-
+  
 
   } else if (payload.message.startsWith('/crapsrecord')) {
     // Fetch the current record, preferring the stored nickname in the
