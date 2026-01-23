@@ -82,12 +82,12 @@ const MAX_BET = Number(process.env.CRAPS_MAX_BET ?? 10000)
 const JOIN_SECS = Number(process.env.CRAPS_JOIN_SECS ?? 30)
 const BET_SECS = Number(process.env.CRAPS_BET_SECS ?? 30)
 const ROLL_SECS = Number(process.env.CRAPS_ROLL_SECS ?? 45)
+const POINT_BET_SECS = Number(process.env.CRAPS_POINT_BET_SECS ?? 20)
+
 
 // Place numbers
 const PLACES = [4, 5, 6, 8, 9, 10]
 
-// Enforce standard place bet units to avoid weird decimals (recommended for chat UX)
-const ENFORCE_PLACE_UNITS = (process.env.CRAPS_ENFORCE_PLACE_UNITS ?? '1') !== '0'
 
 /* ───────────────────────── State ───────────────────────── */
 
@@ -110,6 +110,9 @@ function freshState () {
     tableUsers: [],
     shooterIdx: 0,
 
+    pendingNextShooter: null, // uuid who would be next shooter from last hand
+
+
     point: null,
     rollCount: 0, // rolls in the current hand (until seven-out)
 
@@ -131,8 +134,9 @@ function freshState () {
     nameCache: Object.create(null),
 
     // NEW: timer context
-    timers: { join: null, bet: null, roll: null },
-    rollTimerCtx: { phase: null } // COME_OUT or POINT, for timeout messaging
+    timers: { join: null, bet: null, pointBet: null, roll: null },
+    rollTimerCtx: { phase: null }
+
   }
 }
 
@@ -182,11 +186,52 @@ function isShooter (uuid, st) {
 }
 
 function clearTimers (st) {
-  for (const k of ['join', 'bet', 'roll']) {
+  for (const k of ['join', 'bet', 'pointBet', 'roll']) {
     const t = st.timers[k]
     if (t) { clearTimeout(t); st.timers[k] = null }
   }
 }
+
+async function openPointBetting (room, reasonLine = '') {
+  const st = S(room)
+
+  // Stop roll timer while people are betting
+  stopRollTimer(room)
+  if (st.timers.pointBet) { clearTimeout(st.timers.pointBet); st.timers.pointBet = null }
+
+  st.phase = PHASES.POINT_BETTING
+
+  const prefix = reasonLine ? `${reasonLine}\n` : ''
+  await say(
+    room,
+    `${prefix}🟦 **Point betting open** for **${POINT_BET_SECS}s**.\n` +
+    'Place **/come <amt>**, **/dontcome <amt>**, **/place <num> <amt>**, or **/removeplace <num>**.\n' +
+    'Rolling begins when this window closes.'
+  )
+
+  st.timers.pointBet = setTimeout(async () => {
+    st.timers.pointBet = null
+    await closePointBettingStartRoll(room)
+  }, POINT_BET_SECS * 1000)
+}
+
+async function closePointBettingStartRoll (room) {
+  const st = S(room)
+
+  // If point got cleared somehow, don't start point rolling
+  if (!st.point) {
+    // fall back to come-out behavior if needed
+    st.phase = PHASES.COME_OUT
+    await say(room, `🎯 Shooter: ${mention(shooterUuid(st))} — you have **${ROLL_SECS}s** to **/roll**.`)
+    startRollTimer(room, PHASES.COME_OUT)
+    return
+  }
+
+  st.phase = PHASES.POINT
+  await say(room, `🎯 Shooter: ${mention(shooterUuid(st))} — you have **${ROLL_SECS}s** to **/roll**.`)
+  startRollTimer(room, PHASES.POINT)
+}
+
 
 function resetAllBets (st) {
   st.pass = Object.create(null)
@@ -266,13 +311,14 @@ async function openJoinWindow (room, starterUuid) {
   st.nameCache = Object.create(null)
   resetAllBets(st)
 
-  if (starterUuid) await autoSeat(st, starterUuid, room)
 
   await say(
-    room,
-    `🎲 **Craps** table is open for **${JOIN_SECS}s**!\n` +
-    'Type **/craps join** to take a seat. Then place **/pass <amt>** or **/dontpass <amt>** during betting.'
-  )
+  room,
+  `🎲 **Craps** table is open for **${JOIN_SECS}s**!\n` +
+  'Type **/craps join** to take a seat.\n' +
+  'After join closes, betting opens for **/pass <amt>** or **/dontpass <amt>**.'
+)
+
 
   st.timers.join = setTimeout(async () => {
     st.timers.join = null
@@ -280,32 +326,6 @@ async function openJoinWindow (room, starterUuid) {
   }, JOIN_SECS * 1000)
 }
 
-// Inter-hand join (keep seated players, allow others to join)
-async function openInterHandJoin (room) {
-  const st = S(room)
-  clearTimers(st)
-
-  st.phase = PHASES.JOIN
-  st.point = null
-  st.rollCount = 0
-  st.roundResults = Object.create(null)
-  resetAllBets(st)
-
-  const shooter = shooterUuid(st)
-  const seated = st.tableUsers.length ? st.tableUsers.map(mention).join(', ') : '—'
-
-  await say(
-    room,
-    `🧾 Hand over. Next shooter will be ${shooter ? mention(shooter) : '—'}.\n` +
-    `🪑 **Join window open** for **${JOIN_SECS}s** (current seats: ${seated}).\n` +
-    'Type **/craps join** to sit. Betting opens when join closes.'
-  )
-
-  st.timers.join = setTimeout(async () => {
-    st.timers.join = null
-    await closeJoinOpenBetting(room)
-  }, JOIN_SECS * 1000)
-}
 
 async function closeJoinOpenBetting (room) {
   const st = S(room)
@@ -314,6 +334,16 @@ async function closeJoinOpenBetting (room) {
     await say(room, '⏱️ Join closed — nobody seated. Table closed.')
     return
   }
+  // Pick shooter: honor pendingNextShooter if they re-joined
+if (st.pendingNextShooter) {
+  const idx = st.tableUsers.indexOf(st.pendingNextShooter)
+  if (idx !== -1) st.shooterIdx = idx
+  else st.shooterIdx = 0
+  st.pendingNextShooter = null // consume it once we’ve chosen
+} else {
+  st.shooterIdx = 0
+}
+
 
   const seats = st.tableUsers.map(mention).join(', ')
   await say(room, `⏱️ Join closed. Players seated: ${seats}`)
@@ -472,16 +502,6 @@ async function closeBettingBeginComeOut (room) {
 
 /* ───────────────────────── Bets ───────────────────────── */
 
-function isValidPlaceUnit (num, amt) {
-  if (!ENFORCE_PLACE_UNITS) return true
-  if (!Number.isInteger(amt)) return false
-
-  // Standard “proper” units (keeps payouts clean)
-  if (num === 6 || num === 8) return (amt % 6 === 0)
-  if (num === 5 || num === 9) return (amt % 5 === 0)
-  if (num === 4 || num === 10) return (amt % 5 === 0)
-  return true
-}
 
 async function placeLineBet (kind, user, amount, room) {
   const st = S(room)
@@ -528,10 +548,11 @@ async function placeComeBet (kind, user, amount, room) {
     await say(room, `${mention(user)} you must join the table to bet.`)
     return
   }
-  if (st.phase !== PHASES.POINT) {
-    await say(room, 'Come/Don\'t Come only during POINT.')
-    return
-  }
+  if (![PHASES.POINT, PHASES.POINT_BETTING].includes(st.phase)) {
+  await say(room, 'Come/Don\'t Come only during the point phase.')
+  return
+}
+
   if (!Number.isFinite(amt) || amt < MIN_BET || amt > MAX_BET) {
     await say(room, `${mention(user)} invalid amount. Min ${fmtMoney(MIN_BET)}, Max ${fmtMoney(MAX_BET)}.`)
     return
@@ -562,10 +583,11 @@ async function placePlaceBet (num, user, amount, room) {
     await say(room, `${mention(user)} you must join the table to bet.`)
     return
   }
-  if (st.phase !== PHASES.POINT) {
-    await say(room, 'Place bets only during POINT.')
-    return
-  }
+  if (![PHASES.POINT, PHASES.POINT_BETTING].includes(st.phase)) {
+  await say(room, 'Place bets only during the point phase.')
+  return
+}
+
   if (!PLACES.includes(n)) {
     await say(room, `Valid place numbers: ${PLACES.join(', ')}.`)
     return
@@ -576,18 +598,6 @@ async function placePlaceBet (num, user, amount, room) {
   }
   if (st.place[n][user]) {
     await say(room, `${mention(user)} you already have a place bet on ${n} (${fmtMoney(st.place[n][user])}).`)
-    return
-  }
-
-  if (!isValidPlaceUnit(n, amt)) {
-    await say(
-      room,
-      `${mention(user)} place ${n} must be a proper unit to keep payouts clean:\n` +
-      (n === 6 || n === 8 ? '• 6/8: multiples of $6\n' : '') +
-      (n === 5 || n === 9 ? '• 5/9: multiples of $5\n' : '') +
-      (n === 4 || n === 10 ? '• 4/10: multiples of $5\n' : '') +
-      '(You can disable this by setting CRAPS_ENFORCE_PLACE_UNITS=0.)'
-    )
     return
   }
 
@@ -655,7 +665,14 @@ async function shooterRoll (user, room) {
   const st = S(room)
 
   if (!isShooter(user, st)) { await say(room, `${mention(user)} only the shooter may roll.`); return }
-  if (![PHASES.COME_OUT, PHASES.POINT].includes(st.phase)) { await say(room, 'Not a rolling phase.'); return }
+  if (![PHASES.COME_OUT, PHASES.POINT].includes(st.phase)) {
+  if (st.phase === PHASES.POINT_BETTING) {
+    await say(room, 'Point betting is still open — rolling starts when it closes.')
+  } else {
+    await say(room, 'Not a rolling phase.')
+  }
+  return
+}
 
   // Shooter rolled — stop timer; we will restart after we prompt again.
   stopRollTimer(room)
@@ -712,12 +729,9 @@ async function shooterRoll (user, room) {
     }
 
     st.point = total
-    st.phase = PHASES.POINT
 
     await say(room, `🟢 Point established: **${st.point}**`)
-    await say(room, 'You may add **/come <amt>**, **/dontcome <amt>**, **/place <num> <amt>**, or **/removeplace <num>**.')
-    await say(room, `🎯 Shooter: ${mention(shooterUuid(st))} — you have **${ROLL_SECS}s** to **/roll**.`)
-    startRollTimer(room, PHASES.POINT)
+    await openPointBetting(room)
     return
   }
 
@@ -764,8 +778,10 @@ async function shooterRoll (user, room) {
     return
   }
 
-  await say(room, `⏭️ Point stays **${st.point}**. Shooter: ${mention(shooterUuid(st))} — you have **${ROLL_SECS}s** to **/roll**.`)
-  startRollTimer(room, PHASES.POINT)
+  await say(room, `⏭️ Point stays **${st.point}**.`)
+await openPointBetting(room)   // <-- betting window before next roll
+return
+
 }
 
 /* ───────────────────────── Settlements / Resolutions (return lines) ───────────────────────── */
@@ -909,7 +925,8 @@ async function resolvePlace (total, st) {
     const book = st.place[total]
     for (const [u, amt] of Object.entries(book)) {
       const name = await getDisplayName(st, u)
-      const profit = placeProfit(total, amt)
+      const rawProfit = placeProfit(total, amt)
+      const profit = Math.ceil(rawProfit)
       if (profit > 0) {
         await creditGameWin(u, profit)
         addRoundResult(st, u, profit)
@@ -933,6 +950,15 @@ async function endHand (room, reason) {
   const st = S(room)
   const shooter = shooterUuid(st)
 
+  // Determine who WOULD have been next shooter (before we clear seats)
+  const curLen = st.tableUsers.length
+  if (curLen > 1) {
+    const nextIdx = (st.shooterIdx + 1) % curLen
+    st.pendingNextShooter = st.tableUsers[nextIdx] || null
+  } else {
+    st.pendingNextShooter = null
+  }
+
   await say(room, reason ? `🧾 Hand over — ${reason}` : '🧾 Hand over.')
 
   // Hand totals board
@@ -955,19 +981,29 @@ async function endHand (room, reason) {
     if (shooter) await persistRecord(room, st.record.rolls, shooter)
   }
 
-  // Rotate shooter for next hand
-  nextShooter(st)
-
-  // Reset hand state, keep seats
+  // Reset hand state
   st.point = null
   st.rollCount = 0
   st.roundResults = Object.create(null)
   resetAllBets(st)
-  stopRollTimer(room)
 
-  // Open a JOIN window so others can join before next betting
-  await openInterHandJoin(room)
+  // Stop timers
+  stopRollTimer(room)
+  if (st.timers?.pointBet) { clearTimeout(st.timers.pointBet); st.timers.pointBet = null }
+  if (st.timers?.bet) { clearTimeout(st.timers.bet); st.timers.bet = null }
+  if (st.timers?.join) { clearTimeout(st.timers.join); st.timers.join = null }
+
+  // IMPORTANT: Clear seats so it does NOT auto-start another hand.
+  st.tableUsers = []
+  st.shooterIdx = 0
+
+  st.phase = PHASES.IDLE
+
+  // Let the room decide if they want to play again
+  const nextHint = st.pendingNextShooter ? ` Next shooter in line (if they re-join): ${mention(st.pendingNextShooter)}.` : ''
+  await say(room, `🛑 Table is idle.${nextHint}\nType **/craps** to open a new join window.`)
 }
+
 
 /* ───────────────────────── Table mgmt / Bets view ───────────────────────── */
 
@@ -977,7 +1013,13 @@ async function joinTable (user, room) {
     st.tableUsers.push(user)
     await say(room, `🪑 ${mention(user)} sits at the table.`)
   }
+
+  // If this user was next in line last hand, make them the shooter now.
+  if (st.pendingNextShooter && st.pendingNextShooter === user) {
+    st.shooterIdx = st.tableUsers.indexOf(user)
+  }
 }
+
 
 async function userBetsView (room, uuid) {
   const st = S(room)
