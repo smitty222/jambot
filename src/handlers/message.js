@@ -742,7 +742,6 @@ Please refresh your page for the queue to update`
     
   
   else if (payload.message.startsWith('/newalbums')) {
-  const room = payload.room
   const raw = payload.message
 
   console.log('[newalbums] command received:', raw)
