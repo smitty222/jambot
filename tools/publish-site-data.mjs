@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import Database from 'better-sqlite3'
 import process from 'process'
+import { getCryptoPrice } from '../src/utils/cryptoPrice.js'
 import { publishDbSnapshot } from './publishSnapshot.js'
 
 // ── Resolve API + auth ───────────────────────────────────────
@@ -371,6 +372,240 @@ async function publishCareerLeaders (state) {
     db.close()
   }
 }
+
+// ── Publish: Crypto investing performance (public) ────────────
+//
+// Computes per-user P/L from crypto_trades:
+// - Realized P/L: from SELLs vs average cost at the time of sale
+// - Unrealized P/L: current holdings vs cost basis (uses CoinGecko spot price)
+//
+// Publishes:
+// - crypto_leaderboard_public: [{ uuid, nickname, totalPnl, realizedPnl, unrealizedPnl, ... }]
+// - crypto_extremes_public: { topWinner, topLoser, updatedAt }
+async function publishCryptoPerformance (state) {
+  if (minutesSince(state.last?.cryptoPerf) < COOLDOWN_MINUTES_STATS) {
+    console.log('[publish] cryptoPerf skipped (cooldown)')
+    return
+  }
+
+  console.log('[publish] cryptoPerf snapshot from', process.env.DB_PATH)
+  const db = new Database(process.env.DB_PATH, { readonly: true })
+
+  try {
+    // Pull all trades + nickname (safe fallback to uuid)
+    const trades = db.prepare(`
+      SELECT
+        t.userId AS userId,
+        t.coinId AS coinId,
+        UPPER(TRIM(COALESCE(p.symbol, ''))) AS symbol,
+        UPPER(TRIM(t.side)) AS side,
+        COALESCE(t.quantity, 0) AS quantity,
+        COALESCE(t.priceUsd, 0) AS priceUsd,
+        COALESCE(t.timestamp, '') AS timestamp,
+        COALESCE(NULLIF(TRIM(u.nickname), ''), t.userId, 'Unknown') AS nickname
+      FROM crypto_trades t
+      LEFT JOIN users u ON u.uuid = t.userId
+      LEFT JOIN crypto_positions p
+        ON p.userId = t.userId AND p.coinId = t.coinId
+      WHERE t.userId IS NOT NULL AND TRIM(t.userId) <> ''
+        AND t.coinId IS NOT NULL AND TRIM(t.coinId) <> ''
+      ORDER BY
+        t.userId ASC,
+        t.coinId ASC,
+        t.timestamp ASC,
+        t.id ASC
+    `).all()
+
+    if (!Array.isArray(trades) || trades.length === 0) {
+      await postJson('/api/publishDb', {
+        tables: {
+          crypto_leaderboard_public: [],
+          crypto_extremes_public: { topWinner: null, topLoser: null, updatedAt: new Date().toISOString() }
+        },
+        public: ['crypto_leaderboard_public', 'crypto_extremes_public']
+      })
+
+      state.last.cryptoPerf = new Date().toISOString()
+      saveState(state)
+      console.log('[publish] cryptoPerf published: 0 trades')
+      return
+    }
+
+    // State: user -> coin -> { qty, costBasisUsd, realizedPnlUsd, buysUsd, sellsUsd }
+    const perUser = new Map()
+
+    function getUserState (userId, nickname) {
+      let u = perUser.get(userId)
+      if (!u) {
+        u = {
+          userId,
+          nickname: nickname || userId || 'Unknown',
+          coins: new Map()
+        }
+        perUser.set(userId, u)
+      } else if (nickname && u.nickname === u.userId) {
+        // upgrade nickname if we only had uuid fallback
+        u.nickname = nickname
+      }
+      return u
+    }
+
+    function getCoinState (u, coinId, symbol) {
+      let c = u.coins.get(coinId)
+      if (!c) {
+        c = {
+          coinId,
+          symbol: (symbol || '').toLowerCase(),
+          qty: 0,
+          costBasisUsd: 0,
+          realizedPnlUsd: 0,
+          buysUsd: 0,
+          sellsUsd: 0
+        }
+        u.coins.set(coinId, c)
+      } else if (symbol && !c.symbol) {
+        c.symbol = String(symbol).toLowerCase()
+      }
+      return c
+    }
+
+    for (const t of trades) {
+      const userId = String(t.userId || '').trim()
+      const coinId = String(t.coinId || '').trim()
+      if (!userId || !coinId) continue
+
+      const nickname = String(t.nickname || userId)
+      const side = String(t.side || '').toUpperCase()
+      const qty = Number(t.quantity || 0)
+      const px = Number(t.priceUsd || 0)
+
+      if (!Number.isFinite(qty) || qty <= 0) continue
+      if (!Number.isFinite(px) || px <= 0) continue
+      if (side !== 'BUY' && side !== 'SELL') continue
+
+      const u = getUserState(userId, nickname)
+      const c = getCoinState(u, coinId, t.symbol)
+
+      if (side === 'BUY') {
+        const spend = qty * px
+        c.qty += qty
+        c.costBasisUsd += spend
+        c.buysUsd += spend
+      } else {
+        // SELL: realized P/L based on avg cost at time of sale
+        if (c.qty <= 1e-12) continue
+
+        const sellQty = Math.min(qty, c.qty)
+        const proceeds = sellQty * px
+
+        const avgCost = c.qty > 0 ? (c.costBasisUsd / c.qty) : 0
+        const costRemoved = sellQty * avgCost
+
+        c.qty -= sellQty
+        c.costBasisUsd = Math.max(0, c.costBasisUsd - costRemoved)
+
+        c.realizedPnlUsd += (proceeds - costRemoved)
+        c.sellsUsd += proceeds
+      }
+    }
+
+    // Collect coinIds we need prices for (anything with qty > 0 somewhere)
+    const coinIdsToPrice = new Set()
+    for (const u of perUser.values()) {
+      for (const c of u.coins.values()) {
+        if (c.qty > 1e-12) coinIdsToPrice.add(c.coinId)
+      }
+    }
+
+    // Fetch prices (bounded / safe)
+    const priceMap = {}
+    for (const coinId of coinIdsToPrice) {
+      try {
+        // getCryptoPrice throws on failure; default to 0 on error
+        const p = await getCryptoPrice(coinId)
+        priceMap[coinId] = Number(p) || 0
+      } catch {
+        priceMap[coinId] = 0
+      }
+    }
+
+    // Build output rows
+    const rows = []
+    for (const u of perUser.values()) {
+      let realized = 0
+      let unrealized = 0
+      let holdingsValue = 0
+      let costBasis = 0
+      let totalBuys = 0
+      let totalSells = 0
+      let positions = 0
+
+      for (const c of u.coins.values()) {
+        realized += Number(c.realizedPnlUsd || 0)
+        totalBuys += Number(c.buysUsd || 0)
+        totalSells += Number(c.sellsUsd || 0)
+
+        if (c.qty > 1e-12) {
+          positions += 1
+          const price = Number(priceMap[c.coinId] || 0)
+          const value = c.qty * price
+          holdingsValue += value
+          costBasis += Number(c.costBasisUsd || 0)
+          unrealized += (value - Number(c.costBasisUsd || 0))
+        }
+      }
+
+      const totalPnl = realized + unrealized
+
+      // Ignore people with no activity
+      if (Math.abs(totalBuys) < 0.01 && Math.abs(totalSells) < 0.01 && Math.abs(totalPnl) < 0.01) continue
+
+      rows.push({
+        uuid: u.userId,
+        nickname: u.nickname || u.userId || 'Unknown',
+        totalPnl: Number(totalPnl.toFixed(2)),
+        realizedPnl: Number(realized.toFixed(2)),
+        unrealizedPnl: Number(unrealized.toFixed(2)),
+        holdingsValue: Number(holdingsValue.toFixed(2)),
+        costBasis: Number(costBasis.toFixed(2)),
+        totalBuys: Number(totalBuys.toFixed(2)),
+        totalSells: Number(totalSells.toFixed(2)),
+        openPositions: positions
+      })
+    }
+
+    // Sort by total P/L
+    rows.sort((a, b) => Number(b.totalPnl || 0) - Number(a.totalPnl || 0))
+
+    const topWinner = rows.length ? rows.reduce((max, r) =>
+      (max == null || Number(r.totalPnl) > Number(max.totalPnl)) ? r : max
+    , null) : null
+
+    const topLoser = rows.length ? rows.reduce((min, r) =>
+      (min == null || Number(r.totalPnl) < Number(min.totalPnl)) ? r : min
+    , null) : null
+
+    const updatedAt = new Date().toISOString()
+
+    await postJson('/api/publishDb', {
+      tables: {
+        crypto_leaderboard_public: rows,
+        crypto_extremes_public: { topWinner, topLoser, updatedAt }
+      },
+      public: ['crypto_leaderboard_public', 'crypto_extremes_public']
+    })
+
+    state.last.cryptoPerf = updatedAt
+    saveState(state)
+
+    console.log('[publish] cryptoPerf published:', rows.length, 'users; priced', coinIdsToPrice.size, 'coins')
+  } catch (err) {
+    console.warn('[publish] cryptoPerf failed:', err?.message || err)
+  } finally {
+    db.close()
+  }
+}
+
 
 async function publishAlbumStats (state) {
   // Respect configured cooldowns
@@ -808,6 +1043,7 @@ const main = async () => {
   await publishStats(state)
   await publishSiteData(state)
   await publishCareerLeaders(state)
+  await publishCryptoPerformance(state)
   await publishAlbumStats(state)
   await publishWrapped2026(state)
   await publishLotteryWinners(state)

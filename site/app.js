@@ -59,6 +59,14 @@ const els = {
   crapsRecord: $('crapsRecord'),
   lotteryWinners: $('lotteryWinners'),
 
+    // crypto performance
+  gamesCryptoTopWinner: $('gamesCryptoTopWinner'),
+  gamesCryptoTopLoser: $('gamesCryptoTopLoser'),
+  gamesCryptoSelect: $('gamesCryptoSelect'),
+  gamesCryptoResult: $('gamesCryptoResult'),
+  gamesCryptoUpdated: $('gamesCryptoUpdated'),
+
+
   // wrapped
   tabWrapped: $('tabWrapped'),
   viewWrapped: $('viewWrapped'),
@@ -584,6 +592,84 @@ function moneySigned (n) {
 
 let _careerRows = []
 
+let _cryptoRows = []
+
+function moneySigned2 (n) {
+  const v = Number(n) || 0
+  const sign = v > 0 ? '+' : v < 0 ? '-' : ''
+  return `${sign}$${Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+}
+
+function renderCryptoUI (extremes, rows) {
+  const topW = extremes?.topWinner
+  const topL = extremes?.topLoser
+
+  if (els.gamesCryptoTopWinner) {
+    els.gamesCryptoTopWinner.textContent = topW
+      ? `${topW.nickname} (${moneySigned2(topW.totalPnl)})`
+      : '—'
+  }
+
+  if (els.gamesCryptoTopLoser) {
+    els.gamesCryptoTopLoser.textContent = topL
+      ? `${topL.nickname} (${moneySigned2(topL.totalPnl)})`
+      : '—'
+  }
+
+  if (els.gamesCryptoUpdated) {
+    // show timestamp if provided, otherwise show count
+    const ts = extremes?.updatedAt ? briefDate(extremes.updatedAt) : ''
+    els.gamesCryptoUpdated.textContent = ts
+      ? `• ${ts}`
+      : (rows?.length ? `• ${rows.length} players` : '')
+  }
+
+  // dropdown
+  if (els.gamesCryptoSelect) {
+    const list = Array.isArray(rows) ? rows.slice() : []
+    list.sort((a, b) => String(a.nickname || '').localeCompare(String(b.nickname || ''), undefined, { sensitivity: 'base' }))
+
+    els.gamesCryptoSelect.innerHTML =
+      '<option value="">Select a player…</option>' +
+      list.map(u => {
+        const uuid = String(u.uuid || '')
+        const label = String(u.nickname || 'Unknown')
+        return `<option value="${escapeHtml(uuid)}">${escapeHtml(label)}</option>`
+      }).join('')
+
+    // preserve selection if possible
+    const cur = els.gamesCryptoSelect.value || ''
+    if (cur && list.some(x => String(x.uuid) === cur)) els.gamesCryptoSelect.value = cur
+  }
+
+  if (els.gamesCryptoResult) els.gamesCryptoResult.textContent = '—'
+}
+
+function wireCryptoSelect () {
+  if (!els.gamesCryptoSelect || !els.gamesCryptoResult) return
+
+  // avoid double-binding if refreshGames runs repeatedly
+  if (els.gamesCryptoSelect._wired) return
+  els.gamesCryptoSelect._wired = true
+
+  els.gamesCryptoSelect.addEventListener('change', () => {
+    const uuid = els.gamesCryptoSelect.value || ''
+    if (!uuid) { els.gamesCryptoResult.textContent = '—'; return }
+
+    const u = (_cryptoRows || []).find(r => String(r.uuid || '') === String(uuid))
+    if (!u) { els.gamesCryptoResult.textContent = '—'; return }
+
+    const total = Number(u.totalPnl || 0)
+    const realized = Number(u.realizedPnl || 0)
+    const unreal = Number(u.unrealizedPnl || 0)
+    const hold = Math.round(Number(u.holdingsValue || 0))
+
+    els.gamesCryptoResult.textContent =
+      `${u.nickname}: ${moneySigned2(total)} (realized: ${moneySigned2(realized)}, unrealized: ${moneySigned2(unreal)}, holdings: $${hold.toLocaleString()})`
+  })
+}
+
+
 function renderCareerUI (extremes, rows) {
   const topG = extremes?.topGainer
   const topL = extremes?.topLoser
@@ -795,6 +881,23 @@ async function refreshGames () {
   } catch (e) {
     if (els.gamesCareerResult) els.gamesCareerResult.textContent = `Error: ${e.message}`
   }
+
+    // Crypto performance
+  try {
+    if (els.gamesCryptoTopWinner || els.gamesCryptoSelect) {
+      const [extremes, rows] = await Promise.all([
+        apiGet('/api/db/crypto_extremes_public').catch(() => null),
+        apiGet('/api/db/crypto_leaderboard_public').catch(() => [])
+      ])
+
+      _cryptoRows = Array.isArray(rows) ? rows : []
+      renderCryptoUI(extremes, _cryptoRows)
+      wireCryptoSelect()
+    }
+  } catch (e) {
+    if (els.gamesCryptoResult) els.gamesCryptoResult.textContent = `Error: ${e.message}`
+  }
+
 }
 
 // ------------- Albums (Top 5 + Rest) -------------

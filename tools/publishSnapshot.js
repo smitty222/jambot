@@ -28,7 +28,10 @@ const RAW_TABLE_ALLOWLIST = (process.env.RAW_TABLE_ALLOWLIST || [
   'horses',
   'avatars',
   'current_state',
-  'craps_records'
+  'craps_records',
+  'crypto_accounts',
+  'crypto_positions',
+  'crypto_trades',
 ].join(','))
   .split(',')
   .map(s => s.trim())
