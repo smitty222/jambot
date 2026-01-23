@@ -210,6 +210,78 @@ db.exec(`
   )
 `)
 
+// ─── PGA (ESPN) Leaderboard storage ─────────────────────────────────────────
+//
+// We store both raw snapshots (for debugging/history) and normalized results
+// (for “post cut” and “final” queries).
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS pga_events (
+    eventId TEXT PRIMARY KEY,
+    eventName TEXT,
+    status TEXT,               -- In Progress / Final / etc
+    season INTEGER,
+    startDate TEXT,
+    endDate TEXT,
+    source TEXT DEFAULT 'espn',
+    lastSeenAt TEXT,
+    finalizedAt TEXT
+  )
+`)
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS pga_leaderboard_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    eventId TEXT NOT NULL,
+    eventName TEXT,
+    status TEXT,
+    capturedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+    kind TEXT DEFAULT 'live',   -- live | cut | final | manual
+    json TEXT NOT NULL
+  )
+`)
+
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_pga_snapshots_event_time
+  ON pga_leaderboard_snapshots(eventId, capturedAt)
+`)
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS pga_event_results (
+    eventId TEXT NOT NULL,
+    athleteId TEXT NOT NULL,
+    playerName TEXT,
+    pos TEXT,
+    toPar TEXT,
+    status TEXT,               -- F / CUT / WD / DQ / In Progress
+    thru TEXT,                 -- "Thru 6" / "F" etc
+    sortOrder INTEGER,
+    movement INTEGER,
+    earnings REAL,
+    cupPoints REAL,
+
+    r1 INTEGER,
+    r2 INTEGER,
+    r3 INTEGER,
+    r4 INTEGER,
+
+    updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (eventId, athleteId)
+  )
+`)
+
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_pga_results_event_sort
+  ON pga_event_results(eventId, sortOrder)
+`)
+
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_pga_results_event_pos
+  ON pga_event_results(eventId, pos)
+`)
+
+
 // Avatars
 db.exec(`
   CREATE TABLE IF NOT EXISTS avatars (

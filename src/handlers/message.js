@@ -3,7 +3,7 @@ import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
 import { askQuestion, setCurrentSong } from '../libs/ai.js'
 import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, displayTriviaInfo } from '../handlers/triviaCommands.js'
 import { logger } from '../utils/logging.js'
-import { getAlbumsByArtist, getAlbumTracks, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSongData, updateRoomInfo, isUserOwner, searchSpotify, getMLBScores, getNHLScores, getNBAScores, getSimilarTracks, getTopChartTracks, addSongsToCrate, getUserToken, clearUserQueueCrate, getUserQueueCrateId, getRandomDogImage, getSpotifyUserId, getUserPlaylists, getPlaylistTracks, getSpotifyNewAlbumsViaSearch } from '../utils/API.js'
+import { getAlbumsByArtist, getAlbumTracks, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSongData, updateRoomInfo, isUserOwner, searchSpotify, getMLBScores, getNHLScores, getNBAScores, getSimilarTracks, getTopChartTracks, addSongsToCrate, getUserToken, clearUserQueueCrate, getUserQueueCrateId, getRandomDogImage, getSpotifyUserId, getUserPlaylists, getPlaylistTracks, getSpotifyNewAlbumsViaSearch, getPGALeaderboard } from '../utils/API.js'
 import { handleLotteryCommand, handleLotteryNumber, handleTopLotteryStatsCommand, handleSingleNumberQuery, handleLotteryCheck, LotteryGameActive, getLotteryWinners } from '../database/dblotterymanager.js'
 import { formatMention } from '../utils/names.js'
 import { enableSongStats, disableSongStats, isSongStatsEnabled, saveSongReview, getAverageRating } from '../utils/voteCounts.js'
@@ -60,7 +60,6 @@ import { usersToBeRemoved } from '../utils/usersToBeRemoved.js'
 import { parseTipAmount, randomTipGif, splitEvenly, naturalJoin, getSenderNickname } from '../utils/helpers.js'
 import { handleBuyHorse } from '../games/horserace/horseManager.js'
 import { handleAddMoneyCommand } from './addMoney.js'
-import { handlePgaUnofficial } from './pgaUnofficialCommands.js'
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
 export const /* deprecated_roomThemes */roomThemes = {}
@@ -162,6 +161,20 @@ export default async (payload, room, state, roomBot) => {
     return
   }
 
+    // ⛳ PGA leaderboard (ESPN)
+  if (/^\/pga\b/i.test(txt)) {
+    console.log('▶ dispatch → getPGALeaderboard', txt)
+    try {
+      const msg = await getPGALeaderboard()
+      await postMessage({ room, message: msg })
+    } catch (err) {
+      console.error('Error fetching PGA leaderboard:', err)
+      await postMessage({ room, message: `⛳ PGA error: ${err.message}` })
+    }
+    return
+  }
+
+
   // ─── HORSE‐RACE ENTRY & COMMANDS ────────────────────────────────────────
 
   // A) If we're in the 30s entry window, ANY non‐slash chat is an entry
@@ -212,14 +225,6 @@ export default async (payload, room, state, roomBot) => {
   }
 
   // ─── END CRAPS BLOCK ──────────────────────────
-
-    // ⛳ PGA Tour (unofficial) — leaderboard/results
-  if (/^\/pga\b/i.test(txt)) {
-    console.log('▶ dispatch → handlePgaUnofficial', txt)
-    await handlePgaUnofficial(payload, room) // NOTE: match handler signature below
-    return
-  }
-
   // Handle Gifs Sent in Chat
   if (payload?.message?.type === 'ChatGif') {
     logger.info('Received a GIF message:', payload.message)

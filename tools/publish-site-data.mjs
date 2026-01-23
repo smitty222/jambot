@@ -36,6 +36,7 @@ const COOLDOWN_MINUTES_ALBUMS = Number(process.env.PUBLISH_ALBUMS_EVERY_MIN || 1
 const COOLDOWN_MINUTES_SITEDATA = Number(process.env.PUBLISH_SITEDATA_EVERY_MIN || 10)
 const COOLDOWN_MINUTES_SONGS = Number(process.env.PUBLISH_SONGS_EVERY_MIN || 10)
 const COOLDOWN_MINUTES_WRAPPED = Number(process.env.PUBLISH_WRAPPED_EVERY_MIN || 60)
+const COOLDOWN_MINUTES_PGA = Number(process.env.PUBLISH_PGA_EVERY_MIN || 10)
 // DJ wrapped limits (safe defaults)
 const WRAPPED_DJ_LIMIT = Number(process.env.WRAPPED_DJ_LIMIT || 200) // how many DJs we track per year
 const WRAPPED_DJ_TOP_SONGS = Number(process.env.WRAPPED_DJ_TOP_SONGS || 50) // per DJ
@@ -120,6 +121,103 @@ ORDER BY cr.maxRolls DESC
     db.close()
   }
 }
+
+// ── Publish: PGA leaderboard + latest event meta (public) ────────────────
+async function publishPga (state) {
+  if (minutesSince(state.last?.pga) < COOLDOWN_MINUTES_PGA) {
+    console.log('[publish] pga skipped (cooldown)')
+    return
+  }
+
+  console.log('[publish] pga snapshot from', process.env.DB_PATH)
+  const db = new Database(process.env.DB_PATH, { readonly: true })
+
+  try {
+    // Latest event we’ve seen (or finalized most recently)
+    const event = db.prepare(`
+      SELECT
+        eventId,
+        eventName,
+        status,
+        season,
+        startDate,
+        endDate,
+        source,
+        lastSeenAt,
+        finalizedAt
+      FROM pga_events
+      ORDER BY
+        CASE WHEN finalizedAt IS NOT NULL AND TRIM(finalizedAt) <> '' THEN 1 ELSE 0 END DESC,
+        datetime(COALESCE(finalizedAt, lastSeenAt)) DESC
+      LIMIT 1
+    `).get()
+
+    if (!event?.eventId) {
+      // Don’t publish empty tables; just record cooldown so we don’t spam logs
+      state.last.pga = new Date().toISOString()
+      saveState(state)
+      console.log('[publish] pga: no event found')
+      return
+    }
+
+    // Top 50 leaderboard for that event (you can change this)
+    const LIMIT = Number(process.env.PGA_PUBLISH_LIMIT || 50)
+
+    const leaderboard = db.prepare(`
+      SELECT
+        r.eventId,
+        r.athleteId,
+        r.playerName,
+        r.pos,
+        r.toPar,
+        r.status,
+        r.thru,
+        r.sortOrder,
+        r.movement,
+        r.earnings,
+        r.cupPoints,
+        r.r1, r.r2, r.r3, r.r4,
+        r.updatedAt
+      FROM pga_event_results r
+      WHERE r.eventId = ?
+      ORDER BY
+        COALESCE(r.sortOrder, 999999) ASC,
+        r.playerName ASC
+      LIMIT ?
+    `).all(event.eventId, LIMIT)
+
+    // A small "summary" object the site can render easily
+    const summary = {
+      eventId: event.eventId,
+      eventName: event.eventName,
+      status: event.status,
+      finalized: !!(event.finalizedAt && String(event.finalizedAt).trim()),
+      finalizedAt: event.finalizedAt || null,
+      lastSeenAt: event.lastSeenAt || null,
+      updatedAt: new Date().toISOString(),
+      count: leaderboard.length
+    }
+
+    await postJson('/api/publishDb', {
+      tables: {
+        pga_event_public: event,
+        pga_leaderboard_public: leaderboard,
+        pga_summary_public: summary
+      },
+      public: ['pga_event_public', 'pga_leaderboard_public', 'pga_summary_public']
+    })
+
+    state.last.pga = summary.updatedAt
+    saveState(state)
+
+    console.log('[publish] pga published:', event.eventName, 'rows:', leaderboard.length)
+  } catch (err) {
+    console.warn('[publish] pga failed:', err?.message || err)
+  } finally {
+    db.close()
+  }
+}
+
 
 // ── Publish: Horse Hall of Fame (public) ──────────────────────
 async function publishHorseHallOfFame (state) {
@@ -1097,6 +1195,7 @@ const main = async () => {
   await publishCryptoPerformance(state)
   await publishAlbumStats(state)
   await publishWrapped2026(state)
+  await publishPga(state)
   await publishLotteryWinners(state)
   await publishCrapsRecords(state)
   await publishHorseHallOfFame(state)
