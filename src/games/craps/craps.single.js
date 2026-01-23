@@ -311,20 +311,23 @@ async function openJoinWindow (room, starterUuid) {
   st.nameCache = Object.create(null)
   resetAllBets(st)
 
+  // ✅ NEW: auto-join the user who started the table
+  if (starterUuid) await autoSeat(st, starterUuid, room)
 
   await say(
-  room,
-  `🎲 **Craps** table is open for **${JOIN_SECS}s**!\n` +
-  'Type **/craps join** to take a seat.\n' +
-  'After join closes, betting opens for **/pass <amt>** or **/dontpass <amt>**.'
-)
-
+    room,
+    `🎲 **Craps** table is open for **${JOIN_SECS}s**!\n` +
+    `Starter is seated automatically.\n` +
+    'Type **/craps join** to take a seat.\n' +
+    'After join closes, betting opens for **/pass <amt>** or **/dontpass <amt>**.'
+  )
 
   st.timers.join = setTimeout(async () => {
     st.timers.join = null
     await closeJoinOpenBetting(room)
   }, JOIN_SECS * 1000)
 }
+
 
 
 async function closeJoinOpenBetting (room) {
