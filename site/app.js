@@ -1,4 +1,4 @@
-// site/app.js (modern10)
+// site/app.js (modern11)
 const APP_VER = 'modern11'
 console.log('[jj] app.js booted', APP_VER, new Date().toISOString())
 
