@@ -15,7 +15,7 @@ primary_region = "iad"
   PUBLISH_SCRIPT = "tools/publish-site-data.mjs"
 
   # Worker API for publishing site data
-  API_BASE = "https://jamflow-site-api.jamflowbot.workers.dev"
+  API_BASE = "API_BASE=https://jamflow-site-api-dev.jamflowbot.workers.dev"
 
   # ── Persistent data paths (lives on the attached volume) ─
   DB_PATH = "/data/app.db"
