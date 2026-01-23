@@ -383,48 +383,114 @@ export async function fetchSpotifyPlaylistTracks (playlistId) {
   return tracks
 }
 
+// utils/API.js (or wherever getSpotifyNewReleases lives)
+
 export async function getSpotifyNewReleases (country = 'US', limit = 10) {
   const cc = String(country || 'US').toUpperCase()
   const n = Math.max(1, Math.min(50, Number(limit) || 10))
-  const key = `new-releases:${cc}:${n}`
+  const key = `new-releases:albums:${cc}:${n}`
 
   const cached = spotifyCache.get(key)
   if (cached) return cached
 
-  const url = withQuery('https://api.spotify.com/v1/browse/new-releases', {
-    country: cc,
-    limit: 50 // fetch more so filtering "album only" still yields ~10
-  })
+  // Helper: convert Spotify release_date + precision into a sortable timestamp
+  function releaseDateToTs (dateStr, precision) {
+    if (!dateStr) return 0
+    const p = String(precision || '').toLowerCase()
+
+    // Spotify can return:
+    // - precision "day":   "2026-01-23"
+    // - precision "month": "2026-01"
+    // - precision "year":  "2026"
+    // normalize to a full date so Date.parse works consistently
+    let iso = dateStr
+    if (p === 'year') iso = `${dateStr}-01-01`
+    else if (p === 'month') iso = `${dateStr}-01`
+
+    const ts = Date.parse(iso)
+    return Number.isFinite(ts) ? ts : 0
+  }
+
+  // Fetch more than one page if needed so we still get enough full albums.
+  // Spotify max limit per page is 50.
+  const PER_PAGE = 50
+  const MAX_PAGES = 3 // 3 * 50 = 150 items scanned (keeps it fast)
 
   const res = await singleFlight(key, async () => {
-    const { ok, data } = await spotifyRequest(url)
-    if (!ok) return []
+    const collected = []
 
-    const items = data?.albums?.items || []
+    for (let page = 0; page < MAX_PAGES && collected.length < n; page++) {
+      const url = withQuery('https://api.spotify.com/v1/browse/new-releases', {
+        country: cc,
+        limit: PER_PAGE,
+        offset: page * PER_PAGE
+      })
 
-    // ✅ FULL ALBUMS ONLY
-    const albumsOnly = items.filter(a => String(a?.album_type || '').toLowerCase() === 'album')
+      const { ok, data, status } = await spotifyRequest(url)
 
-    const out = albumsOnly.slice(0, n).map(a => {
-      const artists = Array.isArray(a?.artists) ? a.artists.map(x => x?.name).filter(Boolean) : []
-      return {
-        id: a?.id || '',
-        name: a?.name || 'Unknown',
-        artist: artists.length ? artists.join(', ') : 'Unknown',
-        releaseDate: a?.release_date || null,
-        totalTracks: Number(a?.total_tracks ?? 0) || null,
-        image: a?.images?.[0]?.url || '',
-        spotifyUrl: a?.external_urls?.spotify || (a?.id ? `https://open.spotify.com/album/${a.id}` : ''),
-        albumType: a?.album_type || 'album'
+      if (!ok) {
+        const msg =
+          data?.error?.message ||
+          (typeof data === 'string' ? data : JSON.stringify(data)) ||
+          'Unknown Spotify error'
+        throw new Error(`Spotify new-releases failed${status ? ` (${status})` : ''}: ${msg}`)
       }
-    }).filter(x => x.id)
 
-    spotifyCache.set(key, out)
+      const items = data?.albums?.items || []
+
+      // Albums only
+      const albumsOnly = items.filter(a => String(a?.album_type || '').toLowerCase() === 'album')
+
+      for (const a of albumsOnly) {
+        const artists = Array.isArray(a?.artists) ? a.artists.map(x => x?.name).filter(Boolean) : []
+        const releaseDate = a?.release_date || null
+        const releasePrecision = a?.release_date_precision || null
+
+        collected.push({
+          id: a?.id || '',
+          name: a?.name || 'Unknown',
+          artist: artists.length ? artists.join(', ') : 'Unknown',
+          releaseDate,
+          releasePrecision,
+          totalTracks: Number(a?.total_tracks ?? 0) || null,
+          image: a?.images?.[0]?.url || '',
+          spotifyUrl: a?.external_urls?.spotify || (a?.id ? `https://open.spotify.com/album/${a.id}` : ''),
+          albumType: a?.album_type || 'album'
+        })
+      }
+    }
+
+    // Remove any blanks / duplicates
+    const deduped = []
+    const seen = new Set()
+    for (const a of collected) {
+      if (!a?.id) continue
+      if (seen.has(a.id)) continue
+      seen.add(a.id)
+      deduped.push(a)
+    }
+
+    // Sort most recent first (release_date_precision-aware)
+    deduped.sort((a, b) => {
+      const ta = releaseDateToTs(a.releaseDate, a.releasePrecision)
+      const tb = releaseDateToTs(b.releaseDate, b.releasePrecision)
+      // newest first
+      if (tb !== ta) return tb - ta
+      // stable tie-breaker
+      return String(a.name || '').localeCompare(String(b.name || ''))
+    })
+
+    const out = deduped.slice(0, n)
+
+    // Don’t cache empties (avoids “stuck” empty results)
+    if (out.length) spotifyCache.set(key, out)
+
     return out
   })
 
   return res
 }
+
 
 
 
