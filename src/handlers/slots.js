@@ -150,7 +150,7 @@ const COLLECTION_REWARDS = {
 
 // Bets
 const MIN_BET = 1
-const MAX_BET = 10000
+const MAX_BET = 100000
 const DEFAULT_BET = 1
 
 // ───────────────────────────────────────────────────────────
