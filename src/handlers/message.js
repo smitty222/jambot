@@ -3,7 +3,7 @@ import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
 import { askQuestion, setCurrentSong } from '../libs/ai.js'
 import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, displayTriviaInfo } from '../handlers/triviaCommands.js'
 import { logger } from '../utils/logging.js'
-import { getAlbumsByArtist, getAlbumTracks, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSongData, updateRoomInfo, isUserOwner, searchSpotify, getMLBScores, getNHLScores, getNBAScores, getSimilarTracks, getTopChartTracks, addSongsToCrate, getUserToken, clearUserQueueCrate, getUserQueueCrateId, getRandomDogImage, getSpotifyUserId, getUserPlaylists, getPlaylistTracks } from '../utils/API.js'
+import { getAlbumsByArtist, getAlbumTracks, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSongData, updateRoomInfo, isUserOwner, searchSpotify, getMLBScores, getNHLScores, getNBAScores, getSimilarTracks, getTopChartTracks, addSongsToCrate, getUserToken, clearUserQueueCrate, getUserQueueCrateId, getRandomDogImage, getSpotifyUserId, getUserPlaylists, getPlaylistTracks, getSpotifyNewReleases } from '../utils/API.js'
 import { handleLotteryCommand, handleLotteryNumber, handleTopLotteryStatsCommand, handleSingleNumberQuery, handleLotteryCheck, LotteryGameActive, getLotteryWinners } from '../database/dblotterymanager.js'
 import { formatMention } from '../utils/names.js'
 import { enableSongStats, disableSongStats, isSongStatsEnabled, saveSongReview, getAverageRating } from '../utils/voteCounts.js'
@@ -737,6 +737,87 @@ Please refresh your page for the queue to update`
 \`\`\`${error.message}\`\`\``
       })
     }
+
+    } else if (payload.message.startsWith('/newalbums')) {
+  const raw = payload.message.trim()
+  const parts = raw.split(/\s+/).slice(1)
+
+  let limit = 10
+  let country = 'US'
+
+  // Parse args:
+  // - first arg may be a number (limit) OR a country code/global
+  // - second arg (if present) is country code/global
+  if (parts.length >= 1) {
+    const a = parts[0]
+    const n = Number(a)
+    if (Number.isFinite(n) && n > 0) {
+      limit = Math.max(1, Math.min(50, Math.floor(n)))
+      if (parts[1]) country = String(parts[1] || '').trim().toUpperCase()
+    } else {
+      country = String(a || '').trim().toUpperCase()
+      if (parts[1]) {
+        const n2 = Number(parts[1])
+        if (Number.isFinite(n2) && n2 > 0) limit = Math.max(1, Math.min(50, Math.floor(n2)))
+      }
+    }
+  }
+
+  if (!country) country = 'US'
+
+  try {
+    const albums = await getSpotifyNewReleases({ limit, country })
+
+    if (!albums || albums.length === 0) {
+      await postMessage({
+        room,
+        message: `🆕 No new releases found right now${country ? ` for ${country}` : ''}.`
+      })
+      return
+    }
+
+    const titleCountry = (country && country !== 'GLOBAL') ? country : 'GLOBAL'
+    const header = `🆕 *New Album Releases* (${titleCountry}) — showing ${albums.length}`
+
+    // CometChat alignment: use a code block with fixed columns
+    const lines = albums.map((a, i) => {
+      const idx = String(i + 1).padStart(2, '0')
+      const date = (a.releaseDate || '—').padEnd(10, ' ')
+      const name = String(a.albumName || 'Unknown').slice(0, 34).padEnd(34, ' ')
+      const artist = String(a.artistName || 'Unknown').slice(0, 26).padEnd(26, ' ')
+      const id = String(a.spotifyAlbumId || '').slice(0, 22)
+      return `${idx}  ${date}  ${name}  ${artist}  ${id}`
+    })
+
+    const body =
+`01  YYYY-MM-DD  Album Name                          Artist                     spotifyAlbumId
+${lines.join('\n')}`.replace(/^01.*\n/, '') // remove the example header line above
+
+    // Optional: add 1-click URL list after the table (keeps table clean)
+    const linkLines = albums.map((a, i) => {
+      const idx = String(i + 1).padStart(2, '0')
+      const url = a.spotifyUrl || (a.spotifyAlbumId ? `https://open.spotify.com/album/${a.spotifyAlbumId}` : '')
+      return url ? `${idx}. ${a.albumName} — ${url}` : null
+    }).filter(Boolean)
+
+    await postMessage({
+      room,
+      message:
+`${header}
+\`\`\`
+#   Date        Album                              Artist                    AlbumId
+${lines.join('\n')}
+\`\`\`
+${linkLines.length ? `\n${linkLines.slice(0, 10).join('\n')}` : ''}`
+    })
+  } catch (error) {
+    logger.error('Error fetching Spotify new releases', { err: error })
+    await postMessage({
+      room,
+      message: `❌ *Failed to fetch new releases*\n\`${error.message}\``
+    })
+  }
+
 
     /// //////////// LOTTERY GAME ////////////////////////////////////////////
   } else if (payload.message.startsWith('/lottery')) {

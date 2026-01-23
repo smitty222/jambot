@@ -383,6 +383,45 @@ export async function fetchSpotifyPlaylistTracks (playlistId) {
   return tracks
 }
 
+export async function getSpotifyNewReleases ({ limit = 10, country = 'US' } = {}) {
+  // Spotify limits: 1–50
+  const lim = Math.max(1, Math.min(50, Number(limit) || 10))
+  const c = (country == null ? 'US' : String(country)).trim().toUpperCase()
+
+  // Allow "GLOBAL" (or empty) to omit the country param
+  const countryParam = (!c || c === 'GLOBAL') ? null : c
+
+  const key = `new-releases:${lim}:${countryParam || 'GLOBAL'}`
+  const cached = spotifyCache.get(key)
+  if (cached) return cached
+
+  return singleFlight(key, async () => {
+    const url = withQuery('https://api.spotify.com/v1/browse/new-releases', {
+      limit: lim,
+      ...(countryParam ? { country: countryParam } : {})
+    })
+
+    const { ok, data } = await spotifyRequest(url)
+    if (!ok) return []
+
+    const items = data?.albums?.items || []
+    const out = items.map(a => ({
+      spotifyAlbumId: a?.id || '',
+      spotifyUrl: a?.external_urls?.spotify || (a?.id ? `https://open.spotify.com/album/${a.id}` : ''),
+      albumName: a?.name || 'Unknown',
+      artistName: Array.isArray(a?.artists) ? a.artists.map(x => x?.name).filter(Boolean).join(', ') : 'Unknown',
+      releaseDate: a?.release_date || null,
+      releaseDatePrecision: a?.release_date_precision || null,
+      trackCount: Number(a?.total_tracks ?? 0) || null,
+      albumArt: a?.images?.[0]?.url || ''
+    }))
+
+    spotifyCache.set(key, out)
+    return out
+  })
+}
+
+
 export async function spotifyTrackInfo (trackId) {
   if (!trackId) return null
   const key = `track:${trackId}`
