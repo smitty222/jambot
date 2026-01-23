@@ -1096,8 +1096,17 @@ ${blocks}
       room,
       message: 'testing!'
     })
- } else if (payload.message.startsWith('/pga')) {
+    
+ const ctx = {
+  room: payload.roomId,
+  userId: payload.sender?.uid,
+  payload
+}
+
+if (payload.message.startsWith('/pga')) {
   await handlePgaUnofficial(ctx, payload)
+}
+
 
   } else if (payload.message.startsWith('/crapsrecord')) {
     // Fetch the current record, preferring the stored nickname in the
