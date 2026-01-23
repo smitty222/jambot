@@ -65,10 +65,27 @@ import { isUserAuthorized,getSpotifyAlbumInfo, getUserNicknameByUuid } from '../
 import { addQueuedAlbum, removeQueuedAlbum,listQueuedAlbums } from '../database/dbalbumqueue.js'
 
 
-function looksLikeSpotifyId (s) {
-  const t = String(s || '').trim()
-  return /^[A-Za-z0-9]{15,30}$/.test(t) // Spotify IDs are base62; usually 22 chars
+function extractSpotifyAlbumId (input) {
+  const s = String(input || '').trim()
+
+  // raw base62 ID
+  if (/^[A-Za-z0-9]{15,30}$/.test(s)) return s
+
+  // https://open.spotify.com/album/<id>
+  const m1 = s.match(/open\.spotify\.com\/album\/([A-Za-z0-9]{15,30})/i)
+  if (m1?.[1]) return m1[1]
+
+  // spotify:album:<id>
+  const m2 = s.match(/spotify:album:([A-Za-z0-9]{15,30})/i)
+  if (m2?.[1]) return m2[1]
+
+  return null
 }
+
+function looksLikeSpotifyId (s) {
+  return !!extractSpotifyAlbumId(s)
+}
+
 
 // ---------------------------------------------------------------------------
 // Command registry
@@ -171,7 +188,8 @@ const commandRegistry = {
     // 🎵 Add an album by Spotify album ID.
   // Usage: `/albumadd <spotifyAlbumId>`
   albumadd: async ({ payload, room, args }) => {
-    const albumId = (args || '').trim()
+    const albumId = extractSpotifyAlbumId(args)
+
 
     if (!albumId) {
       await postMessage({ room, message: 'Please specify a Spotify album ID. Usage: `/albumadd <spotifyAlbumId>`' })
@@ -185,7 +203,7 @@ const commandRegistry = {
 
     try {
       const userId = payload?.sender || null
-      const submitterNick = userId ? await getUserNickname(userId) : null
+      const submitterNick = userId ? await getUserNicknameByUuid(userId) : null
 
       const info = await getSpotifyAlbumInfo(albumId)
       if (!info?.spotifyAlbumId) {
@@ -226,7 +244,8 @@ const commandRegistry = {
   // 🎵 Remove an album from queue by Spotify album ID
   // Usage: `/albumremove <spotifyAlbumId>`
   albumremove: async ({ room, args }) => {
-    const albumId = (args || '').trim()
+    const albumId = extractSpotifyAlbumId(args)
+
 
     if (!albumId) {
       await postMessage({ room, message: 'Please specify a Spotify album ID. Usage: `/albumremove <spotifyAlbumId>`' })
@@ -270,7 +289,15 @@ const commandRegistry = {
         return `${String(i + 1).padStart(2, '0')}. ${title} — ${artist} (${id})`
       }).join('\n')
 
-      await postMessage({ room, message: `🎧 *Albums in the queue:*\n${lines}` })
+      await postMessage({
+  room,
+  message:
+    `🎧 Albums in the queue (${albums.length}):\n` +
+    '```' +
+    `\n${lines}\n` +
+    '```'
+})
+
     } catch (err) {
       logger.error('[albumlist] Error:', err?.message || err)
       await postMessage({ room, message: '❌ Failed to fetch the album queue.' })
