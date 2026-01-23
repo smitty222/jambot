@@ -3307,10 +3307,14 @@ ${blocks}
         message: `Error: ${error.message}`
       })
     }
-  } else if (/^\/greet(\\b|$)/i.test(payload.message)) {
-    const room = process.env.ROOM_UUID
-    const parts = payload.message.trim().split(/\\s+/)
-    const sub = (parts[1] || '').toLowerCase()
+  } else if (
+  /^\/greet(?:\s|$)/i.test(payload.message.trim()) ||
+  /^\/greetoff$/i.test(payload.message.trim())
+) {
+  const room = payload.room || process.env.ROOM_UUID
+  const parts = payload.message.trim().split(/\s+/)
+  const sub = (parts[1] || '').toLowerCase()
+
 
     if (sub === 'standard') {
       enableGreetingMessages()
