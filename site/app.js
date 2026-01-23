@@ -1,5 +1,5 @@
-// site/app.js (modern11)
-const APP_VER = 'modern11'
+// site/app.js (modern12)
+const APP_VER = 'modern12'
 console.log('[jj] app.js booted', APP_VER, new Date().toISOString())
 
 // --- tiny error reporter so we see issues on the page ---
