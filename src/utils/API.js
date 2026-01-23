@@ -384,35 +384,35 @@ export async function fetchSpotifyPlaylistTracks (playlistId) {
 }
 
 
-export async function getSpotifyNewAlbumsViaSearch (country = 'US', limit = 10) {
+export async function getSpotifyNewAlbumsViaSearch (year = 2026, country = 'US', limit = 10) {
   const market = String(country || 'US').toUpperCase()
   const n = Math.max(1, Math.min(50, Number(limit) || 10))
-  const key = `search:new-albums-30d:${market}:${n}`
+  const y = Number(year) || new Date().getFullYear()
+
+  // New cache key so you don't collide with previous implementations
+  const key = `search:albums:year:${y}:${market}:${n}`
 
   const cached = spotifyCache.get(key)
   if (cached) return cached
 
-  const now = Date.now()
-  const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
-  const cutoffTs = now - THIRTY_DAYS_MS
-  const currentYear = new Date().getFullYear()
-
   function releaseDateToTs (dateStr, precision) {
     if (!dateStr) return 0
+    const p = String(precision || '').toLowerCase()
     let iso = dateStr
-    if (precision === 'year') iso = `${dateStr}-01-01`
-    else if (precision === 'month') iso = `${dateStr}-01`
+    if (p === 'year') iso = `${dateStr}-01-01`
+    else if (p === 'month') iso = `${dateStr}-01`
     const ts = Date.parse(iso)
     return Number.isFinite(ts) ? ts : 0
   }
 
-  async function searchAlbums (q) {
+  async function searchAlbums (q, offset = 0) {
     const url = withQuery('https://api.spotify.com/v1/search', {
       q,
       type: 'album',
       market,
       limit: 50,
-      _ts: Date.now() // cache-buster
+      offset,
+      _ts: Date.now() // cache-buster in case spotifyRequest caches by URL
     })
 
     const { ok, data, status } = await spotifyRequest(url)
@@ -428,15 +428,18 @@ export async function getSpotifyNewAlbumsViaSearch (country = 'US', limit = 10) 
   }
 
   const res = await singleFlight(key, async () => {
-    // 1️⃣ Freshest releases
-    const tagNew = await searchAlbums('tag:new')
+    // Broad seeds to pull a wide slice of 2026 albums.
+    // Tune list length for more coverage vs fewer API calls.
+    const seeds = ['a', 'e', 'i', 'o', 'u', 'the', 'love', 'remaster']
 
-    // 2️⃣ Broader net for recent albums
-    const yearSearch = await searchAlbums(`year:${currentYear}`)
+    const combined = []
+    for (const s of seeds) {
+      const q = `${s} year:${y}`
+      const items = await searchAlbums(q, 0)
+      combined.push(...items)
+    }
 
-    const combined = [...tagNew, ...yearSearch]
-
-    // Full albums only + map
+    // Full albums only + map to your shape
     const mapped = combined
       .filter(a => String(a?.album_type || '').toLowerCase() === 'album')
       .map(a => {
@@ -453,9 +456,9 @@ export async function getSpotifyNewAlbumsViaSearch (country = 'US', limit = 10) 
           albumType: a?.album_type || 'album'
         }
       })
-      .filter(a => a.id)
+      .filter(x => x.id)
 
-    // De-dupe
+    // De-dupe by album id
     const seen = new Set()
     const deduped = []
     for (const a of mapped) {
@@ -464,27 +467,22 @@ export async function getSpotifyNewAlbumsViaSearch (country = 'US', limit = 10) 
       deduped.push(a)
     }
 
-    // Filter to last 30 days
-    const last30Days = deduped.filter(a => {
-      const ts = releaseDateToTs(a.releaseDate, a.releasePrecision)
-      return ts >= cutoffTs
-    })
-
-    // Sort newest first
-    last30Days.sort(
-      (a, b) =>
-        releaseDateToTs(b.releaseDate, b.releasePrecision) -
-        releaseDateToTs(a.releaseDate, a.releasePrecision)
+    // Sort newest → oldest (precision-aware)
+    deduped.sort(
+      (a, b) => releaseDateToTs(b.releaseDate, b.releasePrecision) - releaseDateToTs(a.releaseDate, a.releasePrecision)
     )
 
-    const out = last30Days.slice(0, n)
+    const out = deduped.slice(0, n)
 
+    // Don't cache empties forever
     if (out.length) spotifyCache.set(key, out)
+
     return out
   })
 
   return res
 }
+
 
 
 
