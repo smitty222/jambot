@@ -383,43 +383,49 @@ export async function fetchSpotifyPlaylistTracks (playlistId) {
   return tracks
 }
 
-export async function getSpotifyNewReleases ({ limit = 10, country = 'US' } = {}) {
-  // Spotify limits: 1–50
-  const lim = Math.max(1, Math.min(50, Number(limit) || 10))
-  const c = (country == null ? 'US' : String(country)).trim().toUpperCase()
+export async function getSpotifyNewReleases (country = 'US', limit = 10) {
+  const cc = String(country || 'US').toUpperCase()
+  const n = Math.max(1, Math.min(50, Number(limit) || 10))
+  const key = `new-releases:${cc}:${n}`
 
-  // Allow "GLOBAL" (or empty) to omit the country param
-  const countryParam = (!c || c === 'GLOBAL') ? null : c
-
-  const key = `new-releases:${lim}:${countryParam || 'GLOBAL'}`
   const cached = spotifyCache.get(key)
   if (cached) return cached
 
-  return singleFlight(key, async () => {
-    const url = withQuery('https://api.spotify.com/v1/browse/new-releases', {
-      limit: lim,
-      ...(countryParam ? { country: countryParam } : {})
-    })
+  const url = withQuery('https://api.spotify.com/v1/browse/new-releases', {
+    country: cc,
+    limit: 50 // fetch more so filtering "album only" still yields ~10
+  })
 
+  const res = await singleFlight(key, async () => {
     const { ok, data } = await spotifyRequest(url)
     if (!ok) return []
 
     const items = data?.albums?.items || []
-    const out = items.map(a => ({
-      spotifyAlbumId: a?.id || '',
-      spotifyUrl: a?.external_urls?.spotify || (a?.id ? `https://open.spotify.com/album/${a.id}` : ''),
-      albumName: a?.name || 'Unknown',
-      artistName: Array.isArray(a?.artists) ? a.artists.map(x => x?.name).filter(Boolean).join(', ') : 'Unknown',
-      releaseDate: a?.release_date || null,
-      releaseDatePrecision: a?.release_date_precision || null,
-      trackCount: Number(a?.total_tracks ?? 0) || null,
-      albumArt: a?.images?.[0]?.url || ''
-    }))
+
+    // ✅ FULL ALBUMS ONLY
+    const albumsOnly = items.filter(a => String(a?.album_type || '').toLowerCase() === 'album')
+
+    const out = albumsOnly.slice(0, n).map(a => {
+      const artists = Array.isArray(a?.artists) ? a.artists.map(x => x?.name).filter(Boolean) : []
+      return {
+        id: a?.id || '',
+        name: a?.name || 'Unknown',
+        artist: artists.length ? artists.join(', ') : 'Unknown',
+        releaseDate: a?.release_date || null,
+        totalTracks: Number(a?.total_tracks ?? 0) || null,
+        image: a?.images?.[0]?.url || '',
+        spotifyUrl: a?.external_urls?.spotify || (a?.id ? `https://open.spotify.com/album/${a.id}` : ''),
+        albumType: a?.album_type || 'album'
+      }
+    }).filter(x => x.id)
 
     spotifyCache.set(key, out)
     return out
   })
+
+  return res
 }
+
 
 
 export async function spotifyTrackInfo (trackId) {
@@ -552,7 +558,7 @@ export async function getAlbumsByArtist (artistName) {
     const artist = s.data?.artists?.items?.[0]
     if (!artist?.id) return []
 
-    const albumsUrl = `https://api.spotify.com/v1/artists/${artist.id}/albums?include_groups=album,single&limit=50`
+    const albumsUrl = `https://api.spotify.com/v1/artists/${artist.id}/albums?include_groups=album&limit=50`
     const a = await spotifyRequest(albumsUrl)
     if (!a.ok) return []
 
@@ -567,7 +573,8 @@ export async function getAlbumsByArtist (artistName) {
       id: alb.id,
       releaseDate: alb.release_date,
       totalTracks: alb.total_tracks,
-      image: alb.images?.[0]?.url || ''
+      image: alb.images?.[0]?.url || '',
+      albumType: alb.album_type || 'album'
     }))
 
     spotifyCache.set(key, items)
