@@ -666,6 +666,57 @@ async function publishAlbumStats (state) {
   }
 }
 
+// ── Publish: Album Queue (public) ────────────────────────────
+async function publishAlbumQueue (state) {
+  if (minutesSince(state.last?.albumQueue) < COOLDOWN_MINUTES_ALBUMS) {
+    console.log('[publish] albumQueue skipped (cooldown)')
+    return
+  }
+
+  console.log('[publish] albumQueue snapshot from', process.env.DB_PATH)
+  const db = new Database(process.env.DB_PATH, { readonly: true })
+
+  try {
+    const LIMIT = Number(process.env.ALBUM_QUEUE_LIMIT || 50)
+
+    const rows = db.prepare(`
+      SELECT
+        id,
+        spotifyAlbumId,
+        spotifyUrl,
+        albumName,
+        artistName,
+        releaseDate,
+        trackCount,
+        albumArt,
+        submittedByUserId,
+        submittedByNickname,
+        status,
+        createdAt,
+        updatedAt
+      FROM album_queue
+      WHERE COALESCE(status, 'queued') = 'queued'
+      ORDER BY datetime(createdAt) ASC, id ASC
+      LIMIT ?
+    `).all(LIMIT)
+
+    await postJson('/api/publishDb', {
+      tables: { album_queue_public: rows },
+      public: ['album_queue_public']
+    })
+
+    state.last.albumQueue = new Date().toISOString()
+    saveState(state)
+
+    console.log('[publish] albumQueue published:', rows.length)
+  } catch (err) {
+    console.warn('[publish] albumQueue failed:', err?.message || err)
+  } finally {
+    db.close()
+  }
+}
+
+
 // ── Publish: Commands ────────────────────────────────────────
 async function publishCommands (state) {
   if (!commands.length && !commands_mod.length) return
@@ -1051,6 +1102,7 @@ const main = async () => {
   await publishHorseHallOfFame(state)
   await publishHorseHallOfFame(state)
   await publishUserOwnedHorses(state)
+  await publishAlbumQueue(state)
   console.log('[publish] done')
 }
 

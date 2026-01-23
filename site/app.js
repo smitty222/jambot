@@ -118,6 +118,9 @@ const els = {
   albumMinPlays: $('albumMinPlays'),
   albumsAll: $('albumsAll'), // NEW
   albumsList: $('albumsList'),
+  albumQueue: $('albumQueue'),
+  albumQueueUpdated: $('albumQueueUpdated'),
+
 
   // songs
   songSearch: $('songSearch'),
@@ -900,6 +903,76 @@ async function refreshGames () {
 
 }
 
+// ------------- Album Queue (Up Next) -------------
+let _albumQueueRaw = []
+
+function renderAlbumQueue () {
+  if (!els.albumQueue) return
+
+  const rows = Array.isArray(_albumQueueRaw) ? _albumQueueRaw : []
+  if (!rows.length) {
+    els.albumQueue.innerHTML = '<div class="muted small">No albums queued. Add one in chat with <code>/albumadd &lt;spotifyAlbumId&gt;</code>.</div>'
+    if (els.albumQueueUpdated) els.albumQueueUpdated.textContent = ''
+    return
+  }
+
+  // Simple horizontal cards/grid
+  const cards = rows.map((a, i) => {
+    const title = String(a.albumName || a.title || 'Unknown Album')
+    const artist = String(a.artistName || a.artist || 'Unknown Artist')
+    const art = String(a.albumArt || a.cover || '')
+    const url = String(a.spotifyUrl || '')
+    const who = String(a.submittedByNickname || '')
+
+    const cover = art
+      ? `<img src="${escapeHtml(art)}" alt="" loading="lazy" referrerpolicy="no-referrer"
+              style="width:56px;height:56px;object-fit:cover;border-radius:10px;border:1px solid rgba(255,255,255,.10);" />`
+      : `<div style="width:56px;height:56px;border-radius:10px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);"></div>`
+
+    const inner = `
+      <div style="display:flex;gap:12px;align-items:center;">
+        <div style="flex:0 0 auto">${cover}</div>
+        <div style="min-width:0;">
+          <div class="small muted">#${i + 1} up next</div>
+          <div style="font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(title)}</div>
+          <div class="muted small" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(artist)}</div>
+          ${who ? `<div class="muted small">added by <b>${escapeHtml(who)}</b></div>` : ''}
+        </div>
+      </div>
+    `
+
+    return url
+      ? `<a class="card" href="${escapeHtml(url)}" target="_blank" rel="noreferrer" style="display:block;text-decoration:none;">${inner}</a>`
+      : `<div class="card">${inner}</div>`
+  }).join('')
+
+  els.albumQueue.innerHTML = `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;">${cards}</div>`
+}
+
+async function refreshAlbumQueue () {
+  if (!els.albumQueue) return
+  try {
+    // NEW endpoint we’ll add in the API:
+    // returns either { albums, updatedAt } or an array
+    const data = await apiGet('/api/album_queue', false)
+    const rows = Array.isArray(data) ? data : (Array.isArray(data?.albums) ? data.albums : [])
+    _albumQueueRaw = rows
+
+    if (els.albumQueueUpdated) {
+      const ts = data?.updatedAt ? briefDate(data.updatedAt) : ''
+      els.albumQueueUpdated.textContent = ts ? `• Updated ${ts}` : ''
+    }
+
+    renderAlbumQueue()
+  } catch (e) {
+    // Don’t break Albums tab if queue endpoint isn’t deployed yet
+    if (els.albumQueue) els.albumQueue.innerHTML = `<div class="muted small">Queue unavailable.</div>`
+    if (els.albumQueueUpdated) els.albumQueueUpdated.textContent = ''
+    console.warn('[albums] queue failed:', e?.message || e)
+  }
+}
+
+
 // ------------- Albums (Top 5 + Rest) -------------
 let _albumsRaw = []
 let _reviewCounts = {} // { [albumId]: count }
@@ -1365,7 +1438,8 @@ async function refreshAll () {
     refreshSongs(),
     refreshLottery(),
     refreshWrapped(),
-    refreshDjWrapped()
+    refreshDjWrapped(),
+    refreshAlbumQueue()
   ])
 }
 
@@ -1381,6 +1455,8 @@ async function refreshAll () {
     setInterval(refreshSongs, 60000)
     setInterval(refreshWrapped, 60000)
     setInterval(refreshDjWrapped, 60000)
+    setInterval(refreshAlbumQueue, 30000)
+
   } catch (e) {
     console.error('[jj] init failed', e)
     toast('Init failed: ' + e.message)
