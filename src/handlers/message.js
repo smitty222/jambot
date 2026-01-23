@@ -60,6 +60,7 @@ import { usersToBeRemoved } from '../utils/usersToBeRemoved.js'
 import { parseTipAmount, randomTipGif, splitEvenly, naturalJoin, getSenderNickname } from '../utils/helpers.js'
 import { handleBuyHorse } from '../games/horserace/horseManager.js'
 import { handleAddMoneyCommand } from './addMoney.js'
+import { handlePgaUnofficial } from './pgaUnofficialCommands.js'
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
 export const /* deprecated_roomThemes */roomThemes = {}
@@ -1095,6 +1096,9 @@ ${blocks}
       room,
       message: 'testing!'
     })
+ } else if (payload.message.startsWith('/pga')) {
+  await handlePgaUnofficial(ctx, payload)
+
   } else if (payload.message.startsWith('/crapsrecord')) {
     // Fetch the current record, preferring the stored nickname in the
     // users table when available. If both the craps_records nickname and
