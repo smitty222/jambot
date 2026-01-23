@@ -536,6 +536,39 @@ export async function getAlbumsByArtist (artistName) {
   })
   return res
 }
+export async function getSpotifyAlbumInfo (albumId) {
+  if (!albumId) return null
+  const id = String(albumId).trim()
+  const key = `album:${id}`
+
+  const cached = spotifyCache.get(key)
+  if (cached) return cached
+
+  const url = `https://api.spotify.com/v1/albums/${encodeURIComponent(id)}`
+
+  const res = await singleFlight(key, async () => {
+    const { ok, data } = await spotifyRequest(url)
+    if (!ok || !data) return null
+
+    const artists = Array.isArray(data.artists) ? data.artists.map(a => a?.name).filter(Boolean) : []
+    const img = data?.images?.[0]?.url || ''
+
+    const out = {
+      spotifyAlbumId: data?.id || id,
+      spotifyUrl: data?.external_urls?.spotify || (data?.id ? `https://open.spotify.com/album/${data.id}` : ''),
+      albumName: data?.name || 'Unknown',
+      artistName: artists.length ? artists.join(', ') : 'Unknown',
+      releaseDate: data?.release_date || null,
+      trackCount: Number(data?.total_tracks ?? 0) || null,
+      albumArt: img
+    }
+
+    spotifyCache.set(key, out)
+    return out
+  })
+
+  return res
+}
 
 export async function fetchTrackDetails (trackUri) {
   try {

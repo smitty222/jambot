@@ -53,7 +53,7 @@ import {
 } from './avatarCommands.js'
 
 // User authorization helper to restrict bot avatar changes
-import { isUserAuthorized } from '../utils/API.js'
+import { isUserAuthorized,getSpotifyAlbumInfo, getUserNicknameByUuid } from '../utils/API.js'
 
 // Album list management functions.  These helpers read and write a simple JSON
 // file at the project root to keep track of albums that should be queued.
@@ -62,7 +62,13 @@ import { isUserAuthorized } from '../utils/API.js'
 // query the current list of queued albums so users can see what is in the
 // rotation.  getAlbumList returns an array of album names (lower‑cased) or
 // an empty array if none have been queued yet.
-import { addAlbum, removeAlbum, getAlbumList } from '../utils/albumlistManager.js'
+import { addQueuedAlbum, removeQueuedAlbum,listQueuedAlbums } from '../database/dbalbumqueue.js'
+
+
+function looksLikeSpotifyId (s) {
+  const t = String(s || '').trim()
+  return /^[A-Za-z0-9]{15,30}$/.test(t) // Spotify IDs are base62; usually 22 chars
+}
 
 // ---------------------------------------------------------------------------
 // Command registry
@@ -162,101 +168,112 @@ const commandRegistry = {
   dozen: async ({ payload }) => { if (rouletteGameActive) await handleRouletteBet(payload) },
 
   // 🎵 Add an album to the remembered list.
-  // Usage: `/albumadd <album name>`
+    // 🎵 Add an album by Spotify album ID.
+  // Usage: `/albumadd <spotifyAlbumId>`
   albumadd: async ({ payload, room, args }) => {
-    const albumName = (args || '').trim()
-    if (!albumName) {
-      await postMessage({
-        room,
-        message: 'Please specify an album name. Usage: `/albumadd <album name>`'
-      })
+    const albumId = (args || '').trim()
+
+    if (!albumId) {
+      await postMessage({ room, message: 'Please specify a Spotify album ID. Usage: `/albumadd <spotifyAlbumId>`' })
       return
     }
-    try {
-      const added = await addAlbum(albumName)
-      if (added) {
-        await postMessage({
-          room,
-          message: `✅ Album "${albumName}" added to the remembered list.`
-        })
-      } else {
-        await postMessage({
-          room,
-          message: `ℹ️ Album "${albumName}" is already on the list.`
-        })
-      }
-    } catch (err) {
-      logger.error('[albumadd] Error updating album list:', err?.message || err)
-      await postMessage({
-        room,
-        message: '❌ Failed to add album to the list.'
-      })
-    }
-  },
 
-  // 🎵 Remove an album from the remembered list.
-  // Usage: `/albumremove <album name>`
-  albumremove: async ({ payload, room, args }) => {
-    const albumName = (args || '').trim()
-    if (!albumName) {
-      await postMessage({
-        room,
-        message: 'Please specify an album name. Usage: `/albumremove <album name>`'
-      })
+    if (!looksLikeSpotifyId(albumId)) {
+      await postMessage({ room, message: 'That does not look like a Spotify album ID. Example: `/albumadd 2v6ANhWhZBUKkg6pJJBs3B`' })
       return
     }
-    try {
-      const removed = await removeAlbum(albumName)
-      if (removed) {
-        await postMessage({
-          room,
-          message: `️ Album "${albumName}" removed from the remembered list.`
-        })
-      } else {
-        await postMessage({
-          room,
-          message: `❔ Album "${albumName}" was not found in the list.`
-        })
-      }
-    } catch (err) {
-      logger.error('[albumremove] Error updating album list:', err?.message || err)
-      await postMessage({
-        room,
-        message: '❌ Failed to remove album from the list.'
-      })
-    }
-  },
 
-  // 🎵 Show the current album queue. Users can call `/albumlist` to see
-  // what albums have been added via `/albumadd` and have not yet been
-  // automatically removed after playing. The list is displayed as a
-  // bullet‑pointed set of album names, or a friendly message if the list
-  // is empty.
-  // Usage: `/albumlist`
-  albumlist: async ({ payload, room }) => {
     try {
-      const albums = await getAlbumList()
-      // When no albums are saved, provide an informative response.
-      if (!albums || albums.length === 0) {
-        await postMessage({
-          room,
-          message: ' There are no albums currently queued. Use `/albumadd <album name>` to add one!'
-        })
+      const userId = payload?.sender || null
+      const submitterNick = userId ? await getUserNickname(userId) : null
+
+      const info = await getSpotifyAlbumInfo(albumId)
+      if (!info?.spotifyAlbumId) {
+        await postMessage({ room, message: '❌ Could not fetch that album from Spotify. Double-check the ID.' })
         return
       }
-      // Format each album with a bullet for readability. Preserve the order
-      // they were added to the list.
-      const list = albums.map((a) => `• ${a}`).join('\n')
+
+      // Persist to DB (idempotent behavior should be handled in dbalbumqueue.js)
+      const result = addQueuedAlbum({
+        spotifyAlbumId: info.spotifyAlbumId,
+        spotifyUrl: info.spotifyUrl || '',
+        albumName: info.albumName || 'Unknown',
+        artistName: info.artistName || 'Unknown',
+        releaseDate: info.releaseDate || '',
+        trackCount: Number(info.trackCount || 0),
+        albumArt: info.albumArt || '',
+        submittedByUserId: userId || '',
+        submittedByNickname: submitterNick || ''
+      })
+
+      // If your addQueuedAlbum returns something meaningful (like { inserted: true/false }),
+      // you can adjust copy below. For now we always show success.
       await postMessage({
         room,
-        message: ` Albums in the queue:\n${list}`
+        message:
+          `✅ Added to album queue:\n` +
+          `📀 *${info.albumName}*\n` +
+          `🎤 *${info.artistName}*\n` +
+          (info.spotifyUrl ? `🔗 ${info.spotifyUrl}\n` : '') +
+          `🆔 ${info.spotifyAlbumId}`
       })
     } catch (err) {
-      logger.error('[albumlist] Error reading album list:', err?.message || err)
+      logger.error('[albumadd] Error:', err?.message || err)
+      await postMessage({ room, message: '❌ Failed to add album.' })
+    }
+  },
+
+  // 🎵 Remove an album from queue by Spotify album ID
+  // Usage: `/albumremove <spotifyAlbumId>`
+  albumremove: async ({ room, args }) => {
+    const albumId = (args || '').trim()
+
+    if (!albumId) {
+      await postMessage({ room, message: 'Please specify a Spotify album ID. Usage: `/albumremove <spotifyAlbumId>`' })
+      return
+    }
+
+    if (!looksLikeSpotifyId(albumId)) {
+      await postMessage({ room, message: 'That does not look like a Spotify album ID. Example: `/albumremove 2v6ANhWhZBUKkg6pJJBs3B`' })
+      return
+    }
+
+    try {
+      const ok = removeQueuedAlbum(albumId)
       await postMessage({
         room,
-        message: '❌ Failed to fetch the album list.'
+        message: ok
+          ? `🗑️ Removed from album queue: ${albumId}`
+          : `❔ Not found in album queue: ${albumId}`
       })
+    } catch (err) {
+      logger.error('[albumremove] Error:', err?.message || err)
+      await postMessage({ room, message: '❌ Failed to remove album.' })
+    }
+  },
+
+  // 🎵 Show queued albums (DB)
+  // Usage: `/albumlist`
+  albumlist: async ({ room }) => {
+    try {
+      const albums = listQueuedAlbums({ limit: 25, includeNonQueued: false })
+
+      if (!albums || albums.length === 0) {
+        await postMessage({ room, message: '📭 There are no albums queued. Use `/albumadd <spotifyAlbumId>` to add one!' })
+        return
+      }
+
+      const lines = albums.map((a, i) => {
+        const title = a.albumName || 'Unknown Album'
+        const artist = a.artistName || 'Unknown Artist'
+        const id = a.spotifyAlbumId || '—'
+        return `${String(i + 1).padStart(2, '0')}. ${title} — ${artist} (${id})`
+      }).join('\n')
+
+      await postMessage({ room, message: `🎧 *Albums in the queue:*\n${lines}` })
+    } catch (err) {
+      logger.error('[albumlist] Error:', err?.message || err)
+      await postMessage({ room, message: '❌ Failed to fetch the album queue.' })
     }
   },
 

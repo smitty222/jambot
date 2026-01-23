@@ -534,3 +534,42 @@ db.exec(`
     timestamp TEXT DEFAULT CURRENT_TIMESTAMP
   )
 `)
+
+// Album queue / wishlist (Spotify albums users submit via /albumadd)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS album_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    -- Spotify identity
+    spotifyAlbumId TEXT NOT NULL UNIQUE,
+    spotifyUrl TEXT,
+    albumName TEXT,
+    artistName TEXT,
+    releaseDate TEXT,
+    trackCount INTEGER,
+    albumArt TEXT,
+
+    -- who submitted it
+    submittedByUserId TEXT,
+    submittedByNickname TEXT,
+
+    -- lifecycle
+    status TEXT DEFAULT 'queued', -- queued | playing | played | removed
+    createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+  )
+`)
+
+// Helpful indexes
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_album_queue_status ON album_queue(status)') } catch (e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_album_queue_createdAt ON album_queue(createdAt)') } catch (e) {}
+
+// Lightweight migration: add missing columns if older DB already has album_queue
+try {
+  if (!hasColumn('album_queue', 'status')) db.exec("ALTER TABLE album_queue ADD COLUMN status TEXT DEFAULT 'queued'")
+  if (!hasColumn('album_queue', 'createdAt')) db.exec("ALTER TABLE album_queue ADD COLUMN createdAt TEXT DEFAULT CURRENT_TIMESTAMP")
+  if (!hasColumn('album_queue', 'updatedAt')) db.exec("ALTER TABLE album_queue ADD COLUMN updatedAt TEXT DEFAULT CURRENT_TIMESTAMP")
+} catch (e) {
+  // non-fatal
+}
+
