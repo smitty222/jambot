@@ -952,25 +952,22 @@ function renderAlbumQueue () {
 async function refreshAlbumQueue () {
   if (!els.albumQueue) return
   try {
-    // NEW endpoint we’ll add in the API:
-    // returns either { albums, updatedAt } or an array
-    const data = await apiGet('/api/album_queue', false)
-    const rows = Array.isArray(data) ? data : (Array.isArray(data?.albums) ? data.albums : [])
-    _albumQueueRaw = rows
+    const rows = await apiGet('/api/db/album_queue_public', false).catch(() => [])
+    _albumQueueRaw = Array.isArray(rows) ? rows : []
 
     if (els.albumQueueUpdated) {
-      const ts = data?.updatedAt ? briefDate(data.updatedAt) : ''
-      els.albumQueueUpdated.textContent = ts ? `• Updated ${ts}` : ''
+      const ts = _albumQueueRaw[0]?.updatedAt || _albumQueueRaw[0]?.createdAt || ''
+      els.albumQueueUpdated.textContent = ts ? `• Updated ${briefDate(ts)}` : ''
     }
 
     renderAlbumQueue()
   } catch (e) {
-    // Don’t break Albums tab if queue endpoint isn’t deployed yet
     if (els.albumQueue) els.albumQueue.innerHTML = `<div class="muted small">Queue unavailable.</div>`
     if (els.albumQueueUpdated) els.albumQueueUpdated.textContent = ''
     console.warn('[albums] queue failed:', e?.message || e)
   }
 }
+
 
 
 // ------------- Albums (Top 5 + Rest) -------------
