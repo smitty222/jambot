@@ -1096,16 +1096,18 @@ ${blocks}
       room,
       message: 'testing!'
     })
-    
- const ctx = {
+
+    const ctx = {
   room: payload.roomId,
   userId: payload.sender?.uid,
   payload
 }
 
-if (payload.message.startsWith('/pga')) {
+} else if (text.startsWith('/pga')) {
+  console.log('[pga] command received:', text, 'roomId:', payload.roomId, 'room:', payload.room)
+  await postMessage({ room: process.env.ROOM_UUID, message: '⛳️ /pga routing hit' })
   await handlePgaUnofficial(ctx, payload)
-}
+  return
 
 
   } else if (payload.message.startsWith('/crapsrecord')) {
