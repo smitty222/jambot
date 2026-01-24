@@ -138,7 +138,7 @@ async function sayCode (room, title, body) {
   await say(room, `${t}\`\`\`\n${body}\n\`\`\``)
 }
 
-const BANNER = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+const BANNER = '━━━━━━━━━━━━━━━━━━━━━'
 
 async function phaseBanner (room, title, lines = []) {
   const body = [
