@@ -247,7 +247,6 @@ function phaseLabel (st) {
   if (st.phase === PHASES.JOIN) return 'JOIN'
   if (st.phase === PHASES.BETTING && !st.point) return 'LINE BETTING'
   if (st.phase === PHASES.COME_OUT) return 'COME-OUT'
-  if (st.phase === PHASES.POINT_BETTING) return 'POINT BETTING'
   if (st.phase === PHASES.POINT) return 'POINT (ROLLING)'
   if (st.phase === PHASES.IDLE) return 'IDLE'
   return String(st.phase || '—')
@@ -258,7 +257,7 @@ async function tableStatusBoard (room, st, next = '') {
   const shooterName = sh ? await getDisplayName(st, sh) : '—'
   const lines = [
     'TABLE STATUS',
-    '------------------------------',
+    '-----------------------',
     `Phase:     ${phaseLabel(st)}`,
     `Shooter:   ${shooterName}`,
     `Point:     ${st.point ?? '—'}`,
@@ -266,7 +265,7 @@ async function tableStatusBoard (room, st, next = '') {
     `Players:   ${st.tableUsers.length}`
   ]
   if (next) {
-    lines.push('------------------------------')
+    lines.push('-----------------------')
     lines.push(`Next:      ${next}`)
   }
   await sayCode(room, '', lines.join('\n'))
@@ -290,19 +289,19 @@ async function shooterTurnPrompt (room, st, mode = '') {
 async function openPointBetting (room, reasonLine = '') {
   const st = S(room)
 
-  // Stop roll timer while people are betting
   stopRollTimer(room)
   if (st.timers.pointBet) { clearTimeout(st.timers.pointBet); st.timers.pointBet = null }
 
-  st.phase = PHASES.POINT_BETTING
+  // NOTE: we stay in POINT phase; this is just a timed "side bets" window
+  st.phase = PHASES.POINT
 
-  await phaseBanner(room, `🟦 PHASE: POINT BETTING (${POINT_BET_SECS}s)`, [
+  await phaseBanner(room, `🟦 SIDE BETS OPEN (${POINT_BET_SECS}s)`, [
     'Available now: /come /dontcome /place /removeplace',
-    'Rolling begins when this window closes.'
+    'Rolling resumes when this closes.'
   ])
 
   if (reasonLine) await say(room, reasonLine)
-  await tableStatusBoard(room, st, `Point betting open (${POINT_BET_SECS}s)`)
+  await tableStatusBoard(room, st, `Side bets open (${POINT_BET_SECS}s)`)
 
   st.timers.pointBet = setTimeout(async () => {
     st.timers.pointBet = null
@@ -313,6 +312,7 @@ async function openPointBetting (room, reasonLine = '') {
 async function closePointBettingStartRoll (room) {
   const st = S(room)
 
+  // If point vanished, treat like come-out
   if (!st.point) {
     st.phase = PHASES.COME_OUT
     await shooterTurnPrompt(room, st, 'COME-OUT')
@@ -324,6 +324,7 @@ async function closePointBettingStartRoll (room) {
   await shooterTurnPrompt(room, st, `POINT (${st.point})`)
   startRollTimer(room, PHASES.POINT)
 }
+
 
 /* ───────────────────────── Join / Betting / Roll timer ───────────────────────── */
 
@@ -516,7 +517,7 @@ async function closeBettingBeginComeOut (room) {
 
   const body = []
   body.push('LINE BETS LOCKED')
-  body.push('------------------------------')
+  body.push('-----------------------')
   if (!passLines.length && !dpLines.length) {
     body.push('(none this come-out)')
   } else {
@@ -586,9 +587,9 @@ async function placeComeBet (kind, user, amount, room) {
     await say(room, `${mention(user)} you must join the table to bet.`)
     return
   }
-  if (![PHASES.POINT, PHASES.POINT_BETTING].includes(st.phase)) {
-    await say(room, 'Come/Don\'t Come only during the point phase.')
-    return
+  if (st.phase !== PHASES.POINT) {
+  await say(room, 'Come/Don\'t Come only during the point phase.')
+  return
   }
   if (!Number.isFinite(amt) || amt < MIN_BET || amt > MAX_BET) {
     await say(room, `${mention(user)} invalid amount. Min ${fmtMoney(MIN_BET)}, Max ${fmtMoney(MAX_BET)}.`)
@@ -620,9 +621,9 @@ async function placePlaceBet (num, user, amount, room) {
     await say(room, `${mention(user)} you must join the table to bet.`)
     return
   }
-  if (![PHASES.POINT, PHASES.POINT_BETTING].includes(st.phase)) {
-    await say(room, 'Place bets only during the point phase.')
-    return
+  if (st.phase !== PHASES.POINT) {
+  await say(room, 'Place bets only during the point phase.')
+  return
   }
   if (!PLACES.includes(n)) {
     await say(room, `Valid place numbers: ${PLACES.join(', ')}.`)
@@ -701,13 +702,10 @@ async function shooterRoll (user, room) {
   if (!isShooter(user, st)) { await say(room, `${mention(user)} only the shooter may roll.`); return }
 
   if (![PHASES.COME_OUT, PHASES.POINT].includes(st.phase)) {
-    if (st.phase === PHASES.POINT_BETTING) {
-      await say(room, 'Point betting is still open — rolling starts when it closes.')
-    } else {
-      await say(room, 'Not a rolling phase.')
-    }
-    return
-  }
+  await say(room, 'Not a rolling phase.')
+  return
+}
+
 
   stopRollTimer(room)
 
@@ -762,9 +760,9 @@ async function shooterRoll (user, room) {
 
     // Point established
     st.point = total
-    await say(room, `🟢 Point established: **${st.point}**`)
-    await openPointBetting(room)
-    return
+await say(room, `🟢 Point established: **${st.point}**`)
+await openPointBetting(room) // one-time side bets window
+return
   }
 
   // POINT phase
@@ -811,7 +809,10 @@ async function shooterRoll (user, room) {
   }
 
   await say(room, `⏭️ Point stays **${st.point}**.`)
-  await openPointBetting(room)
+await shooterTurnPrompt(room, st, `POINT (${st.point})`)
+startRollTimer(room, PHASES.POINT)
+return
+
 }
 
 /* ───────────────────────── Settlements / Resolutions ───────────────────────── */
@@ -1070,7 +1071,7 @@ async function userBetsView (room, uuid) {
   if (places.length) lines.push(`PLACE           ${places.join('  ')}`)
 
   if (!lines.length) return `No active bets for ${mention(uuid)}.`
-  return `\`\`\`\nYOUR BETS: ${name}\n------------------------------\n${lines.join('\n')}\n\`\`\``
+  return `\`\`\`\nYOUR BETS: ${name}\n-----------------------\n${lines.join('\n')}\n\`\`\``
 }
 
 /* ───────────────────────── Router ───────────────────────── */
@@ -1157,7 +1158,7 @@ export async function routeCrapsMessage (payload) {
         message:
 `\`\`\`
 CRAPS — QUICK HELP
-------------------------------------------------
+-----------------------
 FLOW
 join → line betting → come-out → (point betting → roll) → ...
 - Point betting opens before each POINT roll.
