@@ -1,0 +1,896 @@
+[
+  {
+    "slug": "1"
+  },
+  {
+    "slug": "10"
+  },
+  {
+    "slug": "11"
+  },
+  {
+    "slug": "12"
+  },
+  {
+    "slug": "13"
+  },
+  {
+    "slug": "14"
+  },
+  {
+    "slug": "15"
+  },
+  {
+    "slug": "16"
+  },
+  {
+    "slug": "17"
+  },
+  {
+    "slug": "18"
+  },
+  {
+    "slug": "19"
+  },
+  {
+    "slug": "2"
+  },
+  {
+    "slug": "20"
+  },
+  {
+    "slug": "21"
+  },
+  {
+    "slug": "22"
+  },
+  {
+    "slug": "23"
+  },
+  {
+    "slug": "24"
+  },
+  {
+    "slug": "25"
+  },
+  {
+    "slug": "26"
+  },
+  {
+    "slug": "27"
+  },
+  {
+    "slug": "28"
+  },
+  {
+    "slug": "29"
+  },
+  {
+    "slug": "3"
+  },
+  {
+    "slug": "4"
+  },
+  {
+    "slug": "5"
+  },
+  {
+    "slug": "6"
+  },
+  {
+    "slug": "7"
+  },
+  {
+    "slug": "8"
+  },
+  {
+    "slug": "9"
+  },
+  {
+    "slug": "als-brian-1"
+  },
+  {
+    "slug": "als-dave-1"
+  },
+  {
+    "slug": "av-august-2020-01"
+  },
+  {
+    "slug": "av-august-2020-02"
+  },
+  {
+    "slug": "av-august-2020-03"
+  },
+  {
+    "slug": "av-august-2020-04"
+  },
+  {
+    "slug": "av-august-2020-05"
+  },
+  {
+    "slug": "av-august-2020-06"
+  },
+  {
+    "slug": "av-august-2020-07"
+  },
+  {
+    "slug": "av-boy-b1"
+  },
+  {
+    "slug": "av-boy-b2"
+  },
+  {
+    "slug": "av-boy-cw1"
+  },
+  {
+    "slug": "av-boy-cw2"
+  },
+  {
+    "slug": "av-boy-db1"
+  },
+  {
+    "slug": "av-boy-db2"
+  },
+  {
+    "slug": "av-boy-m1"
+  },
+  {
+    "slug": "av-boy-m2"
+  },
+  {
+    "slug": "av-boy-w1"
+  },
+  {
+    "slug": "av-boy-w2"
+  },
+  {
+    "slug": "av-girl-b1"
+  },
+  {
+    "slug": "av-girl-b2"
+  },
+  {
+    "slug": "av-girl-cw1"
+  },
+  {
+    "slug": "av-girl-cw2"
+  },
+  {
+    "slug": "av-girl-db1"
+  },
+  {
+    "slug": "av-girl-db2"
+  },
+  {
+    "slug": "av-girl-m1"
+  },
+  {
+    "slug": "av-girl-m2"
+  },
+  {
+    "slug": "av-girl-w1"
+  },
+  {
+    "slug": "av-girl-w2"
+  },
+  {
+    "slug": "bot-01"
+  },
+  {
+    "slug": "bot-2"
+  },
+  {
+    "slug": "chad-lawrence-01"
+  },
+  {
+    "slug": "custom-face-av-1"
+  },
+  {
+    "slug": "discord"
+  },
+  {
+    "slug": "dj-1996montana-1"
+  },
+  {
+    "slug": "dj-acornhead-1"
+  },
+  {
+    "slug": "dj-akemie50-1"
+  },
+  {
+    "slug": "dj-andrewgoestohell-1"
+  },
+  {
+    "slug": "dj-annabelle-1"
+  },
+  {
+    "slug": "dj-araya-1"
+  },
+  {
+    "slug": "dj-atmcg-1"
+  },
+  {
+    "slug": "dj-atmcg-2"
+  },
+  {
+    "slug": "dj-aurision-1"
+  },
+  {
+    "slug": "dj-benmoskow-1"
+  },
+  {
+    "slug": "dj-black-unicorn-1"
+  },
+  {
+    "slug": "dj-bmwkenny-1"
+  },
+  {
+    "slug": "dj-brandon-1"
+  },
+  {
+    "slug": "dj-branton-1"
+  },
+  {
+    "slug": "dj-brick-1"
+  },
+  {
+    "slug": "dj-buppy-1"
+  },
+  {
+    "slug": "dj-buppy-2"
+  },
+  {
+    "slug": "dj-camdot-1"
+  },
+  {
+    "slug": "dj-chasealex-1"
+  },
+  {
+    "slug": "dj-christian-2"
+  },
+  {
+    "slug": "dj-chucksutton-1"
+  },
+  {
+    "slug": "dj-churchhill-1"
+  },
+  {
+    "slug": "dj-cid-2"
+  },
+  {
+    "slug": "dj-creatork-1"
+  },
+  {
+    "slug": "dj-crsd-1"
+  },
+  {
+    "slug": "dj-curtis-synth-1"
+  },
+  {
+    "slug": "dj-danidoucette-1"
+  },
+  {
+    "slug": "dj-dazegxd-1"
+  },
+  {
+    "slug": "dj-desiigner-1"
+  },
+  {
+    "slug": "dj-diz-1"
+  },
+  {
+    "slug": "dj-djbrains-1"
+  },
+  {
+    "slug": "dj-donda-1"
+  },
+  {
+    "slug": "dj-drummaboy-1"
+  },
+  {
+    "slug": "dj-FACES-1"
+  },
+  {
+    "slug": "dj-fayt-1"
+  },
+  {
+    "slug": "dj-femalezombie-1"
+  },
+  {
+    "slug": "dj-festseason-1"
+  },
+  {
+    "slug": "dj-festseason-2"
+  },
+  {
+    "slug": "dj-festseason-4"
+  },
+  {
+    "slug": "dj-fiftygrand-1"
+  },
+  {
+    "slug": "dj-finlince-1"
+  },
+  {
+    "slug": "dj-flaco-1"
+  },
+  {
+    "slug": "dj-georgettlive-1"
+  },
+  {
+    "slug": "dj-GOM-1"
+  },
+  {
+    "slug": "dj-gravehours-1"
+  },
+  {
+    "slug": "dj-greentea-1"
+  },
+  {
+    "slug": "dj-greg-1"
+  },
+  {
+    "slug": "dj-griffin-raphael-1"
+  },
+  {
+    "slug": "dj-grimehouse-1"
+  },
+  {
+    "slug": "dj-grunge-1"
+  },
+  {
+    "slug": "DJ-HADJI-1"
+  },
+  {
+    "slug": "dj-heartgaze-1"
+  },
+  {
+    "slug": "dj-hipster-mouse-1"
+  },
+  {
+    "slug": "dj-izzihot-1"
+  },
+  {
+    "slug": "dj-jacksperling-1"
+  },
+  {
+    "slug": "dj-jameminogue-1"
+  },
+  {
+    "slug": "dj-jamopi-1"
+  },
+  {
+    "slug": "dj-jayco-1"
+  },
+  {
+    "slug": "dj-jcox-1"
+  },
+  {
+    "slug": "dj-jeancantskate-1"
+  },
+  {
+    "slug": "dj-jessa-1"
+  },
+  {
+    "slug": "dj-jfled-1"
+  },
+  {
+    "slug": "dj-joeypecoraco-1"
+  },
+  {
+    "slug": "dj-jordanabryant-1"
+  },
+  {
+    "slug": "dj-jukbox-1"
+  },
+  {
+    "slug": "dj-kaine-2"
+  },
+  {
+    "slug": "dj-kaineheartnft-1"
+  },
+  {
+    "slug": "dj-kaiya-1"
+  },
+  {
+    "slug": "dj-kaleballen-1"
+  },
+  {
+    "slug": "dj-kevin-1"
+  },
+  {
+    "slug": "dj-kinrose-1"
+  },
+  {
+    "slug": "dj-lanparty-1"
+  },
+  {
+    "slug": "dj-lucaslex-1"
+  },
+  {
+    "slug": "dj-luna-1"
+  },
+  {
+    "slug": "dj-madeleine-1"
+  },
+  {
+    "slug": "dj-maki-1"
+  },
+  {
+    "slug": "dj-malcom-1"
+  },
+  {
+    "slug": "dj-malcom-2"
+  },
+  {
+    "slug": "dj-malezombie-1"
+  },
+  {
+    "slug": "dj-margaux-1"
+  },
+  {
+    "slug": "dj-max-1"
+  },
+  {
+    "slug": "dj-max-2"
+  },
+  {
+    "slug": "dj-mgnta-1"
+  },
+  {
+    "slug": "dj-mike-1"
+  },
+  {
+    "slug": "dj-montypk-2"
+  },
+  {
+    "slug": "dj-moonlight-1"
+  },
+  {
+    "slug": "dj-moonlight-2"
+  },
+  {
+    "slug": "dj-mummyv1-1"
+  },
+  {
+    "slug": "dj-mummyv2-1"
+  },
+  {
+    "slug": "dj-mycroft-1"
+  },
+  {
+    "slug": "dj-mykel-1"
+  },
+  {
+    "slug": "dj-name-change-1"
+  },
+  {
+    "slug": "dj-nebita-1"
+  },
+  {
+    "slug": "dj-noahsimon-1"
+  },
+  {
+    "slug": "dj-northxix-1"
+  },
+  {
+    "slug": "dj-parti-1"
+  },
+  {
+    "slug": "dj-pedro-1"
+  },
+  {
+    "slug": "dj-peech-1"
+  },
+  {
+    "slug": "dj-petalsupply-1"
+  },
+  {
+    "slug": "dj-peterkuli-1"
+  },
+  {
+    "slug": "dj-pnkblnkt-1"
+  },
+  {
+    "slug": "dj-pritty-1"
+  },
+  {
+    "slug": "dj-psychtest-1"
+  },
+  {
+    "slug": "dj-robel-2"
+  },
+  {
+    "slug": "dj-rottingscott-1"
+  },
+  {
+    "slug": "dj-rouri404-1"
+  },
+  {
+    "slug": "dj-roy-1"
+  },
+  {
+    "slug": "dj-rylo-1"
+  },
+  {
+    "slug": "dj-rylo-2"
+  },
+  {
+    "slug": "dj-sadgayboi-1"
+  },
+  {
+    "slug": "dj-sallyspitz-1"
+  },
+  {
+    "slug": "dj-seafloorjustin-1"
+  },
+  {
+    "slug": "dj-seafloorseth-1"
+  },
+  {
+    "slug": "dj-seafloortim-1"
+  },
+  {
+    "slug": "dj-sean-1"
+  },
+  {
+    "slug": "dj-sean-2"
+  },
+  {
+    "slug": "dj-shewlace-1"
+  },
+  {
+    "slug": "dj-spacebear-1"
+  },
+  {
+    "slug": "dj-tatum-1"
+  },
+  {
+    "slug": "dj-thechinablue-1"
+  },
+  {
+    "slug": "dj-timweber-1"
+  },
+  {
+    "slug": "dj-trendingraps-2"
+  },
+  {
+    "slug": "dj-tybolden-1"
+  },
+  {
+    "slug": "dj-uba-1"
+  },
+  {
+    "slug": "dj-ukrainefemale-1"
+  },
+  {
+    "slug": "dj-ukrainemale-1"
+  },
+  {
+    "slug": "dj-vamplife-1"
+  },
+  {
+    "slug": "dj-willyp-1"
+  },
+  {
+    "slug": "dj-willyp-2"
+  },
+  {
+    "slug": "dj-witchv1-1"
+  },
+  {
+    "slug": "dj-witchv2-1"
+  },
+  {
+    "slug": "dj-zakkuhn-1"
+  },
+  {
+    "slug": "elle-king01"
+  },
+  {
+    "slug": "elle-king-02"
+  },
+  {
+    "slug": "festivalseason-01"
+  },
+  {
+    "slug": "festivalseason-02"
+  },
+  {
+    "slug": "festivalseason-03"
+  },
+  {
+    "slug": "festivalseason-04"
+  },
+  {
+    "slug": "ghost"
+  },
+  {
+    "slug": "girlinred"
+  },
+  {
+    "slug": "harvest-01"
+  },
+  {
+    "slug": "harvest-02"
+  },
+  {
+    "slug": "harvest-03"
+  },
+  {
+    "slug": "harvest-04"
+  },
+  {
+    "slug": "harvest-05"
+  },
+  {
+    "slug": "harvest-06"
+  },
+  {
+    "slug": "harvest-07"
+  },
+  {
+    "slug": "harvest-08"
+  },
+  {
+    "slug": "jankytodd-01"
+  },
+  {
+    "slug": "jurassic-01"
+  },
+  {
+    "slug": "jurassic-02"
+  },
+  {
+    "slug": "jurassic-03"
+  },
+  {
+    "slug": "jurassic-05"
+  },
+  {
+    "slug": "jurassic-06"
+  },
+  {
+    "slug": "jurassic-07"
+  },
+  {
+    "slug": "keaton-01"
+  },
+  {
+    "slug": "kevinbedford-1"
+  },
+  {
+    "slug": "lennnie-01"
+  },
+  {
+    "slug": "pinguclub-01"
+  },
+  {
+    "slug": "pinguclub-02"
+  },
+  {
+    "slug": "pinguclub-03"
+  },
+  {
+    "slug": "rap-80s-beret"
+  },
+  {
+    "slug": "rap-80s-bwa"
+  },
+  {
+    "slug": "rap-80s-denim"
+  },
+  {
+    "slug": "rap-80s-saltpepper"
+  },
+  {
+    "slug": "rap-80s-tracksuit"
+  },
+  {
+    "slug": "rap-80s-windbreaker"
+  },
+  {
+    "slug": "ryan-01"
+  },
+  {
+    "slug": "scotty-01"
+  },
+  {
+    "slug": "season-0001-underground-catscradle"
+  },
+  {
+    "slug": "season-0001-underground-clubkid1"
+  },
+  {
+    "slug": "season-0001-underground-clubkid2"
+  },
+  {
+    "slug": "season-0001-underground-thehuman"
+  },
+  {
+    "slug": "season-0001-underground-wildthing"
+  },
+  {
+    "slug": "season-0002-psychedelic-fish"
+  },
+  {
+    "slug": "season-0002-psychedelic-flower"
+  },
+  {
+    "slug": "season-0002-psychedelic-glowfly"
+  },
+  {
+    "slug": "season-0002-psychedelic-mushroom"
+  },
+  {
+    "slug": "season-0007-underground-catscradle"
+  },
+  {
+    "slug": "season-0007-underground-clubkid1"
+  },
+  {
+    "slug": "season-0007-underground-clubkid2"
+  },
+  {
+    "slug": "season-0007-underground-thehuman"
+  },
+  {
+    "slug": "season-0007-underground-wildthing"
+  },
+  {
+    "slug": "stadiumseason-01"
+  },
+  {
+    "slug": "stadiumseason-02"
+  },
+  {
+    "slug": "stadiumseason-03"
+  },
+  {
+    "slug": "stadiumseason-04a"
+  },
+  {
+    "slug": "staff"
+  },
+  {
+    "slug": "staff-bear"
+  },
+  {
+    "slug": "timarbury-01"
+  },
+  {
+    "slug": "ttfm-adamseadub-01"
+  },
+  {
+    "slug": "ttfm-amandapeanut-1"
+  },
+  {
+    "slug": "ttfm-awendt"
+  },
+  {
+    "slug": "ttfm-dayoffltd-glowfly"
+  },
+  {
+    "slug": "ttfm-dj-owl-drake"
+  },
+  {
+    "slug": "ttfm-green-goblin-1"
+  },
+  {
+    "slug": "ttfm-jester-1"
+  },
+  {
+    "slug": "ttfm-purple-f1"
+  },
+  {
+    "slug": "ttfm-robelketuma-1"
+  },
+  {
+    "slug": "ttfm-santo-1"
+  },
+  {
+    "slug": "ttfm-staff-gustavo-1"
+  },
+  {
+    "slug": "ttfm-theo-1"
+  },
+  {
+    "slug": "ttfm-yuval-1"
+  },
+  {
+    "slug": "ttfm-zak-1"
+  },
+  {
+    "slug": "ttmf-kaine-1"
+  },
+  {
+    "slug": "user-lulu-1"
+  },
+  {
+    "slug": "winter-01"
+  },
+  {
+    "slug": "winter-02"
+  },
+  {
+    "slug": "winter-03"
+  },
+  {
+    "slug": "winter-04"
+  },
+  {
+    "slug": "winter-05"
+  },
+  {
+    "slug": "winter-06"
+  },
+  {
+    "slug": "winter-07"
+  },
+  {
+    "slug": "winter-08"
+  },
+  {
+    "slug": "cyber-bear-visor"
+  },
+  {
+    "slug": "cyber-bear-angry"
+  },
+  {
+    "slug": "cyber-girl"
+  },
+  {
+    "slug": "cyber-gorilla"
+  },
+  {
+    "slug": "cyber-guy"
+  },
+  {
+    "slug": "cyber-helmet"
+  },
+  {
+    "slug": "cyber-hood-purple"
+  },
+  {
+    "slug": "cyber-hood-yellow"
+  },
+  {
+    "slug": "winter2-01"
+  },
+  {
+    "slug": "winter2-02"
+  },
+  {
+    "slug": "winter2-03"
+  },
+  {
+    "slug": "winter2-04"
+  },
+  {
+    "slug": "winter2-05"
+  },
+  {
+    "slug": "winter2-06"
+  },
+  {
+    "slug": "winter2-07"
+  },
+  {
+    "slug": "winter2-08"
+  },
+  {
+    "slug": "pink-skirt"
+  },
+  {
+    "slug": "purp-bob"
+  },
+  {
+    "slug": "purp-ponytail"
+  },
+  {
+    "slug": "green-glasses"
+  },
+  {
+    "slug": "red-glasses"
+  }
+]

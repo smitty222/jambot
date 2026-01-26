@@ -76,7 +76,7 @@ const MAX_BET = Number(process.env.CRAPS_MAX_BET ?? 10000)
 const JOIN_SECS = Number(process.env.CRAPS_JOIN_SECS ?? 30)
 const BET_SECS = Number(process.env.CRAPS_BET_SECS ?? 30)
 const ROLL_SECS = Number(process.env.CRAPS_ROLL_SECS ?? 45)
-const POINT_BET_SECS = Number(process.env.CRAPS_POINT_BET_SECS ?? 20)
+const POINT_BET_SECS = Number(process.env.CRAPS_POINT_BET_SECS ?? 45)
 
 const PLACES = [4, 5, 6, 8, 9, 10]
 
@@ -353,7 +353,6 @@ async function openJoinWindow (room, starterUuid) {
 
   await phaseBanner(room, `🎲 PHASE: JOIN (${JOIN_SECS}s)`, [
     'Type: /craps join',
-    'Starter is seated automatically.',
     `Min: ${fmtMoney(MIN_BET)} | Max: ${fmtMoney(MAX_BET)}`
   ])
 

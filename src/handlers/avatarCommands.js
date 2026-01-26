@@ -993,6 +993,59 @@ export async function handleRecordGuyCommand (senderUuid, room, postMessage) {
     })
   }
 }
+export async function handleJesterCommand (senderUuid, room, postMessage) {
+  const userToken = userTokenMap[senderUuid]
+  if (!userToken) {
+    await postMessage({
+      room,
+      message: '🎟️ Sorry, this command is only available to authorized users.'
+    })
+    return
+  }
+
+  const slug = 'ttfm-jester-1'
+
+  // Jester vibe — playful, chaotic, a little unhinged
+  // Purple works well for trickster energy
+  const color = '#8A2BE2FF' // BlueViolet
+
+  const line = '🎭 The Jester enters — chaos enabled, mischief guaranteed.'
+
+  console.log('[jester] attempt', {
+    senderUuid,
+    slug,
+    color
+  })
+
+  try {
+    await updateUserAvatar(userToken, slug, color)
+
+    console.log('[jester] success', {
+      senderUuid,
+      slug,
+      color
+    })
+
+    await postMessage({
+      room,
+      message: line
+    })
+  } catch (error) {
+    console.error('[handleJesterCommand] update failed', {
+      senderUuid,
+      slug,
+      colorTried: color,
+      error: error?.message || String(error),
+      stack: error?.stack
+    })
+
+    await postMessage({
+      room,
+      message: 'The Jester slipped on a banana peel 🤡'
+    })
+  }
+}
+
 
 export async function handleJukeboxCommand (senderUuid, room, postMessage) {
   const userToken = userTokenMap[senderUuid]
@@ -1142,6 +1195,59 @@ export async function handleFacesCommand (senderUuid, room, postMessage) {
     await postMessage({ room, message: 'Something went wrong transforming you into a smiley face' })
   }
 }
+
+export async function handleGayIanCommand (senderUuid, room, postMessage) {
+  const userToken = userTokenMap[senderUuid]
+  if (!userToken) {
+    await postMessage({
+      room,
+      message: '🎟️ Sorry, this command is only available to authorized users.'
+    })
+    return
+  }
+
+  const slug = 'dj-festseason-4'
+
+  // Bright, festival-energy pink to match the avatar vibe
+  const color = '#FF4FA3FF'
+
+  const line = '🕺✨ Gay Ian activated — glitter on, volume up'
+
+  console.log('[gayIan] attempt', {
+    senderUuid,
+    slug,
+    color
+  })
+
+  try {
+    await updateUserAvatar(userToken, slug, color)
+
+    console.log('[gayIan] success', {
+      senderUuid,
+      slug,
+      color
+    })
+
+    await postMessage({
+      room,
+      message: line
+    })
+  } catch (error) {
+    console.error('[handleGayIanCommand] update failed', {
+      senderUuid,
+      slug,
+      colorTried: color,
+      error: error?.message || String(error),
+      stack: error?.stack
+    })
+
+    await postMessage({
+      room,
+      message: 'Gay Ian dropped the beat… and the glitter 💔'
+    })
+  }
+}
+
 export async function handleAlienCommand (senderUuid, room, postMessage) {
   const userToken = userTokenMap[senderUuid]
   if (!userToken) {
