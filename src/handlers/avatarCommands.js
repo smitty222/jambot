@@ -1182,6 +1182,19 @@ export async function handleGayCamCommand (senderUuid, room, postMessage) {
     await postMessage({ room, message: 'Something went wrong transforming you into a gay cam' })
   }
 }
+export async function handleGayAlexCommand (senderUuid, room, postMessage) {
+  const userToken = userTokenMap[senderUuid]
+  if (!userToken) {
+    await postMessage({ room, message: 'Sorry, this command is only available to authorized users.' })
+    return
+  }
+  try {
+    await updateUserAvatar(userToken, 'dj-akemie50-1', '#ff00bbff')
+    await postMessage({ room, message: 'Cute mask 💗ྀི' })
+  } catch (error) {
+    await postMessage({ room, message: 'Something went wrong transforming you into a gay Alex' })
+  }
+}
 export async function handleFacesCommand (senderUuid, room, postMessage) {
   const userToken = userTokenMap[senderUuid]
   if (!userToken) {
@@ -1755,7 +1768,11 @@ export async function handleBearPartyCommand (senderUuid, room, postMessage) {
     'cosmic-alien-bear',
     'cosmic-galactic-bear',
     '19', // NEW — black bear w/ red eyes
-    '20' // NEW — yellow bear
+    '20',
+    'dj-christian-2',
+    '28',
+    '21',
+    '10'
   ]
 
   // 🎨 Color mappings per-bear
