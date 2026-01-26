@@ -1195,6 +1195,109 @@ export async function handleGayAlexCommand (senderUuid, room, postMessage) {
     await postMessage({ room, message: 'Something went wrong transforming you into a gay Alex' })
   }
 }
+export async function handleTVguyCommand (senderUuid, room, postMessage) {
+  const userToken = userTokenMap[senderUuid]
+  if (!userToken) {
+    await postMessage({
+      room,
+      message: '🎟️ Sorry, this command is only available to authorized users.'
+    })
+    return
+  }
+
+  const slug = 'dj-jamopi-1'
+
+  // Soft CRT / retro TV glow
+  const color = '#9ED3D3FF'
+
+  const line = '📺 TVguy online — static fades, picture locks in, channel changed.'
+
+  console.log('[tvguy] attempt', {
+    senderUuid,
+    slug,
+    color
+  })
+
+  try {
+    await updateUserAvatar(userToken, slug, color)
+
+    console.log('[tvguy] success', {
+      senderUuid,
+      slug,
+      color
+    })
+
+    await postMessage({
+      room,
+      message: line
+    })
+  } catch (error) {
+    console.error('[handleTVguyCommand] update failed', {
+      senderUuid,
+      slug,
+      colorTried: color,
+      error: error?.message || String(error),
+      stack: error?.stack
+    })
+
+    await postMessage({
+      room,
+      message: '📡 TVguy lost signal… try adjusting the rabbit ears.'
+    })
+  }
+}
+export async function handlePinkBlanketCommand (senderUuid, room, postMessage) {
+  const userToken = userTokenMap[senderUuid]
+  if (!userToken) {
+    await postMessage({
+      room,
+      message: '🎟️ Sorry, this command is only available to authorized users.'
+    })
+    return
+  }
+
+  const slug = 'dj-pnkblnkt-1'
+
+  // Soft pastel pink to match the blanket aesthetic
+  const color = '#FFB7D5FF'
+
+  const line = '🩷 Pink Blanket mode activated — cozy beats, zero stress.'
+
+  console.log('[pinkblanket] attempt', {
+    senderUuid,
+    slug,
+    color
+  })
+
+  try {
+    await updateUserAvatar(userToken, slug, color)
+
+    console.log('[pinkblanket] success', {
+      senderUuid,
+      slug,
+      color
+    })
+
+    await postMessage({
+      room,
+      message: line
+    })
+  } catch (error) {
+    console.error('[handlePinkBlanketCommand] update failed', {
+      senderUuid,
+      slug,
+      colorTried: color,
+      error: error?.message || String(error),
+      stack: error?.stack
+    })
+
+    await postMessage({
+      room,
+      message: 'Pink Blanket slipped off… please re-tuck 🫣'
+    })
+  }
+}
+
 export async function handleFacesCommand (senderUuid, room, postMessage) {
   const userToken = userTokenMap[senderUuid]
   if (!userToken) {

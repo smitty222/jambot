@@ -35,7 +35,7 @@ import {
   handleBlackjackBet, handleHit, handleStand, handleDouble, handleSurrender, handleSplit,
   getFullTableView, getPhase
 } from '../games/blackjack/blackJack.js'
-import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand, handleRandomCyberCommand, handleVibesGuyCommand, handleFacesCommand, handleDoDoCommand, handleFlowerPowerCommand, handleDumDumCommand, handleRandomCosmicCommand, handleRandomLovableCommand, handleBot3Command, handleAnonCommand, handleGhostCommand, handleTeacupCommand, handleBouncerCommand, handleSpookyCommand, handleRecordGuyCommand, handleJukeboxCommand, handleBotSpookyCommand, handleAlienCommand, handleAlien2Command, handleRoyCommand, handleGrimehouseCommand, handleBotStaffCommand, handleBearPartyCommand, handleWinterCommand, handleBotWinterCommand, handleGayCamCommand,handleGayIanCommand, handleJesterCommand, handleGayAlexCommand } from './avatarCommands.js'
+import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand, handleRandomCyberCommand, handleVibesGuyCommand, handleFacesCommand, handleDoDoCommand, handleFlowerPowerCommand, handleDumDumCommand, handleRandomCosmicCommand, handleRandomLovableCommand, handleBot3Command, handleAnonCommand, handleGhostCommand, handleTeacupCommand, handleBouncerCommand, handleSpookyCommand, handleRecordGuyCommand, handleJukeboxCommand, handleBotSpookyCommand, handleAlienCommand, handleAlien2Command, handleRoyCommand, handleGrimehouseCommand, handleBotStaffCommand, handleBearPartyCommand, handleWinterCommand, handleBotWinterCommand, handleGayCamCommand,handleGayIanCommand, handleJesterCommand, handleGayAlexCommand, handleTVguyCommand } from './avatarCommands.js'
 import { markUser, getMarkedUser } from '../utils/removalQueue.js'
 import { extractUserFromText, isLotteryQuestion } from '../database/dblotteryquestionparser.js'
 import { askMagic8Ball } from './magic8Ball.js'
@@ -2531,6 +2531,10 @@ ${blocks}
     await handleBearPartyCommand(payload.sender, room, postMessage)
   } else if (payload.message.startsWith('/winter')) {
     await handleWinterCommand(payload.sender, room, postMessage)
+  } else if (payload.message.startsWith('/tvguy')) {
+    await handleTVguyCommand(payload.sender, room, postMessage)
+  } else if (payload.message.startsWith('/pinkblanket' || '/blanket')) {
+    await handlePinkBlanketCommand(payload.sender, room, postMessage)
   } else if (payload.message.startsWith('/gaycam')) {
     await handleGayCamCommand(payload.sender, room, postMessage)
   } else if (payload.message.startsWith('/gayian')) {
