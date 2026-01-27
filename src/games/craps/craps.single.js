@@ -242,6 +242,37 @@ async function refundAllBets (st) {
 
   resetAllBets(st)
 }
+function outcomeLabel ({ phase, total, point }) {
+  // COME-OUT results
+  if (phase === PHASES.COME_OUT) {
+    if (total === 7 || total === 11) return 'NATURAL (PASS wins)'
+    if (total === 2 || total === 3) return 'CRAPS (PASS loses)'
+    if (total === 12) return 'BOXCARS (PASS loses, DP pushes)'
+    return `POINT SET: ${total}`
+  }
+
+  // POINT phase results
+  if (phase === PHASES.POINT) {
+    if (total === 7) return 'SEVEN-OUT 💥'
+    if (point && total === point) return `POINT HIT ✅ (${point})`
+    return 'NO DECISION'
+  }
+
+  return '—'
+}
+
+function formatRollCard ({ rollCount, d1, d2, total, point, phase }) {
+  const pointStr = point ? `POINT ${point}` : 'COME-OUT'
+  const label = outcomeLabel({ phase, total, point })
+
+  return [
+    `🎲 ROLL #${rollCount}   (${pointStr})`,
+    '---------------------------',
+    `Dice:   ${d1} + ${d2} = ${total}`,
+    `RESULT: ${label}`
+  ].join('\n')
+}
+
 
 function phaseLabel (st) {
   if (st.phase === PHASES.JOIN) return 'JOIN'
@@ -271,8 +302,16 @@ async function tableStatusBoard (room, st, next = '') {
   await sayCode(room, '', lines.join('\n'))
 }
 
-async function shooterTurnPrompt (room, st, mode = '') {
+async function shooterTurnPrompt (room, st, mode = '', { minimal = false } = {}) {
   const sh = shooterUuid(st)
+
+  if (minimal) {
+    // One clean line, no boards/banners
+    await say(room, `🎲 Shooter: ${sh ? mention(sh) : '—'} — type **/roll** (⏱️ ${ROLL_SECS}s)`)
+    return
+  }
+
+  // Full “big” prompt (use at phase transitions only)
   await say(room, `🎲 **SHOOTER TURN** → ${sh ? mention(sh) : '—'} type **/roll** (⏱️ ${ROLL_SECS}s)`)
 
   await phaseBanner(room, '🎲 PHASE: SHOOTER TURN', [
@@ -284,24 +323,30 @@ async function shooterTurnPrompt (room, st, mode = '') {
   await tableStatusBoard(room, st, 'Shooter rolls (/roll)')
 }
 
+
 /* ───────────────────────── Point betting window ───────────────────────── */
 
 async function openPointBetting (room, reasonLine = '') {
   const st = S(room)
 
+  // Pause rolling timer while side bets are open
   stopRollTimer(room)
-  if (st.timers.pointBet) { clearTimeout(st.timers.pointBet); st.timers.pointBet = null }
+  if (st.timers.pointBet) {
+    clearTimeout(st.timers.pointBet)
+    st.timers.pointBet = null
+  }
 
-  // NOTE: we stay in POINT phase; this is just a timed "side bets" window
+  // Stay in POINT phase; this is just a timed side-bets window
   st.phase = PHASES.POINT
 
-  await phaseBanner(room, `🟦 SIDE BETS OPEN (${POINT_BET_SECS}s)`, [
-    'Available now: /come /dontcome /place /removeplace',
-    'Rolling resumes when this closes.'
-  ])
+  // ✅ Minimal, non-spammy message (no banner, no status board)
+  await say(
+    room,
+    `🟦 **Side bets open** (${POINT_BET_SECS}s) — ` +
+    `**/come <amt> /dontcome <amt> /place <num> <amt> /removeplace <num>**`
+  )
 
   if (reasonLine) await say(room, reasonLine)
-  await tableStatusBoard(room, st, `Side bets open (${POINT_BET_SECS}s)`)
 
   st.timers.pointBet = setTimeout(async () => {
     st.timers.pointBet = null
@@ -315,15 +360,30 @@ async function closePointBettingStartRoll (room) {
   // If point vanished, treat like come-out
   if (!st.point) {
     st.phase = PHASES.COME_OUT
-    await shooterTurnPrompt(room, st, 'COME-OUT')
+
+    // ✅ minimal roll prompt (no banner/board)
+    const sh = shooterUuid(st)
+    await say(
+      room,
+      `🎲 **Roll #${st.rollCount + 1}** — ${sh ? mention(sh) : 'Shooter'} type **/roll** (⏱️ ${ROLL_SECS}s)`
+    )
+
     startRollTimer(room, PHASES.COME_OUT)
     return
   }
 
   st.phase = PHASES.POINT
-  await shooterTurnPrompt(room, st, `POINT (${st.point})`)
+
+  // ✅ minimal roll prompt (focus on the roll; keep point visible)
+  const sh = shooterUuid(st)
+  await say(
+    room,
+    `🎲 **Roll #${st.rollCount + 1}** (point **${st.point}**) — ${sh ? mention(sh) : 'Shooter'} type **/roll** (⏱️ ${ROLL_SECS}s)`
+  )
+
   startRollTimer(room, PHASES.POINT)
 }
+
 
 
 /* ───────────────────────── Join / Betting / Roll timer ───────────────────────── */
@@ -351,12 +411,12 @@ async function openJoinWindow (room, starterUuid) {
   // Starter auto-seated
   if (starterUuid) await autoSeat(st, starterUuid, room)
 
-  await phaseBanner(room, `🎲 PHASE: JOIN (${JOIN_SECS}s)`, [
-    'Type: /craps join',
-    `Min: ${fmtMoney(MIN_BET)} | Max: ${fmtMoney(MAX_BET)}`
-  ])
+  await say(
+  room,
+  `🎲 **Craps table OPEN** (${JOIN_SECS}s)\n` +
+  `Type **/craps join** to sit at the table.`
+)
 
-  await tableStatusBoard(room, st, `Join open (${JOIN_SECS}s)`)
 
   st.timers.join = setTimeout(async () => {
     st.timers.join = null
@@ -711,7 +771,14 @@ async function shooterRoll (user, room) {
   const [d1, d2, total] = dice()
   st.rollCount++
 
-  await say(room, `🎲 Roll: **${d1} + ${d2} = ${total}**` + (st.point ? `  _(point ${st.point})_` : ''))
+  await sayCode(room, '', formatRollCard({
+  rollCount: st.rollCount,
+  d1,
+  d2,
+  total,
+  point: st.point,
+  phase: st.phase
+}))
 
   // COME-OUT phase
   if (st.phase === PHASES.COME_OUT) {
@@ -807,8 +874,8 @@ return
     return
   }
 
-  await say(room, `⏭️ Point stays **${st.point}**.`)
-await shooterTurnPrompt(room, st, `POINT (${st.point})`)
+  // No “point stays” chatter. Just prompt the shooter again.
+await shooterTurnPrompt(room, st, `POINT (${st.point})`, { minimal: true })
 startRollTimer(room, PHASES.POINT)
 return
 
@@ -1041,7 +1108,7 @@ async function joinTable (user, room) {
   const st = S(room)
   if (!st.tableUsers.includes(user)) {
     st.tableUsers.push(user)
-    await say(room, `🪑 ${mention(user)} sits at the table.`)
+    await say(room, `🪑 ${mention(user)} joined`)
   }
 
   // If this user was next in line last hand, make them the shooter now.
