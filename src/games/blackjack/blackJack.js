@@ -353,7 +353,7 @@ function scheduleTurnTimers (ctx, id) {
   }
 }
 
-async function promptTurn (ctx, id, { rePrompt = false } = {}) {
+async function promptTurn (ctx, id, { rePrompt = false, ping = true } = {}) {
   const st = getTable(ctx)
   if (SUSPENSE_MS && rePrompt) await sleep(Math.min(SUSPENSE_MS, 900))
 
@@ -378,10 +378,13 @@ async function promptTurn (ctx, id, { rePrompt = false } = {}) {
   snap.push(`⏱ Auto-stand in ${TURN_AUTOSTAND_DISPLAY_S}s`)
   await postSnapshot(ctx, snap)
 
-  // One lightweight ping to ensure they see it (keep density low)
+  // Optional lightweight ping (useful for first prompt, noisy for re-prompts)
+if (ping) {
   await postMessage({ room: ctx.room, message: `🎯 ${await mention(id)} you’re up.` })
-  // Small cinematic beat before they type (feels less "instant")
   await beat(250, 450)
+} else {
+  await beat(150, 300)
+}
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -437,15 +440,13 @@ export async function openJoin (ctx) {
 
   // Manual line breaks to avoid CometChat mid-line wraps
   await postMessage({
-    room: ctx.room,
-    message: [
-    `🃏 *Blackjack* table is open for *${Math.round(JOIN_WINDOW_MS / 1000)}s*!`,
-    'Type */bj join* to take a seat.',
-    '',
-    'After join:',
-    `• ${Math.round(BETTING_WINDOW_MS / 1000)}s to bet with */bj bet <amount>*`
-    ].join('\n')
-  })
+  room: ctx.room,
+  message: [
+    '🃏 **BLACKJACK** 🃏',
+    '🪑 Type */bj join* to take a seat',
+    '⏱ Join window open for *30s*'
+  ].join('\n')
+})
 
   st.joinTimer = setTimeout(() => concludeJoin(ctx), JOIN_WINDOW_MS)
 }
@@ -501,10 +502,8 @@ async function concludeJoin (ctx) {
     return
   }
 
-  const playerMentions = await Promise.all(st.handOrder.map(id => mention(id)))
-  await postMessage({ room: ctx.room, message: `⏱️ Join closed. Players: ${playerMentions.join(', ')}` })
-  await beat(350, 650)
-  await startBetting(ctx)
+await beat(350, 650)
+await startBetting(ctx)
 }
 
 async function startBetting (ctx) {
@@ -522,14 +521,21 @@ async function startBetting (ctx) {
   }
 
   const playerMentions = await Promise.all(st.handOrder.map(id => mention(id)))
-  await postMessage({
-    room: ctx.room,
-    message: [
-    `💰 *Betting open* for ${Math.round(BETTING_WINDOW_MS / 1000)}s.`,
-    `Players: ${playerMentions.join(', ')}`,
-    'Place your bet with */bj bet <amount>*.'
-    ].join('\n')
-  })
+const betS = Math.round(BETTING_WINDOW_MS / 1000)
+
+await postMessage({
+  room: ctx.room,
+  message: [
+    '💰 **BETTING OPEN**',
+    `⏱ ${betS}s to place your bet`,
+    '',
+    'Players:',
+    ...playerMentions.map(p => `• ${p}`),
+    '',
+    'Place your bet with:',
+    '*/bj bet <amount>*'
+  ].join('\n')
+})
 
   clearTimer(st.betTimer)
   st.betTimer = setTimeout(() => concludeBetting(ctx), BETTING_WINDOW_MS)
@@ -662,7 +668,7 @@ async function dealInitial (ctx) {
   // Optional cinematic callout (keeps density low: only sends if someone actually hit BJ)
   if (bjWinners.length > 0) {
     for (const id of bjWinners) {
-      await postMessage({ room: ctx.room, message: `🂡 ${await mention(id)} has *BLACKJACK*!` })
+      await postMessage({ room: ctx.room, message: `🂡 ${await mention(id)} has *BLACKJACK*! 🂡` })
       await beat(350, 650)
     }
   }
@@ -683,13 +689,16 @@ async function dealInitial (ctx) {
     }
   }
 
-  const allBJ = st.handOrder.every(id => isBlackjack(st.players.get(id).hand))
-  st.turnIndex = 0
-  if (allBJ) return dealerPlay(ctx)
+ const allBJ = st.handOrder.every(id => isBlackjack(st.players.get(id).hand))
+st.turnIndex = 0
+if (allBJ) return dealerPlay(ctx)
 
-  st.phase = 'acting'
-  await beat(400, 750)
-  await advanceIfDoneAndPrompt(ctx)
+// 🧠 UX PAUSE: give players time to read the table
+await bigBeat()              // ~850–1300ms
+await beat(700, 1200)        // extra breathing room
+
+st.phase = 'acting'
+await advanceIfDoneAndPrompt(ctx)
 }
 
 async function advanceIfDoneAndPrompt (ctx) {
@@ -725,21 +734,28 @@ export async function handleHit (userUUID, nickname, ctx) {
   const v = handValue(p.hand).total
   if (v > 21) { p.busted = true; p.done = true }
 
-  // Keep message density low; show new hand once.
-  await postMessage({ room: ctx.room, message: `🃏 ${await mention(userUUID)} → ${formatHand(p.hand)}${p.busted ? ' — *BUST*' : ''}` })
+  await postMessage({
+  room: ctx.room,
+  message: `🃏 ${await mention(userUUID)} → ${formatHand(p.hand)}${p.busted ? ' — *BUST*' : ''}`
+})
 
-  if (p.busted) {
-    st.turnIndex++
-    const nextId = st.handOrder[st.turnIndex]
-    if (nextId) {
-      await beat(350, 650)
-      await postMessage({ room: ctx.room, message: `➡️ Next up: ${await mention(nextId)}` })
-      await beat(250, 450)
-    }
-    return advanceIfDoneAndPrompt(ctx)
+// 🧠 UX PAUSE: let the table absorb the card
+await beat(700, 1200)
+
+if (p.busted) {
+  st.turnIndex++
+  const nextId = st.handOrder[st.turnIndex]
+  if (nextId) {
+    await beat(350, 650)
+    await postMessage({ room: ctx.room, message: `➡️ Next up: ${await mention(nextId)}` })
+    await beat(250, 450)
   }
+  return advanceIfDoneAndPrompt(ctx)
+}
 
-  return promptTurn(ctx, userUUID, { rePrompt: true })
+// Small pause before re-prompting same player
+await beat(300, 600)
+return promptTurn(ctx, userUUID, { rePrompt: true, ping: false })
 }
 
 export async function handleStand (userUUID, nickname, ctx) {
@@ -862,26 +878,31 @@ async function dealerPlay (ctx) {
   await beat(450, 850)
 
   let { total, soft } = handValue(st.dealerHand)
-  const drawLog = []
+let drew = 0
 
-  while (total < 17 || (total === 17 && soft === true && HIT_SOFT_17)) {
-    await postMessage({ room: ctx.room, message: '🎲 Dealer draws…' })
-    await beat(550, 950)
+while (total < 17 || (total === 17 && soft === true && HIT_SOFT_17)) {
+  await postMessage({ room: ctx.room, message: '🎲 Dealer hits...' })
+  await beat(550, 950)
 
-    st.dealerHand.push(draw(st))
-    const hv = handValue(st.dealerHand); total = hv.total; soft = hv.soft
+  st.dealerHand.push(draw(st))
+  drew++
 
-    // Keep density low: log internally, and only snapshot once at end.
-    drawLog.push(`→ ${formatHand(st.dealerHand)}`)
-    // Slight extra tension if dealer is sitting on 16/17
-    if (total === 16 || total === 17) await beat(350, 750)
-    else await beat(250, 550)
-  }
+  const hv = handValue(st.dealerHand)
+  total = hv.total
+  soft = hv.soft
 
-  if (drawLog.length > 0) {
-    await postSnapshot(ctx, ['DEALER DRAW', ...drawLog])
-    await beat(350, 650)
-  }
+  // Reveal immediately (dramatic + clearer)
+  await postMessage({ room: ctx.room, message: `→ Dealer: ${formatHand(st.dealerHand)}` })
+
+  // Extra tension when hovering near stand/bust range
+  if (total === 16 || total === 17) await beat(450, 900)
+  else await beat(300, 650)
+}
+
+// Optional: one final "stands" line (only if dealer actually drew)
+if (drew > 0) {
+  await beat(250, 500)
+}
 
   await settleRound(ctx)
 }
