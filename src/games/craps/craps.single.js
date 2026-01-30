@@ -77,9 +77,26 @@ const JOIN_SECS = Number(process.env.CRAPS_JOIN_SECS ?? 30)
 const BET_SECS = Number(process.env.CRAPS_BET_SECS ?? 30)
 const ROLL_SECS = Number(process.env.CRAPS_ROLL_SECS ?? 45)
 const POINT_BET_SECS = Number(process.env.CRAPS_POINT_BET_SECS ?? 45)
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
 const PLACES = [4, 5, 6, 8, 9, 10]
+
+
+const POS = '🟢'
+const NEG = '🔴'
+const PUSH = '⚪'
+
+function winLine (name, amt) {
+  return `${POS} ${name.padEnd(18)} +${fmtMoney(amt)}`
+}
+
+function loseLine (name, amt) {
+  return `${NEG} ${name.padEnd(18)} -${fmtMoney(amt)}`
+}
+
+function pushLine (name, amt) {
+  return `${PUSH} ${name.padEnd(18)} push ${fmtMoney(amt)}`
+}
+
 
 /* ───────────────────────── State ───────────────────────── */
 
@@ -263,14 +280,8 @@ function outcomeLabel ({ phase, total, point }) {
 }
 
 
-const DIE_EMOJI = {
-  1: '⚀',
-  2: '⚁',
-  3: '⚂',
-  4: '⚃',
-  5: '⚄',
-  6: '⚅'
-}
+const DIE = { 1:'1️⃣', 2:'2️⃣', 3:'3️⃣', 4:'4️⃣', 5:'5️⃣', 6:'6️⃣' }
+
 
 function formatRollCard ({ rollCount, d1, d2, total, point, phase }) {
   const pointStr = point ? `POINT ${point}` : 'COME-OUT'
@@ -280,10 +291,10 @@ function formatRollCard ({ rollCount, d1, d2, total, point, phase }) {
 
   return [
     `🎲 ROLL #${rollCount} • ${pointStr}`,
-    '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+    '━━━━━━━━━━━━━━━━━━━━━━',
     `🎯 TOTAL: ${total}     (${d1} + ${d2})`,
-    `🎲 DICE:  ${dice}`,
-    '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+    `🎲 DICE:  ${DIE[d1]} + ${DIE[d2]}`,
+    '━━━━━━━━━━━━━━━━━━━━━━',
     `🔥 ${label}`
   ].join('\n')
 }
@@ -300,49 +311,29 @@ function phaseLabel (st) {
   return String(st.phase || '—')
 }
 
-async function tableStatusBoard (room, st, next = '') {
-  const sh = shooterUuid(st)
-  const shooterName = sh ? await getDisplayName(st, sh) : '—'
-  const lines = [
-    'TABLE STATUS',
-    '-----------------------',
-    `Phase:     ${phaseLabel(st)}`,
-    `Shooter:   ${shooterName}`,
-    `Point:     ${st.point ?? '—'}`,
-    `Rolls:     ${st.rollCount}`,
-    `Players:   ${st.tableUsers.length}`
-  ]
-  if (next) {
-    lines.push('-----------------------')
-    lines.push(`Next:      ${next}`)
-  }
-  await sayCode(room, '', lines.join('\n'))
-}
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
 async function shooterTurnPrompt (room, st, mode = '', { minimal = false } = {}) {
   const sh = shooterUuid(st)
-  const modeUpper = String(mode || '').toUpperCase()
-  const isComeOut = modeUpper.includes('COME-OUT')
 
   if (minimal) {
     await say(room, `🎲 Shooter: ${sh ? mention(sh) : '—'} — type **/roll** (⏱️ ${ROLL_SECS}s)`)
     return
   }
 
-  // ✅ Skip the table status board for COME-OUT to avoid repetition
-  if (!isComeOut) {
-    await tableStatusBoard(room, st, 'Shooter rolls (/roll)')
-  }
-
+  
   await phaseBanner(room, '🎲 PHASE: SHOOTER TURN', [
     mode ? `Mode: ${mode}` : '',
     `Time: ${ROLL_SECS}s`,
     'Available now: /roll'
   ].filter(Boolean))
 
-  // Put the CTA last so it sits at the bottom
+  
+  await sleep(80)
   await say(room, `🎲 **SHOOTER TURN** → ${sh ? mention(sh) : '—'} type **/roll** (⏱️ ${ROLL_SECS}s)`)
 }
+
 
 
 
@@ -468,8 +459,6 @@ async function closeJoinOpenBetting (room) {
 
   st.phase = PHASES.BETTING
 
-  // ✅ status first
-  await tableStatusBoard(room, st, `Line betting open (${BET_SECS}s)`)
 
   // ✅ then phase banner
   await phaseBanner(room, `💰 PHASE: LINE BETTING (${BET_SECS}s)`, [
@@ -487,6 +476,7 @@ async function closeJoinOpenBetting (room) {
 async function openComeOutBetting (room, reasonLine = '') {
   const st = S(room)
 
+  // Clear any existing timers that could compete with this window
   if (st.timers.bet) { clearTimeout(st.timers.bet); st.timers.bet = null }
   if (st.timers.roll) { clearTimeout(st.timers.roll); st.timers.roll = null }
   if (st.timers.pointBet) { clearTimeout(st.timers.pointBet); st.timers.pointBet = null }
@@ -494,21 +484,32 @@ async function openComeOutBetting (room, reasonLine = '') {
   st.phase = PHASES.BETTING
   st.point = null
 
+  // Reason (e.g. "Point made!" / "Come-out craps 3!") first
   if (reasonLine) await say(room, reasonLine)
-  await tableStatusBoard(room, st, `Come-out betting open (${BET_SECS}s)`)
 
+
+  // ✅ Phase banner after status
   await phaseBanner(room, `💰 PHASE: COME-OUT BETTING (${BET_SECS}s)`, [
     'Available now: /pass <amt>  /dontpass <amt>',
     '(Other bets stay working.)'
   ])
 
-  
+  // Tiny delay so the final CTA lands at the bottom consistently
+  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
+  await sleep(80)
+
+  // ✅ Final “what to do now” line (last thing users see)
+  await say(
+    room,
+    `✅ Betting open — type **/pass <amt>** or **/dontpass <amt>** (⏱️ ${BET_SECS}s)`
+  )
 
   st.timers.bet = setTimeout(async () => {
     st.timers.bet = null
     await closeBettingBeginComeOut(room)
   }, BET_SECS * 1000)
 }
+
 
 function startRollTimer (room, phase) {
   const st = S(room)
@@ -916,117 +917,149 @@ return
 
 async function settlePass (st, outcome) {
   const lines = []
+
   for (const [u, amt] of Object.entries(st.pass)) {
     const name = await getDisplayName(st, u)
+
     if (outcome === 'win') {
       await creditGameWin(u, amt * 2)
       addRoundResult(st, u, amt)
-      lines.push(`${name.padEnd(18)} +${fmtMoney(amt)}`)
+      lines.push(winLine(name, amt))
+
     } else if (outcome === 'push') {
       await creditGameWin(u, amt)
-      lines.push(`${name.padEnd(18)} push ${fmtMoney(amt)}`)
+      lines.push(pushLine(name, amt))
+
     } else {
       addRoundResult(st, u, -amt)
-      lines.push(`${name.padEnd(18)} -${fmtMoney(amt)}`)
+      lines.push(loseLine(name, amt))
     }
   }
+
   st.pass = Object.create(null)
   return lines
 }
 
+
 async function settleDontPass (st, outcome) {
   const lines = []
+
   for (const [u, amt] of Object.entries(st.dontPass)) {
     const name = await getDisplayName(st, u)
+
     if (outcome === 'win') {
       await creditGameWin(u, amt * 2)
       addRoundResult(st, u, amt)
-      lines.push(`${name.padEnd(18)} +${fmtMoney(amt)}`)
+      lines.push(winLine(name, amt))
+
     } else if (outcome === 'push') {
       await creditGameWin(u, amt)
-      lines.push(`${name.padEnd(18)} push ${fmtMoney(amt)}`)
+      lines.push(pushLine(name, amt))
+
     } else {
       addRoundResult(st, u, -amt)
-      lines.push(`${name.padEnd(18)} -${fmtMoney(amt)}`)
+      lines.push(loseLine(name, amt))
     }
   }
+
   st.dontPass = Object.create(null)
   return lines
 }
 
+
 async function resolveComeWaiting (total, st) {
   const lines = []
 
+  // COME (waiting)
   for (const [u, amt] of Object.entries(st.comeWaiting)) {
     const name = await getDisplayName(st, u)
+
     if (total === 7 || total === 11) {
       await creditGameWin(u, amt * 2)
       addRoundResult(st, u, amt)
-      lines.push(`${name.padEnd(18)} COME +${fmtMoney(amt)}`)
+      lines.push(`${POS} ${name.padEnd(18)} COME +${fmtMoney(amt)}`)
+
     } else if ([2, 3, 12].includes(total)) {
       if (total === 12) {
         await creditGameWin(u, amt)
-        lines.push(`${name.padEnd(18)} COME push ${fmtMoney(amt)}`)
+        lines.push(`${PUSH} ${name.padEnd(18)} COME push ${fmtMoney(amt)}`)
       } else {
         addRoundResult(st, u, -amt)
-        lines.push(`${name.padEnd(18)} COME -${fmtMoney(amt)}`)
+        lines.push(`${NEG} ${name.padEnd(18)} COME -${fmtMoney(amt)}`)
       }
+
     } else {
+      // travels to a come point
       st.comePoint[u] = { num: total, amt }
       lines.push(`${name.padEnd(18)} COME -> ${total} (${fmtMoney(amt)})`)
     }
+
     delete st.comeWaiting[u]
   }
 
+  // DON'T COME (waiting)
   for (const [u, amt] of Object.entries(st.dontComeWaiting)) {
     const name = await getDisplayName(st, u)
+
     if ([2, 3].includes(total)) {
       await creditGameWin(u, amt * 2)
       addRoundResult(st, u, amt)
-      lines.push(`${name.padEnd(18)} DONT-COME +${fmtMoney(amt)}`)
+      lines.push(`${POS} ${name.padEnd(18)} DONT-COME +${fmtMoney(amt)}`)
+
     } else if (total === 12) {
       await creditGameWin(u, amt)
-      lines.push(`${name.padEnd(18)} DONT-COME push ${fmtMoney(amt)}`)
+      lines.push(`${PUSH} ${name.padEnd(18)} DONT-COME push ${fmtMoney(amt)}`)
+
     } else if (total === 7 || total === 11) {
       addRoundResult(st, u, -amt)
-      lines.push(`${name.padEnd(18)} DONT-COME -${fmtMoney(amt)}`)
+      lines.push(`${NEG} ${name.padEnd(18)} DONT-COME -${fmtMoney(amt)}`)
+
     } else {
+      // travels to a don't-come point
       st.dontComePoint[u] = { num: total, amt }
       lines.push(`${name.padEnd(18)} DONT-COME vs ${total} (${fmtMoney(amt)})`)
     }
+
     delete st.dontComeWaiting[u]
   }
 
   return lines
 }
 
+
 async function resolveComePoints (total, st) {
   const lines = []
 
+  // COME point bets
   for (const [u, o] of Object.entries(st.comePoint)) {
     const name = await getDisplayName(st, u)
+
     if (total === o.num) {
       await creditGameWin(u, o.amt * 2)
       addRoundResult(st, u, o.amt)
-      lines.push(`${name.padEnd(18)} COME(${o.num}) +${fmtMoney(o.amt)}`)
+      lines.push(`${POS} ${name.padEnd(18)} COME(${o.num}) +${fmtMoney(o.amt)}`)
       delete st.comePoint[u]
+
     } else if (total === 7) {
       addRoundResult(st, u, -o.amt)
-      lines.push(`${name.padEnd(18)} COME(${o.num}) -${fmtMoney(o.amt)}`)
+      lines.push(`${NEG} ${name.padEnd(18)} COME(${o.num}) -${fmtMoney(o.amt)}`)
       delete st.comePoint[u]
     }
   }
 
+  // DON'T COME point bets
   for (const [u, o] of Object.entries(st.dontComePoint)) {
     const name = await getDisplayName(st, u)
+
     if (total === 7) {
       await creditGameWin(u, o.amt * 2)
       addRoundResult(st, u, o.amt)
-      lines.push(`${name.padEnd(18)} DONT(${o.num}) +${fmtMoney(o.amt)}`)
+      lines.push(`${POS} ${name.padEnd(18)} DONT(${o.num}) +${fmtMoney(o.amt)}`)
       delete st.dontComePoint[u]
+
     } else if (total === o.num) {
       addRoundResult(st, u, -o.amt)
-      lines.push(`${name.padEnd(18)} DONT(${o.num}) -${fmtMoney(o.amt)}`)
+      lines.push(`${NEG} ${name.padEnd(18)} DONT(${o.num}) -${fmtMoney(o.amt)}`)
       delete st.dontComePoint[u]
     }
   }
@@ -1034,37 +1067,44 @@ async function resolveComePoints (total, st) {
   return lines
 }
 
+
 async function resolvePlace (total, st) {
   const lines = []
 
+  // Seven-out: all place bets lose
   if (total === 7) {
     for (const n of PLACES) {
-      for (const [u, amt] of Object.entries(st.place[n])) {
+      for (const [u, amt] of Object.entries(st.place[n] || {})) {
         const name = await getDisplayName(st, u)
         addRoundResult(st, u, -amt)
-        lines.push(`${name.padEnd(18)} PLACE(${n}) -${fmtMoney(amt)}`)
+        lines.push(`${NEG} ${name.padEnd(18)} PLACE(${n}) -${fmtMoney(amt)}`)
       }
       st.place[n] = {}
     }
     return lines
   }
 
+  // Place number hit: pay profit only (your bankroll model)
   if (PLACES.includes(total)) {
-    const book = st.place[total]
+    const book = st.place[total] || {}
+
     for (const [u, amt] of Object.entries(book)) {
       const name = await getDisplayName(st, u)
+
       const rawProfit = placeProfit(total, amt)
       const profit = Math.ceil(rawProfit) // round UP
+
       if (profit > 0) {
         await creditGameWin(u, profit)
         addRoundResult(st, u, profit)
-        lines.push(`${name.padEnd(18)} PLACE(${total}) +$${profit}`)
+        lines.push(`${POS} ${name.padEnd(18)} PLACE(${total}) +${fmtMoney(profit)}`)
       }
     }
   }
 
   return lines
 }
+
 
 /* ───────────────────────── Hand End ───────────────────────── */
 
@@ -1089,17 +1129,27 @@ async function endHand (room, reason) {
   await say(room, reason ? `🧾 Hand over — ${reason}` : '🧾 Hand over.')
 
   // Hand totals board
-  const rrKeys = Object.keys(st.roundResults || {})
-  if (rrKeys.length) {
-    const lines = []
-    for (const u of rrKeys) {
-      const name = await getDisplayName(st, u)
-      const amt = st.roundResults[u]
-      const sign = amt >= 0 ? '+' : '-'
-      lines.push(`${name.padEnd(18)} ${sign}${fmtMoney(Math.abs(amt))}`)
-    }
-    await sayCode(room, 'HAND TOTALS', lines.join('\n'))
+  // Hand totals board (🟢 up / 🔴 down / ⚪ even)
+const rrKeys = Object.keys(st.roundResults || {})
+if (rrKeys.length) {
+  const lines = []
+
+  // Optional: sort biggest winners first
+  rrKeys.sort((a, b) => Number(st.roundResults[b] || 0) - Number(st.roundResults[a] || 0))
+
+  for (const u of rrKeys) {
+    const name = await getDisplayName(st, u)
+    const amt = Number(st.roundResults[u] || 0)
+
+    const chip = amt > 0 ? '🟢' : (amt < 0 ? '🔴' : '⚪')
+    const sign = amt > 0 ? '+' : (amt < 0 ? '-' : '±')
+
+    lines.push(`${chip} ${name.padEnd(18)} ${sign}${fmtMoney(Math.abs(amt))}`)
   }
+
+  await sayCode(room, 'HAND TOTALS', lines.join('\n'))
+}
+
 
   // Record check
   if (st.rollCount > st.record.rolls) {
