@@ -261,17 +261,67 @@ function outcomeLabel ({ phase, total, point }) {
   return '—'
 }
 
+const DIE_FACE = {
+  1: ['┌─────┐', '│  ●  │', '└─────┘'],
+  2: ['┌─────┐', '│ ●   │', '│   ● │', '└─────┘'],
+  3: ['┌─────┐', '│ ●   │', '│  ●  │', '│   ● │', '└─────┘'],
+  4: ['┌─────┐', '│ ● ● │', '│ ● ● │', '└─────┘'],
+  5: ['┌─────┐', '│ ● ● │', '│  ●  │', '│ ● ● │', '└─────┘'],
+  6: ['┌─────┐', '│ ● ● │', '│ ● ● │', '│ ● ● │', '└─────┘']
+}
+
+// Pads left/right to roughly center text in a fixed width card
+function center (txt, width = 27) {
+  const s = String(txt)
+  if (s.length >= width) return s
+  const pad = width - s.length
+  const left = Math.floor(pad / 2)
+  const right = pad - left
+  return ' '.repeat(left) + s + ' '.repeat(right)
+}
+
 function formatRollCard ({ rollCount, d1, d2, total, point, phase }) {
   const pointStr = point ? `POINT ${point}` : 'COME-OUT'
   const label = outcomeLabel({ phase, total, point })
 
+  const a = DIE_FACE[d1]
+  const b = DIE_FACE[d2]
+
+  // normalize dice art to same height (some entries have 3 vs 5 lines)
+  const ha = a.length
+  const hb = b.length
+  const h = Math.max(ha, hb)
+  const padTo = (arr) => {
+    if (arr.length === h) return arr
+    // add blank lines to top/bottom to match height
+    const blanks = Array(h - arr.length).fill('       ')
+    return [...blanks.slice(0, Math.floor(blanks.length / 2)), ...arr, ...blanks.slice(Math.floor(blanks.length / 2))]
+  }
+
+  const aa = padTo(a)
+  const bb = padTo(b)
+
+  const diceLines = []
+  for (let i = 0; i < h; i++) {
+    diceLines.push(`${aa[i]}  ${bb[i]}`)
+  }
+
+  const header = `🎲 ROLL #${rollCount} • ${pointStr}`
+  const width = 27
+  const bar = '━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+
   return [
-    `🎲 ROLL #${rollCount}   (${pointStr})`,
-    '---------------------------',
-    `Dice:   ${d1} + ${d2} = ${total}`,
-    `RESULT: ${label}`
+    header,
+    bar,
+    center(`TOTAL: ${total}`, width),
+    center(`(${d1} + ${d2})`, width),
+    '',
+    ...diceLines,
+    '',
+    `🔥 ${label}`
   ].join('\n')
 }
+
 
 
 function phaseLabel (st) {
@@ -314,13 +364,14 @@ async function shooterTurnPrompt (room, st, mode = '', { minimal = false } = {})
   // Full “big” prompt (use at phase transitions only)
   await say(room, `🎲 **SHOOTER TURN** → ${sh ? mention(sh) : '—'} type **/roll** (⏱️ ${ROLL_SECS}s)`)
 
+  await tableStatusBoard(room, st, 'Shooter rolls (/roll)')
+
   await phaseBanner(room, '🎲 PHASE: SHOOTER TURN', [
     mode ? `Mode: ${mode}` : '',
     `Time: ${ROLL_SECS}s`,
     'Available now: /roll'
   ].filter(Boolean))
 
-  await tableStatusBoard(room, st, 'Shooter rolls (/roll)')
 }
 
 
@@ -426,6 +477,7 @@ async function openJoinWindow (room, starterUuid) {
 
 async function closeJoinOpenBetting (room) {
   const st = S(room)
+
   if (!st.tableUsers.length) {
     st.phase = PHASES.IDLE
     await phaseBanner(room, '🛑 PHASE: IDLE', ['Join closed — nobody seated.'])
@@ -444,17 +496,20 @@ async function closeJoinOpenBetting (room) {
 
   st.phase = PHASES.BETTING
 
+  // ✅ status first
+  await tableStatusBoard(room, st, `Line betting open (${BET_SECS}s)`)
+
+  // ✅ then phase banner
   await phaseBanner(room, `💰 PHASE: LINE BETTING (${BET_SECS}s)`, [
     'Available now: /pass <amt>  /dontpass <amt>'
   ])
-
-  await tableStatusBoard(room, st, `Line betting open (${BET_SECS}s)`)
 
   st.timers.bet = setTimeout(async () => {
     st.timers.bet = null
     await closeBettingBeginComeOut(room)
   }, BET_SECS * 1000)
 }
+
 
 // Come-out betting window again (same shooter; does NOT reset other bets)
 async function openComeOutBetting (room, reasonLine = '') {
@@ -467,13 +522,15 @@ async function openComeOutBetting (room, reasonLine = '') {
   st.phase = PHASES.BETTING
   st.point = null
 
+  if (reasonLine) await say(room, reasonLine)
+  await tableStatusBoard(room, st, `Come-out betting open (${BET_SECS}s)`)
+
   await phaseBanner(room, `💰 PHASE: COME-OUT BETTING (${BET_SECS}s)`, [
     'Available now: /pass <amt>  /dontpass <amt>',
     '(Other bets stay working.)'
   ])
 
-  if (reasonLine) await say(room, reasonLine)
-  await tableStatusBoard(room, st, `Come-out betting open (${BET_SECS}s)`)
+  
 
   st.timers.bet = setTimeout(async () => {
     st.timers.bet = null
@@ -1097,10 +1154,9 @@ async function endHand (room, reason) {
     'Type: /craps to open a new join window'
   ])
 
-  // Also ping as mention outside code so people see it
-  const nextHint = st.pendingNextShooter ? ` Next shooter in line (if they re-join): ${mention(st.pendingNextShooter)}.` : ''
-  await say(room, `🛑 Table is idle.${nextHint}\nType **/craps** to open a new join window.`)
+  // ✅ removed the extra “Table is idle…” say() to avoid repetition
 }
+
 
 /* ───────────────────────── Table mgmt / Bets view ───────────────────────── */
 

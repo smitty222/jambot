@@ -110,9 +110,9 @@ async function drawWinningNumber () {
       const mention = formatMention(userId)
       const displayName = cleanNick || getDisplayName(userId)
       db.prepare(`
-        INSERT INTO lottery_winners (userId, nickname, displayName, winningNumber, amountWon)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(userId, mention, displayName, winningNumber, LOTTERY_WIN_AMOUNT)
+        INSERT INTO lottery_winners (userId, nickname, displayName, winningNumber, amountWon, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+      `).run(userId, mention, displayName, winningNumber, LOTTERY_WIN_AMOUNT, Date.now())
       // Compose a message using the mention syntax for the chat
       message += `\n ${mention} wins $${LOTTERY_WIN_AMOUNT.toLocaleString()}!`
     }
