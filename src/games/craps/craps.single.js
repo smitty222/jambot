@@ -77,6 +77,7 @@ const JOIN_SECS = Number(process.env.CRAPS_JOIN_SECS ?? 30)
 const BET_SECS = Number(process.env.CRAPS_BET_SECS ?? 30)
 const ROLL_SECS = Number(process.env.CRAPS_ROLL_SECS ?? 45)
 const POINT_BET_SECS = Number(process.env.CRAPS_POINT_BET_SECS ?? 45)
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
 const PLACES = [4, 5, 6, 8, 9, 10]
 
@@ -261,66 +262,32 @@ function outcomeLabel ({ phase, total, point }) {
   return '—'
 }
 
-const DIE_FACE = {
-  1: ['┌─────┐', '│  ●  │', '└─────┘'],
-  2: ['┌─────┐', '│ ●   │', '│   ● │', '└─────┘'],
-  3: ['┌─────┐', '│ ●   │', '│  ●  │', '│   ● │', '└─────┘'],
-  4: ['┌─────┐', '│ ● ● │', '│ ● ● │', '└─────┘'],
-  5: ['┌─────┐', '│ ● ● │', '│  ●  │', '│ ● ● │', '└─────┘'],
-  6: ['┌─────┐', '│ ● ● │', '│ ● ● │', '│ ● ● │', '└─────┘']
-}
 
-// Pads left/right to roughly center text in a fixed width card
-function center (txt, width = 27) {
-  const s = String(txt)
-  if (s.length >= width) return s
-  const pad = width - s.length
-  const left = Math.floor(pad / 2)
-  const right = pad - left
-  return ' '.repeat(left) + s + ' '.repeat(right)
+const DIE_EMOJI = {
+  1: '⚀',
+  2: '⚁',
+  3: '⚂',
+  4: '⚃',
+  5: '⚄',
+  6: '⚅'
 }
 
 function formatRollCard ({ rollCount, d1, d2, total, point, phase }) {
   const pointStr = point ? `POINT ${point}` : 'COME-OUT'
   const label = outcomeLabel({ phase, total, point })
 
-  const a = DIE_FACE[d1]
-  const b = DIE_FACE[d2]
-
-  // normalize dice art to same height (some entries have 3 vs 5 lines)
-  const ha = a.length
-  const hb = b.length
-  const h = Math.max(ha, hb)
-  const padTo = (arr) => {
-    if (arr.length === h) return arr
-    // add blank lines to top/bottom to match height
-    const blanks = Array(h - arr.length).fill('       ')
-    return [...blanks.slice(0, Math.floor(blanks.length / 2)), ...arr, ...blanks.slice(Math.floor(blanks.length / 2))]
-  }
-
-  const aa = padTo(a)
-  const bb = padTo(b)
-
-  const diceLines = []
-  for (let i = 0; i < h; i++) {
-    diceLines.push(`${aa[i]}  ${bb[i]}`)
-  }
-
-  const header = `🎲 ROLL #${rollCount} • ${pointStr}`
-  const width = 27
-  const bar = '━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+  const dice = `${DIE_EMOJI[d1] || d1} ${DIE_EMOJI[d2] || d2}`
 
   return [
-    header,
-    bar,
-    center(`TOTAL: ${total}`, width),
-    center(`(${d1} + ${d2})`, width),
-    '',
-    ...diceLines,
-    '',
+    `🎲 ROLL #${rollCount} • ${pointStr}`,
+    '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+    `🎯 TOTAL: ${total}     (${d1} + ${d2})`,
+    `🎲 DICE:  ${dice}`,
+    '━━━━━━━━━━━━━━━━━━━━━━━━━━━',
     `🔥 ${label}`
   ].join('\n')
 }
+
 
 
 
@@ -354,17 +321,18 @@ async function tableStatusBoard (room, st, next = '') {
 
 async function shooterTurnPrompt (room, st, mode = '', { minimal = false } = {}) {
   const sh = shooterUuid(st)
+  const modeUpper = String(mode || '').toUpperCase()
+  const isComeOut = modeUpper.includes('COME-OUT')
 
   if (minimal) {
-    // One clean line, no boards/banners
     await say(room, `🎲 Shooter: ${sh ? mention(sh) : '—'} — type **/roll** (⏱️ ${ROLL_SECS}s)`)
     return
   }
 
-  // Full “big” prompt (use at phase transitions only)
-  await say(room, `🎲 **SHOOTER TURN** → ${sh ? mention(sh) : '—'} type **/roll** (⏱️ ${ROLL_SECS}s)`)
-
-  await tableStatusBoard(room, st, 'Shooter rolls (/roll)')
+  // ✅ Skip the table status board for COME-OUT to avoid repetition
+  if (!isComeOut) {
+    await tableStatusBoard(room, st, 'Shooter rolls (/roll)')
+  }
 
   await phaseBanner(room, '🎲 PHASE: SHOOTER TURN', [
     mode ? `Mode: ${mode}` : '',
@@ -372,7 +340,11 @@ async function shooterTurnPrompt (room, st, mode = '', { minimal = false } = {})
     'Available now: /roll'
   ].filter(Boolean))
 
+  // Put the CTA last so it sits at the bottom
+  await say(room, `🎲 **SHOOTER TURN** → ${sh ? mention(sh) : '—'} type **/roll** (⏱️ ${ROLL_SECS}s)`)
 }
+
+
 
 
 /* ───────────────────────── Point betting window ───────────────────────── */
@@ -604,6 +576,7 @@ async function handleShooterRollTimeout (room) {
     `🎯 Next shooter: ${next ? mention(next) : '—'}`
   )
 
+  await sleep(50)
   await shooterTurnPrompt(room, st, label)
   startRollTimer(room, st.phase)
 }
@@ -653,6 +626,7 @@ async function closeBettingBeginComeOut (room) {
   st.phase = PHASES.COME_OUT
   st.point = null
 
+  await sleep(50)
   await shooterTurnPrompt(room, st, 'COME-OUT')
   startRollTimer(room, PHASES.COME_OUT)
 }
@@ -931,7 +905,7 @@ return
     return
   }
 
-  // No “point stays” chatter. Just prompt the shooter again.
+ 
 await shooterTurnPrompt(room, st, `POINT (${st.point})`, { minimal: true })
 startRollTimer(room, PHASES.POINT)
 return
