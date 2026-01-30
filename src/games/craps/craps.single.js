@@ -112,6 +112,22 @@ function S (room) {
   return TABLES.get(key)
 }
 
+function rollRulesLine (mode, point) {
+  const m = String(mode || '').toUpperCase()
+
+  if (m.includes('COME')) {
+    return '🎯 Rules: 7/11 = WIN • 2/3/12 = LOSE • 4/5/6/8/9/10 = set POINT'
+  }
+
+  if (m.includes('POINT')) {
+    const p = point ? `(${point})` : ''
+    return `🎯 Rules: hit POINT ${p} = WIN • 7 = SEVEN-OUT • others = keep rolling`
+  }
+
+  return '🎯 Rules: roll to continue'
+}
+
+
 function freshState () {
   return {
     phase: PHASES.IDLE,
@@ -155,6 +171,26 @@ async function sayCode (room, title, body) {
   const t = title ? `${title}\n` : ''
   await say(room, `${t}\`\`\`\n${body}\n\`\`\``)
 }
+function bold (s) { return `**${s}**` }
+
+function shooterWho (st) {
+  const sh = shooterUuid(st)
+  return sh ? mention(sh) : '—'
+}
+
+function fmtSecs (secs) {
+  return `${secs}s`
+}
+
+// Clean, non-code "phase" lines to replace the noisy ``` banners
+async function phaseLine (room, title, lines = []) {
+  const msg = [
+    `🟦 ${bold(title)}`,
+    ...(lines || [])
+  ].filter(Boolean).join('\n')
+  await say(room, msg)
+}
+
 
 const BANNER = '━━━━━━━━━━━━━━━━━━━━━'
 
@@ -287,13 +323,11 @@ function formatRollCard ({ rollCount, d1, d2, total, point, phase }) {
   const pointStr = point ? `POINT ${point}` : 'COME-OUT'
   const label = outcomeLabel({ phase, total, point })
 
-  const dice = `${DIE_EMOJI[d1] || d1} ${DIE_EMOJI[d2] || d2}`
-
   return [
     `🎲 ROLL #${rollCount} • ${pointStr}`,
     '━━━━━━━━━━━━━━━━━━━━━━',
     `🎯 TOTAL: ${total}     (${d1} + ${d2})`,
-    `🎲 DICE:  ${DIE[d1]} + ${DIE[d2]}`,
+    `🎲 DICE:  ${DIE[d1] || d1} + ${DIE[d2] || d2}`,
     '━━━━━━━━━━━━━━━━━━━━━━',
     `🔥 ${label}`
   ].join('\n')
@@ -301,38 +335,29 @@ function formatRollCard ({ rollCount, d1, d2, total, point, phase }) {
 
 
 
-
-function phaseLabel (st) {
-  if (st.phase === PHASES.JOIN) return 'JOIN'
-  if (st.phase === PHASES.BETTING && !st.point) return 'LINE BETTING'
-  if (st.phase === PHASES.COME_OUT) return 'COME-OUT'
-  if (st.phase === PHASES.POINT) return 'POINT (ROLLING)'
-  if (st.phase === PHASES.IDLE) return 'IDLE'
-  return String(st.phase || '—')
-}
-
-
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
 async function shooterTurnPrompt (room, st, mode = '', { minimal = false } = {}) {
   const sh = shooterUuid(st)
+  const who = sh ? mention(sh) : '—'
+  const rules = rollRulesLine(mode, st.point)
 
   if (minimal) {
-    await say(room, `🎲 Shooter: ${sh ? mention(sh) : '—'} — type **/roll** (⏱️ ${ROLL_SECS}s)`)
+    await say(room, `🎲 ${who} — **/roll** (⏱️ ${ROLL_SECS}s) • ${rules}`)
     return
   }
 
-  
-  await phaseBanner(room, '🎲 PHASE: SHOOTER TURN', [
-    mode ? `Mode: ${mode}` : '',
-    `Time: ${ROLL_SECS}s`,
-    'Available now: /roll'
-  ].filter(Boolean))
-
-  
+  // One clean shooter prompt (no code block)
   await sleep(80)
-  await say(room, `🎲 **SHOOTER TURN** → ${sh ? mention(sh) : '—'} type **/roll** (⏱️ ${ROLL_SECS}s)`)
+  await say(
+    room,
+    `🎲 **SHOOTER TURN** → ${who}\n` +
+    `Mode: **${mode || '—'}** • (⏱️ ${ROLL_SECS}s)\n` +
+    `${rules}\n` +
+    `👉 Type **/roll**`
+  )
 }
+
 
 
 
@@ -443,8 +468,10 @@ async function closeJoinOpenBetting (room) {
 
   if (!st.tableUsers.length) {
     st.phase = PHASES.IDLE
-    await phaseBanner(room, '🛑 PHASE: IDLE', ['Join closed — nobody seated.'])
-    await say(room, 'Type **/craps** to open a new join window.')
+    await phaseLine(room, 'PHASE: IDLE', [
+      'Join closed — nobody seated.',
+      'Type ' + bold('/craps') + ' to open a new join window.'
+    ])
     return
   }
 
@@ -459,17 +486,21 @@ async function closeJoinOpenBetting (room) {
 
   st.phase = PHASES.BETTING
 
-
-  // ✅ then phase banner
-  await phaseBanner(room, `💰 PHASE: LINE BETTING (${BET_SECS}s)`, [
-    'Available now: /pass <amt>  /dontpass <amt>'
+  await phaseLine(room, `PHASE: LINE BETTING (${fmtSecs(BET_SECS)})`, [
+    `Shooter: ${shooterWho(st)}`,
+    `Commands: ${bold('/pass <amt>')}  ${bold('/dontpass <amt>')}`
   ])
+
+  // Optional: a bottom CTA so it always “ends” the phase message
+  await sleep(80)
+  await say(room, `✅ Line betting open — place bets now (⏱️ ${BET_SECS}s)`)
 
   st.timers.bet = setTimeout(async () => {
     st.timers.bet = null
     await closeBettingBeginComeOut(room)
   }, BET_SECS * 1000)
 }
+
 
 
 // Come-out betting window again (same shooter; does NOT reset other bets)
@@ -484,31 +515,26 @@ async function openComeOutBetting (room, reasonLine = '') {
   st.phase = PHASES.BETTING
   st.point = null
 
-  // Reason (e.g. "Point made!" / "Come-out craps 3!") first
+  // Reason first (e.g. "Point made!" / "Come-out craps 3!")
   if (reasonLine) await say(room, reasonLine)
 
-
-  // ✅ Phase banner after status
-  await phaseBanner(room, `💰 PHASE: COME-OUT BETTING (${BET_SECS}s)`, [
-    'Available now: /pass <amt>  /dontpass <amt>',
-    '(Other bets stay working.)'
+  await phaseLine(room, `PHASE: COME-OUT BETTING (${fmtSecs(BET_SECS)})`, [
+    `Shooter: ${shooterWho(st)}`,
+    `Commands: ${bold('/pass <amt>')}  ${bold('/dontpass <amt>')}`,
+    'Other bets stay working.'
   ])
 
-  // Tiny delay so the final CTA lands at the bottom consistently
-  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
+  // Ensure CTA lands at the bottom
   await sleep(80)
-
-  // ✅ Final “what to do now” line (last thing users see)
-  await say(
-    room,
-    `✅ Betting open — type **/pass <amt>** or **/dontpass <amt>** (⏱️ ${BET_SECS}s)`
-  )
+  await say(room, `✅ Betting open — type ${bold('/pass <amt>')} or ${bold('/dontpass <amt>')} (⏱️ ${BET_SECS}s)`)
 
   st.timers.bet = setTimeout(async () => {
     st.timers.bet = null
     await closeBettingBeginComeOut(room)
   }, BET_SECS * 1000)
 }
+
+
 
 
 function startRollTimer (room, phase) {
@@ -558,8 +584,10 @@ async function handleShooterRollTimeout (room) {
     st.point = null
     st.rollCount = 0
     st.roundResults = Object.create(null)
-    await phaseBanner(room, '🛑 PHASE: IDLE', ['Round cancelled. Bets refunded.'])
-    await say(room, 'Type **/craps** to start again.')
+    await phaseLine(room, 'PHASE: IDLE', [
+  'Round cancelled. Bets refunded.',
+  `Type ${bold('/craps')} to start again.`
+])
     return
   }
 
@@ -587,8 +615,10 @@ async function closeBettingBeginComeOut (room) {
 
   if (!hasAnyBets(st)) {
     st.phase = PHASES.IDLE
-    await phaseBanner(room, '🛑 PHASE: IDLE', ['No active bets. Table closed.'])
-    await say(room, 'Type **/craps** to open a new join window.')
+    await phaseLine(room, 'PHASE: IDLE', [
+  'No active bets. Table closed.',
+  `Type ${bold('/craps')} to open a new join window.`
+])
     return
   }
 
@@ -1173,12 +1203,13 @@ if (rrKeys.length) {
 
   st.phase = PHASES.IDLE
 
-  await phaseBanner(room, '🛑 PHASE: IDLE', [
-    st.pendingNextShooter ? `Next shooter in line (if they re-join): ${st.pendingNextShooter}` : 'Next shooter in line: —',
-    'Type: /craps to open a new join window'
-  ])
+  await phaseLine(room, 'PHASE: IDLE', [
+  st.pendingNextShooter
+    ? `Next shooter in line (if they re-join): ${mention(st.pendingNextShooter)}`
+    : 'Next shooter in line: —',
+  `Type ${bold('/craps')} to open a new join window.`
+])
 
-  // ✅ removed the extra “Table is idle…” say() to avoid repetition
 }
 
 
