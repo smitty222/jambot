@@ -1771,6 +1771,117 @@ export async function handleRandomCosmicCommand (senderUuid, room, postMessage) 
   }
 }
 
+export async function handleRandomPajamaCommand (senderUuid, room, postMessage) {
+  const userToken = userTokenMap[senderUuid]
+  if (!userToken) {
+    await postMessage({
+      room,
+      message: '🎟️ Sorry, this command is only available to authorized users.'
+    })
+    return
+  }
+
+  // L→R exactly as your screenshot order
+  const allowedSlugs = [
+    'pajamas-classic-bear-frog',
+    'pajamas-classic-bear-panda',
+    'pajamas-eyeball',
+
+    'pajamas-pink-skin-black',
+    'pajamas-pixel-boy-blue',
+    'pajamas-pixel-girl-pink',
+
+    'pajamas-bunny-blue',
+    'pajamas-bunny-pink',
+    'pajamas-witch',
+
+    'pajamas-black-penguin',
+    'pajamas-blue-penguin',
+    'pajamas-penguin-onesies',
+
+    'pajamas-clown-cap',
+    'pajamas-clown-jester',
+    'pajamas-yellow-cloak',
+
+    'pajamas-brown-onsies-goblin',
+    'pajamas-orange-onsies-goblin',
+    'pajamas-yellow-fire'
+  ]
+
+  // Fun cozy palette (opaque 8-digit hex). Falls back if slug not mapped.
+  const PAJAMA_COLORS = [
+    '#FFD966FF', '#A7D2CBFF', '#FFB6B9FF', '#FFDAC1FF', '#E2F0CBFF', '#B5EAD7FF',
+    '#C7CEEAFF', '#F7A072FF', '#D5AAFFFF', '#ACE7FFFF', '#FFB347FF', '#B0E57CFF',
+    '#FF9AA2FF', '#E6E6FAFF', '#FFDEADFF', '#C0FDFBFF', '#FAF3DDFF', '#FDCB82FF'
+  ]
+
+  // Optional: per-avatar “best match” colors (feel free to tweak)
+  const COLOR_BY_SLUG = {
+    'pajamas-classic-bear-frog': '#67E38BFF',      // frog green
+    'pajamas-classic-bear-panda': '#EDEDEDFF',     // panda white/gray
+    'pajamas-eyeball': '#7EC8FFFF',               // icy blue
+
+    'pajamas-pink-skin-black': '#FF5AB1FF',       // hot pink
+    'pajamas-pixel-boy-blue': '#4DA3FFFF',        // bright blue
+    'pajamas-pixel-girl-pink': '#FF8FCBFF',       // soft pink
+
+    'pajamas-bunny-blue': '#66D6FFFF',            // bunny blue
+    'pajamas-bunny-pink': '#FF9EDBFF',            // bunny pink
+    'pajamas-witch': '#8A2BE2FF',                 // purple witch
+
+    'pajamas-black-penguin': '#1A1A1AFF',         // penguin dark
+    'pajamas-blue-penguin': '#2F7DFFFF',          // penguin blue
+    'pajamas-penguin-onesies': '#B6E3FFFF',       // icy onesie vibe
+
+    'pajamas-clown-cap': '#FF4D97FF',             // clown pink/red
+    'pajamas-clown-jester': '#8C6DF1FF',          // jester violet
+    'pajamas-yellow-cloak': '#FFD500FF',          // yellow cloak
+
+    'pajamas-brown-onsies-goblin': '#C68642FF',   // brown goblin
+    'pajamas-orange-onsies-goblin': '#FF7A1CFF',  // orange goblin
+    'pajamas-yellow-fire': '#FFB000FF'            // fire yellow/orange
+  }
+
+  const LINES = [
+    '🛌 Pajama mode: engaged. Cozy levels rising.',
+    '😴 Sleepover vibes activated — no outside clothes allowed.',
+    '🧸 Blankets on. Problems off.',
+    '🌙 Night shift: comfy edition.',
+    '✨ Pajamas equipped — drip, but make it bedtime.'
+  ]
+
+  const slug = allowedSlugs[Math.floor(Math.random() * allowedSlugs.length)]
+  const color = COLOR_BY_SLUG[slug] || PAJAMA_COLORS[Math.floor(Math.random() * PAJAMA_COLORS.length)]
+  const line = LINES[Math.floor(Math.random() * LINES.length)]
+
+  console.log('[randomPajama] attempt', { senderUuid, slug, color })
+
+  try {
+    await updateUserAvatar(userToken, slug, color)
+
+    console.log('[randomPajama] success', { senderUuid, slug, color })
+
+    await postMessage({
+      room,
+      message: line
+    })
+  } catch (error) {
+    console.error('[handleRandomPajamaCommand] update failed', {
+      senderUuid,
+      slugTried: slug,
+      colorTried: color,
+      error: error?.message || String(error),
+      stack: error?.stack
+    })
+
+    await postMessage({
+      room,
+      message: 'Pajama drawer stuck… try again 🧺'
+    })
+  }
+}
+
+
 export async function handleRandomLovableCommand (senderUuid, room, postMessage) {
   const userToken = userTokenMap[senderUuid]
   if (!userToken) {
