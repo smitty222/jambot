@@ -16,29 +16,69 @@ const MIN_NUMBER = 1
 const TIMEOUT_DURATION = 30000
 const DRAWING_DELAY = 5000
 const LOTTERY_WIN_AMOUNT = 100000
+
+// In-memory game state (single-room)
 const lotteryEntries = {}
 let LotteryGameActive = false
+
+// Track timers so multiple /lottery calls can’t overlap
+let reminderTimer = null
+let closeTimer = null
+let drawTimer = null
 
 function generateRandomNumber (min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min
 }
 
+function resetEntries () {
+  Object.keys(lotteryEntries).forEach(k => delete lotteryEntries[k])
+}
+
+function clearLotteryTimers () {
+  if (reminderTimer) clearTimeout(reminderTimer)
+  if (closeTimer) clearTimeout(closeTimer)
+  if (drawTimer) clearTimeout(drawTimer)
+  reminderTimer = null
+  closeTimer = null
+  drawTimer = null
+}
+
 // ✅ Start the lottery game
 export async function handleLotteryCommand (payload) {
-  LotteryGameActive = true
   const room = process.env.ROOM_UUID
+
+  // Prevent overlapping games
+  if (LotteryGameActive) {
+    await postMessage({
+      room,
+      message: '🎱 Lottery is already running! Send a number 1–100 to enter.'
+    })
+    return
+  }
+
+  LotteryGameActive = true
+
+  // Fresh round state
+  resetEntries()
+  clearLotteryTimers()
 
   await postMessage({ room, message: '🎱 LOTTERY BALL TIME!' })
   await postMessage({ room, message: `Send a number 1–100 to play!  Entry: $${cost}` })
 
-  setTimeout(() => {
+  reminderTimer = setTimeout(() => {
     postMessage({ room, message: '🔔 Drawing in 15 seconds! Get your pick in!' })
   }, 15000)
 
-  setTimeout(() => {
+  closeTimer = setTimeout(() => {
     LotteryGameActive = false
-    postMessage({ room, message: '⛔ Entries closed! Drawing the number...' })
-    setTimeout(drawWinningNumber, DRAWING_DELAY)
+    const entrants = Object.keys(lotteryEntries).length
+    postMessage({ room, message: `⛔ Entries closed! (${entrants} entrant${entrants === 1 ? '' : 's'}) Drawing the number...` })
+
+    drawTimer = setTimeout(() => {
+      // We intentionally do not await here because setTimeout won’t handle it,
+      // but drawWinningNumber itself awaits its async work.
+      drawWinningNumber().catch(() => {})
+    }, DRAWING_DELAY)
   }, TIMEOUT_DURATION)
 }
 
@@ -46,12 +86,17 @@ export async function handleLotteryCommand (payload) {
 export async function handleLotteryNumber (payload) {
   if (!LotteryGameActive) return
 
-  const number = parseInt(payload.message)
-  const userId = payload.sender
-  const nickname = await getUserNickname(userId)
   const room = process.env.ROOM_UUID
+  const userId = payload.sender
 
-  if (isNaN(number) || number < MIN_NUMBER || number > MAX_NUMBER) return
+  // Accept bare numbers or messages containing a number like "#69" or "/lottery 69"
+  const match = String(payload.message || '').match(/(\d{1,3})/)
+  if (!match) return
+
+  const number = parseInt(match[1], 10)
+  const nickname = await getUserNickname(userId)
+
+  if (Number.isNaN(number) || number < MIN_NUMBER || number > MAX_NUMBER) return
 
   if (lotteryEntries[userId]) {
     return await postMessage({ room, message: `${nickname} you already picked ${lotteryEntries[userId]}` })
@@ -65,13 +110,14 @@ export async function handleLotteryNumber (payload) {
     })
   }
 
-  const success = removeFromUserWallet(userId, cost)
+  // IMPORTANT: await wallet debit (prevents Promise truthiness bugs)
+  const success = await removeFromUserWallet(userId, cost)
   if (!success) {
     return await postMessage({ room, message: `${nickname} error charging wallet.` })
   }
 
   lotteryEntries[userId] = number
-  await postMessage({ room, message: `${nickname} entered with #${number}. Good luck! ` })
+  await postMessage({ room, message: `${nickname} entered with #${number}. Good luck!` })
 }
 
 // ✅ Draw and process winning number
@@ -95,24 +141,26 @@ async function drawWinningNumber () {
       // sanitised nickname (if available) in the users table via
       // addToUserWallet() so that future lookups return a human name.
       const rawNick = await getUserNickname(userId)
+
       // Sanitise the nickname: if it’s a mention token the result
       // will be an empty string, triggering a fallback to the UUID.
       const cleanNick = sanitizeNickname(rawNick)
+
       // Credit the user’s wallet and update their nickname in the
       // users table (handled by addToUserWallet when a nickname is passed)
       await addToUserWallet(userId, LOTTERY_WIN_AMOUNT, cleanNick)
+
       // Compute both the mention string for chat and the human display
-      // name for the website. The mention string is always in the
-      // format <@uid:uuid> while the display name is a sanitised
-      // version of the user’s nickname or their UUID if no clean
-      // nickname exists. We avoid storing raw mention tokens in
-      // displayName so the site never renders them.
+      // name for the website.
       const mention = formatMention(userId)
       const displayName = cleanNick || getDisplayName(userId)
+
+      // ✅ FIX: correct placeholder count + use SQLite datetime('now') consistently
       db.prepare(`
         INSERT INTO lottery_winners (userId, nickname, displayName, winningNumber, amountWon, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-      `).run(userId, mention, displayName, winningNumber, LOTTERY_WIN_AMOUNT, Date.now())
+        VALUES (?, ?, ?, ?, ?, datetime('now'))
+      `).run(userId, mention, displayName, winningNumber, LOTTERY_WIN_AMOUNT)
+
       // Compose a message using the mention syntax for the chat
       message += `\n ${mention} wins $${LOTTERY_WIN_AMOUNT.toLocaleString()}!`
     }
@@ -130,8 +178,9 @@ async function drawWinningNumber () {
     })
   }
 
-  // Reset entries
-  Object.keys(lotteryEntries).forEach(k => delete lotteryEntries[k])
+  // Reset entries + timers at end of round
+  resetEntries()
+  clearLotteryTimers()
 }
 
 // ✅ Get winners list from DB
@@ -140,7 +189,7 @@ export function getLotteryWinners (limit = 20) {
    * Fetch the latest lottery winners. We attempt to use the stored
    * displayName from the lottery_winners table first; if that is blank
    * we fall back to the current nickname stored in the users table. We
-   * avoid referencing a non‑existent `u.displayname` column (which
+   * avoid referencing a non-existent `u.displayname` column (which
    * caused errors in the original implementation) by selecting
    * `u.nickname` instead. Finally, if neither a display name nor
    * nickname is available, we use the userId itself.
@@ -181,7 +230,7 @@ export async function handleSingleNumberQuery (room, message) {
   const match = message.match(/\/lotto\s+#?(\d{1,3})/)
   if (!match) return
 
-  const number = parseInt(match[1])
+  const number = parseInt(match[1], 10)
   if (number < 1 || number > 100) {
     return await postMessage({ room, message: 'Please pick a number 1–100' })
   }
