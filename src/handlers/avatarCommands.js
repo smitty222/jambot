@@ -1792,7 +1792,7 @@ export async function handleRandomPajamaCommand (senderUuid, room, postMessage) 
     'pajamas-blue-penguin',
     'pajamas-penguin-onesies',
     'pajamas-clown-cap',
-    'pajamas-clown-jester',
+    'pajamas-clown-jester-cap',
     'pajamas-yellow-cloak',
     'pajamas-brown-onsies-goblin',
     'pajamas-orange-onsies-goblin',

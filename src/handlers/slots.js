@@ -126,7 +126,6 @@ const FEATURE_ANY_SYMBOL_BONUS = {
   '🔔': 50
 }
 
-// Symbol collection progression (persistent)
 const COLLECTION_GOALS = {
   '🍒': 50,
   '🍋': 50,
@@ -134,9 +133,10 @@ const COLLECTION_GOALS = {
   '🍉': 50,
   '🔔': 30,
   '⭐': 25,
-  '💎': 10,
+  '💎': 20,   // was 10
   '🎟️': 25
 }
+
 const COLLECTION_REWARDS = {
   '🍒': 5000,
   '🍋': 4000,
@@ -144,9 +144,10 @@ const COLLECTION_REWARDS = {
   '🍉': 6000,
   '🔔': 8000,
   '⭐': 10000,
-  '💎': 25000,
+  '💎': 15000, // was 25000 (reduced)
   '🎟️': 7500
 }
+
 
 // Bets
 const MIN_BET = 1
