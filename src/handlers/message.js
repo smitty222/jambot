@@ -60,6 +60,13 @@ import { usersToBeRemoved } from '../utils/usersToBeRemoved.js'
 import { parseTipAmount, randomTipGif, splitEvenly, naturalJoin, getSenderNickname } from '../utils/helpers.js'
 import { handleBuyHorse } from '../games/horserace/horseManager.js'
 import { handleAddMoneyCommand } from './addMoney.js'
+import {
+  startSpotlight,
+  startPaidSpotlight,
+  isSpotlightProtected,
+  isSpotlightActive
+} from '../handlers/spotlight.js'
+
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
 export const /* deprecated_roomThemes */roomThemes = {}
@@ -1550,6 +1557,12 @@ ${blocks}
         return
       }
 
+      if (isSpotlightProtected(currentDJ)) {
+  await postMessage({ room, message: `🚫 Spotlight mode: that DJ is protected.` })
+  return
+}
+
+
       // Wallet check
       const balance = await getUserWallet(callerUuid)
       const numericBalance = Number(balance) || 0
@@ -1642,6 +1655,21 @@ ${blocks}
     } catch (error) {
       console.error('Error handling /escortme command:', error)
     }
+
+      } else if (payload.message.startsWith('/spotlight')) {
+    await startPaidSpotlight({
+      payload,
+      room,
+      state,
+      roomBot,
+      postMessage,
+      getSenderNickname,
+      getUserWallet,
+      removeFromUserWallet,
+      cost: 1
+    })
+    return
+
   /// /////////////// Secret Commands /////////////////////
   } else if (payload.message.startsWith('/secret')) {
     const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken)
