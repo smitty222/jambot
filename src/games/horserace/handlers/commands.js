@@ -149,23 +149,59 @@ export async function startHorseRace () {
   const activeIds = await safeCall(fetchCurrentUsers).catch(() => [])
   const avail = all.filter(h => activeIds.includes(h.ownerId) && !h.retired && h.ownerId !== 'allen')
 
-  if (avail.length) {
+    if (avail.length) {
+    // Group horses by tier
     const byTier = avail.reduce((acc, h) => {
-      const t = h.tier || 'Unrated'
-      ;(acc[t] ||= []).push(h)
+      const key = String(h.tier || 'Unrated').toLowerCase()
+      ;(acc[key] ||= []).push(h)
       return acc
     }, {})
-    const tiers = Object.keys(byTier).sort()
-    const lines = []
-    for (const t of tiers) {
-      lines.push(`**${t}**`)
-      for (const h of byTier[t]) {
-        const nick = await safeCall(getUserNickname, [h.ownerId]).catch(() => '@owner')
-        lines.push(`- ${h.emoji || ''} ${h.name} (by ${nick?.replace(/^@/, '') || 'Unknown'})`)
-      }
+
+    // Tier display order: champion -> elite -> basic -> everything else alphabetically
+    const priority = ['champion', 'elite', 'basic']
+    const tiers = Object.keys(byTier).sort((a, b) => {
+      const ai = priority.indexOf(a)
+      const bi = priority.indexOf(b)
+      const ar = ai === -1 ? 999 : ai
+      const br = bi === -1 ? 999 : bi
+      if (ar !== br) return ar - br
+      return a.localeCompare(b)
+    })
+
+    const tierTitle = (t) => {
+      if (t === 'champion') return 'CHAMPION'
+      if (t === 'elite') return 'ELITE'
+      if (t === 'basic') return 'BASIC'
+      if (t === 'unrated') return 'UNRATED'
+      return t.toUpperCase()
     }
-    const listMsg = ['Available horses by tier:', ...lines].join('\n')
-    await safeCall(postMessage, [{ room: ROOM, message: '```\n' + listMsg + '\n```' }])
+
+    const lines = []
+    lines.push('AVAILABLE HORSES (type the exact name to enter)')
+    lines.push('')
+
+    for (const t of tiers) {
+      const list = byTier[t]
+        .slice()
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+
+      lines.push(`[${tierTitle(t)}] (${list.length})`)
+
+      for (const h of list) {
+        const nick = await safeCall(getUserNickname, [h.ownerId]).catch(() => null)
+        const owner = (nick ? String(nick).replace(/^@/, '') : 'Unknown')
+        const emoji = String(h.emoji || '').trim()
+        const prefix = emoji ? `${emoji} ` : ''
+        lines.push(`• ${prefix}${h.name} — ${owner}`)
+      }
+
+      lines.push('') // blank line between tiers
+    }
+
+    await safeCall(postMessage, [{
+      room: ROOM,
+      message: '```' + '\n' + lines.join('\n').trimEnd() + '\n' + '```'
+    }])
   } else {
     await safeCall(postMessage, [{ room: ROOM, message: '⚠️ No user horses detected online — bots may fill the field.' }])
   }

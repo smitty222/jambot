@@ -1509,6 +1509,117 @@ ${blocks}
     } catch (error) {
       console.error('Error handling /dive command:', error)
     }
+
+       } else if (payload.message.startsWith('/begonebitch')) {
+    try {
+      const callerUuid = payload.sender
+      const callerName = await getSenderNickname(callerUuid).catch(() => `<@uid:${callerUuid}>`)
+
+      const COST = 5000
+
+      const fmt = (n) => Math.round(Number(n || 0)).toLocaleString('en-US')
+      const fmt$ = (n) => `$${fmt(n)}`
+      const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms))
+
+      // Current DJ (UUID)
+      const currentDJ = getCurrentDJ(state)
+
+      if (!currentDJ) {
+        await postMessage({
+          room,
+          message: `🕳️ ${callerName} tried /begonebitch… but nobody is DJing right now.`
+        })
+        return
+      }
+
+      // Don’t allow ejecting the bot
+      if (currentDJ === process.env.BOT_USER_UUID) {
+        await postMessage({
+          room,
+          message: `😤 ${callerName}… nice try. You can’t eject Allen with this one.`
+        })
+        return
+      }
+
+      // Prevent paying to kick yourself (optional — remove if you want it allowed)
+      if (currentDJ === callerUuid) {
+        await postMessage({
+          room,
+          message: `💀 ${callerName} you can’t pay to eject yourself. Use /dive like a normal person.`
+        })
+        return
+      }
+
+      // Wallet check
+      const balance = await getUserWallet(callerUuid)
+      const numericBalance = Number(balance) || 0
+
+      if (!Number.isFinite(numericBalance)) {
+        await postMessage({ room, message: `⚠️ ${callerName}, I couldn’t read your wallet. Try again.` })
+        return
+      }
+
+      if (numericBalance < COST) {
+        await postMessage({
+          room,
+          message: `💸 ${callerName}, /begonebitch costs ${fmt$(COST)} but you only have ${fmt$(numericBalance)}.`
+        })
+        return
+      }
+
+      // Charge them
+      const paid = await removeFromUserWallet(callerUuid, COST)
+      if (!paid) {
+        await postMessage({
+          room,
+          message: `⚠️ ${callerName}, payment failed. Your balance should still be ${fmt$(numericBalance)}.`
+        })
+        return
+      }
+
+      const djName = await getSenderNickname(currentDJ).catch(() => `<@uid:${currentDJ}>`)
+
+      // 1) announce
+      await postMessage({
+        room,
+        message: `💰 ${callerName} just paid ${fmt$(COST)} for ${djName} to get tf off the stage…`
+      })
+
+      // 2) suspense beat
+      await delay(900)
+
+      // 3) funny gif
+      const gifs = [
+        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExb3c3aDU4MXkyNTNuenkxY2l1dDBrMnBpZ244MjY4MDhzdnB5eWYxdyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/9Rp27Gpwjx1n2/giphy.gif', 
+        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExb3c3aDU4MXkyNTNuenkxY2l1dDBrMnBpZ244MjY4MDhzdnB5eWYxdyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/MX5vcczsj1rw4ySjcl/giphy.gif', 
+        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExZDVxbmlpd3A0b3lta256Mm1teG1xdXMwMzVtaTJld29hZzJtOHlkYSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/3oEhmHaxNpPrSymkIo/giphy.gif',
+        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExemNkbmVlOXZjdDM3dnN4ZnAyemNtb2NqdWtlOWQ1bmo0YW95NzBrdyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/EOIHxXCGiPPIT2Xl9t/giphy.gif',
+        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExemNkbmVlOXZjdDM3dnN4ZnAyemNtb2NqdWtlOWQ1bmo0YW95NzBrdyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/2rWwvPlNJIuP7Ndy0W/giphy.gif'
+      ]
+      const gif = gifs[Math.floor(Math.random() * gifs.length)]
+      await postMessage({ room, message: '', images: [gif] })
+
+      // 4) Allen talks trash
+      await delay(1100)
+      await postMessage({
+        room,
+        message: `${djName}… nobody likes you.`
+      })
+
+      // 5) final beat then eject
+      await delay(800)
+      await postMessage({
+        room,
+        message: `👋 BEGONE.`
+      })
+
+      await delay(450)
+      await roomBot.removeDJ(currentDJ)
+    } catch (error) {
+      console.error('Error handling /begonebitch command:', error)
+    }
+
+
   } else if (payload.message.startsWith('/escortme')) {
     try {
       const senderUUID = payload.sender
