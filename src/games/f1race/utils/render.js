@@ -49,16 +49,18 @@ export function renderRaceProgress (rows, { title = 'RACE', barCells = 14, nameW
 
   const line = '-'.repeat(header.length)
 
-  const mkBar = (pct) => {
+  // ✅ race-like bar
+  const mkBar = (pct, dnf = false) => {
+    if (dnf) return 'DNF'.padEnd(barCells, ' ')
     const p = Math.max(0, Math.min(1, Number(pct || 0)))
     const filled = Math.round(p * barCells)
-    return '■'.repeat(filled) + '·'.repeat(Math.max(0, barCells - filled))
+    return '▰'.repeat(filled) + '▱'.repeat(Math.max(0, barCells - filled))
   }
 
   const body = rows.map((r, i) => {
     const pos = padL(String(i + 1), W_POS)
     const name = clamp(r.label, W_NAME)
-    const bar = padR(mkBar(r.progress01), barCells)
+    const bar = padR(mkBar(r.progress01, !!r.dnf), barCells)
     const gap = padL(r.gap || '+0.0', W_GAP)
     return `${pos} ${name} ${bar} ${gap}`
   })
@@ -67,6 +69,6 @@ export function renderRaceProgress (rows, { title = 'RACE', barCells = 14, nameW
 }
 
 export function fmtMoney (n) {
-  const x = Number(n || 0)
+  const x = Math.floor(Number(n || 0))
   return '$' + x.toLocaleString('en-US')
 }

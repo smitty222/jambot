@@ -649,7 +649,8 @@ export async function handleF1Help (ctx) {
   const msg = [
     'F1 RACE COMMANDS',
     '',
-    '/team create <name>  - create your team (garage)',
+    '/team create  - create your team (garage)',
+    `/team reroll         - randomize your team name/badge (costs ${fmtMoney(TEAM_REROLL_FEE)})`,
     '/buycar <tier>       - buy a car (starter/pro/hyper/legendary)',
     '/mycars              - list your cars',
     '/repaircar <name>    - repair wear (cost scales with wear)',
