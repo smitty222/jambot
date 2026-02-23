@@ -38,6 +38,11 @@ export function getTeamById (id) {
   const stmt = db.prepare(`SELECT * FROM teams WHERE id = ?`)
   return stmt.get(Number(id))
 }
+export function updateTeamIdentity (ownerId, name, badge = '') {
+  ensureTeamsTable()
+  const stmt = db.prepare(`UPDATE teams SET name = ?, badge = ? WHERE ownerId = ?`)
+  return stmt.run(String(name), String(badge || ''), String(ownerId))
+}
 
 export function updateTeamGarageLevel (ownerId, garageLevel) {
   ensureTeamsTable()

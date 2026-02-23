@@ -5,7 +5,7 @@ import { getUserWallet, debitGameBet, creditGameWin } from '../../../database/db
 import { getUserNickname } from '../../../utils/nickname.js'
 import { fetchCurrentUsers } from '../../../utils/API.js'
 
-import { createTeam, getTeamByOwner } from '../../../database/dbteams.js'
+import { createTeam, getTeamByOwner, updateTeamIdentity } from '../../../database/dbteams.js'
 import { insertCar, getAllCars, getUserCars, setCarWear, setCarTeam } from '../../../database/dbcars.js'
 
 import { bus, safeCall } from '../service.js'
@@ -86,15 +86,17 @@ export async function handleTeamCommand (ctx) {
   const userId = ctx?.sender
   const text = String(ctx?.message || '').trim()
 
-  const sub = (text.match(/^\/team\s*(.*)$/i) || [])[1]?.trim() || ''
-  const mCreate = sub.match(/^create\s+(.+)$/i)
-  if (mCreate) {
-    const nameRaw = mCreate[1].trim()
-    const badge = (nameRaw.match(/^\S+\s+/) ? '' : '') // keep simple; badge via /team badge later if you want
-    const nick = await safeCall(getUserNickname, [userId]).catch(() => '@user')
-    const existing = await safeCall(getTeamByOwner, [userId]).catch(() => null)
+  const sub = (text.match(/^\/team\s*(.*)$/i) || [])[1]?.trim().toLowerCase() || ''
+  const nick = await safeCall(getUserNickname, [userId]).catch(() => '@user')
+
+  // If they already have a team, show it (and optionally allow /team reroll)
+  const existing = await safeCall(getTeamByOwner, [userId]).catch(() => null)
+
+  // /team create  OR  /team
+  if (!sub || sub.startsWith('create')) {
     if (existing) {
-      await postMessage({ room, message: `❗ ${nick}, you already have a team: **${existing.name}**.` })
+      await postMessage({ room, message: `🏎️ ${nick}, your team is **${existing.name}** ${existing.badge || ''}`.trim() })
+      await postMessage({ room, message: `Tip: Want a new random team? Use **/team reroll** (costs money).` })
       return
     }
 
@@ -107,17 +109,50 @@ export async function handleTeamCommand (ctx) {
     }
     if (fee > 0) await safeCall(debitGameBet, [userId, fee])
 
-    const teamId = createTeam({ ownerId: userId, ownerName: nick, name: nameRaw, badge })
-    await postMessage({ room, message: `🏁 ${nick} created a new team: **${nameRaw}** (Garage Level 1)` })
+    const { name, badge } = generateTeamIdentity()
+    const teamId = createTeam({ ownerId: userId, ownerName: nick, name, badge })
+
+    await postMessage({
+      room,
+      message: `🏁 ${nick} founded a new team: **${name}** ${badge}\nGarage Level: **1**`
+    })
     return
   }
 
-  const team = await safeCall(getTeamByOwner, [userId]).catch(() => null)
-  if (!team) {
-    await postMessage({ room, message: 'No team found. Create one with **/team create <name>**' })
+  // Optional: /team reroll (money sink)
+  if (sub.startsWith('reroll')) {
+    if (!existing) {
+      await postMessage({ room, message: `❗ ${nick}, you don’t have a team yet. Use **/team create**.` })
+      return
+    }
+
+    const rerollFee = Number(process.env.F1_TEAM_REROLL_FEE ?? 5000)
+    const bal = await safeCall(getUserWallet, [userId]).catch(() => null)
+    if (typeof bal === 'number' && bal < rerollFee) {
+      await postMessage({ room, message: `❗ ${nick}, a reroll costs **${fmtMoney(rerollFee)}**. Your balance: **${fmtMoney(bal)}**.` })
+      return
+    }
+    if (rerollFee > 0) await safeCall(debitGameBet, [userId, rerollFee])
+
+    const { name, badge } = generateTeamIdentity()
+    // easiest: update teams row (you’ll need a tiny DB helper) OR delete+recreate.
+    // If you want minimal DB changes: add updateTeamIdentity in dbteams.js (below).
+    await safeCall(updateTeamIdentity, [userId, name, badge])
+
+    await postMessage({ room, message: `🎲 ${nick} rebranded their team to **${name}** ${badge}` })
     return
   }
-  await postMessage({ room, message: `🏎️ Team: **${team.name}** · Garage Level: **${team.garageLevel}**` })
+
+  // default: show team
+  if (!existing) {
+    await postMessage({ room, message: `No team found. Create one with **/team create**` })
+    return
+  }
+
+  await postMessage({
+    room,
+    message: `🏎️ Team: **${existing.name}** ${existing.badge || ''} · Garage Level: **${existing.garageLevel}**`.trim()
+  })
 }
 
 export async function handleBuyCar (ctx) {
@@ -385,6 +420,29 @@ function generateCarName (usedLower) {
     if (!usedLower.has(name.toLowerCase())) return name
   }
   return `Apex Viper ${rint(100, 999)}`
+}
+function generateTeamIdentity () {
+  const BADGES = ['🟥', '🟦', '🟩', '🟨', '🟪', '⬛', '⬜', '🟧']
+  const COLORS = ['Crimson', 'Cobalt', 'Emerald', 'Golden', 'Violet', 'Onyx', 'Ivory', 'Tangerine']
+  const ANIMALS = ['Falcons', 'Vipers', 'Wolves', 'Ravens', 'Cobras', 'Sharks', 'Panthers', 'Dragons']
+  const TECH = ['Apex', 'Turbo', 'Quantum', 'Neon', 'Vortex', 'Pulse', 'Nova', 'Titan']
+  const NOUNS = ['Racing', 'Motorsport', 'GP', 'Works', 'Engineering', 'Dynamics', 'Performance', 'Autosport']
+  const CITIES = ['Monaco', 'Silverstone', 'Daytona', 'Suzuka', 'Imola', 'Austin', 'Spa', 'Monza']
+
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)]
+
+  // Mix formats so it doesn’t feel repetitive
+  const formats = [
+    () => `${pick(TECH)} ${pick(ANIMALS)}`,
+    () => `${pick(COLORS)} ${pick(NOUNS)}`,
+    () => `${pick(CITIES)} ${pick(ANIMALS)}`,
+    () => `${pick(TECH)} ${pick(NOUNS)}`
+  ]
+
+  const badge = pick(BADGES)
+  const name = formats[Math.floor(Math.random() * formats.length)]()
+
+  return { name, badge }
 }
 
 async function lockEntriesAndOpenStrategy () {
