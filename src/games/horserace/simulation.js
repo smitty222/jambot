@@ -142,11 +142,13 @@ export async function runRace ({ horses, horseBets }) {
         const w = horses[winnerIdx]
         const num = Number(w?.oddsFrac?.num)
         const den = Number(w?.oddsFrac?.den)
+
         if (Number.isFinite(num) && Number.isFinite(den) && den > 0) {
           const profit = s.amount * (num / den)
           sum += Math.floor(s.amount + profit)
         } else {
-          const dec = Number(w?.odds || 3.0)
+          // ✅ Settlement fallback should match displayed/locked tote odds
+          const dec = Number(w?.oddsDecLocked ?? w?.odds ?? 3.0)
           sum += Math.floor(s.amount * dec)
         }
       }

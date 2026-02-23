@@ -67,6 +67,7 @@ import {
   isSpotlightProtected,
   isSpotlightActive
 } from '../handlers/spotlight.js'
+import { handleCarEntryAttempt, handleTireChoice, handleModeChoice, startF1Race, handleBuyCar, handleMyCars, handleRepairCar, handleTeamCommand, handleF1Help } from '../games/f1race/handlers/commands.js'
 
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
@@ -243,6 +244,20 @@ if (handled) return
   }
 
   // ─── END CRAPS BLOCK ──────────────────────────
+
+  if (payload.message.startsWith('/gp start')) return startF1Race()
+if (payload.message.startsWith('/buycar')) return handleBuyCar(payload)
+if (payload.message.startsWith('/mycars')) return handleMyCars(payload)
+if (payload.message.startsWith('/repaircar')) return handleRepairCar(payload)
+if (payload.message.startsWith('/team')) return handleTeamCommand(payload)
+if (payload.message.startsWith('/f1help')) return handleF1Help(payload)
+
+// during entry/strategy phases:
+await handleCarEntryAttempt(payload)
+await handleTireChoice(payload)
+await handleModeChoice(payload)
+
+
   // Handle Gifs Sent in Chat
   if (payload?.message?.type === 'ChatGif') {
     logger.info('Received a GIF message:', payload.message)
@@ -1662,7 +1677,8 @@ ${blocks}
         'https://media.giphy.com/media/IwAZ6dvvvaTtdI8SD5/giphy.gif',
         'https://media.giphy.com/media/3o7qDQ4kcSD1PLM3BK/giphy.gif',
         'https://media.giphy.com/media/oP997KOtJd5ja/giphy.gif',
-        'https://media.giphy.com/media/wAxlCmeX1ri1y/giphy.gif'
+        'https://media.giphy.com/media/wAxlCmeX1ri1y/giphy.gif',
+        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExbDRvZDRsb3dmcmtnYWY0bXQxMmxlOWtqNHQ5ZnRhdjg0dnF2ZmhjNyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/lsJCkIKV6AT28/giphy.gif'
       ]
       const randomDanceImageUrl = danceImageOptions[Math.floor(Math.random() * danceImageOptions.length)]
       await postMessage({

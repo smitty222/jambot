@@ -10,7 +10,7 @@ import { bus, safeCall } from '../service.js'
 import { runRace, LEGS } from '../simulation.js'
 import { getCurrentOdds, lockToteBoardOdds } from '../utils/odds.js'
 import { renderProgress, renderRacecard } from '../utils/progress.js'
-import { getHofList, getHofEntryByHorseName, isHorseInducted } from '../../../database/dbhorsehof.js'
+import { getHofList, getHofEntryByHorseName } from '../../../database/dbhorsehof.js'
 
 const ROOM = process.env.ROOM_UUID
 
@@ -102,8 +102,8 @@ async function postCountdown (n = 5) {
   await postMessage({ room: ROOM, message: '🏁 *And they’re off!*' })
 }
 
-// Career limit heuristics (used by /myhorses).
-const TIER_RETIRE_LIMIT = { champion: 50, elite: 40, pro: 30, rookie: 25, amateur: 20, default: 25 }
+// Career limit heuristics (used by /myhorses) — only used if careerLength absent.
+const TIER_RETIRE_LIMIT = { champion: 50, elite: 40, basic: 30, default: 25 }
 function careerLimitFor (h) {
   if (Number.isFinite(h?.careerLength)) return Number(h.careerLength)
   if (Number.isFinite(h?.careerLimit)) return Number(h?.careerLimit)
@@ -124,6 +124,9 @@ let horses = []
 let horseBets = {} // userId -> [{horseIndex, amount}]
 let raceSilks = []
 
+// ✅ Eligible horses lookup for owner-only entry (no DB hits per message)
+let eligibleByName = new Map() // nameLower -> horse
+
 // ── Public API ─────────────────────────────────────────────────────────
 export function isWaitingForEntries () { return isAcceptingEntries === true }
 
@@ -139,17 +142,23 @@ export async function startHorseRace () {
   entered.clear()
   horses = []
   horseBets = {}
+  eligibleByName = new Map()
 
   await safeCall(postMessage, [{
     room: ROOM,
-    message: `🏇 HORSE RACE STARTING! Type your horse’s exact name in the next ${ENTRY_MS / 1000}s to enter.`
+    message: `🏇 HORSE RACE STARTING! Owners: type your horse’s exact name in the next ${ENTRY_MS / 1000}s to enter.`
   }])
 
   const all = await safeCall(getAllHorses)
   const activeIds = await safeCall(fetchCurrentUsers).catch(() => [])
   const avail = all.filter(h => activeIds.includes(h.ownerId) && !h.retired && h.ownerId !== 'allen')
 
-    if (avail.length) {
+  // ✅ Build eligibility map (only horses shown here can be entered)
+  for (const h of avail) {
+    eligibleByName.set(String(h.name || '').toLowerCase(), h)
+  }
+
+  if (avail.length) {
     // Group horses by tier
     const byTier = avail.reduce((acc, h) => {
       const key = String(h.tier || 'Unrated').toLowerCase()
@@ -177,7 +186,7 @@ export async function startHorseRace () {
     }
 
     const lines = []
-    lines.push('AVAILABLE HORSES (type the exact name to enter)')
+    lines.push('AVAILABLE HORSES (owners only — type exact name to enter)')
     lines.push('')
 
     for (const t of tiers) {
@@ -192,7 +201,9 @@ export async function startHorseRace () {
         const owner = (nick ? String(nick).replace(/^@/, '') : 'Unknown')
         const emoji = String(h.emoji || '').trim()
         const prefix = emoji ? `${emoji} ` : ''
-        lines.push(`• ${prefix}${h.name} — ${owner}`)
+
+        // ✅ Make the exact entry token explicit (avoid emoji copy/paste confusion)
+        lines.push(`• ${prefix}${h.name} — ${owner}  (enter: ${h.name})`)
       }
 
       lines.push('') // blank line between tiers
@@ -212,17 +223,17 @@ export async function startHorseRace () {
 export async function handleHorseEntryAttempt (ctx) {
   if (!isAcceptingEntries) return
 
-  const txt = String(ctx.message || '').trim()
   const sender = ctx.sender
-  const all = await safeCall(getAllHorses)
+  const txtRaw = String(ctx.message || '').trim()
+  if (!txtRaw) return
 
-  const match = all.find(h =>
-    !h.retired &&
-    h.ownerId &&
-    h.ownerId !== 'allen' &&
-    h.name.toLowerCase() === txt.toLowerCase()
-  )
+  const key = txtRaw.toLowerCase()
+  const match = eligibleByName.get(key)
   if (!match) return
+
+  // ✅ Owner-only entry
+  if (String(match.ownerId) !== String(sender)) return
+
   if (entered.has(match.name)) return
 
   entered.add(match.name)
@@ -252,6 +263,7 @@ export async function handleHorseBet (ctx) {
     return
   }
 
+  // NOTE: If debitGameBet returns a boolean in your DB layer, prefer checking it.
   await safeCall(debitGameBet, [sender, amt])
   ;(horseBets[sender] ||= []).push({ horseIndex: idx, amount: amt })
 
@@ -309,7 +321,7 @@ async function openBetsPhase () {
 
     // Build race horses and lock tote-board odds for display + settlement.
     // - h.odds (decimal) is used for simulation strength.
-    // - h.oddsLabel / h.oddsFrac are used for the race card + bet settlement.
+    // - h.oddsLabel / h.oddsFrac / h.oddsDecLocked are used for the race card + bet settlement.
     horses = [...ownerHorses, ...bots].map(h => {
       const decFair = getCurrentOdds(h)
       const locked = lockToteBoardOdds(decFair, { minProfit: 2.0 })
@@ -426,6 +438,11 @@ function cleanup () {
   horses = []
   horseBets = {}
   raceSilks = []
+  eligibleByName = new Map()
+
+  // ✅ Reset TV renderer memory between races
+  _lastFrame = null
+  _lastLine = ''
 }
 
 // ── TV commentary helpers ──────────────────────────────────────────────
@@ -534,10 +551,10 @@ if (!globalThis[LISTENER_GUARD_KEY]) {
         room: ROOM,
         message: [
           '```',
-        ` Leg ${turnIndex + 1} of ${LEGS}`,
-        track,
-        '```',
-        comment
+          ` Leg ${turnIndex + 1} of ${LEGS}`,
+          track,
+          '```',
+          comment
         ].join('\n')
       })
     }
@@ -964,7 +981,7 @@ export async function handleTopHorsesCommand (ctx) {
 
   const title = 'Top Horses (User-Owned)'
   const msg = ['```', title, header, line, ...rows, '```'].join('\n')
-  await postMessage({ room, message: msg })
+  await postMessage({ room: ROOM, message: msg })
 }
 
 // ── Help command ─────────────────────────────────────────────────────────
@@ -973,7 +990,7 @@ export async function handleHorseHelpCommand (ctx) {
   const helpLines = [
     ' **Horse Race Commands**',
     '',
-    '/buyhorse <tier> – Purchase a new horse. Tiers include champion, elite, pro, rookie and amateur.',
+    '/buyhorse <tier> – Purchase a new horse. Tiers: champion, elite, basic.',
     '/myhorses – List your owned horses with their race counts, wins and career limits.',
     '/horsestats [name] – Show detailed stats for a specific horse by name, or view leaderboards when no name is given.',
     '/tophorses – See the top user-owned horses ranked by wins and win percentage.',
