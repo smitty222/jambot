@@ -67,7 +67,7 @@ import {
   isSpotlightProtected,
   isSpotlightActive
 } from '../handlers/spotlight.js'
-import { handleCarEntryAttempt, handleTireChoice, handleModeChoice, startF1Race, handleBuyCar, handleMyCars, handleRepairCar, handleTeamCommand, handleF1Help } from '../games/f1race/handlers/commands.js'
+import { handleCarEntryAttempt, handleBetCommand, handleTireChoice, handleModeChoice, startF1Race, handleBuyCar, handleMyCars, handleRepairCar, handleTeamCommand, handleF1Help, } from '../games/f1race/handlers/commands.js'
 
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
@@ -244,19 +244,43 @@ if (handled) return
   }
 
   // ─── END CRAPS BLOCK ──────────────────────────
+// ─── F1 / GRAND PRIX ───────────────────────────────────────────────
 
-  if (payload.message.startsWith('/gp start')) return startF1Race()
-if (payload.message.startsWith('/buycar')) return handleBuyCar(payload)
-if (payload.message.startsWith('/mycars')) return handleMyCars(payload)
-if (payload.message.startsWith('/repaircar')) return handleRepairCar(payload)
-if (payload.message.startsWith('/team')) return handleTeamCommand(payload)
-if (payload.message.startsWith('/f1help')) return handleF1Help(payload)
+// Start GP (support "/gp start" and "/f1 start")
+if (/^\/(gp|f1)\s+start\b/i.test(txt)) {
+  console.log('▶ dispatch → startF1Race')
+  startF1Race().catch(console.error)
+  return
+}
 
-// during entry/strategy phases:
-await handleCarEntryAttempt(payload)
+// Garage / team commands
+if (/^\/buycar\b/i.test(txt)) return handleBuyCar(payload)
+if (/^\/mycars\b/i.test(txt)) return handleMyCars(payload)
+if (/^\/repaircar\b/i.test(txt)) return handleRepairCar(payload)
+if (/^\/team\b/i.test(txt)) return handleTeamCommand(payload)
+
+// Help
+if (/^\/(f1help|gphelp)\b/i.test(txt)) return handleF1Help(payload)
+
+// Betting (win-only) — only works during strategy lock window
+if (/^\/bet\s*\d+\s+\d+/i.test(txt)) {
+  console.log('▶ dispatch → handleBetCommand')
+  await handleBetCommand(payload)
+  return
+}
+
+// IMPORTANT: during entry/strategy phases, allow non-slash car entry attempt.
+// (Only your f1race handler will accept it if entry is actually open.)
+if (typeof payload.message === 'string' && payload.message.length > 0 && !payload.message.startsWith('/')) {
+  await handleCarEntryAttempt(payload)
+}
+
+// Always call these; they no-op unless the correct phase is open
 await handleTireChoice(payload)
 await handleModeChoice(payload)
+await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting open)
 
+// ─── END F1 BLOCK ────────────────────────────────────────────────
 
   // Handle Gifs Sent in Chat
   if (payload?.message?.type === 'ChatGif') {
@@ -669,7 +693,7 @@ ${blocks}
     }
 
   // ===== /mod (DM full moderator sheet, grouped & de-duped) =====
-  } else if (payload.message.startsWith('/mod')) {
+  } else if (/^\/mod\b/i.test(payload.message.trim())) {
     try {
       const isAuthorized = await isUserAuthorized(payload.sender, ttlUserToken)
       if (!isAuthorized) {

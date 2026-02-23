@@ -1,655 +1,1099 @@
-// src/games/f1race/handlers/commands.js
+// src/games/horserace/handlers/commands.js
 
 import { postMessage } from '../../../libs/cometchat.js'
 import { getUserWallet, debitGameBet } from '../../../database/dbwalletmanager.js'
 import { getUserNickname } from '../../../utils/nickname.js'
+import { getAllHorses, getUserHorses } from '../../../database/dbhorses.js'
 import { fetchCurrentUsers } from '../../../utils/API.js'
-
-import { createTeam, getTeamByOwner, updateTeamIdentity } from '../../../database/dbteams.js'
-import { insertCar, getAllCars, getUserCars, setCarWear } from '../../../database/dbcars.js'
 
 import { bus, safeCall } from '../service.js'
 import { runRace, LEGS } from '../simulation.js'
-import { pickTrack } from '../utils/track.js'
-import { renderGrid, renderRaceProgress, fmtMoney } from '../utils/render.js'
+import { getCurrentOdds, lockToteBoardOdds } from '../utils/odds.js'
+import { renderProgress, renderRacecard } from '../utils/progress.js'
+import { getHofList, getHofEntryByHorseName } from '../../../database/dbhorsehof.js'
 
 const ROOM = process.env.ROOM_UUID
 
-// ── Economy tuning ─────────────────────────────────────────────────────
+// ── Display tuning ─────────────────────────────────────────────────────
+const BAR_STYLE = 'solid' // continuous track
+const BAR_CELLS = 12 // width of the progress bar
+const NAME_WIDTH = 24
+const TV_MODE = true
+const PHOTO_SUSPENSE_MS = 2500
+
+// Ticks inside the solid rail
+const TICKS_EVERY = 3
+const TICK_CHAR = ':'
+
+// ── SILKS (colored “jerseys”) ─────────────────────────────────────────
+// Squares only (consistent “silks” look).
+const SILKS = [
+  '🟥', // red
+  '🟧', // orange
+  '🟨', // yellow
+  '🟩', // green
+  '🟦', // blue
+  '🟪', // purple
+  '🟫', // brown
+  '⬛', // black
+  '⬜' // white
+]
+const silk = (i) => SILKS[i % SILKS.length]
+
+function shuffleArray (arr) {
+  const a = arr.slice()
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
+}
+
+// ── Bot name generator ────────────────────────────────────────────────
+const HORSE_ADJECTIVES = [
+  'Swift', 'Wild', 'Silent', 'Midnight', 'Golden', 'Thundering', 'Rapid',
+  'Lucky', 'Brave', 'Majestic', 'Fierce', 'Clever', 'Mighty', 'Noble',
+  'Radiant', 'Bold', 'Starry', 'Daring', 'Gallant', 'Vibrant', 'Iron',
+  'Rugged', 'Grim', 'Dusty', 'Crimson'
+]
+const HORSE_NOUNS = [
+  'Spirit', 'Dream', 'Storm', 'Fire', 'Wind', 'Comet', 'Rocket', 'Shadow',
+  'Blaze', 'Surge', 'Flash', 'Thunder', 'Whisper', 'Blitz', 'Mirage',
+  'Avalanche', 'Echo', 'Aurora', 'Falcon', 'Phantom', 'Ridge', 'Riot',
+  'Ember', 'Breaker', 'Raven'
+]
+
+function generateHorseName (usedNames) {
+  for (let attempts = 0; attempts < 20; attempts++) {
+    const adj = HORSE_ADJECTIVES[Math.floor(Math.random() * HORSE_ADJECTIVES.length)]
+    const noun = HORSE_NOUNS[Math.floor(Math.random() * HORSE_NOUNS.length)]
+    const name = `${adj} ${noun}`
+    if (!usedNames.has(name)) return name
+  }
+  const base = `${HORSE_ADJECTIVES[0]} ${HORSE_NOUNS[0]}`
+  let suffix = 1
+  let unique = base
+  while (usedNames.has(unique)) unique = `${base} ${suffix++}`
+  return unique
+}
+
+// ── Race flow timing ───────────────────────────────────────────────────
 const ENTRY_MS = 30_000
-const STRAT_MS = 25_000
-const MIN_FIELD = 6
+const BET_MS = 45_000
 
-const ENTRY_FEE = Number(process.env.F1_ENTRY_FEE ?? 2000)
-const HOUSE_RAKE_PCT = Number(process.env.F1_HOUSE_RAKE_PCT ?? 15) // percent
-const PRIZE_SPLIT = [45, 25, 15, 10, 5] // top 5 weights (redistributed among real players)
-const POLE_BONUS = Number(process.env.F1_POLE_BONUS ?? 250)
-const FASTEST_LAP_BONUS = Number(process.env.F1_FASTEST_LAP_BONUS ?? 300)
+// ── Suspense / pacing ──────────────────────────────────────────────────
+const DELAY = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
-// Team fees (for help text if you want)
-const TEAM_CREATE_FEE = Number(process.env.F1_TEAM_CREATE_FEE ?? 25000)
-const TEAM_REROLL_FEE = Number(process.env.F1_TEAM_REROLL_FEE ?? 50000)
-
-// Car tiers (expensive)
-const CAR_TIERS = {
-  starter: { price: 30000, base: { power: 55, handling: 55, aero: 52, reliability: 58, tire: 54 }, livery: '🟥' },
-  pro: { price: 90000, base: { power: 65, handling: 64, aero: 62, reliability: 62, tire: 60 }, livery: '🟦' },
-  hyper: { price: 200000, base: { power: 74, handling: 72, aero: 70, reliability: 66, tire: 66 }, livery: '🟩' },
-  legendary: { price: 400000, base: { power: 80, handling: 78, aero: 76, reliability: 70, tire: 70 }, livery: '🟪' }
+const RESULTS_PACING = {
+  preResultBeatMs: 900, // after finish gif
+  photoFinishBeatMs: PHOTO_SUSPENSE_MS, // if tight margin
+  officialBeatMs: 1100, // before announcing winner
+  standingsBeatMs: 900, // before posting final standings card
+  payoutLineBeatMs: 700, // between payout lines (per-user)
+  ownerBonusBeatMs: 900 // before owner bonus line
 }
 
-const TIRES = ['soft', 'med', 'hard']
-const MODES = ['push', 'norm', 'save']
-
-// ── Helpers ────────────────────────────────────────────────────────────
-function rint (min, max) { return Math.floor(Math.random() * (max - min + 1)) + min }
-function clamp (n, a, b) { return Math.max(a, Math.min(b, n)) }
-
-function carLabel (car) {
-  const liv = String(car.livery || '').trim() || '⬛'
-  const num = String(car.id || rint(10, 99)).padStart(2, '0')
-  return `${liv} #${num} ${car.name}`.trim()
+// ── Post-time countdown ────────────────────────────────────────────────
+async function postCountdown (n = 5) {
+  for (let i = n; i >= 1; i--) {
+    await postMessage({ room: ROOM, message: `⏱️ Post time in ${i}…` })
+    await new Promise(r => setTimeout(r, 800))
+  }
+  await postMessage({ room: ROOM, message: '🏁 *And they’re off!*' })
 }
 
-function teamLabel (team) {
-  if (!team) return '—'
-  const badge = String(team.badge || '').trim()
-  const nm = String(team.name || '').trim()
-  const short = nm.length > 10 ? nm.slice(0, 9) + '…' : nm
-  return (badge ? `${badge} ${short}` : short).trim()
+// Career limit heuristics (used by /myhorses) — only used if careerLength absent.
+const TIER_RETIRE_LIMIT = { champion: 50, elite: 40, basic: 30, default: 25 }
+function careerLimitFor (h) {
+  if (Number.isFinite(h?.careerLength)) return Number(h.careerLength)
+  if (Number.isFinite(h?.careerLimit)) return Number(h?.careerLimit)
+  const t = String(h?.tier || '').toLowerCase()
+  for (const key of Object.keys(TIER_RETIRE_LIMIT)) {
+    if (key !== 'default' && t.includes(key)) return TIER_RETIRE_LIMIT[key]
+  }
+  return TIER_RETIRE_LIMIT.default
 }
 
-function prizePoolFromEntries (entries) {
-  const gross = Math.floor(entries * ENTRY_FEE)
-  const rake = Math.floor(gross * (HOUSE_RAKE_PCT / 100))
-  const net = Math.max(0, gross - rake)
-  return { gross, rake, net }
-}
+// ── State ──────────────────────────────────────────────────────────────
+let isAcceptingEntries = false
+let isBettingOpen = false
+let isRaceRunning = false
 
-function parseArg (txt, re) {
-  return (String(txt || '').match(re) || [])[1]
-}
+const entered = new Set()
+let horses = []
+let horseBets = {} // userId -> [{horseIndex, amount}]
+let raceSilks = []
 
-function generateTeamIdentity () {
-  const BADGES = ['🟥', '🟦', '🟩', '🟨', '🟪', '⬛', '⬜', '🟧']
-  const COLORS = ['Crimson', 'Cobalt', 'Emerald', 'Golden', 'Violet', 'Onyx', 'Ivory', 'Tangerine']
-  const ANIMALS = ['Falcons', 'Vipers', 'Wolves', 'Ravens', 'Cobras', 'Sharks', 'Panthers', 'Dragons']
-  const TECH = ['Apex', 'Turbo', 'Quantum', 'Neon', 'Vortex', 'Pulse', 'Nova', 'Titan']
-  const NOUNS = ['Racing', 'Motorsport', 'GP', 'Works', 'Engineering', 'Dynamics', 'Performance', 'Autosport']
-  const CITIES = ['Monaco', 'Silverstone', 'Daytona', 'Suzuka', 'Imola', 'Austin', 'Spa', 'Monza']
+// ✅ Eligible horses lookup for owner-only entry (no DB hits per message)
+let eligibleByName = new Map() // nameLower -> horse
 
-  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)]
-  const formats = [
-    () => `${pick(TECH)} ${pick(ANIMALS)}`,
-    () => `${pick(COLORS)} ${pick(NOUNS)}`,
-    () => `${pick(CITIES)} ${pick(ANIMALS)}`,
-    () => `${pick(TECH)} ${pick(NOUNS)}`
-  ]
+// ── Public API ─────────────────────────────────────────────────────────
+export function isWaitingForEntries () { return isAcceptingEntries === true }
 
-  const badge = pick(BADGES)
-  const name = formats[Math.floor(Math.random() * formats.length)]()
-  return { name, badge }
-}
-
-// ── Race state ─────────────────────────────────────────────────────────
-let isAccepting = false
-let isStratOpen = false
-let isRunning = false
-
-const entered = new Set() // carId
-let eligibleByName = new Map() // nameLower -> car
-let field = [] // cars in race (with label, teamLabel, tireChoice, modeChoice)
-let carChoices = new Map() // ownerId -> { tire, mode }
-
-let _lastProgress = null
-
-export function isWaitingForEntries () { return isAccepting === true }
-
-// ── Team commands (random team names) ──────────────────────────────────
-export async function handleTeamCommand (ctx) {
-  const room = ctx?.room || ROOM
-  const userId = ctx?.sender
-  const text = String(ctx?.message || '').trim()
-  const sub = (text.match(/^\/team\s*(.*)$/i) || [])[1]?.trim().toLowerCase() || ''
-  const nick = await safeCall(getUserNickname, [userId]).catch(() => '@user')
-
-  const existing = await safeCall(getTeamByOwner, [userId]).catch(() => null)
-
-  if (!sub || sub.startsWith('create')) {
-    if (existing) {
-      await postMessage({ room, message: `🏎️ ${nick}, your team is **${existing.name}** ${existing.badge || ''}`.trim() })
-      await postMessage({ room, message: `Tip: **/team reroll** (costs ${fmtMoney(TEAM_REROLL_FEE)})` })
-      return
-    }
-
-    const bal = await safeCall(getUserWallet, [userId]).catch(() => null)
-    if (typeof bal === 'number' && bal < TEAM_CREATE_FEE) {
-      await postMessage({ room, message: `❗ ${nick}, creating a team costs **${fmtMoney(TEAM_CREATE_FEE)}**. Balance: **${fmtMoney(bal)}**.` })
-      return
-    }
-    if (TEAM_CREATE_FEE > 0) await safeCall(debitGameBet, [userId, TEAM_CREATE_FEE])
-
-    const { name, badge } = generateTeamIdentity()
-    createTeam({ ownerId: userId, ownerName: nick, name, badge })
-    await postMessage({ room, message: `🏁 ${nick} founded a new team: **${name}** ${badge}\nGarage Level: **1**` })
+export async function startHorseRace () {
+  if (isAcceptingEntries || isBettingOpen || isRaceRunning) {
+    await safeCall(postMessage, [{ room: ROOM, message: '⛔ A horse race is already in progress.' }])
     return
   }
 
-  if (sub.startsWith('reroll')) {
-    if (!existing) {
-      await postMessage({ room, message: `❗ ${nick}, you don’t have a team yet. Use **/team create**.` })
-      return
-    }
-    const bal = await safeCall(getUserWallet, [userId]).catch(() => null)
-    if (typeof bal === 'number' && bal < TEAM_REROLL_FEE) {
-      await postMessage({ room, message: `❗ ${nick}, reroll costs **${fmtMoney(TEAM_REROLL_FEE)}**. Balance: **${fmtMoney(bal)}**.` })
-      return
-    }
-    if (TEAM_REROLL_FEE > 0) await safeCall(debitGameBet, [userId, TEAM_REROLL_FEE])
-
-    const { name, badge } = generateTeamIdentity()
-    await safeCall(updateTeamIdentity, [userId, name, badge])
-    await postMessage({ room, message: `🎲 ${nick} rebranded to **${name}** ${badge}` })
-    return
-  }
-
-  if (!existing) {
-    await postMessage({ room, message: `No team found. Create one with **/team create** (costs ${fmtMoney(TEAM_CREATE_FEE)})` })
-    return
-  }
-
-  await postMessage({ room, message: `🏎️ Team: **${existing.name}** ${existing.badge || ''} · Garage Level: **${existing.garageLevel}**`.trim() })
-}
-
-// ── Car commands ───────────────────────────────────────────────────────
-function generateCarName (usedLower) {
-  const ADJ = ['Neon', 'Apex', 'Turbo', 'Crimson', 'Midnight', 'Solar', 'Phantom', 'Vortex', 'Cobalt', 'Titan']
-  const NOUN = ['Viper', 'Wraith', 'Comet', 'Falcon', 'Raven', 'Blitz', 'Mirage', 'Arrow', 'Specter', 'Nova']
-  for (let i = 0; i < 80; i++) {
-    const name = `${ADJ[rint(0, ADJ.length - 1)]} ${NOUN[rint(0, NOUN.length - 1)]}`
-    if (!usedLower.has(name.toLowerCase())) return name
-  }
-  return `Apex Viper ${rint(100, 999)}`
-}
-
-export async function handleBuyCar (ctx) {
-  const room = ctx?.room || ROOM
-  const userId = ctx?.sender
-  const text = String(ctx?.message || '').trim()
-  const tierKey = (text.match(/^\/buycar\s*(\w+)?/i) || [])[1]?.toLowerCase()
-  const nick = await safeCall(getUserNickname, [userId]).catch(() => '@user')
-
-  if (!tierKey || tierKey === 'help' || tierKey === 'shop') {
-    const lines = [
-      '**F1 Garage — Buy a Car**',
-      '',
-      ...Object.entries(CAR_TIERS).map(([k, v]) => `• **${k}** — ${fmtMoney(v.price)}`),
-      '',
-      'Buy: `/buycar starter` (or pro/hyper/legendary)'
-    ]
-    await postMessage({ room, message: lines.join('\n') })
-    return
-  }
-
-  const tier = CAR_TIERS[tierKey]
-  if (!tier) {
-    await postMessage({ room, message: `❗ Unknown tier \`${tierKey}\`. Try /buycar` })
-    return
-  }
-
-  const bal = await safeCall(getUserWallet, [userId]).catch(() => null)
-  if (typeof bal !== 'number') {
-    await postMessage({ room, message: `⚠️ ${nick}, couldn’t read your wallet. Try again.` })
-    return
-  }
-  if (bal < tier.price) {
-    await postMessage({ room, message: `❗ ${nick}, you need **${fmtMoney(tier.price)}**. Balance: **${fmtMoney(bal)}**.` })
-    return
-  }
-
-  await safeCall(debitGameBet, [userId, tier.price])
-
-  const all = await safeCall(getAllCars).catch(() => [])
-  const used = new Set((all || []).map(c => String(c.name || '').toLowerCase()))
-  const name = generateCarName(used)
-
-  // auto-create a team if they don't have one yet (nice onboarding)
-  let team = await safeCall(getTeamByOwner, [userId]).catch(() => null)
-  if (!team) {
-    const { name: teamName, badge } = generateTeamIdentity()
-    createTeam({ ownerId: userId, ownerName: nick, name: teamName, badge })
-    team = await safeCall(getTeamByOwner, [userId]).catch(() => null)
-    await postMessage({ room, message: `🏁 ${nick} was assigned a team: **${teamName}** ${badge}` })
-  }
-
-  const jitter = (x) => clamp(x + rint(-3, 3), 35, 92)
-  const id = insertCar({
-    ownerId: userId,
-    ownerName: nick,
-    teamId: team?.id ?? null,
-    name,
-    livery: tier.livery,
-    tier: tierKey,
-    price: tier.price,
-    power: jitter(tier.base.power),
-    handling: jitter(tier.base.handling),
-    aero: jitter(tier.base.aero),
-    reliability: jitter(tier.base.reliability),
-    tire: jitter(tier.base.tire),
-    wear: 0
-  })
-
-  const updated = await safeCall(getUserWallet, [userId]).catch(() => null)
-  await postMessage({
-    room,
-    message: `✅ ${nick} bought a **${tierKey.toUpperCase()}** car: **${tier.livery} #${String(id).padStart(2, '0')} ${name}**\n💰 Balance: **${fmtMoney(updated)}**`
-  })
-}
-
-export async function handleMyCars (ctx) {
-  const room = ctx?.room || ROOM
-  const userId = ctx?.sender
-  const nick = await safeCall(getUserNickname, [userId]).catch(() => '@user')
-  const cars = await safeCall(getUserCars, [userId]).catch(() => [])
-
-  if (!cars?.length) {
-    await postMessage({ room, message: `${nick}, you don’t own any cars yet. Try **/buycar**.` })
-    return
-  }
-
-  const lines = []
-  lines.push(`${nick}'s Garage (${cars.length})`)
-  lines.push('')
-
-  for (const c of cars.slice(0, 12)) {
-    const wear = Number(c.wear || 0)
-    const wearTag = wear >= 80 ? '⚠️' : (wear >= 60 ? '🟡' : '🟢')
-    lines.push(`• ${carLabel(c)} — Tier ${String(c.tier || '—').toUpperCase()} · Wear ${wear}% ${wearTag} · W ${c.wins || 0} / R ${c.races || 0}`)
-  }
-
-  lines.push('')
-  lines.push('Repair: `/repaircar <car name>` (reduces wear)')
-  await postMessage({ room, message: '```\n' + lines.join('\n') + '\n```' })
-}
-
-export async function handleRepairCar (ctx) {
-  const room = ctx?.room || ROOM
-  const userId = ctx?.sender
-  const text = String(ctx?.message || '').trim()
-  const nameArg = parseArg(text, /^\/repaircar\s+(.+)$/i)
-  const nick = await safeCall(getUserNickname, [userId]).catch(() => '@user')
-
-  if (!nameArg) {
-    await postMessage({ room, message: `Usage: **/repaircar <car name>**` })
-    return
-  }
-
-  const cars = await safeCall(getUserCars, [userId]).catch(() => [])
-  const car = cars.find(c => String(c.name || '').toLowerCase() === String(nameArg).toLowerCase()) ||
-              cars.find(c => String(c.name || '').toLowerCase().includes(String(nameArg).toLowerCase()))
-
-  if (!car) {
-    await postMessage({ room, message: `❗ ${nick}, couldn’t find that car in your garage.` })
-    return
-  }
-
-  const wear = Number(car.wear || 0)
-  if (wear <= 0) {
-    await postMessage({ room, message: `✅ ${carLabel(car)} is already in perfect condition.` })
-    return
-  }
-
-  const tier = String(car.tier || 'starter').toLowerCase()
-  const mult = (tier === 'legendary') ? 900 : (tier === 'hyper') ? 650 : (tier === 'pro') ? 450 : 300
-  const cost = Math.max(1000, Math.floor(wear * mult))
-
-  const bal = await safeCall(getUserWallet, [userId]).catch(() => null)
-  if (typeof bal !== 'number' || bal < cost) {
-    await postMessage({ room, message: `❗ Repair cost is **${fmtMoney(cost)}**. Your balance: **${fmtMoney(bal)}**.` })
-    return
-  }
-
-  await safeCall(debitGameBet, [userId, cost])
-  await safeCall(setCarWear, [car.id, 0])
-  await postMessage({ room, message: `🔧 ${nick} repaired ${carLabel(car)} for **${fmtMoney(cost)}**. Wear reset to 0%.` })
-}
-
-// ── Race lifecycle ─────────────────────────────────────────────────────
-export async function startF1Race () {
-  if (isAccepting || isStratOpen || isRunning) {
-    await safeCall(postMessage, [{ room: ROOM, message: '⛔ A Grand Prix is already in progress.' }])
-    return
-  }
-
-  isAccepting = true
-  isStratOpen = false
-  isRunning = false
+  isAcceptingEntries = true
+  isBettingOpen = false
+  isRaceRunning = false
   entered.clear()
+  horses = []
+  horseBets = {}
   eligibleByName = new Map()
-  field = []
-  carChoices = new Map()
-  _lastProgress = null
-
-  const all = await safeCall(getAllCars).catch(() => [])
-  const activeIds = await safeCall(fetchCurrentUsers).catch(() => [])
-
-  const avail = (all || []).filter(c => c.ownerId && activeIds.includes(c.ownerId) && !c.retired)
-  for (const c of avail) {
-    eligibleByName.set(String(c.name || '').toLowerCase(), c)
-  }
 
   await safeCall(postMessage, [{
     room: ROOM,
-    message: `🏎️ **GRAND PRIX STARTING!** Owners: type your car’s exact name in the next ${ENTRY_MS / 1000}s to enter.\nEntry fee: **${fmtMoney(ENTRY_FEE)}** (charged at lock-in).`
+    message: `🏇 HORSE RACE STARTING! Owners: type your horse’s exact name in the next ${ENTRY_MS / 1000}s to enter.`
   }])
 
-  if (avail.length) {
-    const lines = []
-    lines.push('AVAILABLE CARS (owners only — type exact name to enter)')
-    lines.push('')
+  const all = await safeCall(getAllHorses)
+  const activeIds = await safeCall(fetchCurrentUsers).catch(() => [])
+  const avail = all.filter(h => activeIds.includes(h.ownerId) && !h.retired && h.ownerId !== 'allen')
 
-    const list = avail.slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''))).slice(0, 20)
-    for (const c of list) {
-      const ownerNick = await safeCall(getUserNickname, [c.ownerId]).catch(() => null)
-      const owner = ownerNick ? String(ownerNick).replace(/^@/, '') : 'Unknown'
-      lines.push(`• ${carLabel(c)} — ${owner}  (enter: ${c.name})`)
-    }
-    if (avail.length > 20) lines.push(`\n… and ${avail.length - 20} more cars online.`)
-
-    await safeCall(postMessage, [{ room: ROOM, message: '```' + '\n' + lines.join('\n') + '\n```' }])
-  } else {
-    await safeCall(postMessage, [{ room: ROOM, message: '⚠️ No user cars detected online — bots will fill the grid.' }])
+  // ✅ Build eligibility map (only horses shown here can be entered)
+  for (const h of avail) {
+    eligibleByName.set(String(h.name || '').toLowerCase(), h)
   }
 
-  setTimeout(lockEntriesAndOpenStrategy, ENTRY_MS)
-}
+  if (avail.length) {
+    // Group horses by tier
+    const byTier = avail.reduce((acc, h) => {
+      const key = String(h.tier || 'Unrated').toLowerCase()
+      ;(acc[key] ||= []).push(h)
+      return acc
+    }, {})
 
-export async function handleCarEntryAttempt (ctx) {
-  if (!isAccepting) return
-  const sender = ctx?.sender
-  const raw = String(ctx?.message || '').trim()
-  if (!raw) return
-
-  const car = eligibleByName.get(raw.toLowerCase())
-  if (!car) return
-
-  if (String(car.ownerId) !== String(sender)) return
-  if (entered.has(car.id)) return
-
-  entered.add(car.id)
-  const nick = await safeCall(getUserNickname, [sender]).catch(() => '@user')
-  await safeCall(postMessage, [{ room: ROOM, message: `✅ ${nick?.replace(/^@/, '')} entered ${carLabel(car)}!` }])
-}
-
-export async function handleTireChoice (ctx) {
-  if (!isStratOpen) return
-  const sender = ctx?.sender
-  const txt = String(ctx?.message || '').trim()
-  const m = txt.match(/^\/tire\s+(soft|med|hard)\b/i)
-  if (!m) return
-
-  const tire = m[1].toLowerCase()
-  const prev = carChoices.get(sender) || {}
-  carChoices.set(sender, { ...prev, tire })
-
-  const nick = await safeCall(getUserNickname, [sender]).catch(() => '@user')
-  await safeCall(postMessage, [{ room: ROOM, message: `🛞 ${nick} locks **${tire.toUpperCase()}** tires.` }])
-}
-
-export async function handleModeChoice (ctx) {
-  if (!isStratOpen) return
-  const sender = ctx?.sender
-  const txt = String(ctx?.message || '').trim()
-  const m = txt.match(/^\/mode\s+(push|norm|save)\b/i)
-  if (!m) return
-
-  const mode = m[1].toLowerCase()
-  const prev = carChoices.get(sender) || {}
-  carChoices.set(sender, { ...prev, mode })
-
-  const nick = await safeCall(getUserNickname, [sender]).catch(() => '@user')
-  await safeCall(postMessage, [{ room: ROOM, message: `🎛️ ${nick} sets mode **${mode.toUpperCase()}**.` }])
-}
-
-// ── Internal helpers ───────────────────────────────────────────────────
-function cleanup () {
-  isAccepting = false
-  isStratOpen = false
-  isRunning = false
-  entered.clear()
-  eligibleByName = new Map()
-  field = []
-  carChoices = new Map()
-  _lastProgress = null
-}
-
-async function lockEntriesAndOpenStrategy () {
-  try {
-    isAccepting = false
-
-    const all = await safeCall(getAllCars).catch(() => [])
-    const enteredCars = (all || []).filter(c => entered.has(c.id))
-
-    const need = Math.max(0, MIN_FIELD - enteredCars.length)
-
-    // Charge entry fees for entered owners now
-    const filtered = []
-    for (const c of enteredCars) {
-      const ownerId = c.ownerId
-      const bal = await safeCall(getUserWallet, [ownerId]).catch(() => null)
-      const nick = await safeCall(getUserNickname, [ownerId]).catch(() => '@user')
-      if (typeof bal !== 'number' || bal < ENTRY_FEE) {
-        await safeCall(postMessage, [{
-          room: ROOM,
-          message: `❗ ${nick} could not pay entry fee (${fmtMoney(ENTRY_FEE)}). ${carLabel(c)} removed from grid.`
-        }])
-        continue
-      }
-      await safeCall(debitGameBet, [ownerId, ENTRY_FEE])
-      filtered.push(c)
-    }
-
-    const bots = []
-    const used = new Set((all || []).map(c => String(c.name || '').toLowerCase()))
-    for (const c of filtered) used.add(String(c.name || '').toLowerCase())
-
-    for (let i = 0; i < need; i++) {
-      const name = generateCarName(used)
-      used.add(name.toLowerCase())
-      bots.push({
-        id: null,
-        ownerId: null,
-        name,
-        livery: '⬛',
-        tier: 'bot',
-        price: 0,
-        power: rint(50, 70),
-        handling: rint(50, 70),
-        aero: rint(48, 68),
-        reliability: rint(52, 72),
-        tire: rint(48, 70),
-        wear: 0
-      })
-    }
-
-    // Attach team label (for user cars)
-    const withTeam = []
-    for (const c of filtered) {
-      const team = await safeCall(getTeamByOwner, [c.ownerId]).catch(() => null)
-      withTeam.push({ ...c, teamLabel: teamLabel(team) })
-    }
-
-    field = [...withTeam, ...bots].map(c => {
-      const label = carLabel(c)
-      const ownerId = c.ownerId || null
-      const choice = ownerId ? (carChoices.get(ownerId) || {}) : {}
-
-      const tireChoice = TIRES.includes(choice.tire) ? choice.tire : 'med'
-      const modeChoice = MODES.includes(choice.mode) ? choice.mode : 'norm'
-
-      return {
-        ...c,
-        label,
-        teamLabel: c.teamLabel || '—',
-        tireChoice,
-        modeChoice
-      }
+    // Tier display order: champion -> elite -> basic -> everything else alphabetically
+    const priority = ['champion', 'elite', 'basic']
+    const tiers = Object.keys(byTier).sort((a, b) => {
+      const ai = priority.indexOf(a)
+      const bi = priority.indexOf(b)
+      const ar = ai === -1 ? 999 : ai
+      const br = bi === -1 ? 999 : bi
+      if (ar !== br) return ar - br
+      return a.localeCompare(b)
     })
 
-    isStratOpen = true
+    const tierTitle = (t) => {
+      if (t === 'champion') return 'CHAMPION'
+      if (t === 'elite') return 'ELITE'
+      if (t === 'basic') return 'BASIC'
+      if (t === 'unrated') return 'UNRATED'
+      return t.toUpperCase()
+    }
+
+    const lines = []
+    lines.push('AVAILABLE HORSES (owners only — type exact name to enter)')
+    lines.push('')
+
+    for (const t of tiers) {
+      const list = byTier[t]
+        .slice()
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+
+      lines.push(`[${tierTitle(t)}] (${list.length})`)
+
+      for (const h of list) {
+        const nick = await safeCall(getUserNickname, [h.ownerId]).catch(() => null)
+        const owner = (nick ? String(nick).replace(/^@/, '') : 'Unknown')
+        const emoji = String(h.emoji || '').trim()
+        const prefix = emoji ? `${emoji} ` : ''
+
+        // ✅ Make the exact entry token explicit (avoid emoji copy/paste confusion)
+        lines.push(`• ${prefix}${h.name} — ${owner}  (enter: ${h.name})`)
+      }
+
+      lines.push('') // blank line between tiers
+    }
 
     await safeCall(postMessage, [{
       room: ROOM,
-      message: `🧠 **Strategy lock** (${STRAT_MS / 1000}s): choose your tires + mode.\n` +
-        `• /tire soft|med|hard\n` +
-        `• /mode push|norm|save\n` +
-        `Default: MED + NORM`
+      message: '```' + '\n' + lines.join('\n').trimEnd() + '\n' + '```'
+    }])
+  } else {
+    await safeCall(postMessage, [{ room: ROOM, message: '⚠️ No user horses detected online — bots may fill the field.' }])
+  }
+
+  setTimeout(openBetsPhase, ENTRY_MS)
+}
+
+export async function handleHorseEntryAttempt (ctx) {
+  if (!isAcceptingEntries) return
+
+  const sender = ctx.sender
+  const txtRaw = String(ctx.message || '').trim()
+  if (!txtRaw) return
+
+  const key = txtRaw.toLowerCase()
+  const match = eligibleByName.get(key)
+  if (!match) return
+
+  // ✅ Owner-only entry
+  if (String(match.ownerId) !== String(sender)) return
+
+  if (entered.has(match.name)) return
+
+  entered.add(match.name)
+  const nick = await safeCall(getUserNickname, [sender]).catch(() => '@user')
+  await safeCall(postMessage, [{
+    room: ROOM,
+    message: `✅ ${nick?.replace(/^@/, '')} entered **${match.name}**!`
+  }])
+}
+
+export async function handleHorseBet (ctx) {
+  if (!isBettingOpen) return
+
+  const txt = String(ctx.message || '')
+  const sender = ctx.sender
+  const m = txt.match(/^\/horse\s*(\d+)\s+(\d+)\b/i)
+  if (!m) return
+
+  const idx = parseInt(m[1], 10) - 1
+  const amt = parseInt(m[2], 10)
+  if (Number.isNaN(idx) || Number.isNaN(amt) || amt <= 0 || idx < 0 || idx >= horses.length) return
+
+  const balance = await safeCall(getUserWallet, [sender])
+  const nick = await safeCall(getUserNickname, [sender]).catch(() => '@user')
+  if (balance < amt) {
+    await safeCall(postMessage, [{ room: ROOM, message: `${nick}, insufficient funds: $${balance}.` }])
+    return
+  }
+
+  // NOTE: If debitGameBet returns a boolean in your DB layer, prefer checking it.
+  await safeCall(debitGameBet, [sender, amt])
+  ;(horseBets[sender] ||= []).push({ horseIndex: idx, amount: amt })
+
+  const h = horses[idx]
+  await safeCall(postMessage, [{
+    room: ROOM,
+    message: `${nick} bets $${amt} on #${idx + 1} **${h.name}**!`
+  }])
+}
+
+// ── Flow helpers ───────────────────────────────────────────────────────
+async function openBetsPhase () {
+  try {
+    isAcceptingEntries = false
+
+    const all = await safeCall(getAllHorses)
+    const ownerHorses = all.filter(h => entered.has(h.name))
+
+    if (ownerHorses.length === 0) {
+      await safeCall(postMessage, [{ room: ROOM, message: '⚠️ No owners entered; house horses take the field!' }])
+    } else {
+      const entryNames = ownerHorses.map(h => `${h.emoji || ''} ${h.name}`.trim()).join(', ')
+      await safeCall(postMessage, [{ room: ROOM, message: `✅ Entries closed! Participants: ${entryNames}.` }])
+    }
+
+    const need = Math.max(0, 6 - ownerHorses.length)
+
+    // Generate fresh bot horses every race (do not pull from DB).
+    const bots = []
+    const existingNames = new Set(all.map(h => h.name))
+    for (const h of ownerHorses) existingNames.add(h.name)
+
+    for (let i = 0; i < need; i++) {
+      const uniqueName = generateHorseName(existingNames)
+      existingNames.add(uniqueName)
+      const baseOdds = 2.0 + Math.random() * 5.0
+      const vol = 1.2 + Math.random() * 0.8
+
+      bots.push({
+        id: null,
+        name: uniqueName,
+        baseOdds: parseFloat(baseOdds.toFixed(1)),
+        volatility: parseFloat(vol.toFixed(2)),
+        wins: 0,
+        racesParticipated: 0,
+        careerLength: 0,
+        owner: 'House',
+        ownerId: null,
+        tier: 'bot',
+        emoji: '',
+        price: 0,
+        retired: false
+      })
+    }
+
+    // Build race horses and lock tote-board odds for display + settlement.
+    // - h.odds (decimal) is used for simulation strength.
+    // - h.oddsLabel / h.oddsFrac / h.oddsDecLocked are used for the race card + bet settlement.
+    horses = [...ownerHorses, ...bots].map(h => {
+      const decFair = getCurrentOdds(h)
+      const locked = lockToteBoardOdds(decFair, { minProfit: 2.0 })
+
+      // CRITICAL: Prevent “underpriced favorite” exploit.
+      // Simulation strength should NEVER be stronger than the displayed odds.
+      // Since lower decimal = stronger, we take the max.
+      const decStrength = Math.max(locked.decFair, locked.oddsDecLocked)
+
+      return {
+        ...h,
+        // used by simulation speed scaling
+        odds: decStrength,
+
+        // display + settlement
+        oddsLabel: locked.oddsLabel,
+        oddsFrac: locked.oddsFrac,
+        oddsDecLocked: locked.oddsDecLocked
+      }
+    })
+
+    if (!horses.length) {
+      await safeCall(postMessage, [{ room: ROOM, message: '❌ No eligible horses. Race canceled.' }])
+      cleanup()
+      return
+    }
+
+    // Pick random silks for this race
+    raceSilks = shuffleArray(SILKS).slice(0, horses.length)
+
+    const entries = horses.map((h, i) => ({
+      index: i,
+      name: `${raceSilks[i]} ${h.name}`,
+      odds: h.oddsLabel || '—'
+    }))
+
+    const card = renderRacecard(entries, { nameWidth: 24, oddsWidth: 7 })
+
+    await safeCall(postMessage, [{
+      room: ROOM,
+      message: [
+        '**🏇 Post parade — today’s field & odds**',
+        '```',
+        card,
+        '```',
+        `Place your bets using /horse <number> <amount> (for example, /horse 2 50) in the next ${BET_MS / 1000}s.`
+      ].join('\n')
     }])
 
-    const previewRows = field.map(c => ({
-      label: c.label,
-      teamLabel: c.teamLabel,
-      tire: c.tireChoice,
-      mode: c.modeChoice
-    }))
-    await safeCall(postMessage, [{ room: ROOM, message: renderGrid(previewRows, { title: 'GRID PREVIEW' }) }])
+    isBettingOpen = true
 
     setTimeout(() => {
-      isStratOpen = false
-      startRaceRun()
-    }, STRAT_MS)
-  } catch (e) {
-    console.error('[f1race] lockEntriesAndOpenStrategy error:', e)
-    await safeCall(postMessage, [{ room: ROOM, message: '❌ Could not lock entries.' }])
+      if (isBettingOpen) {
+        safeCall(postMessage, [{
+          room: ROOM,
+          message: '⌛ Halfway to post! Place your bet now using /horse <number> <amount> (e.g., /horse 1 25).'
+        }])
+      }
+    }, BET_MS / 2)
+
+    setTimeout(() => {
+      isBettingOpen = false
+      startRunPhase()
+    }, BET_MS)
+  } catch (err) {
+    console.error('[openBetsPhase] error:', err)
+    await safeCall(postMessage, [{ room: ROOM, message: '❌ Couldn’t open betting.' }])
     cleanup()
   }
 }
 
-async function startRaceRun () {
+// ── GIF helpers ────────────────────────────────────────────────────────
+const GIFS_ENABLED = String(process.env.HORSE_RACE_GIFS ?? '1') !== '0'
+
+const RACE_GIFS = {
+  start: [
+    'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExY2o1c2M5amVzNnd0ZHY5bzRmNDFvNXZlZXNvNHMzcmFlNXprdmZ5NyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/SuI4fzUBQzG1H1kEtI/giphy.gif'
+  ],
+  finish: [
+    'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExMGpwbGVpNHp4ZmV3dDRrOWJ4cWhpcDQ5YWw2Mm1qM2l4ZWZ6cm45MSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/iD7jBggMvtFQ5BdNpV/giphy.gif'
+  ]
+}
+
+function pickRandom (arr) {
+  if (!Array.isArray(arr) || arr.length === 0) return null
+  return arr[Math.floor(Math.random() * arr.length)]
+}
+
+async function postGif (type) {
+  if (!GIFS_ENABLED) return
+  const url = pickRandom(RACE_GIFS[type])
+  if (!url) return
+  await safeCall(postMessage, [{ room: ROOM, message: '', images: [url] }])
+}
+
+async function startRunPhase () {
   try {
-    isRunning = true
-    const track = pickTrack()
-
-    // Grid order with slight bias: handling+aero
-    const seeded = field.map((c) => {
-      const bias = (Number(c.handling || 50) + Number(c.aero || 50)) / 200 // ~0.5
-      const roll = Math.random() * 0.12
-      return { c, q: roll + bias * 0.08 }
-    }).sort((a, b) => b.q - a.q).map(x => x.c)
-
-    field = seeded
-
-    const userEntries = field.filter(c => c.ownerId).length
-    const { gross, rake, net } = prizePoolFromEntries(userEntries)
-
-    // Pole winner = grid P1 if user-owned
-    const poleWinnerOwnerId = field[0]?.ownerId || null
-
-    await safeCall(postMessage, [{
-      room: ROOM,
-      message: `🏁 **LIGHTS OUT!** ${track.emoji} ${track.name}\n` +
-        `Entry fees: ${fmtMoney(gross)} · House rake: ${fmtMoney(rake)} · Prize pool: **${fmtMoney(net)}**\n` +
-        `🎯 Pole Bonus: **${fmtMoney(POLE_BONUS)}** · ⚡ Fastest Lap Bonus: **${fmtMoney(FASTEST_LAP_BONUS)}**\n` +
-        `📌 House cars do **not** take prize money — their share is redistributed to drivers.`
-    }])
-
-    const gridRows = field.map(c => ({
-      label: c.label,
-      teamLabel: c.teamLabel,
-      tire: c.tireChoice,
-      mode: c.modeChoice
-    }))
-    await safeCall(postMessage, [{ room: ROOM, message: renderGrid(gridRows, { title: 'OFFICIAL GRID' }) }])
-
-    if (poleWinnerOwnerId && POLE_BONUS > 0) {
-      const nick = await safeCall(getUserNickname, [poleWinnerOwnerId]).catch(() => null)
-      const tag = nick?.replace(/^@/, '') || `<@uid:${poleWinnerOwnerId}>`
-      await safeCall(postMessage, [{ room: ROOM, message: `🎯 Pole Position Bonus goes to ${tag} (**${fmtMoney(POLE_BONUS)}**)` }])
-    }
-
-    await runRace({
-      cars: field,
-      track,
-      prizePool: net,
-      payoutPlan: PRIZE_SPLIT,
-      poleBonus: POLE_BONUS,
-      fastestLapBonus: FASTEST_LAP_BONUS,
-      poleWinnerOwnerId
-    })
-  } catch (e) {
-    console.error('[f1race] startRaceRun error:', e)
+    isRaceRunning = true
+    await postGif('start')
+    await postCountdown(5)
+    await runRace({ horses, horseBets })
+  } catch (err) {
+    console.error('[startRunPhase] error:', err)
     await safeCall(postMessage, [{ room: ROOM, message: '❌ Race failed to start.' }])
     cleanup()
   }
 }
 
-// ── Event rendering (CometChat TV mode) ────────────────────────────────
-const LISTENER_GUARD_KEY = '__JAMBOT_F1RACE_LISTENERS__'
+function cleanup () {
+  isAcceptingEntries = false
+  isBettingOpen = false
+  isRaceRunning = false
+  entered.clear()
+  horses = []
+  horseBets = {}
+  raceSilks = []
+  eligibleByName = new Map()
+
+  // ✅ Reset TV renderer memory between races
+  _lastFrame = null
+  _lastLine = ''
+}
+
+// ── TV commentary helpers ──────────────────────────────────────────────
+function rankOrder (raceState) {
+  return raceState.map((h, i) => ({ i, p: h.progress }))
+    .sort((a, b) => b.p - a.p).map(x => x.i)
+}
+
+function blocks (progress, finishDistance, barCells = BAR_CELLS) {
+  const pct = Math.max(0, Math.min(1, progress / (finishDistance || 1)))
+  return Math.round(pct * barCells)
+}
+
+function phaseName (legIdx) {
+  return ['Break', 'Backstretch', 'Far Turn', 'Stretch'][legIdx] || `Leg ${legIdx + 1}`
+}
+
+function pickDifferent (prev, choices) {
+  const pool = choices.filter(l => l && l !== prev)
+  return pool.length ? pool[Math.floor(Math.random() * pool.length)] : (choices[0] || '')
+}
+
+function makeTurnCommentary (legIndex, raceState, prevState, finishDistance, prevLine) {
+  const order = rankOrder(raceState)
+  const leader = raceState[order[0]]
+  const second = raceState[order[1]]
+  const phase = phaseName(legIndex)
+  const late = (legIndex === LEGS - 1)
+
+  if (!prevState) {
+    return pickDifferent(prevLine, [
+      `✨ Clean **Break** — **${leader.name}** shows speed; **${second.name}** keeps tabs.`,
+      `✨ They spring away — **${leader.name}** quick into stride.`
+    ])
+  }
+
+  const prevOrder = rankOrder(prevState)
+  const leadGap = blocks(leader.progress - second.progress, finishDistance)
+
+  const options = []
+  if (leadGap <= 1) {
+    options.push(
+      `🔥 ${phase}: Bunched up — anyone’s race.`,
+      `🔥 ${phase}: Wall of horses — looking for room.`
+    )
+  }
+  if (late) {
+    options.push(
+      `🏁 Down the **Stretch** — **${leader.name}** digs in, **${second.name}** charging!`,
+      '🏁 Final strides — they’re all out!'
+    )
+  }
+  if (prevOrder[0] !== order[0]) {
+    options.push(`⚡ New leader! **${leader.name}** takes command.`)
+  }
+  if (!options.length) {
+    options.push(`🎯 ${phase}: **${leader.name}** controls; **${second.name}** poised.`)
+  }
+  return pickDifferent(prevLine, options)
+}
+
+function makeFinalCommentary (raceState, winnerIdx, finishDistance) {
+  const order = rankOrder(raceState)
+  const winner = raceState[winnerIdx]
+  const runnerUp = raceState[order[0] === winnerIdx ? order[1] : order[0]]
+  const margin = blocks(winner.progress - runnerUp.progress, finishDistance)
+
+  if (margin <= 1) return `📸 Photo finish! **${winner.name}** noses out **${runnerUp.name}** at the wire.`
+  if (margin <= 3) return `✅ **${winner.name}** holds off **${runnerUp.name}** late.`
+  return `💪 Dominant — **${winner.name}** powers clear in the final strides.`
+}
+
+// ── Event rendering ────────────────────────────────────────────────────
+let _lastFrame = null
+let _lastLine = ''
+
+// Guard against duplicate event listeners in environments where modules may reload.
+const LISTENER_GUARD_KEY = '__JAMBOT_HORSERACE_LISTENERS__'
 if (!globalThis[LISTENER_GUARD_KEY]) {
   globalThis[LISTENER_GUARD_KEY] = true
 
-  bus.on('turn', async ({ legIndex, legsTotal, raceState, events, track }) => {
-    // reduce spam: only post when progress meaningfully changes
-    const sig = JSON.stringify(raceState.map(r => [r.index, Math.round(r.progress01 * 100), r.dnf ? 1 : 0]))
-    if (_lastProgress === sig && (legIndex % 2 === 1)) return
-    _lastProgress = sig
+  bus.on('turn', async ({ turnIndex, raceState, finishDistance }) => {
+    const MIN_CELL_CHANGE = 1 / (finishDistance * BAR_CELLS)
+    const prev = _lastFrame?.raceState
+    const changed = raceState.some(
+      (h, i) => Math.abs((h.progress ?? 0) - (prev?.[i]?.progress ?? 0)) >= MIN_CELL_CHANGE
+    )
+    if (!changed && (turnIndex % 2 !== 0)) return
 
-    const title = `${track.emoji} ${track.name} — LAP ${legIndex + 1}/${legsTotal}`
-    const msg = renderRaceProgress(raceState, { title, barCells: 14, nameWidth: 18 })
+    const displayState = raceState.map((h, i) => ({ ...h, name: `${raceSilks[i]} ${h.name}` }))
+    const track = renderProgress(displayState, {
+      barLength: BAR_CELLS,
+      finishDistance,
+      style: BAR_STYLE,
+      ticksEvery: TICKS_EVERY,
+      tickChar: TICK_CHAR,
+      nameWidth: NAME_WIDTH
+    })
 
-    const lines = []
-    lines.push(msg)
-    if (Array.isArray(events) && events.length) lines.push(events.slice(0, 3).join('\n'))
+    const comment = makeTurnCommentary(turnIndex, raceState, _lastFrame?.raceState, finishDistance, _lastLine)
+    _lastFrame = { raceState, finishDistance }
+    _lastLine = comment
 
-    await postMessage({ room: ROOM, message: lines.join('\n') })
+    if (TV_MODE) {
+      await postMessage({
+        room: ROOM,
+        message: [
+          '```',
+          ` Leg ${turnIndex + 1} of ${LEGS}`,
+          track,
+          '```',
+          comment
+        ].join('\n')
+      })
+    }
   })
 
-  bus.on('raceFinished', async ({ finishOrder, cars, payouts, track, prizePool, fastestLap }) => {
+  bus.on('raceFinished', async ({ winnerIdx, raceState, payouts, ownerBonus, finishDistance }) => {
     try {
-      const top = finishOrder.slice(0, Math.min(8, finishOrder.length))
+      await postGif('finish')
 
-      const lines = []
-      lines.push(`RESULTS — ${track.emoji} ${track.name}`)
-      lines.push(`Prize Pool: ${fmtMoney(prizePool)}`)
-      lines.push('')
+      await DELAY(RESULTS_PACING.preResultBeatMs)
+      await safeCall(postMessage, [{ room: ROOM, message: '🏁 They hit the wire…' }])
 
-      // Top 5 with payouts
-      const paid = top.slice(0, 5).map((idx, place) => {
-        const c = cars[idx]
-        const tag = c.ownerId ? `<@uid:${c.ownerId}>` : 'House'
-        const pay = c.ownerId ? (payouts?.[c.ownerId] || 0) : 0
-        return `${place + 1}. ${c.label} — ${tag}${pay ? ` · ${fmtMoney(pay)}` : ''}`
+      const displayState = raceState.map((h, i) => ({ ...h, name: `${raceSilks[i]} ${h.name}` }))
+      const track = renderProgress(displayState, {
+        barLength: BAR_CELLS,
+        finishDistance,
+        winnerIndex: winnerIdx,
+        style: BAR_STYLE,
+        ticksEvery: TICKS_EVERY,
+        tickChar: TICK_CHAR,
+        nameWidth: NAME_WIDTH
       })
-      lines.push(...paid)
 
-      if (fastestLap?.ownerId) {
-        lines.push('')
-        lines.push(`⚡ Fastest Lap: ${fastestLap.label} · Bonus: ${fmtMoney(fastestLap.bonus)}`)
+      const order = rankOrder(raceState)
+      const winner = raceState[winnerIdx]
+      const runnerUpIdx = (order[0] === winnerIdx) ? order[1] : order[0]
+      const runnerUp = raceState[runnerUpIdx]
+      const margin = blocks((winner?.progress ?? 0) - (runnerUp?.progress ?? 0), finishDistance)
+      const isPhotoFinish = margin <= 1
+
+      if (isPhotoFinish) {
+        await DELAY(RESULTS_PACING.photoFinishBeatMs)
+        await safeCall(postMessage, [{ room: ROOM, message: '📸 Photo finish… waiting on the judges…' }])
       }
 
-      await postMessage({ room: ROOM, message: '```\n' + lines.join('\n') + '\n```' })
+      let comment = makeFinalCommentary(raceState, winnerIdx, finishDistance)
+      if (isPhotoFinish) comment = `✅ **${winner.name}** gets the nod over **${runnerUp.name}**!`
+
+      await DELAY(RESULTS_PACING.officialBeatMs)
+
+      const winnerDisplayName = displayState[winnerIdx]?.name || `${silk(winnerIdx)} ${raceState[winnerIdx]?.name || ''}`
+      await safeCall(postMessage, [{
+        room: ROOM,
+        message: `✅ **Official:** WINNER — **${winnerDisplayName}**!`
+      }])
+
+      await DELAY(RESULTS_PACING.standingsBeatMs)
+      await safeCall(postMessage, [{
+        room: ROOM,
+        message: [
+          '```',
+          ' Final Standings',
+          track,
+          '```',
+          comment
+        ].join('\n')
+      }])
+
+      const payoutEntries = payouts && typeof payouts === 'object'
+        ? Object.entries(payouts).filter(([, amount]) => Number(amount) > 0)
+        : []
+
+      if (payoutEntries.length > 0) {
+        await DELAY(RESULTS_PACING.payoutLineBeatMs)
+        for (const [userId, amount] of payoutEntries) {
+          const nick = await safeCall(getUserNickname, [userId]).catch(() => null)
+          const name = nick?.replace(/^@/, '') || `<@uid:${userId}>`
+          await safeCall(postMessage, [{ room: ROOM, message: `💵 ${name} wins **$${amount}**` }])
+          await DELAY(RESULTS_PACING.payoutLineBeatMs)
+        }
+      }
+
+      if (ownerBonus && ownerBonus.ownerId && ownerBonus.amount) {
+        await DELAY(RESULTS_PACING.ownerBonusBeatMs)
+        const nick = await safeCall(getUserNickname, [ownerBonus.ownerId]).catch(() => null)
+        const name = nick?.replace(/^@/, '') || `<@uid:${ownerBonus.ownerId}>`
+        await safeCall(postMessage, [{
+          room: ROOM,
+          message: `🎉 ${name} receives an owner bonus of **$${ownerBonus.amount}**`
+        }])
+      }
+    } catch (err) {
+      console.error('[raceFinished] error:', err)
+      await safeCall(postMessage, [{ room: ROOM, message: '❌ Error displaying race results.' }])
     } finally {
       cleanup()
     }
   })
 }
 
-// ── Help ───────────────────────────────────────────────────────────────
-export async function handleF1Help (ctx) {
+// ── Misc helpers ───────────────────────────────────────────────────────
+function _fmtPct (w, r) {
+  const wins = Number(w || 0)
+  const races = Number(r || 0)
+  if (!races) return '0%'
+  return Math.round((wins / races) * 100) + '%'
+}
+function _fmtOdds (h) {
+  const decFair = getCurrentOdds(h)
+  return lockToteBoardOdds(decFair, { minProfit: 2.0 }).oddsLabel
+}
+function _fmtLine (h, idx = null) {
+  const tag = (idx != null) ? `${String(idx + 1).padStart(2, ' ')}.` : '•'
+  const races = Number(h?.racesParticipated || 0)
+  const wins = Number(h?.wins || 0)
+  const pct = _fmtPct(wins, races)
+  const retired = h?.retired ? ' (retired)' : ''
+  const tier = h?.tier ? ` [${String(h.tier).toUpperCase()}]` : ''
+  const limit = careerLimitFor(h)
+  const raceInfo = Number.isFinite(limit) ? `${races}/${limit}` : `${races}`
+  return `${tag} ${h.name}${retired}${tier} — Odds ${_fmtOdds(h)} · Races ${raceInfo} · Wins ${wins} (${pct})`
+}
+
+function padR (s, n) { return String(s ?? '').padEnd(n, ' ') }
+function padL (s, n) { return String(s ?? '').padStart(n, ' ') }
+
+function clampName (s, n) {
+  s = String(s ?? '')
+  if (s.length <= n) return padR(s, n)
+  return padR(s.slice(0, Math.max(0, n - 1)) + '…', n)
+}
+
+function tierTag (tier) {
+  const t = String(tier || '').toUpperCase()
+  // keep short for table
+  if (!t) return '—'
+  if (t.length <= 7) return t
+  return t.slice(0, 7)
+}
+
+function statusTag (h, hof = false) {
+  const retired = !!h?.retired || Number(h?.retired) === 1
+  if (retired) return hof ? '🏆 RET' : 'RET'
+  return hof ? '🏆' : ''
+}
+
+function careerLeft (h) {
+  const races = Number(h?.racesParticipated || 0)
+  const limit = Number.isFinite(Number(h?.careerLength)) ? Number(h.careerLength) : null
+  if (!limit || limit <= 0) return '—'
+  return String(Math.max(0, limit - races))
+}
+
+function renderHorseTable (rows, { title = '', showOwner = false } = {}) {
+  // Column widths tuned for CometChat
+  const W_NUM = 2
+  const W_NAME = showOwner ? 18 : 22
+  const W_TIER = 7
+  const W_REC = 9 // "12-34"
+  const W_PCT = 4 // "45%"
+  const W_LEFT = 4 // races left
+  const W_STAT = 6 // status / hof badge
+
+  const header =
+    `${padL('#', W_NUM)} ` +
+    `${padR('Horse', W_NAME)} ` +
+    `${padR('Tier', W_TIER)} ` +
+    `${padR('W-S', W_REC)} ` +
+    `${padR('%', W_PCT)} ` +
+    `${padR('Left', W_LEFT)} ` +
+    `${padR('Status', W_STAT)}` +
+    (showOwner ? ` ${padR('Owner', 14)}` : '')
+
+  const line = '-'.repeat(header.length)
+
+  const body = rows.map((r, idx) => {
+    const h = r.horse || r
+    const num = padL(String(idx + 1), W_NUM)
+    const name = clampName(h.name, W_NAME)
+    const tier = padR(tierTag(h.tier), W_TIER)
+    const rec = padR(`${Number(h.wins || 0)}-${Number(h.racesParticipated || 0)}`, W_REC)
+    const pct = padR(fmtPct(h.wins, h.racesParticipated), W_PCT)
+    const left = padR(careerLeft(h), W_LEFT)
+    const stat = padR(statusTag(h, !!r.hof), W_STAT)
+    const owner = showOwner ? ` ${padR(String(r.ownerLabel || '—'), 14)}` : ''
+    return `${num} ${name} ${tier} ${rec} ${pct} ${left} ${stat}${owner}`
+  })
+
+  const parts = []
+  if (title) parts.push(title)
+  parts.push(header)
+  parts.push(line)
+  parts.push(...body)
+
+  return '```\n' + parts.join('\n') + '\n```'
+}
+
+export async function handleMyHorsesCommand (ctx) {
+  const userId = ctx?.sender || ctx?.userId || ctx?.uid
+  const nick = await getUserNickname(userId)
+  const mine = await getUserHorses(userId)
+
+  if (!mine || mine.length === 0) {
+    await postMessage({
+      room: ROOM,
+      message: `${nick}, you don’t own any horses yet. Use **/buyhorse <tier>** to get started.`
+    })
+    return
+  }
+
+  // Sort: active first, then wins, then win%
+  const arranged = mine.slice().sort((a, b) => {
+    const ar = (!!a.retired || Number(a.retired) === 1) ? 1 : 0
+    const br = (!!b.retired || Number(b.retired) === 1) ? 1 : 0
+    if (ar !== br) return ar - br
+
+    const aw = Number(a?.wins || 0)
+    const bw = Number(b?.wins || 0)
+    if (bw !== aw) return bw - aw
+
+    const ap = aw / Math.max(1, Number(a?.racesParticipated || 0))
+    const bp = bw / Math.max(1, Number(b?.racesParticipated || 0))
+    return bp - ap
+  })
+
+  const W_NUM = 2
+  const W_NAME = 18
+  const W_TIER = 7
+  const W_REC = 7 // "11-20"
+  const W_PCT = 4
+  const W_LEFT = 4
+  const W_STAT = 6
+
+  const padR = (s, n) => String(s ?? '').padEnd(n, ' ')
+  const padL = (s, n) => String(s ?? '').padStart(n, ' ')
+  const clamp = (s, n) => {
+    s = String(s ?? '')
+    if (s.length <= n) return padR(s, n)
+    return padR(s.slice(0, n - 1) + '…', n)
+  }
+  const pct = (w, s) => {
+    w = Number(w || 0); s = Number(s || 0)
+    if (!s) return '0%'
+    return `${Math.round((w / s) * 100)}%`
+  }
+  const left = (h) => {
+    const races = Number(h?.racesParticipated || 0)
+    const limit = Number(h?.careerLength || 0)
+    if (!limit) return '—'
+    return String(Math.max(0, limit - races))
+  }
+  const stat = (h) => ((!!h?.retired || Number(h?.retired) === 1) ? 'RET' : '')
+
+  const header =
+    `${padL('#', W_NUM)} ` +
+    `${padR('Horse', W_NAME)} ` +
+    `${padR('Tier', W_TIER)} ` +
+    `${padR('W-S', W_REC)} ` +
+    `${padR('%', W_PCT)} ` +
+    `${padR('Left', W_LEFT)} ` +
+    `${padR('Status', W_STAT)}`
+
+  const line = '-'.repeat(header.length)
+
+  const rows = arranged.map((h, i) => {
+    const rec = `${Number(h?.wins || 0)}-${Number(h?.racesParticipated || 0)}`
+    return (
+      `${padL(String(i + 1), W_NUM)} ` +
+      `${clamp(h.name, W_NAME)} ` +
+      `${padR(String(h?.tier || '—').toUpperCase().slice(0, W_TIER), W_TIER)} ` +
+      `${padR(rec, W_REC)} ` +
+      `${padR(pct(h.wins, h.racesParticipated), W_PCT)} ` +
+      `${padR(left(h), W_LEFT)} ` +
+      `${padR(stat(h), W_STAT)}`
+    )
+  })
+
+  const title = `${nick}'s Stable (${arranged.length})`
+  const msg = ['```', title, header, line, ...rows, '```'].join('\n')
+  await postMessage({ room: ROOM, message: msg })
+}
+
+export async function handleHorseStatsCommand (ctx) {
   const room = ctx?.room || ROOM
+  const text = String(ctx?.message || '').trim()
+  // FIX: this should be \s not \\s
+  const nameArg = (text.match(/^\/horsestats\s+(.+)/i) || [])[1]
+
+  const all = await getAllHorses()
+  const horsesList = Array.isArray(all) ? all : []
+
+  if (!nameArg) {
+    const topWins = horsesList.slice()
+      .sort((a, b) => Number(b?.wins || 0) - Number(a?.wins || 0))
+      .slice(0, 10)
+
+    const topPct = horsesList.slice()
+      .filter(h => Number(h?.racesParticipated || 0) >= 5)
+      .sort((a, b) => {
+        const ap = Number(a?.wins || 0) / Math.max(1, Number(a?.racesParticipated || 0))
+        const bp = Number(b?.wins || 0) / Math.max(1, Number(b?.racesParticipated || 0))
+        return bp - ap
+      })
+      .slice(0, 10)
+
+    const linesWins = topWins.map((h, i) => _fmtLine(h, i))
+    const linesPct = topPct.map((h, i) => _fmtLine(h, i))
+
+    const msg = [
+      ' **Horse Stats**',
+      '',
+      ' Top Wins',
+      ...linesWins,
+      '',
+      ' Best Win% (min 5 starts)',
+      ...linesPct
+    ].join('\n')
+
+    await postMessage({ room, message: '```\n' + msg + '\n```' })
+    return
+  }
+
+  const needle = nameArg.toLowerCase()
+  const match = horsesList.find(h => String(h?.name || '').toLowerCase() === needle) ||
+                 horsesList.find(h => String(h?.name || '').toLowerCase().includes(needle))
+
+  if (!match) {
+    await postMessage({ room, message: `❗ Couldn’t find a horse named **${nameArg}**.` })
+    return
+  }
+
+  const races = Number(match?.racesParticipated || 0)
+  const wins = Number(match?.wins || 0)
+  const pct = _fmtPct(wins, races)
+  const owner = match?.ownerId ? `<@uid:${match.ownerId}>` : 'House'
+
+  const limit = careerLimitFor(match)
+  const left = Number.isFinite(limit) ? Math.max(limit - races, 0) : null
+
+  const details = [
+    ` **${match.name}**` + (match.retired ? ' (retired)' : ''),
+    `Owner: ${owner}`,
+    `Tier: ${String(match?.tier || '').toUpperCase() || '—'}`,
+    `Odds (current): ${_fmtOdds(match)}`,
+    `Record: ${wins} wins from ${races} starts (${pct})`,
+    Number.isFinite(limit)
+      ? `Career limit: ${limit} · Races left: ${left}`
+      : 'Career limit: —',
+    `Base odds: ${match?.baseOdds ?? '—'} · Volatility: ${match?.volatility ?? '—'}`
+  ].join('\n')
+
+  await postMessage({ room, message: '```\n' + details + '\n```' })
+}
+
+export async function handleTopHorsesCommand (ctx) {
+  const room = ctx?.room || ROOM
+  const all = await getAllHorses()
+  const list = Array.isArray(all) ? all : []
+
+  const allenIds = String(process.env.ALLEN_USER_IDS || process.env.CHAT_USER_ID || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+
+  const userHorses = list.filter(h => {
+    const owner = h?.ownerId
+    if (!owner) return false
+    return !allenIds.includes(String(owner))
+  })
+
+  if (userHorses.length === 0) {
+    await postMessage({ room, message: '```\nNo user-owned horses found yet.\n```' })
+    return
+  }
+
+  const top = userHorses.slice()
+    .sort((a, b) => {
+      const dw = Number(b?.wins || 0) - Number(a?.wins || 0)
+      if (dw) return dw
+      const ap = Number(a?.wins || 0) / Math.max(1, Number(a?.racesParticipated || 0))
+      const bp = Number(b?.wins || 0) / Math.max(1, Number(b?.racesParticipated || 0))
+      return bp - ap
+    })
+    .slice(0, 10)
+
+  const W_NUM = 2
+  const W_NAME = 18
+  const W_TIER = 7
+  const W_REC = 7
+  const W_PCT = 4
+  const W_OWNER = 12
+
+  const padR = (s, n) => String(s ?? '').padEnd(n, ' ')
+  const padL = (s, n) => String(s ?? '').padStart(n, ' ')
+  const clamp = (s, n) => {
+    s = String(s ?? '')
+    if (s.length <= n) return padR(s, n)
+    return padR(s.slice(0, n - 1) + '…', n)
+  }
+  const pct = (w, s) => {
+    w = Number(w || 0); s = Number(s || 0)
+    if (!s) return '0%'
+    return `${Math.round((w / s) * 100)}%`
+  }
+
+  const header =
+    `${padL('#', W_NUM)} ` +
+    `${padR('Horse', W_NAME)} ` +
+    `${padR('Tier', W_TIER)} ` +
+    `${padR('W-S', W_REC)} ` +
+    `${padR('%', W_PCT)} ` +
+    `${padR('Owner', W_OWNER)}`
+
+  const line = '-'.repeat(header.length)
+
+  const rows = []
+  for (let i = 0; i < top.length; i++) {
+    const h = top[i]
+    const rec = `${Number(h?.wins || 0)}-${Number(h?.racesParticipated || 0)}`
+    const ownerNick = h?.ownerId
+      ? await safeCall(getUserNickname, [h.ownerId]).catch(() => null)
+      : null
+    const ownerLabel = (ownerNick ? String(ownerNick).replace(/^@/, '') : '—')
+
+    rows.push(
+      `${padL(String(i + 1), W_NUM)} ` +
+      `${clamp(h.name, W_NAME)} ` +
+      `${padR(String(h?.tier || '—').toUpperCase().slice(0, W_TIER), W_TIER)} ` +
+      `${padR(rec, W_REC)} ` +
+      `${padR(pct(h.wins, h.racesParticipated), W_PCT)} ` +
+      `${clamp(ownerLabel, W_OWNER)}`
+    )
+  }
+
+  const title = 'Top Horses (User-Owned)'
+  const msg = ['```', title, header, line, ...rows, '```'].join('\n')
+  await postMessage({ room: ROOM, message: msg })
+}
+
+// ── Help command ─────────────────────────────────────────────────────────
+export async function handleHorseHelpCommand (ctx) {
+  const room = ctx?.room || ROOM
+  const helpLines = [
+    ' **Horse Race Commands**',
+    '',
+    '/buyhorse <tier> – Purchase a new horse. Tiers: champion, elite, basic.',
+    '/myhorses – List your owned horses with their race counts, wins and career limits.',
+    '/horsestats [name] – Show detailed stats for a specific horse by name, or view leaderboards when no name is given.',
+    '/tophorses – See the top user-owned horses ranked by wins and win percentage.',
+    '/horse <number> <amount> – Place a bet on a horse during the betting phase (use the number shown on the race card).',
+    '/horsehelp – Display this help message.',
+    '',
+    'Note: Horses have a finite career limit assigned when purchased. Once a horse reaches this limit, it will automatically retire and cannot enter new races.'
+  ]
+  await postMessage({ room, message: '```\n' + helpLines.join('\n') + '\n```' })
+}
+
+function fmtPct (wins, starts) {
+  const w = Number(wins || 0)
+  const s = Number(starts || 0)
+  if (!s) return '0%'
+  return `${Math.round((w / s) * 100)}%`
+}
+
+function fmtDate (iso) {
+  try {
+    const d = new Date(iso)
+    return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: '2-digit' })
+  } catch {
+    return String(iso || '')
+  }
+}
+
+/**
+ * /hof [newest|wins|winpct]
+ */
+export async function handleHofCommand (ctx) {
+  const room = ctx?.room || ROOM
+  const text = String(ctx?.message || '').trim()
+
+  const arg = (text.match(/^\/hof\s*(.*)$/i) || [])[1]?.trim().toLowerCase()
+  const sort = (arg === 'wins' || arg === 'winpct') ? arg : 'newest'
+
+  const rows = getHofList({ limit: 10, sort })
+  if (!rows || rows.length === 0) {
+    await postMessage({ room, message: '```\n🏆 Horse Hall of Fame\n(no inductees yet)\n```' })
+    return
+  }
+
+  const lines = rows.map((r, i) => {
+    const num = String(i + 1).padStart(2, '0')
+    const name = String(r.name || '').padEnd(22, ' ')
+    const tier = String(r.tier || '').toUpperCase().padEnd(9, ' ')
+    const rec = `${Number(r.wins || 0)}W/${Number(r.racesParticipated || 0)}S`.padEnd(9, ' ')
+    const pct = fmtPct(r.wins, r.racesParticipated).padEnd(4, ' ')
+    const date = fmtDate(r.inducted_at)
+    return `${num}. ${name} ${tier} ${rec} ${pct}  Inducted ${date}`
+  })
+
+  const header = sort === 'wins'
+    ? '🏆 Horse Hall of Fame (Top Wins)'
+    : sort === 'winpct'
+      ? '🏆 Horse Hall of Fame (Top Win%)'
+      : '🏆 Horse Hall of Fame (Newest)'
+
   const msg = [
-    'F1 RACE COMMANDS',
+    header,
     '',
-    `/team create           - create your team (costs ${fmtMoney(TEAM_CREATE_FEE)})`,
-    `/team reroll           - randomize team name/badge (costs ${fmtMoney(TEAM_REROLL_FEE)})`,
-    '/buycar <tier>         - buy a car (starter/pro/hyper/legendary)',
-    '/mycars                - list your cars',
-    '/repaircar <name>      - repair wear (cost scales with wear)',
+    ...lines,
     '',
-    '/gp start              - start a Grand Prix (one race event)',
-    '(during entry) type your exact car name to enter',
-    '(during strategy) /tire soft|med|hard and /mode push|norm|save'
+    'Tip: /hof <horse name>  (plaque)'
   ].join('\n')
 
   await postMessage({ room, message: '```\n' + msg + '\n```' })
+}
+
+/**
+ * /hof <horse name>
+ */
+export async function handleHofPlaqueCommand (ctx) {
+  const room = ctx?.room || ROOM
+  const text = String(ctx?.message || '').trim()
+  const nameArg = (text.match(/^\/hof\s+(.+)/i) || [])[1]?.trim()
+
+  // If they typed /hof wins or /hof newest, that's the list command.
+  if (!nameArg || nameArg.toLowerCase() === 'wins' || nameArg.toLowerCase() === 'winpct' || nameArg.toLowerCase() === 'newest') {
+    return handleHofCommand(ctx)
+  }
+
+  const row = getHofEntryByHorseName(nameArg)
+  if (!row) {
+    await postMessage({ room, message: `❗ **${nameArg}** is not in the Hall of Fame (or name not found).` })
+    return
+  }
+
+  const owner = row?.ownerId ? `<@uid:${row.ownerId}>` : 'House'
+  const starts = Number(row.racesParticipated || 0)
+  const wins = Number(row.wins || 0)
+  const pct = fmtPct(wins, starts)
+
+  const plaque = [
+    '🏆 HALL OF FAME PLAQUE',
+    `Name:   ${row.name}`,
+    `Owner:  ${owner}`,
+    `Tier:   ${String(row.tier || '').toUpperCase() || '—'}`,
+    `Record: ${wins} wins / ${starts} starts (${pct})`,
+    `Inducted: ${fmtDate(row.inducted_at)}`,
+    `Reason: ${row.reason || '—'}`
+  ].join('\n')
+
+  await postMessage({ room, message: '```\n' + plaque + '\n```' })
 }

@@ -8,10 +8,11 @@ function clamp (s, n) {
   return padR(s.slice(0, Math.max(0, n - 1)) + '…', n)
 }
 
-export function renderGrid (rows, { title = 'GRID', nameWidth = 18 } = {}) {
+export function renderGrid (rows, { title = 'GRID', nameWidth = 18, showOdds = true } = {}) {
   const W_POS = 2
   const W_NAME = nameWidth
   const W_TEAM = 10
+  const W_ODDS = showOdds ? 5 : 0
   const W_TIRE = 5
   const W_MODE = 6
 
@@ -19,6 +20,7 @@ export function renderGrid (rows, { title = 'GRID', nameWidth = 18 } = {}) {
     `${padL('P', W_POS)} ` +
     `${padR('Car', W_NAME)} ` +
     `${padR('Team', W_TEAM)} ` +
+    (showOdds ? `${padR('Odds', W_ODDS)} ` : '') +
     `${padR('Tire', W_TIRE)} ` +
     `${padR('Mode', W_MODE)}`
 
@@ -28,9 +30,10 @@ export function renderGrid (rows, { title = 'GRID', nameWidth = 18 } = {}) {
     const pos = padL(String(i + 1), W_POS)
     const name = clamp(r.label, W_NAME)
     const team = clamp(r.teamLabel || '—', W_TEAM)
+    const odds = showOdds ? padL((r.odds ?? '—'), W_ODDS) + ' ' : ''
     const tire = padR(String(r.tire || 'MED').toUpperCase(), W_TIRE)
     const mode = padR(String(r.mode || 'NORM').toUpperCase(), W_MODE)
-    return `${pos} ${name} ${team} ${tire} ${mode}`
+    return `${pos} ${name} ${team} ${odds}${tire} ${mode}`
   })
 
   return '```\n' + [title, header, line, ...body].join('\n') + '\n```'
@@ -49,7 +52,6 @@ export function renderRaceProgress (rows, { title = 'RACE', barCells = 14, nameW
 
   const line = '-'.repeat(header.length)
 
-  // ✅ race-like bar
   const mkBar = (pct, dnf = false) => {
     if (dnf) return 'DNF'.padEnd(barCells, ' ')
     const p = Math.max(0, Math.min(1, Number(pct || 0)))
