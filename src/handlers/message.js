@@ -1767,19 +1767,24 @@ ${blocks}
       console.error('Error processing command:', error.message)
     }
   } else if (payload.message.startsWith('/allen')) {
-    try {
-      const danceImageOptions = [
-        'https://media.giphy.com/media/sA8nO56Gj9RHq/giphy.gif?cid=790b7611h6b5ihdlko5foubqcifo0e3h0i7e6p1vo2h8znzj&ep=v1_gifs_search&rid=giphy.gif&ct=g'
-      ]
-      const randomDanceImageUrl = danceImageOptions[Math.floor(Math.random() * danceImageOptions.length)]
-      await postMessage({
-        room,
-        message: '',
-        images: [randomDanceImageUrl]
-      })
-    } catch (error) {
-      console.error('Error processing command:', error.message)
-    }
+  try {
+    const danceImageOptions = [
+      'https://media.giphy.com/media/sA8nO56Gj9RHq/giphy.gif?cid=790b7611h6b5ihdlko5foubqcifo0e3h0i7e6p1vo2h8znzj&ep=v1_gifs_search&rid=giphy.gif&ct=g'
+    ]
+
+    const rawUrl = danceImageOptions[Math.floor(Math.random() * danceImageOptions.length)]
+    const u = new URL(rawUrl)
+    u.search = '' // ✅ remove ?cid=... etc
+    const cleanUrl = u.toString()
+
+    await postMessage({
+      room,
+      message: '',
+      images: [cleanUrl]
+    })
+  } catch (error) {
+    console.error('Error processing command:', error.message)
+  }
   } else if (payload.message.startsWith('/props')) {
     try {
       const danceImageOptions = [

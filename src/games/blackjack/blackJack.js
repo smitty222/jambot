@@ -361,6 +361,21 @@ function getTurnHand (st, turn) {
   return { p, h }
 }
 
+function normalizeHandOrder (st) {
+  // If handOrder is missing, initialize it
+  if (!Array.isArray(st.handOrder)) st.handOrder = []
+
+  // If handOrder is still UUID strings, convert to turn objects
+  if (st.handOrder.length > 0 && typeof st.handOrder[0] === 'string') {
+    st.handOrder = st.handOrder.map(uuid => ({ uuid, hand: 0 }))
+  }
+
+  // If handOrder is empty but we have roundPlayers, rebuild it
+  if (st.handOrder.length === 0 && Array.isArray(st.roundPlayers) && st.roundPlayers.length > 0) {
+    st.handOrder = st.roundPlayers.map(uuid => ({ uuid, hand: 0 }))
+  }
+}
+
 // Turn timers
 function scheduleTurnTimers (ctx, uuid) {
   const st = getTable(ctx)
@@ -662,6 +677,7 @@ export async function handleBlackjackBet (userUUID, amountStr, nickname, ctx) {
 async function dealInitial (ctx) {
   const st = getTable(ctx)
   if (st.phase !== 'dealing') return
+  normalizeHandOrder(st)
 
   clearTimer(st.betTimer); st.betTimer = null
 
@@ -1067,6 +1083,23 @@ async function dealerPlay (ctx) {
 
 async function settleRound (ctx) {
   const st = getTable(ctx)
+  normalizeHandOrder(st)
+  for (const turn of st.handOrder) {
+  const p = st.players.get(turn.uuid)
+  if (!p) continue
+  if (!Array.isArray(p.hands) || p.hands.length === 0) {
+    p.hands = [{
+      cards: [],
+      bet: p.bet || 0,
+      done: true,
+      busted: false,
+      surrendered: false,
+      doubled: false,
+      actionCount: 0,
+      isSplitHand: false
+    }]
+  }
+}
   let biggestThisHand = { uuid: null, profit: 0 }
 
   st.phase = 'payout'
