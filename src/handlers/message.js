@@ -15,6 +15,7 @@ import {
   disableAIGreeting,
   aiGreetingEnabled
 } from '../handlers/userJoined.js'
+import { startRouletteGame } from './roulette.js'
 import { getCurrentDJ, getCurrentDJUUIDs } from '../libs/bot.js'
 import { readRecentSongs } from '../database/dbrecentsongsmanager.js'
 import { addTracksToPlaylist, removeTrackFromPlaylist } from '../utils/playlistUpdate.js'
@@ -174,7 +175,6 @@ export default async (payload, room, state, roomBot) => {
   roomBot,
   startRouletteGame,
   handleBotRandomAvatarCommand,
-  setCurrentAlbum, // only if exists
   logger
 })
 if (handled) return

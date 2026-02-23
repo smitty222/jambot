@@ -1,3 +1,5 @@
+// src/games/roulette.js
+
 import { postMessage } from '../libs/cometchat.js'
 import {
   getUserWallet,
@@ -8,6 +10,7 @@ import { getUserNickname } from '../utils/nickname.js' // <- avoid circular impo
 
 // Game state
 let rouletteGameActive = false
+let betsOpen = false
 const bets = {}
 const room = process.env.ROOM_UUID
 
@@ -33,6 +36,12 @@ function getDozenRange (dozen) {
   }
 }
 
+function parse00 (token) {
+  // Accept "00" or "0" prefixed variations that might show up
+  // Primary goal: support `/00 50` and `/number 00 50`
+  return token === '00'
+}
+
 // ──────────────────────────────────────────────
 // Game flow
 // ──────────────────────────────────────────────
@@ -40,13 +49,15 @@ function getDozenRange (dozen) {
 export async function startRouletteGame () {
   if (rouletteGameActive) return
   rouletteGameActive = true
+  betsOpen = true
 
   await postMessage({ room, message: '', images: ['https://i.giphy.com/media/qH1jQOvi4WVEvCRvOg/giphy.gif'] })
   await postMessage({ room, message: '🎉 Welcome to the Roulette Table! 🎉' })
   await postMessage({ room, message: '', images: ['https://imgur.com/IyFZlzj.jpg'] })
-  await postMessage({ room, message: 'Place your bets! Betting closes in 90 seconds.' })
+  await postMessage({ room, message: 'Place your bets! Betting closes in 45 seconds.' })
 
   await new Promise(res => setTimeout(res, 30_000))
+  if (!rouletteGameActive) return
   await postMessage({ room, message: '⌛ 15 seconds left to place bets!' })
   await new Promise(res => setTimeout(res, 15_000))
 
@@ -56,6 +67,9 @@ export async function startRouletteGame () {
 
 async function closeBets () {
   if (!rouletteGameActive) return
+
+  // ✅ hard cutoff so late messages don't sneak in after "closed"
+  betsOpen = false
 
   await postMessage({ room, message: '🛑 Betting is now closed!' })
   await new Promise(res => setTimeout(res, 2000))
@@ -81,11 +95,11 @@ async function closeBets () {
 }
 
 async function drawWinningNumber () {
-  // 0–36 plus 37 = "00"
+  // American roulette: 0–36 plus 37 = "00"
   const numbers = [...Array(37).keys(), 37]
   const index = Math.floor(Math.random() * numbers.length)
-  const number = numbers[index]
-  const value = (number === 37) ? '00' : number
+  const number = numbers[index] // 0..36 or 37 sentinel for "00"
+  const value = (number === 37) ? '00' : number // display + color check
   const color = getRouletteColor(value)
 
   await postMessage({ room, message: `🎯 The wheel landed on ${value} (${color})!` })
@@ -95,28 +109,44 @@ async function drawWinningNumber () {
 
     for (const bet of userBets) {
       const amt = bet.amount
+
       switch (bet.type) {
         case 'red':
         case 'black':
         case 'green':
           if (bet.type === color) totalWinnings += amt * 2
           break
+
         case 'odd':
           if (number !== 0 && number !== 37 && number % 2 === 1) totalWinnings += amt * 2
           break
+
         case 'even':
           if (number !== 0 && number !== 37 && number % 2 === 0) totalWinnings += amt * 2
           break
+
         case 'high':
           if (number >= 19 && number <= 36) totalWinnings += amt * 2
           break
+
         case 'low':
           if (number >= 1 && number <= 18) totalWinnings += amt * 2
           break
-        case 'number':
-          if (bet.number === number || (bet.number === 0 && value === '00')) totalWinnings += amt * 36
+
+        case 'number': {
+          // ✅ Correct straight-up logic:
+          // - if bet.number is '00', it only wins when value === '00'
+          // - if bet.number is numeric 0..36, it only wins when number matches
+          if (bet.number === '00') {
+            if (value === '00') totalWinnings += amt * 36
+          } else {
+            if (bet.number === number) totalWinnings += amt * 36
+          }
           break
+        }
+
         case 'dozen':
+          // Dozens don't include 0 or 00; using numeric `number` excludes 37 automatically
           if (getDozenRange(bet.dozen).includes(number)) totalWinnings += amt * 3
           break
       }
@@ -134,6 +164,7 @@ async function drawWinningNumber () {
 
   // Reset state
   Object.keys(bets).forEach(k => delete bets[k])
+  betsOpen = false
   rouletteGameActive = false
 }
 
@@ -142,7 +173,8 @@ async function drawWinningNumber () {
 // ──────────────────────────────────────────────
 
 export async function handleRouletteBet (payload) {
-  if (!rouletteGameActive) return
+  // ✅ must be active AND bets must be open
+  if (!rouletteGameActive || !betsOpen) return
 
   const user = payload.sender
   const nickname = await getUserNickname(user)
@@ -155,7 +187,7 @@ export async function handleRouletteBet (payload) {
     return postMessage({ room, message: `${nickname}, usage: /<bet> <amount>` })
   }
 
-  const cmdToken = parts[0].substring(1).toLowerCase() // e.g. "red", "17", "number", "dozen"
+  const cmdToken = parts[0].substring(1).toLowerCase() // e.g. "red", "17", "number", "dozen", "00"
   const amt = Number(parts[parts.length - 1])
 
   if (!Number.isFinite(amt) || amt <= 0) {
@@ -163,27 +195,38 @@ export async function handleRouletteBet (payload) {
   }
 
   // Resolve bet type
-  const directNum = Number(cmdToken)
   let bet = null
 
-  if (Number.isInteger(directNum) && directNum >= 0 && directNum <= 36) {
-    // `/17 50`
-    bet = { type: 'number', number: directNum, amount: amt }
-  } else if (cmdToken === 'number' && parts.length >= 3) {
-    // `/number 17 50`
-    const n = Number(parts[1])
-    if (Number.isInteger(n) && n >= 0 && n <= 36) {
-      bet = { type: 'number', number: n, amount: amt }
+  // `/00 50`
+  if (parse00(cmdToken)) {
+    bet = { type: 'number', number: '00', amount: amt }
+  } else {
+    const directNum = Number(cmdToken)
+
+    if (Number.isInteger(directNum) && directNum >= 0 && directNum <= 36) {
+      // `/17 50`
+      bet = { type: 'number', number: directNum, amount: amt }
+    } else if (cmdToken === 'number' && parts.length >= 3) {
+      // `/number 17 50` or `/number 00 50`
+      const nToken = String(parts[1]).toLowerCase()
+      if (parse00(nToken)) {
+        bet = { type: 'number', number: '00', amount: amt }
+      } else {
+        const n = Number(parts[1])
+        if (Number.isInteger(n) && n >= 0 && n <= 36) {
+          bet = { type: 'number', number: n, amount: amt }
+        }
+      }
+    } else if (cmdToken === 'dozen' && parts.length >= 3) {
+      // `/dozen 2 50`
+      const d = Number(parts[1])
+      if ([1, 2, 3].includes(d)) {
+        bet = { type: 'dozen', dozen: d, amount: amt }
+      }
+    } else if (['red', 'black', 'green', 'odd', 'even', 'high', 'low'].includes(cmdToken)) {
+      // `/red 50`, `/odd 25`, etc.
+      bet = { type: cmdToken, amount: amt }
     }
-  } else if (cmdToken === 'dozen' && parts.length >= 3) {
-    // `/dozen 2 50`
-    const d = Number(parts[1])
-    if ([1, 2, 3].includes(d)) {
-      bet = { type: 'dozen', dozen: d, amount: amt }
-    }
-  } else if (['red', 'black', 'green', 'odd', 'even', 'high', 'low'].includes(cmdToken)) {
-    // `/red 50`, `/odd 25`, etc.
-    bet = { type: cmdToken, amount: amt }
   }
 
   if (!bet) {
@@ -192,7 +235,10 @@ export async function handleRouletteBet (payload) {
       message: `${nickname}, invalid bet. Examples:\n` +
         '• `/red 50`\n' +
         '• `/17 25`\n' +
+        '• `/0 10`\n' +
+        '• `/00 10`\n' +
         '• `/number 7 25`\n' +
+        '• `/number 00 25`\n' +
         '• `/dozen 2 50`'
     })
   }

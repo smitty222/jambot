@@ -19,7 +19,10 @@ const MODEL_LIMITS = {
 
   // Treat preview aliases like their base
   'gemini-2.5-flash-preview': { rpm: 10, tpm: 250_000, rpd: 250 },
-  'gemini-2.5-flash-lite-preview': { rpm: 15, tpm: 250_000, rpd: 1_000 }
+  'gemini-2.5-flash-lite-preview': { rpm: 15, tpm: 250_000, rpd: 1_000 },
+
+  // Gemini 3 flash preview (if your key has it)
+  'gemini-3-flash-preview': { rpm: 10, tpm: 250_000, rpd: 250 }
 }
 
 // ───────────────────────────────────────────────────────────
@@ -80,7 +83,7 @@ function rlRefill () {
 }
 function rlTryTake () { rlRefill(); if (rlBucket.tokens > 0) { rlBucket.tokens--; return true } return false }
 
-// In-memory response cache
+// In-memory response cache (TEXT ONLY)
 const AI_CACHE_TTL_MS = Number(process.env.AI_CACHE_TTL_MS ?? 300_000) // 5m
 const AI_CACHE_MAX_SIZE = Number(process.env.AI_CACHE_MAX_SIZE ?? 50)
 const aiCache = new Map()
@@ -168,14 +171,14 @@ function expoBackoffMs (attempt, baseMs = 500, capMs = 20_000) {
 
 // Per-model cooldowns (until timestamp)
 const MODEL_COOLDOWNS = new Map()
-function modelIsCoolingDown (modelName) {
-  const until = MODEL_COOLDOWNS.get(modelName)
+function modelIsCoolingDown (modelNorm) {
+  const until = MODEL_COOLDOWNS.get(modelNorm)
   if (!until) return false
-  if (Date.now() >= until) { MODEL_COOLDOWNS.delete(modelName); return false }
+  if (Date.now() >= until) { MODEL_COOLDOWNS.delete(modelNorm); return false }
   return true
 }
-function msUntilModelReady (modelName) {
-  const until = MODEL_COOLDOWNS.get(modelName)
+function msUntilModelReady (modelNorm) {
+  const until = MODEL_COOLDOWNS.get(modelNorm)
   if (!until) return 0
   return Math.max(0, until - Date.now())
 }
@@ -258,6 +261,13 @@ function nextLocalReadyDelayMs (modelNorm, tokenBudget) {
 }
 
 // ───────────────────────────────────────────────────────────
+// Song state (kept for backwards compatibility with existing code)
+// NOTE: Prefer passing context.currentSong to askQuestion instead of relying on this.
+// ───────────────────────────────────────────────────────────
+let currentSong = null
+export const setCurrentSong = (song) => { currentSong = song }
+
+// ───────────────────────────────────────────────────────────
 // Context wrapping (keeps chat answers short + relevant)
 // ───────────────────────────────────────────────────────────
 function buildContextPreamble (context = {}) {
@@ -265,11 +275,14 @@ function buildContextPreamble (context = {}) {
     roomName,
     botName,
     userNickname,
-    currentSong,
+    currentSong: ctxSong,
     currentAlbum,
     tone,
     gameState
   } = context || {}
+
+  // Prefer explicit context song; fallback to global currentSong if present.
+  const song = ctxSong || currentSong
 
   const lines = []
   if (botName) lines.push(`Bot name: ${botName}`)
@@ -278,8 +291,8 @@ function buildContextPreamble (context = {}) {
   if (tone) lines.push(`Tone: ${tone}`)
   if (gameState) lines.push(`Game state: ${gameState}`)
 
-  if (currentSong) {
-    const s = currentSong
+  if (song) {
+    const s = song
     const parts = []
     if (s.trackName) parts.push(`Track: ${s.trackName}`)
     if (s.artistName) parts.push(`Artist: ${s.artistName}`)
@@ -363,7 +376,6 @@ async function generateTextWithRetries (prompt, {
 } = {}) {
   let lastErr
 
-  // If the whole project is in a free-tier cooldown window, fail fast
   const globalMs = globalCooldownMsLeft()
   if (globalMs > 0) {
     const e = new Error(`Gemini text API error 429: global free tier cooling; retry in ${Math.ceil(globalMs / 1000)}s.`)
@@ -371,7 +383,7 @@ async function generateTextWithRetries (prompt, {
     throw e
   }
 
-  // Discover availability; keep caller's order but drop obvious inaccessibles when we can
+  // Drop models your key can’t see, if possible
   let modelList = [...models]
   try {
     const available = await listModelsAvailable()
@@ -386,7 +398,6 @@ async function generateTextWithRetries (prompt, {
   for (let attempt = 1; attempt <= (retries + 1); attempt++) {
     const tokenBudget = estTokensFromPrompt(prompt, maxTokens)
 
-    // Filter out models cooling down or locally rate-exhausted
     let ready = modelList.filter(m => {
       const norm = normalizeModelName(m)
       if (modelIsCoolingDown(norm)) return false
@@ -407,7 +418,6 @@ async function generateTextWithRetries (prompt, {
         await sleep(minWait)
         continue
       } else {
-        // Unknown limits → try original order
         ready = [...modelList]
       }
     }
@@ -426,7 +436,6 @@ async function generateTextWithRetries (prompt, {
         if (topP !== undefined) genCfg.topP = topP
         if (maxTokens !== undefined) genCfg.maxOutputTokens = maxTokens
 
-        // Note local usage before hitting API to avoid race-bursts in same minute
         noteModelUsage(modelNorm, tokenBudget)
 
         const out = await generateTextREST(modelName, prompt, genCfg, AI_REQUEST_TIMEOUT_MS)
@@ -442,35 +451,27 @@ async function generateTextWithRetries (prompt, {
         const transient = isTransientAiError(e)
         console.warn('[AI][error]', { model: modelName, attempt, code, msg: low, transient })
 
-        // Auth/permission/unknown model → skip to next (long-cooldown 403s)
         if ([401, 403, 404].includes(code)) {
           info('[model-skip]', { model: modelName, reason: code })
           if (code === 403) MODEL_COOLDOWNS.set(modelNorm, Date.now() + 10 * 60 * 1000) // 10m
           continue
         }
 
-        // 429 handling
         if (code === 429) {
           const waitS = parseRetryAfterSeconds(e) || Math.ceil(GLOBAL_429_DEFAULT_WAIT_MS / 1000)
-          // If it's the *global* free-tier counter, arm a global cool-off too
           if (/generate_content_free_tier_requests|free[\s_-]?tier/i.test(low)) {
             armGlobalCooldown(waitS * 1000)
           }
-          // Always cool this model as well
           MODEL_COOLDOWNS.set(modelNorm, Date.now() + waitS * 1000)
           info('[rate-limit] model cooling down', { model: modelName, seconds: waitS })
           continue
         }
 
-        // Other transient errors → continue to next; outer loop will back off as well
         if (transient) continue
-
-        // Non-transient → bubble up
         throw e
       }
     }
 
-    // Outer attempt backoff (jittered)
     if (attempt <= retries) {
       const waitMs = expoBackoffMs(attempt, backoffMs)
       info('[backoff]', { attempt, waitMs })
@@ -496,21 +497,20 @@ export async function askQuestion (question, opts = {}) {
     maxTokens
   } = opts
 
-  // Optional: politely refuse image-generation asks to avoid any paid-tier risk.
+  // Politely refuse image-generation asks to avoid any paid-tier risk.
   if (isImageIntent(question)) {
     return { text: "I can’t generate images right now (free tier). Ask me for text info instead 🙏" }
   }
 
   const prompt = context ? wrapPromptWithContext(question, context) : question
 
-  // Text path (cached + local smoothing + rate-aware engine)
   try {
     const globalMs = globalCooldownMsLeft()
     if (globalMs > 0) {
       return { text: `Rate limited (free tier). I’ll be ready again in about ${Math.ceil(globalMs / 1000)}s.` }
     }
 
-    // Namespace cache keys to prevent type collisions
+    // Namespace cache keys (text-only)
     const baseKey = String(question).replace(/\s+/g, ' ').trim().toLowerCase()
     const cacheKey = `text:${baseKey}`
 
@@ -603,7 +603,7 @@ export async function categorizeText (text, {
 
 // ───────────────────────────────────────────────────────────
 // Intent detection (image) — used ONLY to refuse image requests safely.
-// (No image generation code is present in this file.)
+// (No image generation code exists in this file.)
 // ───────────────────────────────────────────────────────────
 function isImageIntent (raw) {
   if (!raw || typeof raw !== 'string') return false
