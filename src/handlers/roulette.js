@@ -46,7 +46,7 @@ export async function startRouletteGame () {
   await postMessage({ room, message: '', images: ['https://imgur.com/IyFZlzj.jpg'] })
   await postMessage({ room, message: 'Place your bets! Betting closes in 90 seconds.' })
 
-  await new Promise(res => setTimeout(res, 75_000))
+  await new Promise(res => setTimeout(res, 30_000))
   await postMessage({ room, message: '⌛ 15 seconds left to place bets!' })
   await new Promise(res => setTimeout(res, 15_000))
 

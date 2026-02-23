@@ -875,7 +875,7 @@ async function publishSiteData (state) {
   const db = new Database(process.env.DB_PATH, { readonly: true })
   try {
     const lotteryRows = db.prepare('SELECT number, count FROM lottery_stats ORDER BY number ASC').all()
-    const lotteryStats = fill1toN(lotteryRows || [], 99, r => r.number, r => r.count)
+    const lotteryStats = fill1toN(lotteryRows || [], 100, r => r.number, r => r.count)
     const snapshot = {
       schemaVersion: 1,
       updatedAt: new Date().toISOString(),
@@ -1198,7 +1198,6 @@ const main = async () => {
   await publishPga(state)
   await publishLotteryWinners(state)
   await publishCrapsRecords(state)
-  await publishHorseHallOfFame(state)
   await publishHorseHallOfFame(state)
   await publishUserOwnedHorses(state)
   await publishAlbumQueue(state)

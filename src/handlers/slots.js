@@ -80,7 +80,7 @@ const BONUS_PERCENT_WEIGHTS = [
 const FEATURE_MIN_TRIGGER_BET = 250
 const FEATURE_MAX_SPINS_PER_TRIGGER = 3
 const FEATURE_MAX_SPINS_PER_SESSION = 15
-const FEATURE_PAYOUT_MULTIPLIER = 5 // option 1
+const FEATURE_PAYOUT_MULTIPLIER = 10 // option 1
 
 // ✅ Feature reel includes tickets so you can extend the round
 const FEATURE_SYMBOLS = ['🍒', '🍋', '🍊', '🍉', '🔔', '⭐', '💎', '🎟️']
@@ -138,14 +138,14 @@ const COLLECTION_GOALS = {
 }
 
 const COLLECTION_REWARDS = {
-  '🍒': 5000,
-  '🍋': 4000,
-  '🍊': 3000,
-  '🍉': 6000,
-  '🔔': 8000,
-  '⭐': 10000,
-  '💎': 15000, // was 25000 (reduced)
-  '🎟️': 7500
+  '🍒': 500,
+  '🍋': 400,
+  '🍊': 300,
+  '🍉': 600,
+  '🔔': 800,
+  '⭐': 1000,
+  '💎': 1500, // was 25000 (reduced)
+  '🎟️': 750
 }
 
 

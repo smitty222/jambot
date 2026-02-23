@@ -1,6 +1,6 @@
 // message.js
 import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
-import { askQuestion, setCurrentSong } from '../libs/ai.js'
+import { handleAIMention } from './aiMentions.js'
 import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, displayTriviaInfo } from '../handlers/triviaCommands.js'
 import { logger } from '../utils/logging.js'
 import { getAlbumsByArtist, getAlbumTracks, isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSongData, updateRoomInfo, isUserOwner, searchSpotify, getMLBScores, getNHLScores, getNBAScores, getSimilarTracks, getTopChartTracks, addSongsToCrate, getUserToken, clearUserQueueCrate, getUserQueueCrateId, getRandomDogImage, getSpotifyUserId, getUserPlaylists, getPlaylistTracks, getSpotifyNewAlbumsViaSearch, getPGALeaderboard } from '../utils/API.js'
@@ -168,6 +168,17 @@ export default async (payload, room, state, roomBot) => {
     return
   }
 
+  const handled = await handleAIMention({
+  payload,
+  room,
+  roomBot,
+  startRouletteGame,
+  handleBotRandomAvatarCommand,
+  setCurrentAlbum, // only if exists
+  logger
+})
+if (handled) return
+
     // ⛳ PGA leaderboard (ESPN)
   if (/^\/pga\b/i.test(txt)) {
     console.log('▶ dispatch → getPGALeaderboard', txt)
@@ -254,291 +265,7 @@ export default async (payload, room, state, roomBot) => {
     if (dispatched) return
   } catch (e) {
     logger.error('[Dispatcher] Error dispatching command:', e?.message || e)
-  }
-
-  // --- AI helpers -----------------------------------------------------------
-  function expandSongQuestion (rawQ, song) {
-    if (!song) return rawQ
-    const parts = []
-    if (song.trackName) parts.push(`Track: ${song.trackName}`)
-    if (song.artistName) parts.push(`Artist: ${song.artistName}`)
-    if (song.albumName && song.albumName !== 'Unknown') parts.push(`Album: ${song.albumName}`)
-    if (song.releaseDate && song.releaseDate !== 'Unknown') parts.push(`Release: ${song.releaseDate}`)
-    if (song.isrc) parts.push(`ISRC: ${song.isrc}`)
-    if (song.popularity != null) parts.push(`Spotify popularity: ${song.popularity}`)
-    const links = song?.links?.spotify?.url || song?.links?.appleMusic?.url || song?.links?.youtube?.url
-    const linkLine = links ? `Link: ${links}` : ''
-
-    const songCard = `${parts.join(' | ')}${linkLine ? `\n${linkLine}` : ''}`
-
-    // replace common phrasings; keep the user’s tone around it
-    const q = rawQ
-      .replace(/\b(tell me about|what is|what's|info on|details about)\s+(this song)\b/gi, '$1 THE_SONG')
-      .replace(/\b(this song|this track|current song|song that is playing)\b/gi, 'THE_SONG')
-
-    return q.replace(
-      /THE_SONG/g,
-    `this song:\n${songCard}\n\nPlease give a short, fun blurb with notable facts (samples, origin, chart peaks, vibe), then 1 similar-track rec.`
-    )
-  }
-  // Put near expandSongQuestion
-  function expandAlbumQuestion (rawQ, albumName, artistName) {
-    if (!albumName && !artistName) return rawQ
-
-    const parts = []
-    if (albumName) parts.push(`Album: ${albumName}`)
-    if (artistName) parts.push(`Artist: ${artistName}`)
-    const albumCard = parts.join(' | ')
-
-    const q = rawQ
-      .replace(/\u2019/g, "'") // normalize curly apostrophes
-      .replace(/\b(tell me about|what is|what's|info on|details about)\s+(this (album|record|lp|ep))\b/gi, '$1 THE_ALBUM')
-      .replace(/\b(this (album|record|lp|ep)|current album|album that is playing|the album)\b/gi, 'THE_ALBUM')
-
-    return q.replace(
-      /THE_ALBUM/g,
-    `this album:\n${albumCard}\n\nPlease give a short, fun blurb (context/era, standout tracks, reception), then 1 similar-album recommendation.`
-    )
-  }
-  function isAlbumQuery (q) {
-    const s = (q || '').toLowerCase().replace(/\u2019/g, "'")
-    return /\b(what's|what is|tell me about|info on|details about)\s+this\s+(album|record|lp|ep)\b/.test(s) ||
-      /\b(this\s+(album|record|lp|ep)|current album|album that is playing)\b/.test(s)
-  }
-
-  function extractText (reply) {
-    if (!reply) return null
-    if (typeof reply === 'string') return reply
-    if (reply.text) return reply.text
-    if (reply.candidates?.[0]?.content?.parts?.[0]?.text) return reply.candidates[0].content.parts[0].text
-    return null
-  }
-
-  async function safeAskQuestion (prompt, askFn, logger) {
-    try {
-      const result = await Promise.race([
-        askFn(prompt),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('AI_TIMEOUT')), 45000))
-      ])
-      const txt = extractText(result)
-      if (!txt) throw new Error('AI_EMPTY_RESPONSE')
-      return txt.trim()
-    } catch (err) {
-      logger?.error?.(`[AI] ${err.message || err}`, { err })
-      return 'My AI brain buffered too long. Try again in a sec. 😅'
-    }
-  }
-
-  // Safer bot-mention check stays the same
-  const isMentioned = (message) => {
-    if (typeof message !== 'string') return false
-    return (
-      message.includes(`<@uid:${process.env.BOT_USER_UUID}>`) ||
-    message.includes(`@${process.env.CHAT_NAME}`)
-    )
-  }
-
-  if (
-    isMentioned(payload.message) &&
-  payload.sender &&
-  payload.sender !== process.env.BOT_USER_UUID && // ✅ compare directly to UUID
-  !payload.message.includes('played')
-  ) {
-    try {
-      const question = payload.message
-        .replace(`<@uid:${process.env.BOT_USER_UUID}>`, '')
-        .replace(`@${process.env.CHAT_NAME}`, '')
-        .trim()
-        .toLowerCase()
-
-      console.log(`Received question: "${question}"`)
-      logger.info(`Received question: "${question}" from ${payload.sender}`)
-
-      // quick one-offs (also fix the OR bug in includes)
-      if (question === 'you good?') {
-        await postMessage({ room, message: "Couldn't be better" })
-        return
-      }
-
-      if (question === 'hide') {
-        try {
-          await handleBotRandomAvatarCommand(room, postMessage, process.env.TTL_USER_TOKEN)
-        } catch (err) {
-          console.error('Error updating bot avatar for hide command:', err)
-          await postMessage({ room, message: 'I tried to hide but tripped over my own code. 🤕' })
-        }
-        return
-      }
-
-      if (question.includes('dj with us') || question.includes('dj with me')) {
-        await postMessage({ room, message: "Let's get it" })
-        // Engage auto-discover DJ when users ask the bot to DJ with them
-        {
-          const discoverIdsEnv = process.env.DISCOVER_PLAYLIST_IDS || ''
-          let discoverIds = discoverIdsEnv.split(',').map((s) => s.trim()).filter(Boolean)
-          if (discoverIds.length === 0) {
-            discoverIds = [
-              '37i9dQZF1DX4JAvHpjipBk',
-              '37i9dQZF1DX5trt9i14X7j',
-              '37i9dQZF1DWVqfgj8NZEp1'
-            ]
-          }
-          // Use discover DJ mode when invited to DJ with users.  Enable
-          // discover mode on the bot and add the bot to the DJ lineup.  The
-          // enableDiscoverDJ method initializes the playlist queue, and
-          // addDJ() will draw from that queue.
-          if (typeof roomBot.enableDiscoverDJ === 'function') {
-            await roomBot.enableDiscoverDJ(discoverIds)
-          }
-          await roomBot.addDJ()
-        }
-        return
-      }
-
-      if (question.includes('get tf off the stage') || question.includes('stop djing')) {
-        await postMessage({ room, message: 'Damn...alright' })
-        await roomBot.removeDJ(process.env.BOT_USER_UUID)
-        return
-      }
-
-      if (question.includes('9+10') || question.includes('9 + 10')) { // ✅
-        await postMessage({ room, message: '21...are you stoopid?' })
-        return
-      }
-
-      if (question.includes('are you a bot?') || question.includes('are you a bot')) { // ✅
-        await postMessage({ room, message: 'I am not' })
-        return
-      }
-
-      if (isLotteryQuestion(question)) {
-        const userInput = extractUserFromText(question)
-        if (userInput) {
-          await handleLotteryCheck(room, userInput)
-          return
-        } else {
-          await postMessage({ room, message: 'Who do you want me to check?' })
-          return
-        }
-      }
-
-      if (question.includes('spin the wheel') || question.includes('spin that wheel')) {
-        await startRouletteGame(payload)
-        return
-      }
-
-      // --- SONG INTENT -----------------------------------------------------
-      if (
-        question.includes('song is this') ||
-      question.includes('this song') ||
-      question.includes('song is playing') ||
-      question.includes('what’s this song') || question.includes("what's this song")
-      ) {
-        const currentSong = roomBot.currentSong
-        if (!currentSong) {
-          await postMessage({ room, message: 'No song is currently playing.' })
-          return
-        }
-
-        console.log(`Current song details: ${JSON.stringify(currentSong)}`)
-        logger.info(`Current song details: ${JSON.stringify(currentSong)}`)
-
-        setCurrentSong(currentSong)
-
-        const prompt = expandSongQuestion(question, currentSong)
-        console.log('Expanded prompt for AI:', prompt)
-        logger.info('Expanded prompt for AI prepared')
-
-        const aiReplyText = await safeAskQuestion(prompt, askQuestion, logger)
-        console.log('AI Reply:', aiReplyText)
-        logger.info(`AI Reply: ${aiReplyText}`)
-
-        await postMessage({ room, message: aiReplyText })
-        return
-      }
-
-      // --- ALBUM INTENT -----------------------------------------------------
-
-      if (isAlbumQuery(question)) {
-        // Try a dedicated album object first; fall back to the song’s album fields
-        const currentAlbumName = roomBot.currentAlbum?.albumName ?? roomBot.currentSong?.albumName
-        const currentArtistName = roomBot.currentAlbum?.artistName ?? roomBot.currentSong?.artistName
-
-        if (!currentAlbumName && !currentArtistName) {
-          await postMessage({ room, message: 'No album info available for the current track.' })
-          return
-        }
-
-        // Optional: persist if you keep album state (mirrors setCurrentSong)
-        if (typeof setCurrentAlbum === 'function') {
-          setCurrentAlbum({ albumName: currentAlbumName, artistName: currentArtistName })
-        }
-
-        const prompt = expandAlbumQuestion(question, currentAlbumName, currentArtistName)
-        console.log('Expanded album prompt for AI:', prompt)
-        logger.info('Expanded album prompt for AI prepared')
-
-        const aiReplyText = await safeAskQuestion(prompt, askQuestion, logger)
-        console.log('AI Reply (album):', aiReplyText)
-        logger.info(`AI Reply (album): ${aiReplyText}`)
-
-        await postMessage({ room, message: aiReplyText })
-        return
-      }
-
-      // --- OTHER CONTEXT (e.g., popularity explanation) -------------------
-      if (question.includes('yankees')) {
-        await postMessage({ room, message: 'Who cares?' })
-        return
-      }
-
-      // default: ask AI with timeout. Use the full askQuestion response so
-      // we can handle images as well as text. If images arrive, send them;
-      // otherwise send the text (do NOT override text with an image error).
-      try {
-        const result = await Promise.race([
-          askQuestion(question, {
-          // ai.js only triggers this when isImageIntent(question) === true
-            onStartImage: async () => {
-              await postMessage({ room, message: '🎨 Generating image...' })
-            }
-          }),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('AI_TIMEOUT')), 45000))
-        ])
-
-        const images = Array.isArray(result?.images)
-          ? result.images.filter(u => typeof u === 'string' && u.trim().length > 0)
-          : []
-        const hasImage = images.length > 0
-        const text = (typeof result?.text === 'string' ? result.text.trim() : '')
-
-        if (hasImage) {
-          const msg = text || 'Here’s your image!'
-          console.log('AI Image Reply:', msg)
-          logger.info(`AI Image Reply: ${msg}`, { hasImage: true, count: images.length })
-          await postMessage({ room, message: msg, images })
-        } else {
-          if (text) {
-            console.log('AI Text Reply:', text.slice(0, 160))
-            logger.info('AI Text Reply', { chars: text.length })
-            await postMessage({ room, message: text })
-          } else {
-            const fallback = 'I’m not sure yet—could you rephrase that?'
-            console.log('AI Fallback Reply:', fallback)
-            logger.info('AI Fallback Reply', { hasImage: false })
-            await postMessage({ room, message: fallback })
-          }
-        }
-      } catch (err) {
-        console.error('[AI][default] Error:', err?.message || err)
-        logger.error(`[AI][default] Error: ${err?.message || err}`)
-        await postMessage({ room, message: 'My AI brain buffered too long. Try again in a sec. 😅' })
-      }
-    } catch (err) {
-      console.error('AI mention handler failed:', err)
-      logger.error(`AI mention handler failed: ${err?.message || err}`)
-      await postMessage({ room, message: 'My AI hiccuped. Try again.' })
-    }
+  
     // ─── NON-MENTION COMMANDS (top-level else-if chain) ──────────────────────
   } if (payload.message.startsWith('/searchalbum')) {
     const args = payload.message.split(' ').slice(1)

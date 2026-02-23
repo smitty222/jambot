@@ -1,4 +1,4 @@
-// src/libs/ai.js — rate-aware, global+per-model cooldowns, and respectful backoff
+// src/libs/ai.js — FREE-TIER SAFE (text-only), rate-aware, global+per-model cooldowns, respectful backoff
 // ESM module
 
 import fetch from 'node-fetch'
@@ -6,7 +6,7 @@ import fetch from 'node-fetch'
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY
 
 // ───────────────────────────────────────────────────────────
-// Model catalog & limits (from your sheet)
+// Model catalog & limits (best-effort local gate)
 // RPM=requests/min, TPM=tokens/min, RPD=requests/day
 // Keys are *normalized* (see normalizeModelName).
 // ───────────────────────────────────────────────────────────
@@ -23,30 +23,16 @@ const MODEL_LIMITS = {
 }
 
 // ───────────────────────────────────────────────────────────
-// Default model order: prefer quality but fall back to headroom
+// Default model order (free-tier friendly).
 // Override with AI_TEXT_MODELS (comma-separated).
 // ───────────────────────────────────────────────────────────
 const TEXT_MODELS_DEFAULT = (
   process.env.AI_TEXT_MODELS ||
-  'gemini-2.5-flash,gemini-2.5-flash-lite,gemini-2.0-flash-lite,gemini-2.0-flash,gemini-2.5-pro'
+  'gemini-2.5-flash-lite,gemini-2.5-flash,gemini-3-flash-preview'
 )
   .split(',')
   .map(s => s.trim())
   .filter(Boolean)
-
-// Image-capable models — prefer free-tier multimodal Flash models
-const IMAGE_MODEL_PRIMARY =
-  process.env.IMAGE_MODEL_PRIMARY || 'gemini-2.5-flash'
-
-const IMAGE_MODEL_FALLBACKS = (
-  process.env.IMAGE_MODEL_FALLBACKS ||
-  'gemini-2.0-flash,gemini-2.5-flash-lite'
-)
-  .split(',')
-  .map(s => s.trim())
-  .filter(Boolean)
-
-const IMAGE_MODELS = [IMAGE_MODEL_PRIMARY, ...IMAGE_MODEL_FALLBACKS]
 
 // ───────────────────────────────────────────────────────────
 // Logging controls
@@ -75,7 +61,6 @@ const isTransientAiError = (err) => {
 // Tunables
 // ───────────────────────────────────────────────────────────
 const AI_REQUEST_TIMEOUT_MS = Number(process.env.AI_REQUEST_TIMEOUT_MS ?? 30_000)
-const AI_IMAGE_TIMEOUT_MS = Number(process.env.AI_IMAGE_TIMEOUT_MS ?? 45_000)
 const AI_RETRIES = Number(process.env.AI_RETRIES ?? 3)
 const AI_BACKOFF_MS = Number(process.env.AI_BACKOFF_MS ?? 800)
 
@@ -139,9 +124,12 @@ function normalizeModelName (name) {
 let availableModelsCache = null
 async function listModelsAvailable () {
   if (availableModelsCache) return availableModelsCache
+  if (!GEMINI_API_KEY) return []
   try {
     const res = await fetchWithTimeout(
-      `https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_API_KEY}`, { method: 'GET' }, 10_000
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_API_KEY}`,
+      { method: 'GET' },
+      10_000
     )
     const data = await res.json().catch(() => ({}))
     const names = (data.models || [])
@@ -199,7 +187,7 @@ function globalCooldownMsLeft () {
 }
 function armGlobalCooldown (waitMs) {
   GLOBAL_FREE_TIER_COOLDOWN_UNTIL = Date.now() + Math.max(0, waitMs)
-  info('[AI][rate-limit][global] cooling', { ms: waitMs })
+  info('[rate-limit][global] cooling', { ms: waitMs })
 }
 
 // ───────────────────────────────────────────────────────────
@@ -267,6 +255,61 @@ function nextLocalReadyDelayMs (modelNorm, tokenBudget) {
     return Math.max(0, msToNextDay)
   }
   return 0
+}
+
+// ───────────────────────────────────────────────────────────
+// Context wrapping (keeps chat answers short + relevant)
+// ───────────────────────────────────────────────────────────
+function buildContextPreamble (context = {}) {
+  const {
+    roomName,
+    botName,
+    userNickname,
+    currentSong,
+    currentAlbum,
+    tone,
+    gameState
+  } = context || {}
+
+  const lines = []
+  if (botName) lines.push(`Bot name: ${botName}`)
+  if (roomName) lines.push(`Room: ${roomName}`)
+  if (userNickname) lines.push(`User: ${userNickname}`)
+  if (tone) lines.push(`Tone: ${tone}`)
+  if (gameState) lines.push(`Game state: ${gameState}`)
+
+  if (currentSong) {
+    const s = currentSong
+    const parts = []
+    if (s.trackName) parts.push(`Track: ${s.trackName}`)
+    if (s.artistName) parts.push(`Artist: ${s.artistName}`)
+    if (s.albumName && s.albumName !== 'Unknown') parts.push(`Album: ${s.albumName}`)
+    if (s.releaseDate && s.releaseDate !== 'Unknown') parts.push(`Release: ${s.releaseDate}`)
+    if (s.isrc) parts.push(`ISRC: ${s.isrc}`)
+    if (s.popularity != null) parts.push(`Popularity: ${s.popularity}`)
+    const link = s?.links?.spotify?.url || s?.links?.appleMusic?.url || s?.links?.youtube?.url
+    lines.push(`Now playing: ${parts.join(' | ')}${link ? ` | Link: ${link}` : ''}`)
+  } else if (currentAlbum) {
+    const a = currentAlbum
+    const parts = []
+    if (a.albumName) parts.push(`Album: ${a.albumName}`)
+    if (a.artistName) parts.push(`Artist: ${a.artistName}`)
+    if (parts.length) lines.push(`Current album: ${parts.join(' | ')}`)
+  }
+
+  if (!lines.length) return ''
+  return `Context:\n${lines.map(l => `- ${l}`).join('\n')}\n\n`
+}
+
+function wrapPromptWithContext (question, context) {
+  const pre = buildContextPreamble(context)
+  const contract =
+    `Reply in a chat-friendly way:\n` +
+    `- Keep it concise (max ~1200 characters unless asked otherwise)\n` +
+    `- Use 1 short paragraph + up to 3 bullets when helpful\n` +
+    `- If recommending music, give exactly 1 rec and why\n\n`
+
+  return `${pre}${contract}User asked:\n${String(question || '').trim()}`
 }
 
 // ───────────────────────────────────────────────────────────
@@ -357,9 +400,10 @@ async function generateTextWithRetries (prompt, {
         const lr = nextLocalReadyDelayMs(norm, tokenBudget)
         return Math.max(cd, lr)
       }).filter(ms => ms > 0)
+
       if (waits.length) {
         const minWait = Math.min(...waits)
-        info('[AI][cooldown/localrate] all models blocked; waiting', { ms: minWait })
+        info('[cooldown/localrate] all models blocked; waiting', { ms: minWait })
         await sleep(minWait)
         continue
       } else {
@@ -375,7 +419,7 @@ async function generateTextWithRetries (prompt, {
       try {
         info('[text request]', { model: modelName, attempt })
         debug('[prompt]', { length: String(prompt || '').length })
-        console.log('[AI][PROMPT]', preview(prompt))
+        if (isInfo || LOG_PROMPT) console.log('[AI][PROMPT]', preview(prompt))
 
         const genCfg = {}
         if (temperature !== undefined) genCfg.temperature = temperature
@@ -400,7 +444,7 @@ async function generateTextWithRetries (prompt, {
 
         // Auth/permission/unknown model → skip to next (long-cooldown 403s)
         if ([401, 403, 404].includes(code)) {
-          info('[AI][model-skip]', { model: modelName, reason: code })
+          info('[model-skip]', { model: modelName, reason: code })
           if (code === 403) MODEL_COOLDOWNS.set(modelNorm, Date.now() + 10 * 60 * 1000) // 10m
           continue
         }
@@ -414,7 +458,7 @@ async function generateTextWithRetries (prompt, {
           }
           // Always cool this model as well
           MODEL_COOLDOWNS.set(modelNorm, Date.now() + waitS * 1000)
-          info('[AI][rate-limit] model cooling down', { model: modelName, seconds: waitS })
+          info('[rate-limit] model cooling down', { model: modelName, seconds: waitS })
           continue
         }
 
@@ -429,7 +473,7 @@ async function generateTextWithRetries (prompt, {
     // Outer attempt backoff (jittered)
     if (attempt <= retries) {
       const waitMs = expoBackoffMs(attempt, backoffMs)
-      info('[AI][backoff]', { attempt, waitMs })
+      info('[backoff]', { attempt, waitMs })
       await sleep(waitMs)
     }
   }
@@ -438,179 +482,71 @@ async function generateTextWithRetries (prompt, {
 }
 
 // ───────────────────────────────────────────────────────────
-// Image generation (best-effort fallbacks)
-// ───────────────────────────────────────────────────────────
-async function generateImageWithFallback (prompt) {
-  let lastErr
-
-  // Filter IMAGE_MODELS to ones this key can actually see, if possible
-  let modelsToTry = [...IMAGE_MODELS]
-  try {
-    const available = await listModelsAvailable()
-    if (available.length) {
-      const availSet = new Set(available.map(normalizeModelName))
-      const filtered = IMAGE_MODELS.filter(m => availSet.has(normalizeModelName(m)))
-      if (filtered.length) modelsToTry = filtered
-    }
-  } catch {
-    // if listModelsAvailable fails, just fall back to IMAGE_MODELS
-  }
-
-  for (const modelId of modelsToTry) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${GEMINI_API_KEY}`
-    const body = {
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
-    }
-
-    try {
-      info('[image request]', { modelId, promptLen: String(prompt || '').length })
-      if (isDebug) console.debug('[image prompt preview]', preview(prompt, 280))
-
-      const res = await fetchWithTimeout(
-        url,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
-        AI_IMAGE_TIMEOUT_MS
-      )
-      const rawText = await res.text()
-      let data = {}; try { data = JSON.parse(rawText) } catch {}
-
-      if (!res.ok) {
-        const message = data?.error?.message || res.statusText || rawText || ''
-        const e = new Error(`Gemini image API error ${res.status}: ${message}`)
-        e.status = res.status
-
-        if (res.status === 400 && /only supports text output/i.test(message)) {
-          console.warn('[image model-mismatch]', { modelId, status: res.status })
-          lastErr = e
-          continue
-        }
-        if (isTransientAiError(e)) {
-          console.warn('[image transient error]', { modelId, status: res.status })
-          lastErr = e
-          continue
-        }
-        console.error('[image fatal http]', { modelId, status: res.status, message })
-        throw e
-      }
-
-      const cand = data.candidates?.[0]
-      const parts = cand?.content?.parts || []
-      let outputText = ''
-      let base64Image = null
-      for (const part of parts) {
-        if (part.text) outputText += part.text
-        if (part.inlineData?.mimeType?.startsWith('image/')) base64Image = part.inlineData.data
-      }
-
-      const hasImage = !!base64Image
-      info('[image response]', { modelId, hasImage, textChars: (outputText || '').length })
-      if (hasImage) {
-        const dataUri = `data:image/png;base64,${base64Image}`
-        const safeText = (outputText && outputText.trim()) || 'Here’s your image!'
-        return { text: safeText, imageBase64: base64Image, dataUri, modelId }
-      }
-
-      console.warn('[image no-image-returned]', { modelId })
-      lastErr = new Error('NO_IMAGE_RETURNED')
-      continue
-    } catch (err) {
-      if (isTransientAiError(err)) {
-        console.warn('[image transient catch]', { modelId, msg: err.message })
-        lastErr = err
-        continue
-      } else {
-        console.error('[image fatal]', { modelId, msg: err.message })
-        throw err
-      }
-    }
-  }
-  console.error('[image failed all models]', { tried: modelsToTry, last: lastErr?.message })
-  return { text: 'Sorry, I couldn’t create an image this time.', imageBase64: null, dataUri: null, modelId: null }
-}
-
-// ───────────────────────────────────────────────────────────
-// Song-aware phrase replacement
-// ───────────────────────────────────────────────────────────
-let currentSong = null
-const replaceThisSong = (question) => {
-  if (currentSong?.artistName && currentSong?.trackName) {
-    const songDetails = `Artist: ${currentSong.artistName}, Track: ${currentSong.trackName}`
-    return String(question).replace(/this song/gi, songDetails)
-  }
-  return question
-}
-export const setCurrentSong = (song) => { currentSong = song }
-
-// ───────────────────────────────────────────────────────────
-// Public: askQuestion (image detection + caching + retries)
+// Public: askQuestion (TEXT-ONLY; image generation disabled for free-tier safety)
 // ───────────────────────────────────────────────────────────
 export async function askQuestion (question, opts = {}) {
   const {
+    context,
     returnApologyOnError = true,
     retries = AI_RETRIES,
     backoffMs = AI_BACKOFF_MS,
     models = TEXT_MODELS_DEFAULT,
     temperature,
     topP,
-    maxTokens,
-    onStartImage
+    maxTokens
   } = opts
 
-  if (typeof question === 'string' && question.toLowerCase().includes('this song')) {
-    const before = question
-    question = replaceThisSong(question)
-    if (before !== question) info('[replaceThisSong]', { applied: true })
+  // Optional: politely refuse image-generation asks to avoid any paid-tier risk.
+  if (isImageIntent(question)) {
+    return { text: "I can’t generate images right now (free tier). Ask me for text info instead 🙏" }
   }
 
-  // Image path (cached + local smoothing)
-  const isImagePrompt = isImageIntent(question)
-  if (isImagePrompt) {
-    info('[image request] detected')
-    const lowered = String(question).toLowerCase()
-    if (/\b(me|myself|my face|my portrait)\b/.test(lowered)) {
-      return { text: 'If you want an image that includes you, please upload a photo of yourself first so I can use it as a reference.' }
-    }
-    const key = String(question).replace(/\s+/g, ' ').trim().toLowerCase()
-    const cached = getCachedResponse(key); if (cached) { info('[cache hit]', { key }); return cached }
-    try { await onStartImage?.() } catch {}
-    if (!rlTryTake()) return { text: 'I’m getting a lot of requests—try that image again in a moment.' }
-
-    const result = await generateImageWithFallback(String(question))
-    if (result.dataUri) { const value = { text: result.text, images: [result.dataUri] }; setCachedResponse(key, value); return value }
-    const value = { text: result.text }; setCachedResponse(key, value); return value
-  }
+  const prompt = context ? wrapPromptWithContext(question, context) : question
 
   // Text path (cached + local smoothing + rate-aware engine)
   try {
-    // If the whole project is cooling due to free-tier 429, short-circuit here
     const globalMs = globalCooldownMsLeft()
     if (globalMs > 0) {
       return { text: `Rate limited (free tier). I’ll be ready again in about ${Math.ceil(globalMs / 1000)}s.` }
     }
 
-    const key = String(question).replace(/\s+/g, ' ').trim().toLowerCase()
-    const cached = getCachedResponse(key)
-    if (cached) { info('[cache hit]', { key }); return { text: cached } }
-    if (!rlTryTake()) return { text: 'Taking a quick breather due to high traffic—try that again in a few seconds.' }
+    // Namespace cache keys to prevent type collisions
+    const baseKey = String(question).replace(/\s+/g, ' ').trim().toLowerCase()
+    const cacheKey = `text:${baseKey}`
 
-    const text = await generateTextWithRetries(String(question), { models, retries, backoffMs, temperature, topP, maxTokens })
-    setCachedResponse(key, text)
+    const cached = getCachedResponse(cacheKey)
+    if (cached) { info('[cache hit]', { cacheKey }); return { text: cached } }
+
+    if (!rlTryTake()) {
+      return { text: 'Taking a quick breather due to high traffic—try that again in a few seconds.' }
+    }
+
+    const text = await generateTextWithRetries(String(prompt), { models, retries, backoffMs, temperature, topP, maxTokens })
+    setCachedResponse(cacheKey, text)
     return { text }
   } catch (error) {
     console.error('AI Error:', error)
+
     if (returnApologyOnError) {
       const code = error?.status || error?.code
-      if (code === 401 || code === 403) return { text: "I couldn't access the AI service (auth/permissions). Try again in a bit, and make sure the API key is set." }
-      if (code === 404) return { text: "That model isn't available on this key. I'll fall back to a supported one next time." }
+      if (code === 401 || code === 403) {
+        return { text: "I couldn't access the AI service (auth/permissions). Try again in a bit, and make sure the API key is set." }
+      }
+      if (code === 404) {
+        return { text: "That model isn't available on this key. I'll fall back to a supported one next time." }
+      }
       if (code === 429) {
-        const waitS = parseRetryAfterSeconds(error) || Math.ceil(globalCooldownMsLeft() / 1000) || Math.ceil(GLOBAL_429_DEFAULT_WAIT_MS / 1000)
-        // Arm a global cool-off if not already (defensive)
+        const waitS =
+          parseRetryAfterSeconds(error) ||
+          Math.ceil(globalCooldownMsLeft() / 1000) ||
+          Math.ceil(GLOBAL_429_DEFAULT_WAIT_MS / 1000)
+
         if (globalCooldownMsLeft() === 0) armGlobalCooldown(waitS * 1000)
         return { text: `Rate limited (free tier). I’ll be ready again in about ${waitS}s.` }
       }
       return { text: 'Sorry, something went wrong trying to get a response from Gemini.' }
     }
+
     throw error
   }
 }
@@ -620,7 +556,7 @@ export const chatWithBot = async (userMessage) => {
 }
 
 // ───────────────────────────────────────────────────────────
-// Utilities
+// Utilities (still text-only)
 // ───────────────────────────────────────────────────────────
 export async function summarizeText (text, {
   maxWords = 100,
@@ -666,19 +602,25 @@ export async function categorizeText (text, {
 }
 
 // ───────────────────────────────────────────────────────────
-// Intent detection (image)
+// Intent detection (image) — used ONLY to refuse image requests safely.
+// (No image generation code is present in this file.)
 // ───────────────────────────────────────────────────────────
 function isImageIntent (raw) {
   if (!raw || typeof raw !== 'string') return false
   let q = raw.toLowerCase().trim()
+
+  // common “text questions” that mention image words in passing
   if (/\b(how to|how do i|explain|what is|tell me about|define|history of|lyrics|instructions)\b/.test(q)) return false
+
   q = q.replace(/\b(can you|could you|would you|please|plz|kindly)\b/g, '')
     .replace(/\b(for (me|us)|me|us)\b/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+
   if (/(make|create|generate|draw|paint|illustrate|render|sketch)\s+(an?|the)?\s*(image|picture|pic|photo|poster|logo|graphic)?\s*(of|about)\s+\S/.test(q)) return true
   if (/(make|create|generate|draw|paint|illustrate|render|sketch)\s+(an?|the)?\s*(image|picture|pic|photo|poster|logo|graphic)\b/.test(q)) return true
   if (/^(image|picture|pic|photo|poster|logo|graphic)\b.*\b(of|that says)\b/.test(q)) return true
   if (/\b(png|jpg|jpeg|svg|transparent|square|wallpaper|banner|thumbnail|avatar|icon|sticker|dpi|aspect ratio|pixels?)\b/.test(q)) return true
+
   return false
 }
