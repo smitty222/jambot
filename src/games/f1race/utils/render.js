@@ -39,32 +39,51 @@ export function renderGrid (rows, { title = 'GRID', nameWidth = 18, showOdds = t
   return '```\n' + [title, header, line, ...body].join('\n') + '\n```'
 }
 
-export function renderRaceProgress (rows, { title = 'RACE', barCells = 14, nameWidth = 18 } = {}) {
+export function renderRaceProgress (rows, {
+  title = 'RACE',
+  nameWidth = 18
+} = {}) {
   const W_POS = 2
   const W_NAME = nameWidth
-  const W_GAP = 6
+  const W_GAP = 7 // "+0.00" / "DNF"
 
   const header =
     `${padL('P', W_POS)} ` +
     `${padR('Car', W_NAME)} ` +
-    `${padR('Track', barCells)} ` +
     `${padR('Gap', W_GAP)}`
 
   const line = '-'.repeat(header.length)
 
-  const mkBar = (pct, dnf = false) => {
-    if (dnf) return 'DNF'.padEnd(barCells, ' ')
-    const p = Math.max(0, Math.min(1, Number(pct || 0)))
-    const filled = Math.round(p * barCells)
-    return '▰'.repeat(filled) + '▱'.repeat(Math.max(0, barCells - filled))
+  // Format gap:
+  // - If a number: "+0.00"
+  // - If string already: use it
+  // - Leader: "+0.00"
+  function fmtGap (g, dnf = false) {
+    if (dnf) return 'DNF'
+    if (g == null || g === '') return '+0.00'
+
+    if (typeof g === 'number' && Number.isFinite(g)) {
+      const sign = g >= 0 ? '+' : '-'
+      return `${sign}${Math.abs(g).toFixed(2)}`
+    }
+
+    // If it's a string like "+0.1", normalize to 2 decimals when possible
+    const s = String(g).trim()
+    const m = s.match(/^([+-])?\s*(\d+(?:\.\d+)?)$/)
+    if (m) {
+      const sign = m[1] || '+'
+      const num = Number(m[2])
+      if (Number.isFinite(num)) return `${sign}${num.toFixed(2)}`
+    }
+
+    return s.slice(0, W_GAP)
   }
 
   const body = rows.map((r, i) => {
     const pos = padL(String(i + 1), W_POS)
     const name = clamp(r.label, W_NAME)
-    const bar = padR(mkBar(r.progress01, !!r.dnf), barCells)
-    const gap = padL(r.gap || '+0.0', W_GAP)
-    return `${pos} ${name} ${bar} ${gap}`
+    const gap = padL(fmtGap(r.gap, !!r.dnf), W_GAP)
+    return `${pos} ${name} ${gap}`.trimEnd()
   })
 
   return '```\n' + [title, header, line, ...body].join('\n') + '\n```'
