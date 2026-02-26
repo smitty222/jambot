@@ -26,8 +26,8 @@ const PRIZE_SPLIT = [45, 25, 15, 10, 5]
 const POLE_BONUS = Number(process.env.F1_POLE_BONUS ?? 250)
 const FASTEST_LAP_BONUS = Number(process.env.F1_FASTEST_LAP_BONUS ?? 300)
 
-const TEAM_CREATE_FEE = Number(process.env.F1_TEAM_CREATE_FEE ?? 25000)
-const TEAM_REROLL_FEE = Number(process.env.F1_TEAM_REROLL_FEE ?? 50000)
+const TEAM_CREATE_FEE = Number(process.env.F1_TEAM_CREATE_FEE ?? 1)
+const TEAM_REROLL_FEE = Number(process.env.F1_TEAM_REROLL_FEE ?? 5)
 
 // Betting
 const BET_MIN = Number(process.env.F1_BET_MIN ?? 25)
@@ -44,6 +44,46 @@ const CAR_TIERS = {
 
 const TIRES = ['soft', 'med', 'hard']
 const MODES = ['push', 'norm', 'save']
+
+// ── Visuals: car images (tier pools) ───────────────────────────────────
+// Add raw GitHub URLs (recommended) or any stable image URL.
+// Example raw URL pattern:
+// https://raw.githubusercontent.com/smitty222/jambot/main/src/games/f1race/assets/cars/starter_1.png
+const CAR_IMAGE_POOLS = {
+  starter: [
+    // 'https://raw.githubusercontent.com/smitty222/jambot/main/src/games/f1race/assets/cars/starter_1.png'
+  ],
+  pro: [
+    // 'https://raw.githubusercontent.com/smitty222/jambot/main/src/games/f1race/assets/cars/pro_1.png'
+  ],
+  hyper: [
+    // 'https://raw.githubusercontent.com/smitty222/jambot/main/src/games/f1race/assets/cars/hyper_1.png'
+  ],
+  legendary: [
+    // 'https://raw.githubusercontent.com/smitty222/jambot/main/src/games/f1race/assets/cars/legendary_1.png'
+  ]
+}
+
+function pickCarImageUrl (tierKey) {
+  const pool = CAR_IMAGE_POOLS[String(tierKey || '').toLowerCase()] || []
+  if (!pool.length) return null
+  return pool[Math.floor(Math.random() * pool.length)]
+}
+
+const DELAY = (ms) => new Promise(resolve => setTimeout(resolve, ms))
+
+async function sendLightsOutSequence (room) {
+  await postMessage({ room, message: '🏁 **GRID FORMED…**' })
+  await DELAY(650)
+
+  for (let i = 0; i < 5; i++) {
+    await postMessage({ room, message: '🔴' })
+    await DELAY(650)
+  }
+
+  await postMessage({ room, message: '🟢 **LIGHTS OUT AND AWAY WE GO!**' })
+  await DELAY(450)
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────
 function rint (min, max) { return Math.floor(Math.random() * (max - min + 1)) + min }
@@ -111,7 +151,6 @@ function computeStrength (car, track) {
   const wear = Math.max(0, Math.min(100, Number(car.wear || 0)))
   base *= (1 - (wear / 100) * 0.08) // up to -8%
 
-  // keep >0
   return Math.max(0.001, base)
 }
 
@@ -121,7 +160,6 @@ function oddsFromStrengths (strengths) {
 
   return strengths.map(s => {
     const p = s / Math.max(1e-9, sum)
-    // apply house edge by reducing effective probability mass paid out
     const paidP = p * (1 - edge)
     const dec = 1 / Math.max(0.0005, paidP)
     const clamped = clamp(dec, 1.40, 15.0)
@@ -292,6 +330,10 @@ export async function handleBuyCar (ctx) {
   }
 
   const jitter = (x) => clamp(x + rint(-3, 3), 35, 92)
+
+  // ✅ persistent car imageUrl (tier-based)
+  const imageUrl = pickCarImageUrl(tierKey)
+
   const id = insertCar({
     ownerId: userId,
     ownerName: nick,
@@ -305,13 +347,15 @@ export async function handleBuyCar (ctx) {
     aero: jitter(tier.base.aero),
     reliability: jitter(tier.base.reliability),
     tire: jitter(tier.base.tire),
-    wear: 0
+    wear: 0,
+    imageUrl
   })
 
   const updated = await safeCall(getUserWallet, [userId]).catch(() => null)
   await postMessage({
     room,
-    message: `✅ ${nick} bought a **${tierKey.toUpperCase()}** car: **${tier.livery} #${String(id).padStart(2, '0')} ${name}**\n💰 Balance: **${fmtMoney(updated)}**`
+    message: `✅ ${nick} bought a **${tierKey.toUpperCase()}** car: **${tier.livery} #${String(id).padStart(2, '0')} ${name}**\n💰 Balance: **${fmtMoney(updated)}**`,
+    images: imageUrl ? [imageUrl] : undefined
   })
 }
 
@@ -337,8 +381,44 @@ export async function handleMyCars (ctx) {
   }
 
   lines.push('')
+  lines.push('Show: `/car <car name>`')
   lines.push('Repair: `/repaircar <car name>` (reduces wear)')
   await postMessage({ room, message: '```\n' + lines.join('\n') + '\n```' })
+}
+
+export async function handleCarShow (ctx) {
+  const room = ctx?.room || ROOM
+  const userId = ctx?.sender
+  const text = String(ctx?.message || '').trim()
+  const nameArg = parseArg(text, /^\/car\s+(.+)$/i)
+  const nick = await safeCall(getUserNickname, [userId]).catch(() => '@user')
+
+  if (!nameArg) {
+    await postMessage({ room, message: `Usage: **/car <car name>**` })
+    return
+  }
+
+  const cars = await safeCall(getUserCars, [userId]).catch(() => [])
+  const q = String(nameArg).toLowerCase()
+  const car =
+    cars.find(c => String(c.name || '').toLowerCase() === q) ||
+    cars.find(c => String(c.name || '').toLowerCase().includes(q))
+
+  if (!car) {
+    await postMessage({ room, message: `❗ ${nick}, couldn’t find that car in your garage.` })
+    return
+  }
+
+  const tierKey = String(car.tier || 'starter').toLowerCase()
+  const wear = Number(car.wear || 0)
+
+  await postMessage({
+    room,
+    message:
+      `🏎️ **${carLabel(car)}**\n` +
+      `Team: **${car.teamId ? 'Assigned' : '—'}** · Tier: **${tierKey.toUpperCase()}** · Wear: **${wear}%** · W ${car.wins || 0} / R ${car.races || 0}`,
+    images: car.imageUrl ? [car.imageUrl] : undefined
+  })
 }
 
 export async function handleRepairCar (ctx) {
@@ -531,6 +611,16 @@ function cleanup () {
   _lastProgress = null
 }
 
+function applyChoicesToField () {
+  field = field.map(c => {
+    if (!c?.ownerId) return c
+    const choice = carChoices.get(c.ownerId) || {}
+    const tireChoice = TIRES.includes(choice.tire) ? choice.tire : (c.tireChoice || 'med')
+    const modeChoice = MODES.includes(choice.mode) ? choice.mode : (c.modeChoice || 'norm')
+    return { ...c, tireChoice, modeChoice }
+  })
+}
+
 async function lockEntriesAndOpenStrategy () {
   try {
     isAccepting = false
@@ -576,7 +666,9 @@ async function lockEntriesAndOpenStrategy () {
         aero: rint(48, 68),
         reliability: rint(52, 72),
         tire: rint(48, 70),
-        wear: 0
+        wear: 0,
+        teamLabel: '—',
+        imageUrl: null
       })
     }
 
@@ -609,7 +701,6 @@ async function lockEntriesAndOpenStrategy () {
         `Default: MED + NORM`
     }])
 
-    // We can't compute odds until we know track + official grid, so preview odds as "—" for now.
     const previewRows = field.map(c => ({
       label: c.label,
       teamLabel: c.teamLabel,
@@ -622,6 +713,7 @@ async function lockEntriesAndOpenStrategy () {
     setTimeout(() => {
       isStratOpen = false
       isBettingOpen = false
+      applyChoicesToField()
       startRaceRun()
     }, STRAT_MS)
   } catch (e) {
@@ -654,9 +746,24 @@ async function startRaceRun () {
 
     const poleWinnerOwnerId = field[0]?.ownerId || null
 
+    // ── VISUALS: circuit splash + lights ───────────────────────────────
+    if (track?.imageUrl) {
+      await postMessage({
+        room: ROOM,
+        message: `${track.emoji} **${track.name}**`,
+        images: [track.imageUrl]
+      })
+      await DELAY(600)
+    } else {
+      await postMessage({ room: ROOM, message: `${track.emoji} **${track.name}**` })
+      await DELAY(350)
+    }
+
+    await sendLightsOutSequence(ROOM)
+
     await safeCall(postMessage, [{
       room: ROOM,
-      message: `🏁 **LIGHTS OUT!** ${track.emoji} ${track.name}\n` +
+      message: `📣 Race Control: ${track.emoji} ${track.name}\n` +
         `Entry fees: ${fmtMoney(gross)} · House rake: ${fmtMoney(rake)} · Prize pool: **${fmtMoney(net)}**\n` +
         `🎯 Pole Bonus: **${fmtMoney(POLE_BONUS)}** · ⚡ Fastest Lap Bonus: **${fmtMoney(FASTEST_LAP_BONUS)}**\n` +
         `📌 House cars do **not** take prize money — their share is redistributed.\n` +
@@ -672,7 +779,6 @@ async function startRaceRun () {
     }))
     await safeCall(postMessage, [{ room: ROOM, message: renderGrid(gridRows, { title: 'OFFICIAL GRID', showOdds: true }) }])
 
-    // announce pole bonus
     if (poleWinnerOwnerId && POLE_BONUS > 0) {
       const nick = await safeCall(getUserNickname, [poleWinnerOwnerId]).catch(() => null)
       const tag = nick?.replace(/^@/, '') || `<@uid:${poleWinnerOwnerId}>`
@@ -742,7 +848,6 @@ if (!globalThis[LISTENER_GUARD_KEY]) {
 
       await postMessage({ room: ROOM, message: '```\n' + lines.join('\n') + '\n```' })
 
-      // Bet winners lines (only winners)
       const betWinners = betPayouts && typeof betPayouts === 'object'
         ? Object.entries(betPayouts).filter(([, amt]) => Number(amt) > 0)
         : []
@@ -770,6 +875,7 @@ export async function handleF1Help (ctx) {
     `/team reroll           - randomize team name/badge (costs ${fmtMoney(TEAM_REROLL_FEE)})`,
     '/buycar <tier>         - buy a car (starter/pro/hyper/legendary)',
     '/mycars                - list your cars',
+    '/car <name>            - show your car (image + stats)',
     '/repaircar <name>      - repair wear (cost scales with wear)',
     '',
     '/gp start              - start a Grand Prix',
