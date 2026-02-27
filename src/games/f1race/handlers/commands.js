@@ -73,16 +73,33 @@ function pickCarImageUrl (tierKey) {
 const DELAY = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
 async function sendLightsOutSequence (room) {
-  await postMessage({ room, message: '🏁 **GRID FORMED…**' })
-  await DELAY(650)
+  await postMessage({ room, message: '🚥 Cars lining up on the grid...' })
+  await DELAY(1200)
 
-  for (let i = 0; i < 5; i++) {
-    await postMessage({ room, message: '🔴' })
-    await DELAY(650)
-  }
+  await postMessage({ room, message: 'Engines revving...' })
+  await DELAY(1500)
 
-  await postMessage({ room, message: '🟢 **LIGHTS OUT AND AWAY WE GO!**' })
-  await DELAY(450)
+  // Realistic F1-style red light build
+  await postMessage({ room, message: '🔴' })
+  await DELAY(1000)
+
+  await postMessage({ room, message: '🔴 🔴' })
+  await DELAY(900)
+
+  await postMessage({ room, message: '🔴 🔴 🔴' })
+  await DELAY(800)
+
+  await postMessage({ room, message: '🔴 🔴 🔴 🔴' })
+  await DELAY(700)
+
+  await postMessage({ room, message: '🔴 🔴 🔴 🔴 🔴' })
+  await DELAY(1200)
+
+  // Slight random delay for realism
+  await DELAY(400 + Math.random() * 900)
+
+  await postMessage({ room, message: '🟢 LIGHTS OUT!!! 🏁' })
+  await DELAY(600)
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -209,6 +226,8 @@ let lockedOddsDec = [] // index-aligned to field
 let bets = {} // userId -> [{carIndex, amount}]
 
 let _lastProgress = null
+
+let lockedTrack = null
 
 export function isWaitingForEntries () { return isAccepting === true }
 
@@ -688,6 +707,15 @@ async function lockEntriesAndOpenStrategy () {
       return { ...c, label, teamLabel: c.teamLabel || '—', tireChoice, modeChoice }
     })
 
+    // ✅ lock track + odds for the betting window (transparent, fair)
+lockedTrack = pickTrack()
+
+// Apply current choices (or defaults) before odds
+applyChoicesToField()
+
+const strengths0 = field.map(c => computeStrength(c, lockedTrack))
+lockedOddsDec = oddsFromStrengths(strengths0)
+
     // Open strategy + betting window
     isStratOpen = true
     isBettingOpen = true
@@ -701,14 +729,17 @@ async function lockEntriesAndOpenStrategy () {
         `Default: MED + NORM`
     }])
 
-    const previewRows = field.map(c => ({
-      label: c.label,
-      teamLabel: c.teamLabel,
-      odds: '—',
-      tire: c.tireChoice,
-      mode: c.modeChoice
-    }))
-    await safeCall(postMessage, [{ room: ROOM, message: renderGrid(previewRows, { title: 'GRID PREVIEW', showOdds: true }) }])
+    const previewRows = field.map((c, i) => ({
+  label: c.label,
+  teamLabel: c.teamLabel,
+  odds: formatOdds(lockedOddsDec[i]),
+  tire: c.tireChoice,
+  mode: c.modeChoice
+}))
+await safeCall(postMessage, [{
+  room: ROOM,
+  message: renderGrid(previewRows, { title: 'BETTING BOARD', showOdds: true })
+}])
 
     setTimeout(() => {
       isStratOpen = false
@@ -726,7 +757,7 @@ async function lockEntriesAndOpenStrategy () {
 async function startRaceRun () {
   try {
     isRunning = true
-    const track = pickTrack()
+    const track = lockedTrack || pickTrack()
 
     // Official grid with slight bias (handling+aero)
     const seeded = field.map((c) => {
@@ -739,64 +770,87 @@ async function startRaceRun () {
 
     const userEntries = field.filter(c => c.ownerId).length
     const { gross, rake, net } = prizePoolFromEntries(userEntries)
-
-    // Lock odds now that we have track + final field
-    const strengths = field.map(c => computeStrength(c, track))
-    lockedOddsDec = oddsFromStrengths(strengths)
-
     const poleWinnerOwnerId = field[0]?.ownerId || null
 
     // ── VISUALS: circuit splash + lights ───────────────────────────────
-    if (track?.imageUrl) {
-      await postMessage({
-        room: ROOM,
-        message: `${track.emoji} **${track.name}**`,
-        images: [track.imageUrl]
-      })
-      await DELAY(600)
-    } else {
-      await postMessage({ room: ROOM, message: `${track.emoji} **${track.name}**` })
-      await DELAY(350)
-    }
+    // Announce track name first (no bold, explicit format)
+await postMessage({
+  room: ROOM,
+  message: `🏁 Track Name: ${track.name.toUpperCase()}`
+})
 
-    await sendLightsOutSequence(ROOM)
+await DELAY(600)
 
-    await safeCall(postMessage, [{
-      room: ROOM,
-      message: `📣 Race Control: ${track.emoji} ${track.name}\n` +
-        `Entry fees: ${fmtMoney(gross)} · House rake: ${fmtMoney(rake)} · Prize pool: **${fmtMoney(net)}**\n` +
-        `🎯 Pole Bonus: **${fmtMoney(POLE_BONUS)}** · ⚡ Fastest Lap Bonus: **${fmtMoney(FASTEST_LAP_BONUS)}**\n` +
-        `📌 House cars do **not** take prize money — their share is redistributed.\n` +
-        `🎟️ Betting is locked at post time.`
-    }])
+// Then send image
+if (track?.imageUrl) {
+  await postMessage({
+    room: ROOM,
+    message: '',
+    images: [track.imageUrl]
+  })
+  await DELAY(900)
+}
 
-    const gridRows = field.map((c, i) => ({
-      label: c.label,
-      teamLabel: c.teamLabel,
-      odds: formatOdds(lockedOddsDec[i]),
-      tire: c.tireChoice,
-      mode: c.modeChoice
-    }))
-    await safeCall(postMessage, [{ room: ROOM, message: renderGrid(gridRows, { title: 'OFFICIAL GRID', showOdds: true }) }])
+await postMessage({
+  room: ROOM,
+  message:
+    `📣 RACE CONTROL\n` +
+    `Track: ${track.name.toUpperCase()}\n\n` +
+    `Entry Fees: ${fmtMoney(gross)}\n` +
+    `House Rake: ${fmtMoney(rake)}\n` +
+    `Prize Pool: ${fmtMoney(net)}\n\n` +
+    `Pole Bonus: ${fmtMoney(POLE_BONUS)}\n` +
+    `Fastest Lap Bonus: ${fmtMoney(FASTEST_LAP_BONUS)}\n\n` +
+    `House cars do NOT take prize money.\n` +
+    `Betting is now LOCKED.`
+})
 
-    if (poleWinnerOwnerId && POLE_BONUS > 0) {
-      const nick = await safeCall(getUserNickname, [poleWinnerOwnerId]).catch(() => null)
-      const tag = nick?.replace(/^@/, '') || `<@uid:${poleWinnerOwnerId}>`
-      await safeCall(postMessage, [{ room: ROOM, message: `🎯 Pole Position Bonus goes to ${tag} (**${fmtMoney(POLE_BONUS)}**)` }])
-    }
+await DELAY(900)
 
-    await runRace({
-      cars: field,
-      track,
-      prizePool: net,
-      payoutPlan: PRIZE_SPLIT,
-      poleBonus: POLE_BONUS,
-      fastestLapBonus: FASTEST_LAP_BONUS,
-      poleWinnerOwnerId,
+// 1) OFFICIAL GRID should be before lights
+const gridRows = field.map((c, i) => ({
+  label: c.label,
+  teamLabel: c.teamLabel,
+  odds: formatOdds(lockedOddsDec[i]),
+  tire: c.tireChoice,
+  mode: c.modeChoice
+}))
+await safeCall(postMessage, [{
+  room: ROOM,
+  message: renderGrid(gridRows, { title: 'OFFICIAL GRID', showOdds: true })
+}])
 
-      bets,
-      lockedOddsDec
-    })
+await DELAY(1200)
+
+// 2) Pole bonus announcement also feels better pre-start (optional)
+if (poleWinnerOwnerId && POLE_BONUS > 0) {
+  const nick = await safeCall(getUserNickname, [poleWinnerOwnerId]).catch(() => null)
+  const tag = nick?.replace(/^@/, '') || `<@uid:${poleWinnerOwnerId}>`
+  await safeCall(postMessage, [{
+    room: ROOM,
+    message: `🎯 Pole Position Bonus goes to ${tag} (${fmtMoney(POLE_BONUS)})`
+  }])
+  await DELAY(800)
+}
+
+await postMessage({ room: ROOM, message: 'Final checks complete.' })
+await DELAY(900)
+
+// 3) Now do the dramatic lights
+await sendLightsOutSequence(ROOM)
+
+// 4) Start the race
+await runRace({
+  cars: field,
+  track,
+  prizePool: net,
+  payoutPlan: PRIZE_SPLIT,
+  poleBonus: POLE_BONUS,
+  fastestLapBonus: FASTEST_LAP_BONUS,
+  poleWinnerOwnerId,
+  bets,
+  lockedOddsDec
+})
   } catch (e) {
     console.error('[f1race] startRaceRun error:', e)
     await safeCall(postMessage, [{ room: ROOM, message: '❌ Race failed to start.' }])
@@ -858,6 +912,8 @@ if (!globalThis[LISTENER_GUARD_KEY]) {
           const tag = nick?.replace(/^@/, '') || `<@uid:${userId}>`
           await postMessage({ room: ROOM, message: `💵 ${tag} wins **${fmtMoney(amt)}** on bets` })
         }
+
+        await postMessage({ room: ROOM, message: '🎟️ Bets settled. Winners have been paid.' })
       }
     } finally {
       cleanup()
