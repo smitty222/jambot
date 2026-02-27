@@ -67,7 +67,7 @@ import {
   isSpotlightProtected,
   isSpotlightActive
 } from '../handlers/spotlight.js'
-import { handleCarEntryAttempt, handleBetCommand, handleTireChoice, handleModeChoice, startF1Race, handleBuyCar, handleMyCars, handleRepairCar, handleTeamCommand, handleF1Help, } from '../games/f1race/handlers/commands.js'
+import { handleCarEntryAttempt, handleBetCommand, startF1Race, handleBuyCar, handleMyCars, handleRepairCar, handleTeamCommand, handleF1Help, } from '../games/f1race/handlers/commands.js'
 
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
