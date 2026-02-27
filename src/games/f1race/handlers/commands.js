@@ -26,8 +26,8 @@ const PRIZE_SPLIT = [45, 25, 15, 10, 5]
 const POLE_BONUS = Number(process.env.F1_POLE_BONUS ?? 250)
 const FASTEST_LAP_BONUS = Number(process.env.F1_FASTEST_LAP_BONUS ?? 300)
 
-const TEAM_CREATE_FEE = Number(process.env.F1_TEAM_CREATE_FEE ?? 1)
-const TEAM_REROLL_FEE = Number(process.env.F1_TEAM_REROLL_FEE ?? 5)
+const TEAM_CREATE_FEE = Number(process.env.F1_TEAM_CREATE_FEE ?? 50000)
+const TEAM_REROLL_FEE = Number(process.env.F1_TEAM_REROLL_FEE ?? 20000)
 
 // Betting
 const BET_MIN = Number(process.env.F1_BET_MIN ?? 25)
