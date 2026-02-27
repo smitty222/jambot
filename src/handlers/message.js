@@ -276,8 +276,6 @@ if (typeof payload.message === 'string' && payload.message.length > 0 && !payloa
 }
 
 // Always call these; they no-op unless the correct phase is open
-//await handleTireChoice(payload)
-//await handleModeChoice(payload)
 await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting open)
 
 // ─── END F1 BLOCK ────────────────────────────────────────────────
