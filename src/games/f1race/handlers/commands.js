@@ -1,12 +1,14 @@
 // src/games/f1race/handlers/commands.js
 
 import { postMessage } from '../../../libs/cometchat.js'
+import { readdirSync } from 'fs'
+import path from 'path'
 import { getUserWallet, debitGameBet } from '../../../database/dbwalletmanager.js'
 import { getUserNickname } from '../../../utils/nickname.js'
 import { fetchCurrentUsers } from '../../../utils/API.js'
 
 import { createTeam, getTeamByOwner, updateTeamIdentity } from '../../../database/dbteams.js'
-import { insertCar, getAllCars, getUserCars, setCarWear } from '../../../database/dbcars.js'
+import { insertCar, getAllCars, getUserCars, setCarImageUrl } from '../../../database/dbcars.js'
 
 import { bus, safeCall } from '../service.js'
 import { runRace, LEGS } from '../simulation.js'
@@ -41,35 +43,66 @@ const CAR_TIERS = {
   hyper: { price: 200000, base: { power: 74, handling: 72, aero: 70, reliability: 66, tire: 66 }, livery: '🟩' },
   legendary: { price: 400000, base: { power: 80, handling: 78, aero: 76, reliability: 70, tire: 70 }, livery: '🟪' }
 }
-const DEFAULT_TIRE = 'med'
-const DEFAULT_MODE = 'norm'
 
-const TIRES = ['soft', 'med', 'hard']
-const MODES = ['push', 'norm', 'save']
+// ── Visuals: car images (local tier folders) ───────────────────────────────
+// Place your images in:
+// src/games/f1race/assets/cars/starter
+// src/games/f1race/assets/cars/pro
+// src/games/f1race/assets/cars/hyper
+// src/games/f1race/assets/cars/legendary
+//
+// Then expose that folder through a public base URL (raw GitHub, CDN, etc.)
+// so chat clients can load the image. By default we point to this repo's raw URL.
+const CAR_IMAGE_BASE_URL = (process.env.F1_CAR_IMAGE_BASE_URL ||
+  'https://raw.githubusercontent.com/smitty222/jambot/main/src/games/f1race/assets/cars').replace(/\/$/, '')
 
-// ── Visuals: car images (tier pools) ───────────────────────────────────
-// Add raw GitHub URLs (recommended) or any stable image URL.
-// Example raw URL pattern:
-// https://raw.githubusercontent.com/smitty222/jambot/main/src/games/f1race/assets/cars/starter_1.png
-const CAR_IMAGE_POOLS = {
-  starter: [
-    // 'https://raw.githubusercontent.com/smitty222/jambot/main/src/games/f1race/assets/cars/starter_1.png'
-  ],
-  pro: [
-    // 'https://raw.githubusercontent.com/smitty222/jambot/main/src/games/f1race/assets/cars/pro_1.png'
-  ],
-  hyper: [
-    // 'https://raw.githubusercontent.com/smitty222/jambot/main/src/games/f1race/assets/cars/hyper_1.png'
-  ],
-  legendary: [
-    // 'https://raw.githubusercontent.com/smitty222/jambot/main/src/games/f1race/assets/cars/legendary_1.png'
-  ]
+const CAR_ASSETS_DIR = path.resolve(process.cwd(), 'src/games/f1race/assets/cars')
+const ALLOWED_IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif'])
+
+function listTierImageFiles (tierKey) {
+  const tier = String(tierKey || '').toLowerCase()
+  if (!tier) return []
+
+  try {
+    const dir = path.join(CAR_ASSETS_DIR, tier)
+    return readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name)
+      .filter((name) => ALLOWED_IMAGE_EXT.has(path.extname(name).toLowerCase()))
+  } catch {
+    return []
+  }
 }
 
 function pickCarImageUrl (tierKey) {
-  const pool = CAR_IMAGE_POOLS[String(tierKey || '').toLowerCase()] || []
-  if (!pool.length) return null
-  return pool[Math.floor(Math.random() * pool.length)]
+  const tier = String(tierKey || '').toLowerCase()
+  const files = listTierImageFiles(tier)
+  if (!files.length) return null
+
+  const picked = files[Math.floor(Math.random() * files.length)]
+  return `${CAR_IMAGE_BASE_URL}/${tier}/${encodeURIComponent(picked)}`
+}
+
+async function ensurePersistentCarImages (cars = []) {
+  if (!Array.isArray(cars) || !cars.length) return cars
+
+  for (const car of cars) {
+    if (!car || car.imageUrl) continue
+
+    const tierKey = String(car.tier || '').toLowerCase()
+    if (!tierKey || tierKey === 'bot') continue
+
+    const imageUrl = pickCarImageUrl(tierKey)
+    if (!imageUrl) continue
+
+    car.imageUrl = imageUrl
+
+    if (car.id != null) {
+      await safeCall(setCarImageUrl, [car.id, imageUrl]).catch(() => null)
+    }
+  }
+
+  return cars
 }
 
 const DELAY = (ms) => new Promise(resolve => setTimeout(resolve, ms))
@@ -155,17 +188,6 @@ function computeStrength (car, track) {
     w.tire * tire +
     w.reliability * reliability
 
-  // tire choice effect (pre-race expectation)
-  const t = String(car.tireChoice || 'med').toLowerCase()
-  if (t === 'soft') base *= 1.03
-  else if (t === 'hard') base *= 0.99
-  else base *= 1.01
-
-  // mode choice effect (pre-race)
-  const m = String(car.modeChoice || 'norm').toLowerCase()
-  if (m === 'push') base *= 1.02
-  else if (m === 'save') base *= 0.99
-
   // wear penalty
   const wear = Math.max(0, Math.min(100, Number(car.wear || 0)))
   base *= (1 - (wear / 100) * 0.08) // up to -8%
@@ -221,9 +243,7 @@ let isBettingOpen = false
 
 const entered = new Set() // carId
 let eligibleByName = new Map() // nameLower -> car
-let field = [] // cars in race (with label, teamLabel, tireChoice, modeChoice)
-
-let carChoices = new Map() // ownerId -> { tire, mode }
+let field = [] // cars in race (with label, teamLabel)
 let lockedOddsDec = [] // index-aligned to field
 let bets = {} // userId -> [{carIndex, amount}]
 
@@ -372,6 +392,10 @@ export async function handleBuyCar (ctx) {
     imageUrl
   })
 
+  if (imageUrl) {
+    await safeCall(setCarImageUrl, [id, imageUrl]).catch(() => null)
+  }
+
   const updated = await safeCall(getUserWallet, [userId]).catch(() => null)
   await postMessage({
     room,
@@ -385,6 +409,7 @@ export async function handleMyCars (ctx) {
   const userId = ctx?.sender
   const nick = await safeCall(getUserNickname, [userId]).catch(() => '@user')
   const cars = await safeCall(getUserCars, [userId]).catch(() => [])
+  await ensurePersistentCarImages(cars)
 
   if (!cars?.length) {
     await postMessage({ room, message: `${nick}, you don’t own any cars yet. Try **/buycar**.` })
@@ -403,7 +428,6 @@ export async function handleMyCars (ctx) {
 
   lines.push('')
   lines.push('Show: `/car <car name>`')
-  lines.push('Repair: `/repaircar <car name>` (reduces wear)')
   await postMessage({ room, message: '```\n' + lines.join('\n') + '\n```' })
 }
 
@@ -420,6 +444,7 @@ export async function handleCarShow (ctx) {
   }
 
   const cars = await safeCall(getUserCars, [userId]).catch(() => [])
+  await ensurePersistentCarImages(cars)
   const q = String(nameArg).toLowerCase()
   const car =
     cars.find(c => String(c.name || '').toLowerCase() === q) ||
@@ -442,46 +467,35 @@ export async function handleCarShow (ctx) {
   })
 }
 
-export async function handleRepairCar (ctx) {
+export async function handleCarPics (ctx) {
   const room = ctx?.room || ROOM
   const userId = ctx?.sender
-  const text = String(ctx?.message || '').trim()
-  const nameArg = parseArg(text, /^\/repaircar\s+(.+)$/i)
   const nick = await safeCall(getUserNickname, [userId]).catch(() => '@user')
-
-  if (!nameArg) {
-    await postMessage({ room, message: `Usage: **/repaircar <car name>**` })
-    return
-  }
-
   const cars = await safeCall(getUserCars, [userId]).catch(() => [])
-  const car = cars.find(c => String(c.name || '').toLowerCase() === String(nameArg).toLowerCase()) ||
-              cars.find(c => String(c.name || '').toLowerCase().includes(String(nameArg).toLowerCase()))
+  await ensurePersistentCarImages(cars)
 
-  if (!car) {
-    await postMessage({ room, message: `❗ ${nick}, couldn’t find that car in your garage.` })
+  if (!cars?.length) {
+    await postMessage({ room, message: `${nick}, you don’t own any cars yet. Try **/buycar**.` })
     return
   }
 
-  const wear = Number(car.wear || 0)
-  if (wear <= 0) {
-    await postMessage({ room, message: `✅ ${carLabel(car)} is already in perfect condition.` })
+  const withImages = cars.filter(c => c.imageUrl)
+  if (!withImages.length) {
+    await postMessage({ room, message: `📷 ${nick}, none of your cars currently have images. Buy a new car to get one.` })
     return
   }
 
-  const tier = String(car.tier || 'starter').toLowerCase()
-  const mult = (tier === 'legendary') ? 900 : (tier === 'hyper') ? 650 : (tier === 'pro') ? 450 : 300
-  const cost = Math.max(1000, Math.floor(wear * mult))
-
-  const bal = await safeCall(getUserWallet, [userId]).catch(() => null)
-  if (typeof bal !== 'number' || bal < cost) {
-    await postMessage({ room, message: `❗ Repair cost is **${fmtMoney(cost)}**. Your balance: **${fmtMoney(bal)}**.` })
-    return
+  for (const c of withImages.slice(0, 8)) {
+    await postMessage({
+      room,
+      message: `📷 ${carLabel(c)}`,
+      images: [c.imageUrl]
+    })
   }
 
-  await safeCall(debitGameBet, [userId, cost])
-  await safeCall(setCarWear, [car.id, 0])
-  await postMessage({ room, message: `🔧 ${nick} repaired ${carLabel(car)} for **${fmtMoney(cost)}**. Wear reset to 0%.` })
+  if (withImages.length > 8) {
+    await postMessage({ room, message: `…and ${withImages.length - 8} more. Use "/car <name>" for a specific car.` })
+  }
 }
 
 // ── Betting command ────────────────────────────────────────────────────
@@ -555,12 +569,12 @@ export async function startF1Race () {
   entered.clear()
   eligibleByName = new Map()
   field = []
-  carChoices = new Map()
   lockedOddsDec = []
   bets = {}
   _lastProgress = null
 
   const all = await safeCall(getAllCars).catch(() => [])
+  await ensurePersistentCarImages(all)
   const activeIds = await safeCall(fetchCurrentUsers).catch(() => [])
 
   const avail = (all || []).filter(c => c.ownerId && activeIds.includes(c.ownerId) && !c.retired)
@@ -607,36 +621,6 @@ export async function handleCarEntryAttempt (ctx) {
   await safeCall(postMessage, [{ room: ROOM, message: `✅ ${nick?.replace(/^@/, '')} entered ${carLabel(car)}!` }])
 }
 
-/*export async function handleTireChoice (ctx) {
-  if (!isStratOpen) return
-  const sender = ctx?.sender
-  const txt = String(ctx?.message || '').trim()
-  const m = txt.match(/^\/tire\s+(soft|med|hard)\b/i)
-  if (!m) return
-
-  const tire = m[1].toLowerCase()
-  const prev = carChoices.get(sender) || {}
-  carChoices.set(sender, { ...prev, tire })
-
-  const nick = await safeCall(getUserNickname, [sender]).catch(() => '@user')
-  await safeCall(postMessage, [{ room: ROOM, message: `🛞 ${nick} locks **${tire.toUpperCase()}** tires.` }])
-}
-
-export async function handleModeChoice (ctx) {
-  if (!isStratOpen) return
-  const sender = ctx?.sender
-  const txt = String(ctx?.message || '').trim()
-  const m = txt.match(/^\/mode\s+(push|norm|save)\b/i)
-  if (!m) return
-
-  const mode = m[1].toLowerCase()
-  const prev = carChoices.get(sender) || {}
-  carChoices.set(sender, { ...prev, mode })
-
-  const nick = await safeCall(getUserNickname, [sender]).catch(() => '@user')
-  await safeCall(postMessage, [{ room: ROOM, message: `🎛️ ${nick} sets mode **${mode.toUpperCase()}**.` }])
-}*/
-
 // ── Internal helpers ───────────────────────────────────────────────────
 function cleanup () {
   isAccepting = false
@@ -646,20 +630,9 @@ function cleanup () {
   entered.clear()
   eligibleByName = new Map()
   field = []
-  carChoices = new Map()
   lockedOddsDec = []
   bets = {}
   _lastProgress = null
-}
-
-function applyChoicesToField () {
-  field = field.map(c => {
-    if (!c?.ownerId) return c
-    const choice = carChoices.get(c.ownerId) || {}
-    const tireChoice = TIRES.includes(choice.tire) ? choice.tire : (c.tireChoice || 'med')
-    const modeChoice = MODES.includes(choice.mode) ? choice.mode : (c.modeChoice || 'norm')
-    return { ...c, tireChoice, modeChoice }
-  })
 }
 
 async function lockEntriesAndOpenStrategy () {
@@ -722,15 +695,11 @@ async function lockEntriesAndOpenStrategy () {
 
     field = [...withTeam, ...bots].map(c => {
       const label = carLabel(c)
-      const ownerId = c.ownerId || null
-      return { ...c, label, teamLabel: c.teamLabel || '—', tireChoice: DEFAULT_TIRE, modeChoice: DEFAULT_MODE }
+      return { ...c, label, teamLabel: c.teamLabel || '—' }
     })
 
     // ✅ lock track + odds for the betting window (transparent, fair)
 lockedTrack = pickTrack()
-
-// Apply current choices (or defaults) before odds
-applyChoicesToField()
 
 const strengths0 = field.map(c => computeStrength(c, lockedTrack))
 lockedOddsDec = oddsFromStrengths(strengths0)
@@ -742,18 +711,13 @@ lockedOddsDec = oddsFromStrengths(strengths0)
     await safeCall(postMessage, [{
       room: ROOM,
       message: `Place your bets!\n` +
-        //`• /tire soft|med|hard\n` +
-        //`• /mode push|norm|save\n` +
         `• /bet <car#> <amount>  (min ${fmtMoney(BET_MIN)})\n`
-        //`Default: MED + NORM`
     }])
 
     const previewRows = field.map((c, i) => ({
   label: c.label,
   teamLabel: c.teamLabel,
-  odds: formatOdds(lockedOddsDec[i]),
-  tire: c.tireChoice,
-  mode: c.modeChoice
+  odds: formatOdds(lockedOddsDec[i])
 }))
 await safeCall(postMessage, [{
   room: ROOM,
@@ -763,7 +727,6 @@ await safeCall(postMessage, [{
     setTimeout(() => {
       isStratOpen = false
       isBettingOpen = false
-      applyChoicesToField()
       startRaceRun()
     }, STRAT_MS)
   } catch (e) {
@@ -892,6 +855,16 @@ if (!globalThis[LISTENER_GUARD_KEY]) {
 
       await postMessage({ room: ROOM, message: '```\n' + lines.join('\n') + '\n```' })
 
+      const winnerIdx = finishOrder?.[0]
+      const winnerCar = (winnerIdx != null) ? cars?.[winnerIdx] : null
+      if (winnerCar?.imageUrl) {
+        await postMessage({
+          room: ROOM,
+          message: `🏆 Winner photo: **${winnerCar.label}**`,
+          images: [winnerCar.imageUrl]
+        })
+      }
+
       const betWinners = betPayouts && typeof betPayouts === 'object'
         ? Object.entries(betPayouts).filter(([, amt]) => Number(amt) > 0)
         : []
@@ -922,12 +895,11 @@ export async function handleF1Help (ctx) {
     '/buycar <tier>         - buy a car (starter/pro/hyper/legendary)',
     '/mycars                - list your cars',
     '/car <name>            - show your car (image + stats)',
-    '/repaircar <name>      - repair wear (cost scales with wear)',
+    '/carpics               - show photos of your cars',
     '',
     '/gp start              - start a Grand Prix',
     '(during entry) type your exact car name to enter',
-    '(during strategy) /tire soft|med|hard · /mode push|norm|save',
-    `/bet <car#> <amount>   - bet a car to win (min ${fmtMoney(BET_MIN)})`
+    `(during betting) /bet <car#> <amount> - bet a car to win (min ${fmtMoney(BET_MIN)})`
   ].join('\n')
 
   await postMessage({ room, message: '```\n' + msg + '\n```' })

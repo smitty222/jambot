@@ -67,7 +67,7 @@ import {
   isSpotlightProtected,
   isSpotlightActive
 } from '../handlers/spotlight.js'
-import { handleCarEntryAttempt, handleBetCommand, startF1Race, handleBuyCar, handleMyCars, handleRepairCar, handleTeamCommand, handleF1Help, } from '../games/f1race/handlers/commands.js'
+import { handleCarEntryAttempt, handleBetCommand, startF1Race, handleBuyCar, handleMyCars, handleCarShow, handleCarPics, handleTeamCommand, handleF1Help, } from '../games/f1race/handlers/commands.js'
 
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
@@ -256,7 +256,8 @@ if (/^\/(gp|f1)\s+start\b/i.test(txt)) {
 // Garage / team commands
 if (/^\/buycar\b/i.test(txt)) return handleBuyCar(payload)
 if (/^\/mycars\b/i.test(txt)) return handleMyCars(payload)
-if (/^\/repaircar\b/i.test(txt)) return handleRepairCar(payload)
+if (/^\/carpics\b/i.test(txt)) return handleCarPics(payload)
+if (/^\/car\s+/i.test(txt)) return handleCarShow(payload)
 if (/^\/team\b/i.test(txt)) return handleTeamCommand(payload)
 
 // Help
