@@ -41,6 +41,8 @@ const CAR_TIERS = {
   hyper: { price: 200000, base: { power: 74, handling: 72, aero: 70, reliability: 66, tire: 66 }, livery: '🟩' },
   legendary: { price: 400000, base: { power: 80, handling: 78, aero: 76, reliability: 70, tire: 70 }, livery: '🟪' }
 }
+const DEFAULT_TIRE = 'med'
+const DEFAULT_MODE = 'norm'
 
 const TIRES = ['soft', 'med', 'hard']
 const MODES = ['push', 'norm', 'save']
@@ -509,14 +511,34 @@ export async function handleBetCommand (ctx) {
     return
   }
 
+  const car = field[idx]
+  if (!car) return
+
+  // ✅ Stable bet identity (fixes array reorder / reseeding bugs)
+  // - user cars: car:<id>
+  // - bots: label:<label>
+  const betKey = (car.id != null)
+    ? `car:${String(car.id)}`
+    : `label:${String(car.label || '').trim()}`
+
+  if (!betKey || betKey.endsWith(':')) {
+    await postMessage({ room, message: `⚠️ ${nick}, couldn't place that bet. Try again.` })
+    return
+  }
+
+  // Debit stake immediately
   await safeCall(debitGameBet, [sender, amt])
 
-  ;(bets[sender] ||= []).push({ carIndex: idx, amount: amt })
+  // Store slip (new format)
+  ;(bets[sender] ||= []).push({ betKey, amount: amt })
 
-  const car = field[idx]
+  // Display odds if available (should be, once you compute odds during betting)
   const dec = lockedOddsDec?.[idx]
   const oddsLabel = Number.isFinite(dec) ? `${dec.toFixed(2)}x` : '—'
-  await postMessage({ room, message: `🎟️ ${nick} bets **${fmtMoney(amt)}** on **#${idx + 1} ${car.label}** (odds ${oddsLabel})` })
+  await postMessage({
+    room,
+    message: `🎟️ ${nick} bets ${fmtMoney(amt)} on #${idx + 1} ${car.label} (odds ${oddsLabel})`
+  })
 }
 
 // ── Race lifecycle ─────────────────────────────────────────────────────
@@ -585,7 +607,7 @@ export async function handleCarEntryAttempt (ctx) {
   await safeCall(postMessage, [{ room: ROOM, message: `✅ ${nick?.replace(/^@/, '')} entered ${carLabel(car)}!` }])
 }
 
-export async function handleTireChoice (ctx) {
+/*export async function handleTireChoice (ctx) {
   if (!isStratOpen) return
   const sender = ctx?.sender
   const txt = String(ctx?.message || '').trim()
@@ -613,7 +635,7 @@ export async function handleModeChoice (ctx) {
 
   const nick = await safeCall(getUserNickname, [sender]).catch(() => '@user')
   await safeCall(postMessage, [{ room: ROOM, message: `🎛️ ${nick} sets mode **${mode.toUpperCase()}**.` }])
-}
+}*/
 
 // ── Internal helpers ───────────────────────────────────────────────────
 function cleanup () {
@@ -701,10 +723,7 @@ async function lockEntriesAndOpenStrategy () {
     field = [...withTeam, ...bots].map(c => {
       const label = carLabel(c)
       const ownerId = c.ownerId || null
-      const choice = ownerId ? (carChoices.get(ownerId) || {}) : {}
-      const tireChoice = TIRES.includes(choice.tire) ? choice.tire : 'med'
-      const modeChoice = MODES.includes(choice.mode) ? choice.mode : 'norm'
-      return { ...c, label, teamLabel: c.teamLabel || '—', tireChoice, modeChoice }
+      return { ...c, label, teamLabel: c.teamLabel || '—', tireChoice: DEFAULT_TIRE, modeChoice: DEFAULT_MODE }
     })
 
     // ✅ lock track + odds for the betting window (transparent, fair)
@@ -722,11 +741,11 @@ lockedOddsDec = oddsFromStrengths(strengths0)
 
     await safeCall(postMessage, [{
       room: ROOM,
-      message: `🧠 **Strategy lock** (${STRAT_MS / 1000}s): choose tires + mode, and place bets.\n` +
-        `• /tire soft|med|hard\n` +
-        `• /mode push|norm|save\n` +
-        `• /bet <car#> <amount>  (min ${fmtMoney(BET_MIN)})\n` +
-        `Default: MED + NORM`
+      message: `Place your bets!\n` +
+        //`• /tire soft|med|hard\n` +
+        //`• /mode push|norm|save\n` +
+        `• /bet <car#> <amount>  (min ${fmtMoney(BET_MIN)})\n`
+        //`Default: MED + NORM`
     }])
 
     const previewRows = field.map((c, i) => ({
@@ -790,35 +809,6 @@ if (track?.imageUrl) {
   })
   await DELAY(900)
 }
-
-await postMessage({
-  room: ROOM,
-  message:
-    `📣 RACE CONTROL\n` +
-    `Track: ${track.name.toUpperCase()}\n\n` +
-    `Entry Fees: ${fmtMoney(gross)}\n` +
-    `House Rake: ${fmtMoney(rake)}\n` +
-    `Prize Pool: ${fmtMoney(net)}\n\n` +
-    `Pole Bonus: ${fmtMoney(POLE_BONUS)}\n` +
-    `Fastest Lap Bonus: ${fmtMoney(FASTEST_LAP_BONUS)}\n\n` +
-    `House cars do NOT take prize money.\n` +
-    `Betting is now LOCKED.`
-})
-
-await DELAY(900)
-
-// 1) OFFICIAL GRID should be before lights
-const gridRows = field.map((c, i) => ({
-  label: c.label,
-  teamLabel: c.teamLabel,
-  odds: formatOdds(lockedOddsDec[i]),
-  tire: c.tireChoice,
-  mode: c.modeChoice
-}))
-await safeCall(postMessage, [{
-  room: ROOM,
-  message: renderGrid(gridRows, { title: 'OFFICIAL GRID', showOdds: true })
-}])
 
 await DELAY(1200)
 

@@ -9,7 +9,6 @@ import { stat01 } from './utils/track.js'
 
 const ROOM = process.env.ROOM_UUID
 
-// ✅ Slightly longer race = more story, still fast in chat
 export const LEGS = 6
 const LEG_DELAY_MS = 3900
 const FINISH = 1.0
@@ -41,6 +40,16 @@ function randn (mean = 0, sd = 1) {
 function clamp01 (x) { return Math.max(0, Math.min(1, x)) }
 function pick (arr) { return arr[Math.floor(Math.random() * arr.length)] }
 
+// Stable bet key helper:
+// - user cars have numeric id -> "car:123"
+// - bots (id null) fall back to label -> "label:⬛ #16 Turbo Specter"
+function carBetKey (car) {
+  if (!car) return ''
+  if (car.id != null) return `car:${String(car.id)}`
+  const lbl = String(car.label || '').trim()
+  return lbl ? `label:${lbl}` : ''
+}
+
 function computePaceScalar (car, track, legIndex) {
   const power = stat01(car.power)
   const handling = stat01(car.handling)
@@ -57,16 +66,13 @@ function computePaceScalar (car, track, legIndex) {
     w.reliability * reliability
 
   const wear = Math.max(0, Math.min(100, Number(car.wear || 0)))
-  const wearPenalty = (wear / 100) * 0.10 // up to -10%
+  const wearPenalty = (wear / 100) * 0.10
 
   const tireKey = String(car.tireChoice || 'med').toLowerCase()
   const deg = TIRE_DEG[tireKey] ?? TIRE_DEG.med
   const startBoost = TIRE_START[tireKey] ?? TIRE_START.med
 
-  // base degradation
   let tireDrop = deg * legIndex
-
-  // ✅ soft tires fall off late race (creates strategy)
   if (tireKey === 'soft' && legIndex >= 3) tireDrop += 0.015
 
   const modeKey = String(car.modeChoice || 'norm').toLowerCase()
@@ -76,11 +82,10 @@ function computePaceScalar (car, track, legIndex) {
   return Math.max(0.90, Math.min(1.12, (mapped * (startBoost - tireDrop) * (1 - wearPenalty) * modeMult)))
 }
 
-// Returns a *race-level* DNF risk (moderate vibe), not per-lap.
 function dnfChanceRace (car, track) {
   const reliability = stat01(car.reliability)
   const wear = Math.max(0, Math.min(100, Number(car.wear || 0)))
-  const wearRisk = (wear / 100) * 0.02 // ✅ reduced from 0.05
+  const wearRisk = (wear / 100) * 0.02
 
   const tireKey = String(car.tireChoice || 'med').toLowerCase()
   const tireRisk = (tireKey === 'soft') ? 0.010 : (tireKey === 'hard' ? 0.0035 : 0.0065)
@@ -88,38 +93,31 @@ function dnfChanceRace (car, track) {
   const modeKey = String(car.modeChoice || 'norm').toLowerCase()
   const modeRisk = MODE_DNF[modeKey] ?? MODE_DNF.norm
 
-  const relReduce = (1 - reliability) * 0.015 // ✅ reduced from 0.035
+  const relReduce = (1 - reliability) * 0.015
 
   const base = Number(track.dnfBase || 0.01)
   const pRace = base + wearRisk + tireRisk + modeRisk + relReduce
-
-  // ✅ moderate: keep race-level DNF between 2% and 12% typically, max 18%
   return Math.max(0.02, Math.min(0.18, pRace))
 }
 
 function perLegFromRaceProb (pRace, legsRemaining) {
-  // Convert race-level probability into a per-leg probability that compounds to pRace
   const L = Math.max(1, legsRemaining)
   return 1 - Math.pow(1 - Math.max(0, Math.min(0.99, pRace)), 1 / L)
 }
 
 function gapLabel (leaderProg, prog, legIndex, track) {
   const d = Math.max(0, leaderProg - prog)
-
-  // ✅ spread gaps a bit; allow track tuning if you add track.gapScale later
   const scale = Number(track?.gapScale || 78.0)
-
   const sec = d * scale
   const decimals = (legIndex >= LEGS - 1) ? 3 : 2
   return `+${sec.toFixed(decimals)}`
 }
 
-// Race control
 function maybeRaceControlEvent (legIndex) {
   if (legIndex >= LEGS - 1) return null
   const r = rand()
-  if (r < 0.075) return { type: 'safety_car' } // rare, but dramatic
-  if (r < 0.20) return { type: 'yellow' } // occasional
+  if (r < 0.075) return { type: 'safety_car' }
+  if (r < 0.20) return { type: 'yellow' }
   return null
 }
 
@@ -132,17 +130,15 @@ function applySafetyCarCompression (state) {
   for (const s of active) {
     if (s === leader) continue
     const gap = leader.progress - s.progress
-    // ✅ compress strongly, but keep a tiny leader buffer
     s.progress = Math.min(leader.progress - 0.002, s.progress + gap * 0.65)
   }
 }
 
-// ✅ lightweight overtakes that feel meaningful (no spam)
 function tryOvertakes ({ state, cars, order, events, leg, track }) {
   if (order.length < 2) return
 
   let overtakeCount = 0
-  const MAX_OVERTAKES_ANNOUNCED = 1 // ✅ keep it hype, not spam
+  const MAX_OVERTAKES_ANNOUNCED = 1
 
   for (let pos = 1; pos < order.length; pos++) {
     if (overtakeCount >= MAX_OVERTAKES_ANNOUNCED) break
@@ -152,7 +148,6 @@ function tryOvertakes ({ state, cars, order, events, leg, track }) {
     if (back.dnf || front.dnf) continue
 
     const gap = front.progress - back.progress
-    // only when genuinely close
     if (gap > 0.004) continue
 
     const carB = cars[back.index]
@@ -170,18 +165,15 @@ function tryOvertakes ({ state, cars, order, events, leg, track }) {
     if (bTire === 'soft') p += 0.03
     if (bTire === 'hard') p -= 0.01
 
-    // less passing under yellow/safety conditions
     if (track?._rc === 'yellow') p *= 0.75
     if (track?._rc === 'safety_car') p *= 0.55
 
     p = Math.max(0.03, Math.min(0.40, p))
 
     if (rand() < p) {
-      // small bump to make the pass "stick"
       back.progress = Math.min(FINISH, back.progress + 0.0016)
       overtakeCount++
 
-      // only announce if the pass is in a visible slice of the field
       if (pos <= 6) {
         events.push(pick([
           `🟢 OVERTAKE! ${back.label} gets by ${front.label}!`,
@@ -219,7 +211,7 @@ export async function runRace ({
     dnf: false,
     dnfReason: null,
     bestLapTime: Infinity,
-    startPos: idx // will update after first order
+    startPos: idx
   }))
 
   if (poleBonus > 0 && poleWinnerOwnerId) {
@@ -233,7 +225,6 @@ export async function runRace ({
     if (active.length <= 1) break
 
     const rcEvent = maybeRaceControlEvent(leg)
-    // stash rc type for overtake dampening without changing your track object elsewhere
     track._rc = rcEvent?.type || null
 
     const avg = active.reduce((sum, s) => sum + s.progress, 0) / active.length
@@ -245,7 +236,6 @@ export async function runRace ({
       const pace = computePaceScalar(car, track, leg)
 
       const yellowMult = (rcEvent?.type === 'yellow') ? 0.96 : 1.0
-
       const raw = (FINISH / (LEGS * 9.4)) * pace * yellowMult * (1 + randn(0, NOISE_SD))
       const blended = MOMENTUM_BLEND * s.lastDelta + (1 - MOMENTUM_BLEND) * Math.max(0, raw)
 
@@ -256,20 +246,16 @@ export async function runRace ({
       s.progress = Math.min(FINISH, s.progress + delta)
       s.lastDelta = delta
 
-      // Lap times should reflect yellow pace a bit
       const lapTime = (rcEvent?.type === 'yellow')
         ? 92.2 - (pace * 4.8) + randRange(-0.35, 0.35)
         : 90.0 - (pace * 6.0) + randRange(-0.35, 0.35)
-
       if (lapTime < s.bestLapTime) s.bestLapTime = lapTime
 
-      // ✅ DNF: moderate vibe, based on race-level risk converted to per-leg risk
       if (leg >= 1) {
         const pRace = dnfChanceRace(car, track)
         const legsRemaining = (LEGS - leg)
         let pLeg = perLegFromRaceProb(pRace, legsRemaining)
 
-        // safer under yellow/safety
         if (rcEvent?.type === 'yellow') pLeg *= 0.80
         if (rcEvent?.type === 'safety_car') pLeg *= 0.65
 
@@ -281,9 +267,7 @@ export async function runRace ({
       }
     }
 
-    if (rcEvent?.type === 'safety_car') {
-      applySafetyCarCompression(state)
-    }
+    if (rcEvent?.type === 'safety_car') applySafetyCarCompression(state)
 
     let order = state
       .map((s, i) => ({ i, p: s.progress, dnf: s.dnf }))
@@ -293,19 +277,14 @@ export async function runRace ({
       })
       .map(x => x.i)
 
-    // record starting positions after first sort
-    if (leg === 0) {
-      order.forEach((idx, pos) => { state[idx].startPos = pos })
-    }
+    if (leg === 0) order.forEach((idx, pos) => { state[idx].startPos = pos })
 
-    // ✅ overtakes (limited announcements)
     const events = []
     if (rcEvent?.type === 'safety_car') events.push('🚨 SAFETY CAR DEPLOYED — field bunches up!')
     else if (rcEvent?.type === 'yellow') events.push('🟡 Yellow flag — sector slow.')
 
     tryOvertakes({ state, cars, order, events, leg, track })
 
-    // re-sort after overtake bumps
     order = state
       .map((s, i) => ({ i, p: s.progress, dnf: s.dnf }))
       .sort((a, b) => {
@@ -329,11 +308,9 @@ export async function runRace ({
       }
     })
 
-    // DNFs this leg (announce max 2)
     const dnfsThisLeg = rows.filter(r => r.dnf).slice(0, 2)
     for (const d of dnfsThisLeg) events.push(`💥 ${d.label} **DNF** (${d.dnfReason})`)
 
-    // Movers highlight (only meaningful moves)
     if (prevOrder) {
       const prevPos = new Map(prevOrder.map((idx, pos) => [idx, pos]))
       const movers = order.slice(0, 8).map((idx, pos) => ({
@@ -341,7 +318,7 @@ export async function runRace ({
       }))
         .filter(x => x.gain >= 2)
         .sort((a, b) => b.gain - a.gain)
-        .slice(0, 1) // ✅ keep it tight
+        .slice(0, 1)
 
       for (const m of movers) {
         const label = state[m.idx]?.label
@@ -382,6 +359,8 @@ export async function runRace ({
     .map(x => x.i)
 
   const winnerIdx = finishOrder[0]
+  const winnerCar = cars[winnerIdx]
+  const winnerKey = carBetKey(winnerCar)
 
   // Fastest lap among finishers
   const fastest = state.filter(s => !s.dnf).sort((a, b) => a.bestLapTime - b.bestLapTime)[0]
@@ -417,20 +396,37 @@ export async function runRace ({
     fastestLapAwarded = { ...fastestLap, bonus: fastestLapBonus }
   }
 
-  // ✅ Bet settlement (win-only)
+  // ✅ Bet settlement
+  // Supports:
+  // - NEW slips: { betKey: "car:123" | "label:..." , amount }
+  // - OLD slips: { carIndex, amount } (less safe; fallback only)
   const betPayouts = {}
   for (const [userId, slips] of Object.entries(bets || {})) {
     let totalWin = 0
+
     for (const s of (slips || [])) {
-      const idx = Number(s.carIndex)
       const amt = Number(s.amount)
-      if (!Number.isFinite(idx) || !Number.isFinite(amt) || amt <= 0) continue
+      if (!Number.isFinite(amt) || amt <= 0) continue
+
+      // Prefer stable betKey matching
+      const slipKey = String(s.betKey || '').trim()
+      if (slipKey) {
+        if (winnerKey && slipKey === winnerKey) {
+          const dec = Number(lockedOddsDec?.[winnerIdx] ?? 0)
+          totalWin += Math.floor(amt * (Number.isFinite(dec) && dec > 1.01 ? dec : 2))
+        }
+        continue
+      }
+
+      // Fallback legacy behavior (NOT recommended): compare indexes
+      const idx = Number(s.carIndex)
+      if (!Number.isFinite(idx)) continue
       if (idx === winnerIdx) {
         const dec = Number(lockedOddsDec?.[idx] ?? 0)
-        if (Number.isFinite(dec) && dec > 1.01) totalWin += Math.floor(amt * dec)
-        else totalWin += Math.floor(amt * 2)
+        totalWin += Math.floor(amt * (Number.isFinite(dec) && dec > 1.01 ? dec : 2))
       }
     }
+
     if (totalWin > 0) {
       betPayouts[userId] = (betPayouts[userId] || 0) + totalWin
       await safeCall(creditGameWin, [userId, totalWin])
@@ -453,13 +449,12 @@ export async function runRace ({
   await safeCall(postMessage, [{ room: ROOM, message: '🏁 **CHECKERED FLAG!**' }])
   await DELAY(850)
 
-  const winner = cars[winnerIdx]
-  if (winner?.ownerId) {
-    const nick = await safeCall(getUserNickname, [winner.ownerId]).catch(() => null)
-    const tag = nick?.replace(/^@/, '') || `<@uid:${winner.ownerId}>`
-    await safeCall(postMessage, [{ room: ROOM, message: `🥇 **${winner.label}** wins the ${track.emoji} **${track.name}**! (${tag})` }])
+  if (winnerCar?.ownerId) {
+    const nick = await safeCall(getUserNickname, [winnerCar.ownerId]).catch(() => null)
+    const tag = nick?.replace(/^@/, '') || `<@uid:${winnerCar.ownerId}>`
+    await safeCall(postMessage, [{ room: ROOM, message: `🥇 **${winnerCar.label}** wins the ${track.emoji} **${track.name}**! (${tag})` }])
   } else {
-    await safeCall(postMessage, [{ room: ROOM, message: `🥇 **${winner?.label || 'House Car'}** wins the ${track.emoji} **${track.name}**!` }])
+    await safeCall(postMessage, [{ room: ROOM, message: `🥇 **${winnerCar?.label || 'House Car'}** wins the ${track.emoji} **${track.name}**!` }])
   }
 
   bus.emit('raceFinished', {
