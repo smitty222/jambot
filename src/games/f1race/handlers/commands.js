@@ -413,6 +413,15 @@ export async function handleBuyCar (ctx) {
     return
   }
 
+  const team = await safeCall(getTeamByOwner, [userId]).catch(() => null)
+  if (!team) {
+    await postMessage({
+      room,
+      message: `❗ ${nick}, you need a garage before buying cars. Use **/team create** first (costs ${fmtMoney(TEAM_CREATE_FEE)}).`
+    })
+    return
+  }
+
   const bal = await safeCall(getUserWallet, [userId]).catch(() => null)
   if (typeof bal !== 'number') {
     await postMessage({ room, message: `⚠️ ${nick}, couldn’t read your wallet. Try again.` })
@@ -428,15 +437,6 @@ export async function handleBuyCar (ctx) {
   const all = await safeCall(getAllCars).catch(() => [])
   const used = new Set((all || []).map(c => String(c.name || '').toLowerCase()))
   const name = generateCarName(used)
-
-  // auto-create a team if missing
-  let team = await safeCall(getTeamByOwner, [userId]).catch(() => null)
-  if (!team) {
-    const { name: teamName, badge } = generateTeamIdentity()
-    createTeam({ ownerId: userId, ownerName: nick, name: teamName, badge })
-    team = await safeCall(getTeamByOwner, [userId]).catch(() => null)
-    await postMessage({ room, message: `🏁 ${nick} was assigned a team: **${teamName}** ${badge}` })
-  }
 
   const jitter = (x) => clamp(x + rint(-3, 3), 35, 92)
 
@@ -497,6 +497,59 @@ export async function handleMyCars (ctx) {
   lines.push('')
   lines.push('Show: `/car <car name>`')
   lines.push('Repair: `/repair <car name>`')
+  await postMessage({ room, message: '```\n' + lines.join('\n') + '\n```' })
+}
+
+export async function handleWearCommand (ctx) {
+  const room = ctx?.room || ROOM
+  const userId = ctx?.sender
+  const text = String(ctx?.message || '').trim()
+  const nameArg = parseArg(text, /^\/wear(?:\s+(.+))?$/i)
+  const nick = await safeCall(getUserNickname, [userId]).catch(() => '@user')
+  const cars = await safeCall(getUserCars, [userId]).catch(() => [])
+  await ensurePersistentCarImages(cars)
+
+  if (!cars?.length) {
+    await postMessage({ room, message: `${nick}, you don’t own any cars yet. Try **/buycar**.` })
+    return
+  }
+
+  if (nameArg) {
+    const q = String(nameArg).toLowerCase()
+    const car =
+      cars.find(c => String(c.name || '').toLowerCase() === q) ||
+      cars.find(c => String(c.name || '').toLowerCase().includes(q))
+
+    if (!car) {
+      await postMessage({ room, message: `❗ ${nick}, couldn’t find that car in your garage.` })
+      return
+    }
+
+    const wear = Math.max(0, Math.floor(Number(car.wear || 0)))
+    const tierKey = normalizeTierKey(car.tier)
+    const fullRepairCost = estimateFullRepairCost(car)
+    await postMessage({
+      room,
+      message:
+        `🧰 ${carLabel(car)}\n` +
+        `Wear: **${wear}%** · Tier: **${tierKey.toUpperCase()}** · Full repair: **${fmtMoney(fullRepairCost)}**`
+    })
+    return
+  }
+
+  const lines = []
+  lines.push(`${nick}'s Wear Report`)
+  lines.push('')
+  for (const c of cars.slice(0, 12)) {
+    const wear = Math.max(0, Math.floor(Number(c.wear || 0)))
+    const fullRepairCost = estimateFullRepairCost(c)
+    const wearTag = wear >= 80 ? '⚠️' : (wear >= 60 ? '🟡' : '🟢')
+    lines.push(`• ${carLabel(c)} — Wear ${wear}% ${wearTag} · Full repair ${fmtMoney(fullRepairCost)}`)
+  }
+  if (cars.length > 12) lines.push(`…and ${cars.length - 12} more cars.`)
+  lines.push('')
+  lines.push('Repair one: `/repair <car name>`')
+  lines.push('Check one: `/wear <car name>`')
   await postMessage({ room, message: '```\n' + lines.join('\n') + '\n```' })
 }
 
@@ -1051,6 +1104,7 @@ export async function handleF1Help (ctx) {
     `/team reroll           - randomize team name/badge (costs ${fmtMoney(TEAM_REROLL_FEE)})`,
     '/buycar <tier>         - buy a car (starter/pro/hyper/legendary)',
     '/mycars                - list your cars',
+    '/wear [name]           - show wear for all cars or one car',
     '/car <name>            - show your car (image + stats)',
     '/repair <name>         - fully repair wear on one car',
     '/carpics               - show photos of your cars',
