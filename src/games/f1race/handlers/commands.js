@@ -476,6 +476,7 @@ export async function handleMyCars (ctx) {
   const room = ctx?.room || ROOM
   const userId = ctx?.sender
   const nick = await safeCall(getUserNickname, [userId]).catch(() => '@user')
+  const team = await safeCall(getTeamByOwner, [userId]).catch(() => null)
   const cars = await safeCall(getUserCars, [userId]).catch(() => [])
   await ensurePersistentCarImages(cars)
 
@@ -485,7 +486,12 @@ export async function handleMyCars (ctx) {
   }
 
   const lines = []
-  lines.push(`${nick}'s Garage (${cars.length})`)
+  const teamBadge = String(team?.badge || '').trim()
+  const teamName = String(team?.name || '').trim()
+  const garageOwnerLabel = teamName
+    ? `${teamBadge ? `${teamBadge} ` : ''}${teamName}`
+    : nick
+  lines.push(`${garageOwnerLabel}'s Garage (${cars.length})`)
   lines.push('')
 
   for (const c of cars.slice(0, 12)) {
