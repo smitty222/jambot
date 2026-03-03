@@ -19,14 +19,14 @@ const ROOM = process.env.ROOM_UUID
 
 // ── Economy tuning ─────────────────────────────────────────────────────
 const ENTRY_MS = 30_000
-const STRAT_MS = 25_000
+const STRAT_MS = 45_000
 const MIN_FIELD = 6
 
 const ENTRY_FEE_BY_TIER = {
-  starter: Number(process.env.F1_ENTRY_FEE_STARTER ?? 2000),
-  pro: Number(process.env.F1_ENTRY_FEE_PRO ?? 3000),
-  hyper: Number(process.env.F1_ENTRY_FEE_HYPER ?? 5000),
-  legendary: Number(process.env.F1_ENTRY_FEE_LEGENDARY ?? 7500)
+  starter: Number(process.env.F1_ENTRY_FEE_STARTER ?? 1000),
+  pro: Number(process.env.F1_ENTRY_FEE_PRO ?? 1500),
+  hyper: Number(process.env.F1_ENTRY_FEE_HYPER ?? 2500),
+  legendary: Number(process.env.F1_ENTRY_FEE_LEGENDARY ?? 3750)
 }
 const HOUSE_RAKE_PCT = Number(process.env.F1_HOUSE_RAKE_PCT ?? 15) // percent
 const PRIZE_SPLIT_BY_MODE = {
