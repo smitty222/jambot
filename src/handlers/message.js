@@ -67,7 +67,7 @@ import {
   isSpotlightProtected,
   isSpotlightActive
 } from '../handlers/spotlight.js'
-import { handleCarEntryAttempt, handleBetCommand, startF1Race, handleBuyCar, handleMyCars, handleCarShow, handleCarPics, handleTeamCommand, handleF1Help, } from '../games/f1race/handlers/commands.js'
+import { handleCarEntryAttempt, handleBetCommand, startF1Race, handleBuyCar, handleMyCars, handleCarShow, handleCarPics, handleRepairCar, handleTeamCommand, handleF1Help, } from '../games/f1race/handlers/commands.js'
 
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
@@ -248,8 +248,9 @@ if (handled) return
 
 // Start GP (support "/gp start" and "/f1 start")
 if (/^\/(gp|f1)\s+start\b/i.test(txt)) {
+  const mode = (txt.match(/^\/(?:gp|f1)\s+start(?:\s+(\w+))?\b/i) || [])[1] || 'open'
   console.log('▶ dispatch → startF1Race')
-  startF1Race().catch(console.error)
+  startF1Race(mode).catch(console.error)
   return
 }
 
@@ -258,6 +259,7 @@ if (/^\/buycar\b/i.test(txt)) return handleBuyCar(payload)
 if (/^\/mycars\b/i.test(txt)) return handleMyCars(payload)
 if (/^\/carpics\b/i.test(txt)) return handleCarPics(payload)
 if (/^\/car\s+/i.test(txt)) return handleCarShow(payload)
+if (/^\/repair\s+/i.test(txt)) return handleRepairCar(payload)
 if (/^\/team\b/i.test(txt)) return handleTeamCommand(payload)
 
 // Help

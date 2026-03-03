@@ -413,7 +413,8 @@ export async function runRace ({
       if (slipKey) {
         if (winnerKey && slipKey === winnerKey) {
           const dec = Number(lockedOddsDec?.[winnerIdx] ?? 0)
-          totalWin += Math.floor(amt * (Number.isFinite(dec) && dec > 1.01 ? dec : 2))
+          const payoutDec = Number.isFinite(dec) ? Math.max(1.01, dec) : 1.01
+          totalWin += Math.floor(amt * payoutDec)
         }
         continue
       }
@@ -423,7 +424,8 @@ export async function runRace ({
       if (!Number.isFinite(idx)) continue
       if (idx === winnerIdx) {
         const dec = Number(lockedOddsDec?.[idx] ?? 0)
-        totalWin += Math.floor(amt * (Number.isFinite(dec) && dec > 1.01 ? dec : 2))
+        const payoutDec = Number.isFinite(dec) ? Math.max(1.01, dec) : 1.01
+        totalWin += Math.floor(amt * payoutDec)
       }
     }
 
