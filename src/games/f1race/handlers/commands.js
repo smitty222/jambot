@@ -113,13 +113,20 @@ function listTierImageFiles (tierKey) {
   }
 }
 
+function buildCarImageUrl (tierKey, fileName) {
+  const tier = String(tierKey || '').toLowerCase()
+  const file = String(fileName || '').trim()
+  if (!tier || !file) return null
+  return `${CAR_IMAGE_BASE_URL}/${tier}/${encodeURIComponent(file)}`
+}
+
 function pickCarImageUrl (tierKey) {
   const tier = String(tierKey || '').toLowerCase()
   const files = listTierImageFiles(tier)
   if (!files.length) return null
 
   const picked = files[Math.floor(Math.random() * files.length)]
-  return `${CAR_IMAGE_BASE_URL}/${tier}/${encodeURIComponent(picked)}`
+  return buildCarImageUrl(tier, picked)
 }
 
 async function ensurePersistentCarImages (cars = []) {
@@ -268,8 +275,9 @@ function buildBuyCarShopCard (balance) {
     lines.push('')
   }
 
-  lines.push('Buy with: /buycar <starter|pro|hyper|legendary>')
-  lines.push('Example: /buycar pro')
+  lines.push('Browse a tier: /buycar <starter|pro|hyper|legendary>')
+  lines.push('Buy exact image: /buycar <tier> <option#>')
+  lines.push('Example: /buycar starter 2')
 
   return lines.join('\n')
 }
@@ -477,7 +485,10 @@ export async function handleBuyCar (ctx) {
   const room = ctx?.room || ROOM
   const userId = ctx?.sender
   const text = String(ctx?.message || '').trim()
-  const tierArg = (text.match(/^\/buycar\s*([^\s]+)?/i) || [])[1]?.toLowerCase()
+  const argsRaw = (text.match(/^\/(?:buycar|buy\s+car)(?:\s+(.+))?$/i) || [])[1] || ''
+  const parts = argsRaw.trim().split(/\s+/).filter(Boolean)
+  const tierArg = parts[0]?.toLowerCase()
+  const pickArg = parts[1]
   const tierAliases = { '1': 'starter', '2': 'pro', '3': 'hyper', '4': 'legendary' }
   const tierKey = tierAliases[tierArg] || tierArg
   const nick = await safeCall(getUserNickname, [userId]).catch(() => '@user')
@@ -496,6 +507,62 @@ export async function handleBuyCar (ctx) {
         `❗ Unknown tier \`${tierKey}\`.\n` +
         `Use: \`/buycar starter\`, \`/buycar pro\`, \`/buycar hyper\`, \`/buycar legendary\`\n` +
         'or open the shop with `/buycar`.'
+    })
+    return
+  }
+
+  const tierImageFiles = listTierImageFiles(tierKey).sort((a, b) => a.localeCompare(b))
+  if (!pickArg || /^(help|list|show|shop)$/i.test(pickArg)) {
+    const lines = []
+    lines.push(`${tier.livery} ${tierKey.toUpperCase()} SHOWROOM`)
+    lines.push(`Price: ${fmtMoney(tier.price)}`)
+    lines.push('')
+
+    if (!tierImageFiles.length) {
+      lines.push('No image options are available in this tier yet.')
+      lines.push(`You can still buy one with: /buycar ${tierKey} 1`)
+      await postMessage({ room, message: '```\n' + lines.join('\n') + '\n```' })
+      return
+    }
+
+    lines.push('Choose an option number:')
+    lines.push('')
+    tierImageFiles.forEach((file, idx) => {
+      lines.push(`${idx + 1}. ${file}`)
+    })
+    lines.push('')
+    lines.push(`Buy with: /buycar ${tierKey} <option#>`)
+    lines.push(`Example: /buycar ${tierKey} 1`)
+    await postMessage({ room, message: '```\n' + lines.join('\n') + '\n```' })
+
+    for (let i = 0; i < Math.min(10, tierImageFiles.length); i++) {
+      const file = tierImageFiles[i]
+      const url = buildCarImageUrl(tierKey, file)
+      if (!url) continue
+      await postMessage({
+        room,
+        message: `Option #${i + 1} — ${tierKey.toUpperCase()}`,
+        images: [url]
+      })
+    }
+    if (tierImageFiles.length > 10) {
+      await postMessage({ room, message: `…and ${tierImageFiles.length - 10} more options. Use /buycar ${tierKey} <option#>.` })
+    }
+    return
+  }
+
+  const selectedOption = Number.parseInt(String(pickArg), 10)
+  if (!Number.isFinite(selectedOption) || selectedOption < 1) {
+    await postMessage({
+      room,
+      message: `❗ ${nick}, choose a valid option number. Browse options with \`/buycar ${tierKey}\`.`
+    })
+    return
+  }
+  if (tierImageFiles.length && selectedOption > tierImageFiles.length) {
+    await postMessage({
+      room,
+      message: `❗ ${nick}, option #${selectedOption} doesn't exist for ${tierKey.toUpperCase()}. Use \`/buycar ${tierKey}\` to view options.`
     })
     return
   }
@@ -533,8 +600,9 @@ export async function handleBuyCar (ctx) {
 
   const jitter = (x) => clamp(x + rint(-3, 3), 35, 92)
 
-  // ✅ persistent car imageUrl (tier-based)
-  const imageUrl = pickCarImageUrl(tierKey)
+  // ✅ persistent car imageUrl (user-selected when available)
+  const selectedFile = tierImageFiles.length ? tierImageFiles[selectedOption - 1] : null
+  const imageUrl = selectedFile ? buildCarImageUrl(tierKey, selectedFile) : pickCarImageUrl(tierKey)
 
   const id = insertCar({
     ownerId: userId,
@@ -562,6 +630,7 @@ export async function handleBuyCar (ctx) {
     room,
     message:
       `✅ ${nick} bought a **${tierKey.toUpperCase()}** car: **${tier.livery} #${String(id).padStart(2, '0')} ${name}**\n` +
+      `${selectedFile ? `🖼️ Chosen option: **#${selectedOption}**\n` : ''}` +
       `💰 Balance: **${fmtMoney(updated)}**\n` +
       'Next: `/mycars`, `/carstats`, `/gp start open`',
     images: imageUrl ? [imageUrl] : undefined
@@ -1439,7 +1508,8 @@ export async function handleF1Help (ctx) {
     '',
     `/team create           - create your team (costs ${fmtMoney(TEAM_CREATE_FEE)})`,
     `/team reroll           - randomize team name/badge (costs ${fmtMoney(TEAM_REROLL_FEE)})`,
-    '/buycar <tier>         - buy a car (starter/pro/hyper/legendary)',
+    '/buycar <tier>         - browse a tier showroom with image options',
+    '/buycar <tier> <#>     - buy selected option # from that tier',
     '/mycars                - list your cars',
     '/carstats [name]       - return/profit stats for your garage or one car',
     '/f1stats               - quick garage summary stats',

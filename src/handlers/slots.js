@@ -1037,7 +1037,6 @@ async function handleSlotsCommand (userUUID, arg) {
       '📊 SLOTS JACKPOT STATS',
       `🧾 Lifetime Contributed: $${formatMoney(stats.lifetimeContributed)}`,
       `🪙 Active Contribution: $${formatMoney(stats.effectiveContributed)}`,
-      `📦 Total Active Pool (tracked): $${formatMoney(stats.totalEffective)}`,
       `📈 Your Active Share: ${stats.effectiveSharePct.toFixed(2)}%`
     ].join('\n')
   }
