@@ -186,6 +186,15 @@ try {
       updatedAt TEXT NOT NULL
     )
   `).run()
+
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS slot_jackpot_contributions (
+      userUUID               TEXT PRIMARY KEY,
+      lifetimeContributed    REAL NOT NULL DEFAULT 0,
+      effectiveContributed   REAL NOT NULL DEFAULT 0,
+      updatedAt              TEXT NOT NULL
+    )
+  `).run()
 } catch (e) {
   console.error('[Slots] Failed ensuring tables:', e)
 }
@@ -268,6 +277,80 @@ function maybeResetCollectionsMonthly () {
   }
 
   return { didReset: false, current }
+}
+
+function recordJackpotContribution (userUUID, amount) {
+  const inc = Math.max(0, Number(amount) || 0)
+  if (!userUUID || inc <= 0) return
+
+  try {
+    const now = new Date().toISOString()
+    db.prepare(`
+      INSERT INTO slot_jackpot_contributions (userUUID, lifetimeContributed, effectiveContributed, updatedAt)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(userUUID) DO UPDATE SET
+        lifetimeContributed = lifetimeContributed + excluded.lifetimeContributed,
+        effectiveContributed = effectiveContributed + excluded.effectiveContributed,
+        updatedAt = excluded.updatedAt
+    `).run(userUUID, inc, inc, now)
+  } catch (e) {
+    console.error('[Slots] recordJackpotContribution error:', e)
+  }
+}
+
+function scaleEffectiveJackpotContributions (retainedRatio) {
+  const ratio = Number(retainedRatio)
+  if (!Number.isFinite(ratio)) return
+
+  const clamped = Math.max(0, Math.min(1, ratio))
+  const now = new Date().toISOString()
+
+  try {
+    db.prepare(`
+      UPDATE slot_jackpot_contributions
+      SET effectiveContributed = effectiveContributed * ?,
+          updatedAt = ?
+    `).run(clamped, now)
+  } catch (e) {
+    console.error('[Slots] scaleEffectiveJackpotContributions error:', e)
+  }
+}
+
+function getUserJackpotContributionStats (userUUID) {
+  try {
+    const row = db.prepare(`
+      SELECT lifetimeContributed, effectiveContributed
+      FROM slot_jackpot_contributions
+      WHERE userUUID = ?
+    `).get(userUUID)
+
+    const totals = db.prepare(`
+      SELECT COALESCE(SUM(effectiveContributed), 0) AS totalEffective
+      FROM slot_jackpot_contributions
+    `).get()
+
+    const lifetimeContributed = Number(row?.lifetimeContributed || 0)
+    const effectiveContributed = Number(row?.effectiveContributed || 0)
+    const totalEffective = Number(totals?.totalEffective || 0)
+    const effectiveSharePct = totalEffective > 0
+      ? (effectiveContributed / totalEffective) * 100
+      : 0
+
+    return {
+      lifetimeContributed,
+      effectiveContributed,
+      totalEffective,
+      effectiveSharePct
+    }
+  } catch (e) {
+    console.error('[Slots] getUserJackpotContributionStats error:', e)
+    return {
+      lifetimeContributed: 0,
+      effectiveContributed: 0,
+      totalEffective: 0,
+      effectiveSharePct: 0
+    }
+  }
 }
 
 function getJackpotValue () {
@@ -404,6 +487,12 @@ async function spinBonusOnce (userUUID) {
   const currentJackpot = getJackpotValue()
   const newJackpot = Math.max(JACKPOT_SEED, currentJackpot - jackpotWon)
   updateJackpotValue(newJackpot)
+
+  // Keep "effective" contribution aligned with remaining jackpot-funded pot.
+  const beforeContribPot = Math.max(0, currentJackpot - JACKPOT_SEED)
+  const afterContribPot = Math.max(0, newJackpot - JACKPOT_SEED)
+  const retainedRatio = beforeContribPot > 0 ? (afterContribPot / beforeContribPot) : 1
+  scaleEffectiveJackpotContributions(retainedRatio)
 
   clearBonusSession(userUUID)
 
@@ -799,6 +888,7 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
     const jackpotIncrement = contribBet * JACKPOT_INCREMENT_RATE
     jackpot += jackpotIncrement
     updateJackpotValue(jackpot)
+    recordJackpotContribution(userUUID, jackpotIncrement)
 
     const milestoneLine = maybeMilestoneAnnouncement(beforeJackpot, jackpot)
 
@@ -933,6 +1023,24 @@ async function handleSlotsCommand (userUUID, arg) {
 
   if (raw === 'bonus') return await spinBonusOnce(userUUID)
   if (raw === 'free') return await spinFeatureOnce(userUUID)
+  if (raw === 'effective' || raw === 'eff') {
+    const stats = getUserJackpotContributionStats(userUUID)
+    return `🪙 Active Jackpot Contribution: $${formatMoney(stats.effectiveContributed)} (${stats.effectiveSharePct.toFixed(2)}% share)`
+  }
+  if (raw === 'lifetime' || raw === 'life') {
+    const stats = getUserJackpotContributionStats(userUUID)
+    return `🧾 Lifetime Jackpot Contributed: $${formatMoney(stats.lifetimeContributed)}`
+  }
+  if (raw === 'stats') {
+    const stats = getUserJackpotContributionStats(userUUID)
+    return [
+      '📊 SLOTS JACKPOT STATS',
+      `🧾 Lifetime Contributed: $${formatMoney(stats.lifetimeContributed)}`,
+      `🪙 Active Contribution: $${formatMoney(stats.effectiveContributed)}`,
+      `📦 Total Active Pool (tracked): $${formatMoney(stats.totalEffective)}`,
+      `📈 Your Active Share: ${stats.effectiveSharePct.toFixed(2)}%`
+    ].join('\n')
+  }
 
   const bet = raw === '' ? DEFAULT_BET : Number(raw)
   if (!Number.isFinite(bet) || bet <= 0) return 'Please enter a valid bet amount.'
@@ -940,4 +1048,4 @@ async function handleSlotsCommand (userUUID, arg) {
   return await playSlots(userUUID, bet)
 }
 
-export { playSlots, handleSlotsCommand, getJackpotValue }
+export { playSlots, handleSlotsCommand, getJackpotValue, getUserJackpotContributionStats }
