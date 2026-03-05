@@ -5,7 +5,7 @@
 // Moving this logic out of message.js improves readability and makes it
 // easier to add or remove commands without touching the monolithic file.
 
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
 import { logger } from '../utils/logging.js'
 
 // Game and feature handlers
@@ -53,7 +53,21 @@ import {
 } from './avatarCommands.js'
 
 // User authorization helper to restrict bot avatar changes
-import { isUserAuthorized,getSpotifyAlbumInfo, getUserNicknameByUuid } from '../utils/API.js'
+import {
+  isUserAuthorized,
+  getSpotifyAlbumInfo,
+  getUserNicknameByUuid,
+  getAlbumsByArtist,
+  getAlbumTracks,
+  addSongsToCrate,
+  getUserToken,
+  clearUserQueueCrate,
+  getUserQueueCrateId,
+  getSpotifyUserId,
+  getUserPlaylists,
+  getPlaylistTracks,
+  getSpotifyNewAlbumsViaSearch
+} from '../utils/API.js'
 
 // Album list management functions.  These helpers read and write a simple JSON
 // file at the project root to keep track of albums that should be queued.
@@ -95,10 +109,7 @@ function looksLikeSpotifyId (s) {
 // current room ID, and a string of extra arguments.
 const commandRegistry = {
   // 🎰 Slots: `/slots [betAmount]`
-  // Updated to support "bonus" and "free" as arguments for jackpot bonus
-  // spins and feature free spins respectively. If provided, those strings
-  // are forwarded directly to the slots handler. Otherwise a numeric bet
-  // amount is parsed (defaulting to 1 when omitted).
+  // Supports text subcommands and numeric bets.
   slots: async ({ payload, room }) => {
     const parts = (payload?.message || '').trim().split(/\s+/)
     const userUUID = payload?.sender
@@ -109,8 +120,16 @@ const commandRegistry = {
       arg = String(parts[1] || '').trim().toLowerCase()
     }
 
-    // Handle special strings for bonus/feature spins.
-    if (arg === 'bonus' || arg === 'free') {
+    // Handle text subcommands directly.
+    if (
+      arg === 'bonus' ||
+      arg === 'free' ||
+      arg === 'stats' ||
+      arg === 'effective' ||
+      arg === 'eff' ||
+      arg === 'lifetime' ||
+      arg === 'life'
+    ) {
       const response = await handleSlotsCommand(userUUID, arg)
       await postMessage({ room, message: response })
       return
@@ -330,6 +349,272 @@ const commandRegistry = {
   lotto: async ({ payload, room }) => {
     // Pass the entire message to the helper which extracts and validates the number
     await handleSingleNumberQuery(room, payload.message)
+  },
+
+  // 🔎 Album search by artist name: `/searchalbum artist name`
+  searchalbum: async ({ payload, room, args }) => {
+    const artistName = (args || '').trim()
+
+    if (!artistName) {
+      await postMessage({
+        room,
+        message: 'Please provide an artist name. Usage: `/searchalbums Mac Miller`'
+      })
+      return
+    }
+
+    const albums = await getAlbumsByArtist(artistName)
+    if (!albums.length) {
+      await postMessage({ room, message: `No albums found for "${artistName}".` })
+      return
+    }
+
+    const albumList = albums.map((album, index) => {
+      return `\`${index + 1}.\` *${album.name}* — \`ID: ${album.id}\``
+    }).join('\n')
+
+    await sendDirectMessage(payload.sender, `🎶 Albums for "${artistName}":\n${albumList}`)
+    await postMessage({ room, message: `<@uid:${payload.sender}> I sent you a private message` })
+  },
+
+  // 🔎 Search user playlists from their linked Spotify user ID.
+  searchplaylist: async ({ payload, room }) => {
+    const user = payload.sender
+    const spotifyUserId = getSpotifyUserId(user)
+    if (!spotifyUserId) {
+      await postMessage({
+        room,
+        message: '🔍 *Spotify user ID not found*\n\nWe don\'t have a Spotify user ID associated with your account.  Ask an admin to update the mapping for your TT.fm UUID so you can use /searchplaylist.'
+      })
+      return
+    }
+
+    try {
+      const playlists = await getUserPlaylists(spotifyUserId)
+      if (!playlists || playlists.length === 0) {
+        await postMessage({
+          room,
+          message: `❌ *No playlists found for your Spotify account \`${spotifyUserId}\`.*`
+        })
+        return
+      }
+
+      const playlistList = playlists.map((pl, index) => {
+        return `\`${index + 1}.\` *${pl.name}* — \`ID: ${pl.id}\``
+      }).join('\n')
+
+      await sendDirectMessage(user, `📃 Playlists for your Spotify account:\n${playlistList}`)
+      await postMessage({ room, message: `<@uid:${user}> I sent you a private message` })
+    } catch (error) {
+      logger.error('Error fetching user playlists', { err: error })
+      await postMessage({
+        room,
+        message: `❌ *Failed to fetch your playlists*\n\`${error.message}\``
+      })
+    }
+  },
+
+  // 📥 Queue tracks from a Spotify playlist into the user's queue crate.
+  qplaylist: async ({ payload, room, args }) => {
+    const playlistId = (args || '').trim().split(/\s+/)[0]
+    if (!playlistId) {
+      await postMessage({
+        room,
+        message: '⚠️ *Missing Playlist ID*\n\nPlease provide a valid Spotify playlist ID.  \nExample: \`/qplaylist 37i9dQZF1DXcBWIGoYBM5M\`'
+      })
+      return
+    }
+
+    const token = getUserToken(payload.sender)
+    if (!token) {
+      await postMessage({
+        room,
+        message: '🔐 *Spotify account not linked*\n\nWe couldn\'t find your access token.  \nPlease contact an admin to link your account to use this command.'
+      })
+      return
+    }
+
+    try {
+      await postMessage({
+        room,
+        message: '📁 *Clearing your current queue...*\n📡 Fetching playlist from Spotify...'
+      })
+
+      await clearUserQueueCrate(payload.sender)
+      const crateInfo = await getUserQueueCrateId(payload.sender)
+      const crateId = crateInfo?.crateUuid
+      if (!crateId) {
+        await postMessage({
+          room,
+          message: '❌ *Failed to retrieve your queue ID. Please try again later.*'
+        })
+        return
+      }
+
+      const tracks = await getPlaylistTracks(playlistId)
+      if (!tracks || tracks.length === 0) {
+        await postMessage({
+          room,
+          message: `❌ *No tracks found for playlist \`${playlistId}\`.*`
+        })
+        return
+      }
+
+      const formattedTracks = tracks.map(track => ({
+        musicProvider: 'spotify',
+        songId: track.id,
+        artistName: Array.isArray(track.artists) ? track.artists.map(a => a.name).join(', ') : '',
+        trackName: track.name,
+        duration: Math.floor((track.duration_ms || 0) / 1000),
+        explicit: track.explicit,
+        isrc: track.external_ids?.isrc || '',
+        playbackToken: '',
+        genre: ''
+      }))
+
+      await addSongsToCrate(crateId, formattedTracks, true, token)
+      await postMessage({
+        room,
+        message: `✅ *Playlist Queued!*\n\n🎵 Added *${formattedTracks.length} track(s)* from playlist \`${playlistId}\` to your queue.  \nPlease refresh your page for the queue to update`
+      })
+    } catch (error) {
+      await postMessage({
+        room,
+        message: `❌ *Something went wrong while queuing your playlist*  \n\`${error.message}\``
+      })
+    }
+  },
+
+  // 📥 Queue tracks from a Spotify album into the user's queue crate.
+  qalbum: async ({ payload, room, args }) => {
+    const albumId = (args || '').trim().split(/\s+/)[0]
+    if (!albumId) {
+      await postMessage({
+        room,
+        message:
+`⚠️ *Missing Album ID*
+
+Please provide a valid Spotify album ID.  
+Example: \`/qalbum 4aawyAB9vmqN3uQ7FjRGTy\``
+      })
+      return
+    }
+
+    const token = getUserToken(payload.sender)
+    if (!token) {
+      await postMessage({
+        room,
+        message:
+`🔐 *Spotify account not linked*
+
+We couldn’t find your access token.  
+Please contact an admin to link your account to use this command.`
+      })
+      return
+    }
+
+    try {
+      await postMessage({
+        room,
+        message: '📁 *Clearing your current queue...*\n📡 Fetching album from Spotify...'
+      })
+
+      await clearUserQueueCrate(payload.sender)
+      const crateInfo = await getUserQueueCrateId(payload.sender)
+      const crateId = crateInfo?.crateUuid
+      if (!crateId) {
+        await postMessage({
+          room,
+          message: '❌ *Failed to retrieve your queue ID. Please try again later.*'
+        })
+        return
+      }
+
+      const tracks = await getAlbumTracks(albumId)
+      if (!tracks || tracks.length === 0) {
+        await postMessage({
+          room,
+          message: `❌ *No tracks found for album \`${albumId}\`.*`
+        })
+        return
+      }
+
+      const formattedTracks = tracks.map(track => ({
+        musicProvider: 'spotify',
+        songId: track.id,
+        artistName: track.artists.map(a => a.name).join(', '),
+        trackName: track.name,
+        duration: Math.floor(track.duration_ms / 1000),
+        explicit: track.explicit,
+        isrc: track.external_ids?.isrc || '',
+        playbackToken: '',
+        genre: ''
+      }))
+
+      await addSongsToCrate(crateId, formattedTracks, true, token)
+      await postMessage({
+        room,
+        message:
+`✅ *Album Queued!*
+
+🎵 Added *${formattedTracks.length} track(s)* from album \`${albumId}\` to your queue.  
+Please refresh your page for the queue to update`
+      })
+    } catch (error) {
+      await postMessage({
+        room,
+        message:
+`❌ *Something went wrong while queuing your album*  
+\`\`\`${error.message}\`\`\``
+      })
+    }
+  },
+
+  // 🆕 Show newest albums by country: `/newalbums [countryCode]`
+  newalbums: async ({ payload, room, args }) => {
+    const country = ((args || '').trim().split(/\s+/)[0] || 'US').toUpperCase()
+    console.log('[newalbums] command received:', payload.message)
+    console.log('[newalbums] country:', country)
+
+    let albums
+    try {
+      albums = await getSpotifyNewAlbumsViaSearch(country, 6)
+      console.log('[newalbums] albums fetched:', albums?.length || 0)
+    } catch (err) {
+      console.error('[newalbums] fetch failed:', err)
+      await postMessage({ room, message: `❌ Failed to fetch new albums.\n\`${err.message}\`` })
+      return
+    }
+
+    if (!albums || albums.length === 0) {
+      console.warn('[newalbums] no albums returned')
+      await postMessage({ room, message: `No recent full album releases found for ${country}.` })
+      return
+    }
+
+    const blocks = albums.map((a, i) => {
+      const num = i + 1
+      return (
+`*${num}. ${a.artist || 'Unknown Artist'}*
+_${a.name || 'Unknown Album'}_
+🗓 ${a.releaseDate || '—'}
+🆔 \`${a.id || '—'}\``
+      )
+    }).join('\n\n')
+
+    console.log('[newalbums] posting message to room')
+    await postMessage({
+      room,
+      message:
+`🆕 *New Album Releases* (${country})
+_Full albums only_
+
+${blocks}
+
+➕ Save to Future Listening Queue:
+\`/albumadd <album id>\`
+`
+    })
   },
 
   // 🎬 Show GIF list: `/gifs`
