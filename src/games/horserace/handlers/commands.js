@@ -783,11 +783,24 @@ export async function handleMyHorsesCommand (ctx) {
     return
   }
 
-  // Sort: active first, then wins, then win%
+  const tierRank = { champion: 0, elite: 1, basic: 2 }
+  const tierBadge = (tier) => {
+    const t = String(tier || '').toLowerCase()
+    if (t === 'champion') return '🏆'
+    if (t === 'elite') return '⚡'
+    if (t === 'basic') return '🐎'
+    return '•'
+  }
+
+  // Sort: active first, then tier, then wins, then win%
   const arranged = mine.slice().sort((a, b) => {
     const ar = (!!a.retired || Number(a.retired) === 1) ? 1 : 0
     const br = (!!b.retired || Number(b.retired) === 1) ? 1 : 0
     if (ar !== br) return ar - br
+
+    const at = tierRank[String(a?.tier || '').toLowerCase()] ?? 9
+    const bt = tierRank[String(b?.tier || '').toLowerCase()] ?? 9
+    if (at !== bt) return at - bt
 
     const aw = Number(a?.wins || 0)
     const bw = Number(b?.wins || 0)
@@ -798,61 +811,30 @@ export async function handleMyHorsesCommand (ctx) {
     return bp - ap
   })
 
-  const W_NUM = 2
-  const W_NAME = 18
-  const W_TIER = 7
-  const W_REC = 7 // "11-20"
-  const W_PCT = 4
-  const W_LEFT = 4
-  const W_STAT = 6
+  const activeCount = arranged.filter(h => !(!!h.retired || Number(h.retired) === 1)).length
+  const retiredCount = arranged.length - activeCount
+  const championCount = arranged.filter(h => String(h?.tier || '').toLowerCase() === 'champion').length
+  const eliteCount = arranged.filter(h => String(h?.tier || '').toLowerCase() === 'elite').length
+  const basicCount = arranged.filter(h => String(h?.tier || '').toLowerCase() === 'basic').length
 
-  const padR = (s, n) => String(s ?? '').padEnd(n, ' ')
-  const padL = (s, n) => String(s ?? '').padStart(n, ' ')
-  const clamp = (s, n) => {
-    s = String(s ?? '')
-    if (s.length <= n) return padR(s, n)
-    return padR(s.slice(0, n - 1) + '…', n)
-  }
-  const pct = (w, s) => {
-    w = Number(w || 0); s = Number(s || 0)
-    if (!s) return '0%'
-    return `${Math.round((w / s) * 100)}%`
-  }
-  const left = (h) => {
-    const races = Number(h?.racesParticipated || 0)
-    const limit = Number(h?.careerLength || 0)
-    if (!limit) return '—'
-    return String(Math.max(0, limit - races))
-  }
-  const stat = (h) => ((!!h?.retired || Number(h?.retired) === 1) ? 'RET' : '')
+  const displayRows = arranged.map(h => ({
+    ...h,
+    name: `${tierBadge(h.tier)} ${String(h.name || '')}`.trim()
+  }))
 
-  const header =
-    `${padL('#', W_NUM)} ` +
-    `${padR('Horse', W_NAME)} ` +
-    `${padR('Tier', W_TIER)} ` +
-    `${padR('W-S', W_REC)} ` +
-    `${padR('%', W_PCT)} ` +
-    `${padR('Left', W_LEFT)} ` +
-    `${padR('Status', W_STAT)}`
+  const title = [
+    `${nick}'s Stable (${arranged.length})`,
+    `Active ${activeCount} · Retired ${retiredCount}`,
+    `Tiers: Champion ${championCount} · Elite ${eliteCount} · Basic ${basicCount}`
+  ].join('\n')
 
-  const line = '-'.repeat(header.length)
+  const table = renderHorseTable(displayRows, { title })
+  const footer = [
+    'Status: RET = retired',
+    'Details: /horsestats <horse name>   Sell: /sellhorse <horse name>'
+  ].join('\n')
 
-  const rows = arranged.map((h, i) => {
-    const rec = `${Number(h?.wins || 0)}-${Number(h?.racesParticipated || 0)}`
-    return (
-      `${padL(String(i + 1), W_NUM)} ` +
-      `${clamp(h.name, W_NAME)} ` +
-      `${padR(String(h?.tier || '—').toUpperCase().slice(0, W_TIER), W_TIER)} ` +
-      `${padR(rec, W_REC)} ` +
-      `${padR(pct(h.wins, h.racesParticipated), W_PCT)} ` +
-      `${padR(left(h), W_LEFT)} ` +
-      `${padR(stat(h), W_STAT)}`
-    )
-  })
-
-  const title = `${nick}'s Stable (${arranged.length})`
-  const msg = ['```', title, header, line, ...rows, '```'].join('\n')
-  await postMessage({ room: ROOM, message: msg })
+  await postMessage({ room: ROOM, message: `${table}\n${footer}` })
 }
 
 export async function handleHorseStatsCommand (ctx) {
@@ -1020,17 +1002,27 @@ export async function handleTopHorsesCommand (ctx) {
 export async function handleHorseHelpCommand (ctx) {
   const room = ctx?.room || ROOM
   const helpLines = [
-    ' **Horse Race Commands**',
+    '🏇 HORSE RACE COMMANDS',
     '',
-    '/buyhorse <tier> [option#] – Browse/buy horse images by tier (champion, elite, basic).',
-    '/sellhorse [name] – Show horse sell values or sell one horse by name.',
-    '/myhorses – List your owned horses with their race counts, wins and career limits.',
-    '/horsestats [name] – Show detailed stats for a specific horse by name, or view leaderboards when no name is given.',
-    '/tophorses – See the top user-owned horses ranked by wins and win percentage.',
-    '/horse <number> <amount> – Place a bet on a horse during the betting phase (use the number shown on the race card).',
-    '/horsehelp – Display this help message.',
+    'Stable Management',
+    '  /buyhorse <tier> [option#]  - browse/buy tier horses (basic, elite, champion)',
+    '  /sellhorse [name]           - show sell values or sell one horse',
+    '  /myhorses                   - view your stable and records',
     '',
-    'Note: Horses have a finite career limit assigned when purchased. Once a horse reaches this limit, it will automatically retire and cannot enter new races.'
+    'Stats + Rankings',
+    '  /horsestats [name]          - horse details or global leaderboards',
+    '  /tophorses                  - top user-owned horses by performance',
+    '  /hof [newest|wins|winpct]   - hall of fame leaderboard',
+    '  /hof <horse name>           - hall of fame plaque for one horse',
+    '',
+    'Race Flow',
+    '  /horserace                  - start a race (opens owner entry window)',
+    '  /horse <number> <amount>    - place a bet during betting phase',
+    '  /horsehelp                  - show this help card',
+    '',
+    'Notes',
+    '  Horses have finite careers. When a horse reaches its race limit, it retires automatically.',
+    '  During entry windows, type your horse name exactly to enter the race.'
   ]
   await postMessage({ room, message: '```\n' + helpLines.join('\n') + '\n```' })
 }

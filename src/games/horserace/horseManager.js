@@ -23,6 +23,12 @@ const TIER_LABELS = {
   champion: 'Champion'
 }
 const TIER_ALIASES = { '1': 'basic', '2': 'elite', '3': 'champion' }
+const TIER_BADGES = { basic: '🐎', elite: '⚡', champion: '🏆' }
+const TIER_PITCH = {
+  basic: 'Best value starter horse',
+  elite: 'Balanced contender',
+  champion: 'Premium favorite profile'
+}
 
 // Formatting helpers
 const fmt = n => Number(n || 0).toLocaleString('en-US')
@@ -178,25 +184,25 @@ export function horseEntryMessage ({ horses = [], title = 'Choose your horse' } 
 }
 
 function horseShopMessage () {
-  const b = HORSE_TIERS.basic
-  const e = HORSE_TIERS.elite
-  const c = HORSE_TIERS.champion
+  const lines = []
+  lines.push('HORSE SHOP')
+  lines.push('')
 
-  return [
-    '**Horse Shop** — buy a racehorse and enter our races!',
-    '',
-    '**Tiers & Price:**',
-    `${c.emoji} *Champion* — **${fmt$(c.price)}** • Base odds ~ ${c.oddsRange[0]}–${c.oddsRange[1]} • Career: ${c.careerLength[0]}–${c.careerLength[1]} races`,
-    `${e.emoji} *Elite* — **${fmt$(e.price)}** • Base odds ~ ${e.oddsRange[0]}–${e.oddsRange[1]} • Career: ${e.careerLength[0]}–${e.careerLength[1]} races`,
-    `${b.emoji} *Basic* — **${fmt$(b.price)}** • Base odds ~ ${b.oddsRange[0]}–${b.oddsRange[1]} • Career: ${b.careerLength[0]}–${b.careerLength[1]} races`,
-    '',
-    '**How to buy:**',
-    '• `/buyhorse <tier>` (showroom)',
-    '• `/buyhorse <tier> <option#>` (buy specific image)',
-    'Examples: `/buyhorse basic` · `/buyhorse basic 1`',
-    '',
-    '_Tip: Lower odds = stronger favorite; volatility affects how much odds swing between races._'
-  ].join('\n')
+  for (const key of TIER_ORDER) {
+    const t = HORSE_TIERS[key]
+    lines.push(`${TIER_BADGES[key]} ${TIER_LABELS[key].toUpperCase()}  ${fmt$(t.price)}`)
+    lines.push(`   Odds: ${t.oddsRange[0]}-${t.oddsRange[1]}   Career: ${t.careerLength[0]}-${t.careerLength[1]} races`)
+    lines.push(`   ${TIER_PITCH[key]}`)
+    lines.push('')
+  }
+
+  lines.push('Browse tier: /buyhorse <basic|elite|champion>')
+  lines.push('Buy image:  /buyhorse <tier> <option#>')
+  lines.push('Example:    /buyhorse elite 2')
+  lines.push('')
+  lines.push('Tip: Lower odds means a stronger horse profile.')
+
+  return '```\n' + lines.join('\n') + '\n```'
 }
 
 // THIS is what your router calls:
@@ -213,7 +219,10 @@ export async function handleBuyHorse (payload) {
   const tierKey = TIER_ALIASES[tierArg] || tierArg
 
   if (!tierKey || /^(help|shop|list)$/i.test(tierKey)) {
-    return postMessage({ room, message: horseShopMessage() })
+    const balance = await getUserWallet(userId)
+    const balLine = typeof balance === 'number' ? `Wallet: ${fmt$(balance)}\n\n` : ''
+    const msg = horseShopMessage()
+    return postMessage({ room, message: msg.replace('HORSE SHOP\n\n', `HORSE SHOP\n\n${balLine}`) })
   }
 
   const tier = HORSE_TIERS[tierKey]
@@ -223,9 +232,11 @@ export async function handleBuyHorse (payload) {
 
   const tierImageFiles = listHorseTierImageFiles(tierKey).sort((a, b) => a.localeCompare(b))
   if (!pickArg || /^(help|list|show|shop)$/i.test(pickArg)) {
+    const badge = TIER_BADGES[tierKey] || '🐎'
     const lines = []
-    lines.push(`${TIER_LABELS[tierKey]} SHOWROOM`)
-    lines.push(`Price: ${fmt$(tier.price)}`)
+    lines.push(`${badge} ${TIER_LABELS[tierKey].toUpperCase()} SHOWROOM`)
+    lines.push(`Price: ${fmt$(tier.price)}   Tier: ${tierKey.toUpperCase()}`)
+    lines.push(`Odds: ${tier.oddsRange[0]}-${tier.oddsRange[1]}   Career: ${tier.careerLength[0]}-${tier.careerLength[1]}`)
     lines.push('')
 
     if (!tierImageFiles.length) {
@@ -237,7 +248,8 @@ export async function handleBuyHorse (payload) {
 
     lines.push('Choose an option number:')
     lines.push('')
-    lines.push('Options are shown in image posts below.')
+    lines.push(`Options available: ${tierImageFiles.length}`)
+    lines.push('Preview images are posted below.')
     lines.push('')
     lines.push(`Buy with: /buyhorse ${tierKey} <option#>`)
     lines.push(`Example: /buyhorse ${tierKey} 1`)
@@ -249,7 +261,7 @@ export async function handleBuyHorse (payload) {
       if (!url) continue
       await postMessage({
         room,
-        message: `Option #${i + 1} — ${TIER_LABELS[tierKey]}`,
+        message: `${badge} Option #${i + 1} · ${TIER_LABELS[tierKey]}`,
         images: [url]
       })
     }
@@ -344,17 +356,26 @@ export async function handleSellHorse (payload) {
     await postMessage({ room, message: `${nick}, you don’t own any horses yet. Try **/buyhorse**.` })
     return
   }
+  const isRetired = (h) => !!h?.retired || Number(h?.retired) === 1
+  const sellable = horses.filter(h => !isRetired(h))
 
   if (!nameArg) {
+    if (!sellable.length) {
+      await postMessage({
+        room,
+        message: `${nick}, all of your horses are retired and therefore unsellable.`
+      })
+      return
+    }
+
     const lines = []
     lines.push(`${nick}'s STABLE SELL VALUES`)
     lines.push('')
 
-    const sorted = horses.slice().sort((a, b) => estimateHorseResaleValue(b) - estimateHorseResaleValue(a))
+    const sorted = sellable.slice().sort((a, b) => estimateHorseResaleValue(b) - estimateHorseResaleValue(a))
     for (const h of sorted.slice(0, 12)) {
       const resale = estimateHorseResaleValue(h)
-      const retired = (!!h?.retired || Number(h?.retired) === 1) ? ' · RET' : ''
-      lines.push(`• ${horseLabel(h)} — ${fmt$(resale)}${retired}`)
+      lines.push(`• ${horseLabel(h)} — ${fmt$(resale)}`)
     }
     if (sorted.length > 12) lines.push(`…and ${sorted.length - 12} more horses.`)
 
@@ -365,9 +386,17 @@ export async function handleSellHorse (payload) {
   }
 
   const q = String(nameArg).toLowerCase()
+  const retiredHorse =
+    horses.find(h => isRetired(h) && String(h.name || '').toLowerCase() === q) ||
+    horses.find(h => isRetired(h) && String(h.name || '').toLowerCase().includes(q))
+  if (retiredHorse) {
+    await postMessage({ room, message: `❗ ${nick}, **${retiredHorse.name}** is retired and cannot be sold.` })
+    return
+  }
+
   const horse =
-    horses.find(h => String(h.name || '').toLowerCase() === q) ||
-    horses.find(h => String(h.name || '').toLowerCase().includes(q))
+    sellable.find(h => String(h.name || '').toLowerCase() === q) ||
+    sellable.find(h => String(h.name || '').toLowerCase().includes(q))
 
   if (!horse) {
     await postMessage({ room, message: `❗ ${nick}, couldn’t find that horse in your stable.` })
