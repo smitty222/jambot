@@ -13,6 +13,7 @@ import db from './db.js'
 // mention format on the fly when sending messages.
 import { sanitizeNickname } from '../utils/names.js'
 import { fetchRecentSongs } from '../utils/API.js'
+import { getCryptoPrice } from '../utils/cryptoPrice.js'
 
 // ───────────────────────────────────────────────────────────
 // Structured logging
@@ -376,99 +377,208 @@ function tableExists (tableName) {
   }
 }
 
-export function getTopNetWorthLeaderboard (limit = 5) {
-  const n = Math.max(1, Math.min(50, Math.floor(Number(limit || 5))))
+function toInt (n) {
+  return Math.floor(Number(n || 0))
+}
 
+function clamp (n, min, max) {
+  return Math.max(min, Math.min(max, n))
+}
+
+// Keep this aligned with F1 /sellcar pricing.
+function estimateCarSaleValue (car) {
+  const price = Math.max(0, toInt(car?.price))
+  const tier = String(car?.tier || 'starter').toLowerCase()
+  const wear = Math.max(0, Math.min(100, toInt(car?.wear)))
+  const wins = Math.max(0, toInt(car?.wins))
+  const podiums = Math.max(0, toInt(car?.podiums))
+  const earnings = Math.max(0, toInt(car?.careerEarnings))
+
+  const basePctByTier = {
+    starter: 0.68,
+    pro: 0.64,
+    hyper: 0.60,
+    legendary: 0.56
+  }
+  const basePct = basePctByTier[tier] ?? 0.62
+  const baseValue = price * basePct
+
+  const wearFactor = Math.max(0.45, 1 - (wear * 0.005))
+  const perfBonus = Math.min(price * 0.20, (wins * 800) + (podiums * 350) + (earnings * 0.03))
+
+  const raw = Math.floor(baseValue * wearFactor + perfBonus)
+  const minFloor = Math.floor(price * 0.20)
+  const maxCap = Math.floor(price * 0.95)
+  return Math.max(minFloor, Math.min(maxCap, raw))
+}
+
+// Keep this aligned with horse /sellhorse pricing.
+function estimateHorseSaleValue (horse) {
+  const price = Math.max(0, toInt(horse?.price))
+  if (price <= 0) return 0
+
+  const tier = String(horse?.tier || '').toLowerCase()
+  const races = Math.max(0, toInt(horse?.racesParticipated))
+  const wins = Math.max(0, toInt(horse?.wins))
+  const careerLength = Math.max(0, toInt(horse?.careerLength))
+  const retired = !!horse?.retired || Number(horse?.retired) === 1
+
+  const basePctByTier = {
+    basic: 0.70,
+    elite: 0.66,
+    champion: 0.62
+  }
+  const basePct = basePctByTier[tier] ?? 0.64
+  const baseValue = price * basePct
+
+  const left = Math.max(0, careerLength - races)
+  const leftPct = careerLength > 0 ? clamp(left / careerLength, 0, 1) : 0.8
+  const lifeFactor = retired ? 0.10 : (0.10 + (0.90 * Math.pow(leftPct, 1.85)))
+
+  const winRate = wins / Math.max(1, races)
+  const perfRaw = (wins * 300) + Math.floor(winRate * price * 0.08)
+  const perfBonus = Math.floor(perfRaw * Math.pow(leftPct, 2.4))
+  const performanceBonus = Math.min(Math.floor(price * 0.10), perfBonus)
+
+  const raw = Math.floor((baseValue * lifeFactor) + performanceBonus)
+  const minFloor = Math.floor(price * (retired ? 0.05 : 0.10))
+  const maxCapByLife = Math.floor(price * (retired ? 0.18 : (0.20 + (0.65 * Math.pow(leftPct, 1.4)))))
+  const maxCap = Math.max(minFloor, maxCapByLife)
+  return Math.max(minFloor, Math.min(maxCap, raw))
+}
+
+function ensureUserRow (map, uuid) {
+  const key = String(uuid)
+  if (!map.has(key)) {
+    map.set(key, {
+      uuid: key,
+      nickname: 'Unknown',
+      cash: 0,
+      carValue: 0,
+      horseValue: 0,
+      cryptoValue: 0,
+      totalNetWorth: 0
+    })
+  }
+  return map.get(key)
+}
+
+async function buildNetWorthRows () {
   const users = db.prepare(`
     SELECT uuid, nickname, COALESCE(balance, 0) AS balance
     FROM users
   `).all()
 
-  const carValueByUser = new Map()
-  const horseValueByUser = new Map()
-
-  if (tableExists('cars')) {
-    const rows = db.prepare(`
-      SELECT ownerId AS uuid, COALESCE(SUM(price), 0) AS total
-      FROM cars
-      WHERE ownerId IS NOT NULL
-        AND ownerId != ''
-        AND COALESCE(retired, 0) = 0
-      GROUP BY ownerId
-    `).all()
-
-    for (const row of rows) {
-      carValueByUser.set(String(row.uuid), Number(row.total) || 0)
-    }
-  }
-
-  if (tableExists('horses')) {
-    const rows = db.prepare(`
-      SELECT ownerId AS uuid, COALESCE(SUM(price), 0) AS total
-      FROM horses
-      WHERE ownerId IS NOT NULL
-        AND ownerId != ''
-        AND COALESCE(retired, 0) = 0
-      GROUP BY ownerId
-    `).all()
-
-    for (const row of rows) {
-      horseValueByUser.set(String(row.uuid), Number(row.total) || 0)
-    }
-  }
-
   const byUser = new Map()
 
   for (const row of users) {
-    const uuid = String(row.uuid)
-    byUser.set(uuid, {
-      uuid,
+    byUser.set(String(row.uuid), {
+      uuid: String(row.uuid),
       nickname: row.nickname || 'Unknown',
-      balance: Number(row.balance) || 0,
+      cash: Number(row.balance) || 0,
       carValue: 0,
       horseValue: 0,
+      cryptoValue: 0,
       totalNetWorth: 0
     })
   }
 
-  for (const [uuid, value] of carValueByUser.entries()) {
-    if (!byUser.has(uuid)) {
-      byUser.set(uuid, {
-        uuid,
-        nickname: 'Unknown',
-        balance: 0,
-        carValue: 0,
-        horseValue: 0,
-        totalNetWorth: 0
-      })
+  if (tableExists('cars')) {
+    const cars = db.prepare(`
+      SELECT ownerId, price, tier, wear, wins, podiums, careerEarnings
+      FROM cars
+      WHERE ownerId IS NOT NULL
+        AND ownerId != ''
+    `).all()
+
+    for (const car of cars) {
+      const row = ensureUserRow(byUser, car.ownerId)
+      row.carValue += estimateCarSaleValue(car)
     }
-    byUser.get(uuid).carValue = value
   }
 
-  for (const [uuid, value] of horseValueByUser.entries()) {
-    if (!byUser.has(uuid)) {
-      byUser.set(uuid, {
-        uuid,
-        nickname: 'Unknown',
-        balance: 0,
-        carValue: 0,
-        horseValue: 0,
-        totalNetWorth: 0
-      })
+  if (tableExists('horses')) {
+    const horses = db.prepare(`
+      SELECT ownerId, price, tier, racesParticipated, wins, careerLength, retired
+      FROM horses
+      WHERE ownerId IS NOT NULL
+        AND ownerId != ''
+    `).all()
+
+    for (const horse of horses) {
+      const row = ensureUserRow(byUser, horse.ownerId)
+      row.horseValue += estimateHorseSaleValue(horse)
     }
-    byUser.get(uuid).horseValue = value
   }
 
-  const leaderboard = Array.from(byUser.values()).map(row => {
-    const totalNetWorth = (Number(row.balance) || 0) + (Number(row.carValue) || 0) + (Number(row.horseValue) || 0)
+  if (tableExists('crypto_positions')) {
+    const positions = db.prepare(`
+      SELECT userId, coinId, quantity
+      FROM crypto_positions
+      WHERE userId IS NOT NULL
+        AND userId != ''
+        AND quantity > 0
+    `).all()
+
+    if (positions.length) {
+      const uniqueCoinIds = [...new Set(positions.map(p => String(p.coinId)))]
+      const priceEntries = await Promise.all(
+        uniqueCoinIds.map(async (coinId) => {
+          try {
+            const price = await getCryptoPrice(coinId)
+            return [coinId, Number(price) || 0]
+          } catch {
+            return [coinId, 0]
+          }
+        })
+      )
+      const priceMap = new Map(priceEntries)
+
+      for (const pos of positions) {
+        const row = ensureUserRow(byUser, pos.userId)
+        const price = Number(priceMap.get(String(pos.coinId)) || 0)
+        const qty = Number(pos.quantity) || 0
+        row.cryptoValue += (qty * price)
+      }
+    }
+  }
+
+  return Array.from(byUser.values()).map((row) => {
+    const totalNetWorth =
+      (Number(row.cash) || 0) +
+      (Number(row.carValue) || 0) +
+      (Number(row.horseValue) || 0) +
+      (Number(row.cryptoValue) || 0)
+
     return { ...row, totalNetWorth }
   })
+}
 
-  return leaderboard
+export async function getTopNetWorthLeaderboard (limit = 5) {
+  const n = Math.max(1, Math.min(50, Math.floor(Number(limit || 5))))
+  const rows = await buildNetWorthRows()
+
+  return rows
     .sort((a, b) =>
       (Number(b.totalNetWorth) - Number(a.totalNetWorth)) ||
-      (Number(b.balance) - Number(a.balance)) ||
+      (Number(b.cash) - Number(a.cash)) ||
       String(a.uuid).localeCompare(String(b.uuid))
     )
     .slice(0, n)
+}
+
+export async function getNetWorthForUser (userUUID) {
+  const id = String(userUUID || '').trim()
+  if (!id) return null
+
+  const rows = await buildNetWorthRows()
+  return rows.find(r => String(r.uuid) === id) || {
+    uuid: id,
+    nickname: 'Unknown',
+    cash: 0,
+    carValue: 0,
+    horseValue: 0,
+    cryptoValue: 0,
+    totalNetWorth: 0
+  }
 }

@@ -14,29 +14,74 @@
 
 import db from './db.js'
 
+function columnExists (table, column) {
+  try {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all()
+    return cols.some(c => String(c.name).toLowerCase() === String(column).toLowerCase())
+  } catch {
+    return false
+  }
+}
+
+function ensureHorsesTable () {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS horses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT UNIQUE,
+      baseOdds REAL,
+      volatility REAL,
+      owner TEXT,
+      ownerId TEXT,
+      tier TEXT,
+      emoji TEXT,
+      price INTEGER,
+      racesParticipated INTEGER DEFAULT 0,
+      wins INTEGER DEFAULT 0,
+      careerLength INTEGER DEFAULT 0,
+      retired BOOLEAN DEFAULT 0,
+      nickname TEXT,
+      odds REAL
+    )
+  `)
+
+  if (!columnExists('horses', 'imageUrl')) {
+    try {
+      db.exec(`ALTER TABLE horses ADD COLUMN imageUrl TEXT;`)
+    } catch (e) {
+      console.warn('[dbhorses] imageUrl migration skipped:', e?.message)
+    }
+  }
+}
+
+ensureHorsesTable()
+
 // Fetch all horses from the database
 export function getAllHorses () {
+  ensureHorsesTable()
   return db.prepare('SELECT * FROM horses').all()
 }
 
 // Fetch horses owned by a specific user
 export function getUserHorses (ownerId) {
+  ensureHorsesTable()
   return db.prepare('SELECT * FROM horses WHERE ownerId = ?').all(ownerId)
 }
 
 // Case‑insensitive lookup of a horse by name
 export function getHorseByName (name) {
+  ensureHorsesTable()
   return db.prepare('SELECT * FROM horses WHERE LOWER(name) = ?').get(name.toLowerCase())
 }
 
 // Insert a new horse record
 export function insertHorse (horse) {
+  ensureHorsesTable()
   const stmt = db.prepare(`
     INSERT INTO horses (
       name, baseOdds, volatility, owner, ownerId, tier,
       emoji, price, careerLength, wins, racesParticipated, retired,
-      nickname, odds
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      nickname, odds, imageUrl
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
   stmt.run(
     horse.name,
@@ -52,7 +97,8 @@ export function insertHorse (horse) {
     horse.racesParticipated || 0,
     horse.retired ? 1 : 0,
     horse.nickname || null,
-    horse.odds || null
+    horse.odds || null,
+    horse.imageUrl || null
   )
 }
 
@@ -73,6 +119,7 @@ export function insertHorse (horse) {
  * provided fields, ensuring that only the specified columns are updated.
  */
 export function updateHorseStats (identifier, stats) {
+  ensureHorsesTable()
   // Backwards compatibility: if only one argument is provided and it's an
   // object, treat it as the old signature.
   if (arguments.length === 1 && typeof identifier === 'object' && identifier !== null) {
@@ -134,5 +181,19 @@ export function updateHorseStats (identifier, stats) {
 
 // Update a horse's odds by name
 export function updateHorseOdds (name, odds) {
+  ensureHorsesTable()
   db.prepare('UPDATE horses SET odds = ? WHERE name = ?').run(odds, name)
+}
+
+export function setHorseImageUrl (id, imageUrl) {
+  ensureHorsesTable()
+  return db.prepare('UPDATE horses SET imageUrl = ? WHERE id = ?')
+    .run(imageUrl ? String(imageUrl) : null, Number(id))
+}
+
+export function deleteHorseOwnedByUser (id, ownerId) {
+  ensureHorsesTable()
+  const info = db.prepare('DELETE FROM horses WHERE id = ? AND ownerId = ?')
+    .run(Number(id), String(ownerId))
+  return Number(info?.changes || 0) > 0
 }

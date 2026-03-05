@@ -3,8 +3,9 @@
 import { postMessage } from '../../../libs/cometchat.js'
 import { getUserWallet, debitGameBet } from '../../../database/dbwalletmanager.js'
 import { getUserNickname } from '../../../utils/nickname.js'
-import { getAllHorses, getUserHorses } from '../../../database/dbhorses.js'
+import { getAllHorses, getUserHorses, setHorseImageUrl } from '../../../database/dbhorses.js'
 import { fetchCurrentUsers } from '../../../utils/API.js'
+import { pickHorseImageUrl } from '../utils/images.js'
 
 import { bus, safeCall } from '../service.js'
 import { runRace, LEGS } from '../simulation.js'
@@ -39,6 +40,26 @@ const SILKS = [
   '⬜' // white
 ]
 const silk = (i) => SILKS[i % SILKS.length]
+
+async function ensurePersistentHorseImages (horsesList = []) {
+  if (!Array.isArray(horsesList) || !horsesList.length) return horsesList
+
+  for (const h of horsesList) {
+    if (!h || h.imageUrl) continue
+    if (!h.id) continue
+
+    const tierKey = String(h.tier || '').toLowerCase()
+    if (!tierKey || tierKey === 'bot') continue
+
+    const imageUrl = pickHorseImageUrl(tierKey)
+    if (!imageUrl) continue
+
+    h.imageUrl = imageUrl
+    await safeCall(setHorseImageUrl, [h.id, imageUrl]).catch(() => null)
+  }
+
+  return horsesList
+}
 
 function shuffleArray (arr) {
   const a = arr.slice()
@@ -150,6 +171,7 @@ export async function startHorseRace () {
   }])
 
   const all = await safeCall(getAllHorses)
+  await ensurePersistentHorseImages(all)
   const activeIds = await safeCall(fetchCurrentUsers).catch(() => [])
   const avail = all.filter(h => activeIds.includes(h.ownerId) && !h.retired && h.ownerId !== 'allen')
 
@@ -280,6 +302,7 @@ async function openBetsPhase () {
     isAcceptingEntries = false
 
     const all = await safeCall(getAllHorses)
+    await ensurePersistentHorseImages(all)
     const ownerHorses = all.filter(h => entered.has(h.name))
 
     if (ownerHorses.length === 0) {
@@ -596,10 +619,14 @@ if (!globalThis[LISTENER_GUARD_KEY]) {
       await DELAY(RESULTS_PACING.officialBeatMs)
 
       const winnerDisplayName = displayState[winnerIdx]?.name || `${silk(winnerIdx)} ${raceState[winnerIdx]?.name || ''}`
+      const winnerHorse = horses[winnerIdx]
       await safeCall(postMessage, [{
         room: ROOM,
         message: `✅ **Official:** WINNER — **${winnerDisplayName}**!`
       }])
+      if (winnerHorse?.imageUrl) {
+        await safeCall(postMessage, [{ room: ROOM, message: '', images: [winnerHorse.imageUrl] }])
+      }
 
       await DELAY(RESULTS_PACING.standingsBeatMs)
       await safeCall(postMessage, [{
@@ -746,6 +773,7 @@ export async function handleMyHorsesCommand (ctx) {
   const userId = ctx?.sender || ctx?.userId || ctx?.uid
   const nick = await getUserNickname(userId)
   const mine = await getUserHorses(userId)
+  await ensurePersistentHorseImages(mine)
 
   if (!mine || mine.length === 0) {
     await postMessage({
@@ -835,6 +863,7 @@ export async function handleHorseStatsCommand (ctx) {
 
   const all = await getAllHorses()
   const horsesList = Array.isArray(all) ? all : []
+  await ensurePersistentHorseImages(horsesList)
 
   if (!nameArg) {
     const topWins = horsesList.slice()
@@ -897,6 +926,9 @@ export async function handleHorseStatsCommand (ctx) {
   ].join('\n')
 
   await postMessage({ room, message: '```\n' + details + '\n```' })
+  if (match?.imageUrl) {
+    await postMessage({ room, message: '', images: [match.imageUrl] })
+  }
 }
 
 export async function handleTopHorsesCommand (ctx) {
@@ -990,7 +1022,8 @@ export async function handleHorseHelpCommand (ctx) {
   const helpLines = [
     ' **Horse Race Commands**',
     '',
-    '/buyhorse <tier> – Purchase a new horse. Tiers: champion, elite, basic.',
+    '/buyhorse <tier> [option#] – Browse/buy horse images by tier (champion, elite, basic).',
+    '/sellhorse [name] – Show horse sell values or sell one horse by name.',
     '/myhorses – List your owned horses with their race counts, wins and career limits.',
     '/horsestats [name] – Show detailed stats for a specific horse by name, or view leaderboards when no name is given.',
     '/tophorses – See the top user-owned horses ranked by wins and win percentage.',

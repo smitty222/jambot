@@ -22,6 +22,7 @@ import { addTracksToPlaylist, removeTrackFromPlaylist } from '../utils/playlistU
 import {
   getBalanceByNickname,
   getNicknamesFromWallets,
+  getNetWorthForUser,
   getTopNetWorthLeaderboard,
   addDollarsByUUID,
   loadWallets,
@@ -60,7 +61,7 @@ import { handleDirectMessage } from './dmHandler.js'
 import { getCurrentState } from '../database/dbcurrent.js'
 import { usersToBeRemoved } from '../utils/usersToBeRemoved.js'
 import { parseTipAmount, randomTipGif, splitEvenly, naturalJoin, getSenderNickname } from '../utils/helpers.js'
-import { handleBuyHorse } from '../games/horserace/horseManager.js'
+import { handleBuyHorse, handleSellHorse } from '../games/horserace/horseManager.js'
 import { handleAddMoneyCommand } from './addMoney.js'
 import {
   startSpotlight,
@@ -224,6 +225,7 @@ const COMMAND_GUIDES = {
     'Wallet',
     '- `/balance`',
     '- `/bankroll`',
+    '- `/topnetworth`',
     '- `/networth`',
     '- `/career`',
     '- `/careerlosses [count]`',
@@ -364,6 +366,7 @@ if (handled) return
 
   // D) Other horse commands
   if (typeof payload.message === 'string' && payload.message.startsWith('/buyhorse')) return handleBuyHorse(payload)
+  if (/^\/sellhorse\b/i.test(txt) || /^\/sell\s+horse\b/i.test(txt)) return handleSellHorse(payload)
   if (typeof payload.message === 'string' && payload.message.startsWith('/myhorses')) return handleMyHorsesCommand(payload)
   if (typeof payload.message === 'string' && payload.message.startsWith('/horsehelp')) { await handleHorseHelpCommand(payload); return }
   if (typeof payload.message === 'string' && payload.message.startsWith('/horserules')) { await handleHorseHelpCommand(payload); return }
@@ -1946,7 +1949,30 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
   }
   if (payload.message.startsWith('/networth')) {
     try {
-      const netWorthRows = getTopNetWorthLeaderboard(5)
+      const user = await getNetWorthForUser(payload.sender)
+      const total = Math.round(Number(user?.totalNetWorth) || 0).toLocaleString()
+      const cash = Math.round(Number(user?.cash) || 0).toLocaleString()
+      const cars = Math.round(Number(user?.carValue) || 0).toLocaleString()
+      const horses = Math.round(Number(user?.horseValue) || 0).toLocaleString()
+      const crypto = Math.round(Number(user?.cryptoValue) || 0).toLocaleString()
+
+      await postMessage({
+        room,
+        message:
+          `🏦 <@uid:${payload.sender}> Net Worth: **$${total}**\n` +
+          `Cash: $${cash} · Cars: $${cars} · Horses: $${horses} · Crypto: $${crypto}`
+      })
+    } catch (error) {
+      console.error('Error fetching user net worth:', error)
+      await postMessage({
+        room,
+        message: 'There was an error fetching your net worth.'
+      })
+    }
+  }
+  if (payload.message.startsWith('/topnetworth')) {
+    try {
+      const netWorthRows = await getTopNetWorthLeaderboard(5)
 
       if (!Array.isArray(netWorthRows) || netWorthRows.length === 0) {
         await postMessage({
@@ -1958,11 +1984,12 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
 
       const formatted = netWorthRows.map((user, index) => {
         const total = Math.round(Number(user.totalNetWorth) || 0).toLocaleString()
-        const wallet = Math.round(Number(user.balance) || 0).toLocaleString()
+        const cash = Math.round(Number(user.cash) || 0).toLocaleString()
         const cars = Math.round(Number(user.carValue) || 0).toLocaleString()
         const horses = Math.round(Number(user.horseValue) || 0).toLocaleString()
+        const crypto = Math.round(Number(user.cryptoValue) || 0).toLocaleString()
 
-        return `${index + 1}. <@uid:${user.uuid}>: $${total} (Wallet: $${wallet} · Cars: $${cars} · Horses: $${horses})`
+        return `${index + 1}. <@uid:${user.uuid}>: $${total} (Cash: $${cash} · Cars: $${cars} · Horses: $${horses} · Crypto: $${crypto})`
       })
 
       await postMessage({
@@ -1970,10 +1997,10 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
         message: `🏦 **Top Net Worth Leaders** 🏦\n\n${formatted.join('\n')}`
       })
     } catch (error) {
-      console.error('Error fetching net worth leaderboard:', error)
+      console.error('Error fetching top net worth leaderboard:', error)
       await postMessage({
         room,
-        message: 'There was an error fetching the net worth leaderboard.'
+        message: 'There was an error fetching the top net worth leaderboard.'
       })
     }
   }

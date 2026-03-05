@@ -206,7 +206,8 @@ db.exec(`
     careerLength INTEGER DEFAULT 0,
     retired BOOLEAN DEFAULT 0,
     nickname TEXT,
-    odds REAL
+    odds REAL,
+    imageUrl TEXT
   )
 `)
 
@@ -644,4 +645,3 @@ try {
 } catch (e) {
   // non-fatal
 }
-

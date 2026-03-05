@@ -893,8 +893,8 @@ export async function handleStand (userUUID, nickname, ctx) {
   await advanceIfDoneAndPrompt(ctx)
 }
 
-// HOUSE RULE DOUBLE (as requested):
-// /bj double doubles your bet but you continue playing normally (no auto card, no auto-stand).
+// STANDARD DOUBLE:
+// /bj double doubles your bet, draws exactly one card, then auto-stands.
 export async function handleDouble (userUUID, nickname, ctx) {
   const st = getTable(ctx)
   ensurePhase(st, 'acting')
@@ -928,10 +928,31 @@ export async function handleDouble (userUUID, nickname, ctx) {
   h.bet = h.bet * 2
   h.actionCount++
 
-  await postMessage({ room: ctx.room, message: `✌️ ${await mention(userUUID)} doubles to ${fmtMoney(h.bet)} — keep playing (hit or stand).` })
+  await postMessage({ room: ctx.room, message: `✌️ ${await mention(userUUID)} doubles to ${fmtMoney(h.bet)} and draws one card…` })
+  await beat(450, 850)
+
+  h.cards.push(draw(st))
+
+  const v = handValue(h.cards).total
+  h.done = true
+  if (v > 21) h.busted = true
+
+  await postMessage({
+    room: ctx.room,
+    message: `🃏 ${await mention(userUUID)} → ${formatHand(h.cards)}${h.busted ? ' — *BUST*' : ''}`
+  })
+  await beat(350, 650)
+
+  await postMessage({ room: ctx.room, message: `✋ ${await mention(userUUID)} stands after doubling.` })
   await beat(300, 600)
 
-  return promptTurn(ctx, userUUID, { rePrompt: true, ping: false })
+  st.turnIndex++
+  const next = currentTurn(st)
+  if (next) {
+    await postMessage({ room: ctx.room, message: `➡️ Next up: ${await mention(next.uuid)}` })
+    await beat(250, 450)
+  }
+  return advanceIfDoneAndPrompt(ctx)
 }
 
 export async function handleSurrender (userUUID, nickname, ctx) {
