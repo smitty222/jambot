@@ -2,7 +2,7 @@
 
 import { bus, safeCall } from './service.js'
 import { creditGameWin } from '../../database/dbwalletmanager.js'
-import { updateCarAfterRace } from '../../database/dbcars.js'
+import { addCarEarnings, updateCarAfterRaceResult } from '../../database/dbcars.js'
 import { postMessage } from '../../libs/cometchat.js'
 import { getUserNickname } from '../../utils/nickname.js'
 import { stat01 } from './utils/track.js'
@@ -193,6 +193,7 @@ export async function runRace ({
   poleBonus = 0,
   fastestLapBonus = 0,
   poleWinnerOwnerId = null,
+  poleWinnerCarId = null,
 
   // betting
   bets = {},
@@ -216,6 +217,9 @@ export async function runRace ({
 
   if (poleBonus > 0 && poleWinnerOwnerId) {
     await safeCall(creditGameWin, [poleWinnerOwnerId, poleBonus]).catch(() => null)
+    if (poleWinnerCarId != null) {
+      await safeCall(addCarEarnings, [poleWinnerCarId, poleBonus, { pole: true }]).catch(() => null)
+    }
   }
 
   let prevOrder = null
@@ -386,6 +390,10 @@ export async function runRace ({
       if (amt > 0) {
         payouts[e.ownerId] = (payouts[e.ownerId] || 0) + amt
         await safeCall(creditGameWin, [e.ownerId, amt])
+        const paidCarId = cars?.[e.idx]?.id
+        if (paidCarId != null) {
+          await safeCall(addCarEarnings, [paidCarId, amt]).catch(() => null)
+        }
       }
     }
   }
@@ -393,6 +401,10 @@ export async function runRace ({
   let fastestLapAwarded = null
   if (fastestLapBonus > 0 && fastestLap?.ownerId) {
     await safeCall(creditGameWin, [fastestLap.ownerId, fastestLapBonus]).catch(() => null)
+    const fastestCarId = cars?.[fastestLap.index]?.id
+    if (fastestCarId != null) {
+      await safeCall(addCarEarnings, [fastestCarId, fastestLapBonus, { fastestLap: true }]).catch(() => null)
+    }
     fastestLapAwarded = { ...fastestLap, bonus: fastestLapBonus }
   }
 
@@ -437,15 +449,25 @@ export async function runRace ({
 
   // Car wear + win/loss persistence
   try {
+    const finishPosByIndex = new Map()
+    finishOrder.forEach((idx, pos) => {
+      finishPosByIndex.set(idx, pos + 1)
+    })
+
     for (let i = 0; i < cars.length; i++) {
       const c = cars[i]
       if (!c?.id) continue
       const modeKey = String(c.modeChoice || 'norm').toLowerCase()
       const wearDelta = MODE_WEAR[modeKey] ?? 5
-      await safeCall(updateCarAfterRace, [c.id, { win: i === winnerIdx, wearDelta }])
+      await safeCall(updateCarAfterRaceResult, [c.id, {
+        win: i === winnerIdx,
+        wearDelta,
+        finishPosition: finishPosByIndex.get(i) ?? null,
+        dnf: state[i]?.dnf === true
+      }])
     }
   } catch (e) {
-    console.warn('[f1race] updateCarAfterRace failed:', e?.message)
+    console.warn('[f1race] updateCarAfterRaceResult failed:', e?.message)
   }
 
   await safeCall(postMessage, [{ room: ROOM, message: '🏁 **CHECKERED FLAG!**' }])
@@ -462,7 +484,7 @@ export async function runRace ({
   bus.emit('raceFinished', {
     winnerIdx,
     finishOrder,
-    cars: cars.map((c, i) => ({ index: i, label: c.label, ownerId: c.ownerId || null })),
+    cars: cars.map((c, i) => ({ index: i, label: c.label, ownerId: c.ownerId || null, imageUrl: c.imageUrl || null })),
     payouts,
     betPayouts,
     track,
