@@ -312,19 +312,103 @@ export async function DeleteQueueSong (crateSongUuid, userToken) {
 }
 
 export async function addSongsToCrate (crateId, songs, append = true, token) {
-  const { ok, data, error } = await makeRequest(
-    `${cfg.ttGateway}/api/playlist-service/crate/${crateId}/songs`,
-    {
-      method: 'POST',
-      headers: ttHeaders({
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }),
-      body: JSON.stringify({ songs, append })
+  if (!crateId) throw new Error('crateId is required')
+  if (!token) throw new Error('token is required')
+  if (!Array.isArray(songs) || songs.length === 0) return { added: 0, skipped: 0 }
+
+  const headers = ttHeaders({
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  })
+  const toQueue = []
+  const skipped = []
+
+  // API expects a Turntable songId; convert Spotify IDs first.
+  for (const s of songs) {
+    const spotifyTrackId = s?.songId
+    if (!spotifyTrackId) {
+      skipped.push('missing-songId')
+      continue
     }
-  )
-  if (!ok) throw new Error(`Failed to add songs to crate: ${error || 'unknown'}`)
-  return data
+    try {
+      const songData = await fetchSongData(spotifyTrackId)
+      const ttSongId = songData?.id
+      if (!ttSongId) {
+        skipped.push(`no-tt-id:${spotifyTrackId}`)
+        continue
+      }
+      toQueue.push({ ttSongId, spotifyTrackId })
+    } catch (err) {
+      skipped.push(`lookup-failed:${spotifyTrackId}:${err?.message || 'unknown'}`)
+    }
+  }
+
+  const candidateHosts = Array.from(new Set([cfg.ttGateway, process.env.TT_PUBLIC_API_BASE].filter(Boolean)))
+  const attempts = []
+  for (const host of candidateHosts) {
+    attempts.push({
+      method: 'POST',
+      url: `${host}/api/playlist-service/api/v1/playlists/${crateId}/tracks`
+    })
+  }
+  // Keep a direct /api/v1 fallback in case TT_PUBLIC_API_BASE already points at playlist-service.
+  for (const host of candidateHosts) {
+    attempts.push({
+      method: 'POST',
+      url: `${host}/api/v1/playlists/${crateId}/tracks`
+    })
+  }
+
+  let workingAttempt = null
+  async function postTrackToQueue (ttSongId, shouldAppend) {
+    const routeAttempts = workingAttempt ? [workingAttempt] : attempts
+
+    const attemptErrors = []
+    for (const attempt of routeAttempts) {
+      const payload = { songId: ttSongId, append: shouldAppend }
+      const { ok, status, data, error } = await makeRequest(attempt.url, {
+        method: attempt.method,
+        headers,
+        body: JSON.stringify(payload)
+      })
+      if (ok) {
+        workingAttempt = attempt
+        return { ok: true }
+      }
+      attemptErrors.push(
+        `method=${attempt.method} url=${attempt.url} status=${status || 0} error=${error || (typeof data === 'string' ? data : 'unknown')}`
+      )
+    }
+
+    return { ok: false, error: attemptErrors.join(' | ') }
+  }
+
+  let added = 0
+  const failures = []
+  for (let i = 0; i < toQueue.length; i++) {
+    const item = toQueue[i]
+    const res = await postTrackToQueue(item.ttSongId, i === 0 ? !!append : true)
+    if (res.ok) {
+      added++
+      continue
+    }
+    const detail = [
+      `spotify=${item.spotifyTrackId}`,
+      `ttSongId=${item.ttSongId}`,
+      `error=${res.error || 'unknown'}`
+    ].join(' ')
+    failures.push(detail)
+  }
+
+  if (added === 0) {
+    throw new Error(
+      `Failed to add songs to crate. ` +
+      `resolved=${toQueue.length} skipped=${skipped.length}. ` +
+      `${failures[0] || skipped[0] || 'unknown error'}`
+    )
+  }
+
+  return { added, skipped: skipped.length, failed: failures.length }
 }
 
 export async function getUserQueueCrateId (userId) {

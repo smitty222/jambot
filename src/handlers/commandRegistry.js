@@ -472,10 +472,12 @@ const commandRegistry = {
         genre: ''
       }))
 
-      await addSongsToCrate(crateId, formattedTracks, true, token)
+      const queueResult = await addSongsToCrate(crateId, formattedTracks, true, token)
+      const addedCount = Number(queueResult?.added || 0)
+      const skippedCount = Number(queueResult?.skipped || 0)
       await postMessage({
         room,
-        message: `✅ *Playlist Queued!*\n\n🎵 Added *${formattedTracks.length} track(s)* from playlist \`${playlistId}\` to your queue.  \nPlease refresh your page for the queue to update`
+        message: `✅ *Playlist Queued!*\n\n🎵 Added *${addedCount} track(s)* from playlist \`${playlistId}\` to your queue.${skippedCount > 0 ? `\n⚠️ Skipped ${skippedCount} track(s) that could not be resolved.` : ''}  \nPlease refresh your page for the queue to update`
       })
     } catch (error) {
       await postMessage({
@@ -487,15 +489,16 @@ const commandRegistry = {
 
   // 📥 Queue tracks from a Spotify album into the user's queue crate.
   qalbum: async ({ payload, room, args }) => {
-    const albumId = (args || '').trim().split(/\s+/)[0]
+    const albumId = extractSpotifyAlbumId(args)
     if (!albumId) {
       await postMessage({
         room,
         message:
 `⚠️ *Missing Album ID*
 
-Please provide a valid Spotify album ID.  
-Example: \`/qalbum 4aawyAB9vmqN3uQ7FjRGTy\``
+Please provide a valid Spotify album ID/URL/URI.  
+Example: \`/qalbum 4aawyAB9vmqN3uQ7FjRGTy\`  
+Example: \`/qalbum https://open.spotify.com/album/4aawyAB9vmqN3uQ7FjRGTy\``
       })
       return
     }
@@ -539,25 +542,37 @@ Please contact an admin to link your account to use this command.`
         return
       }
 
-      const formattedTracks = tracks.map(track => ({
+      const formattedTracks = tracks
+        .filter(track => track?.id)
+        .map(track => ({
         musicProvider: 'spotify',
         songId: track.id,
-        artistName: track.artists.map(a => a.name).join(', '),
-        trackName: track.name,
-        duration: Math.floor(track.duration_ms / 1000),
-        explicit: track.explicit,
+        artistName: Array.isArray(track.artists) ? track.artists.map(a => a.name).join(', ') : '',
+        trackName: track.name || 'Unknown',
+        duration: Math.floor((track.duration_ms || 0) / 1000),
+        explicit: !!track.explicit,
         isrc: track.external_ids?.isrc || '',
         playbackToken: '',
         genre: ''
       }))
 
-      await addSongsToCrate(crateId, formattedTracks, true, token)
+      if (!formattedTracks.length) {
+        await postMessage({
+          room,
+          message: `❌ *No queueable tracks found for album \`${albumId}\`.*`
+        })
+        return
+      }
+
+      const queueResult = await addSongsToCrate(crateId, formattedTracks, true, token)
+      const addedCount = Number(queueResult?.added || 0)
+      const skippedCount = Number(queueResult?.skipped || 0)
       await postMessage({
         room,
         message:
 `✅ *Album Queued!*
 
-🎵 Added *${formattedTracks.length} track(s)* from album \`${albumId}\` to your queue.  
+🎵 Added *${addedCount} track(s)* from album \`${albumId}\` to your queue.${skippedCount > 0 ? `\n⚠️ Skipped ${skippedCount} track(s) that could not be resolved.` : ''}  
 Please refresh your page for the queue to update`
       })
     } catch (error) {
