@@ -79,6 +79,19 @@ import {
 import { addQueuedAlbum, removeQueuedAlbum,listQueuedAlbums } from '../database/dbalbumqueue.js'
 import { getAllNetTotals } from '../database/dbwalletmanager.js'
 
+function buildSlotsInfoMessage () {
+  return [
+    '🎰 Slots Commands',
+    '- `/slots <bet>` play a spin (default bet is 1)',
+    '- `/slots bonus` spin bonus mode (when active)',
+    '- `/slots free` spin free mode (when active)',
+    '- `/slots stats` show jackpot contribution stats',
+    '- `/slots effective` (or `/slots eff`) show active contribution/share',
+    '- `/slots lifetime` (or `/slots life`) show lifetime contribution',
+    '- `/jackpot` show the current jackpot'
+  ].join('\n')
+}
+
 
 function extractSpotifyAlbumId (input) {
   const s = String(input || '').trim()
@@ -169,6 +182,8 @@ const commandRegistry = {
 
     // Handle text subcommands directly.
     if (
+      arg === 'info' ||
+      arg === 'help' ||
       arg === 'bonus' ||
       arg === 'free' ||
       arg === 'stats' ||
@@ -177,6 +192,10 @@ const commandRegistry = {
       arg === 'lifetime' ||
       arg === 'life'
     ) {
+      if (arg === 'info' || arg === 'help') {
+        await postMessage({ room, message: buildSlotsInfoMessage() })
+        return
+      }
       const response = await handleSlotsCommand(userUUID, arg)
       await postMessage({ room, message: response })
       return
@@ -699,7 +718,7 @@ ${blocks}
         '- `/dog [breed] [sub-breed]`',
         '',
         'More grouped help:',
-        '- `/commands gifs`',
+        '- `/gifs`',
         '- `/commands`'
       ].join('\n')
     })

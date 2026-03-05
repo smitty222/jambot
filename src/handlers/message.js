@@ -141,55 +141,18 @@ const COMMAND_GUIDES = {
   games: [
     '🎮 Games Commands',
     '',
-    'Lottery & Roulette',
-    '- `/lottery`',
-    '- `/lotto #<number>`',
-    '- `/lottostats`',
-    '- `/lottowinners`',
-    '- `/roulette start`',
-    '- `/red <amount>` `/black <amount>` `/green <amount>`',
-    '- `/odd <amount>` `/even <amount>` `/high <amount>` `/low <amount>`',
-    '- `/number <1-36> <amount>` or `/<number> <amount>`',
-    '- `/dozen <1|2|3> <amount>`',
+    'Start with the game trigger below, then use that game\'s help/instructions:',
     '',
-    'Slots, Blackjack, Craps',
-    '- `/slots [bet]`',
-    '- `/slotinfo`',
-    '- `/jackpot`',
-    '- `/blackjack` or `/bj`',
-    '- `/join`, `/bet <amount>`, `/hit`, `/stand`, `/double`, `/split`, `/surrender`',
-    '- `/craps help`',
-    '- `/crapsrecord`',
-    '',
-    'Horse Racing',
-    '- `/horserace`',
-    '- `/horse <number> <amount>` or `/horse<number> <amount>`',
-    '- `/buyhorse <tier>`',
-    '- `/myhorses`',
-    '- `/horsehelp` `/horserules` `/horseinfo`',
-    '- `/horsestats`',
-    '- `/tophorses`',
-    '- `/hof`',
-    '',
-    'F1 Racing',
-    '- `/f1race`',
-    '- `/buycar <tier>`',
-    '- `/mycars`',
-    '- `/wear <car #>`',
-    '- `/car <car #>`',
-    '- `/carpics`',
-    '- `/repair <car #>`',
-    '- `/sellcar <car #>`',
-    '- `/team`',
-    '- `/bet ...` (F1 bet formats)',
-    '- `/f1stats`',
-    '- `/f1leaderboard`',
-    '- `/f1help`',
-    '',
-    'Trivia',
-    '- `/triviastart`',
-    '- `/trivia`',
-    '- `/triviaend`'
+    '- Lottery: `/lottery`',
+    '- Roulette: `/roulette`',
+    '- Slots info: `/slots info`',
+    '- Blackjack: `/blackjack` (or `/bj`)',
+    '- Craps help: `/craps help`',
+    '- Horse Race: `/horserace`',
+    '- Horse Race help: `/horsehelp`',
+    '- F1 Race: `/f1 start`',
+    '- F1 help: `/f1help`',
+    '- Trivia: `/triviastart` (or `/trivia`)'
   ].join('\n'),
   gifs: [
     '🎞️ GIF & Fun Commands',
@@ -268,12 +231,7 @@ const COMMAND_GUIDES = {
     '- `/tip <@user> <amount>`',
     '',
     'Sports',
-    '- `/MLB [YYYY-MM-DD]`',
-    '- `/NHL [YYYY-MM-DD]`',
-    '- `/NBA [YYYY-MM-DD]`',
-    '- `/mlbodds`',
-    '- `/sportsbet ...`',
-    '- `/resolvebets` (mods/admin)'
+    '- `/mlbodds`'
   ].join('\n'),
   avatars: [
     '🧑‍🎤 Avatar Commands',
@@ -318,31 +276,6 @@ const COMMAND_GUIDES = {
     '- `/store`',
     '- `/mod` (DM full moderator sheet)'
   ].join('\n')
-}
-
-function resolveCommandGuideTopic (rawTopic = '') {
-  const key = String(rawTopic || '').toLowerCase()
-  const aliases = {
-    game: 'games',
-    games: 'games',
-    gif: 'gifs',
-    gifs: 'gifs',
-    fun: 'gifs',
-    music: 'music',
-    queue: 'music',
-    review: 'music',
-    reviews: 'music',
-    wallet: 'wallet',
-    money: 'wallet',
-    bankroll: 'wallet',
-    avatar: 'avatars',
-    avatars: 'avatars',
-    mod: 'mod',
-    mods: 'mod',
-    moderator: 'mod',
-    admin: 'mod'
-  }
-  return aliases[key] || null
 }
 
 /*
@@ -552,19 +485,13 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
     try {
       const isMod = await isUserAuthorized(payload.sender, ttlUserToken)
       const arg = payload.message.trim().split(/\s+/)[1]?.toLowerCase()
-      const topic = resolveCommandGuideTopic(arg)
-      const askedForMod = topic === 'mod'
-
-      if (topic && topic !== 'mod') {
-        await postMessage({ room, message: COMMAND_GUIDES[topic] })
-        return
-      }
+      const askedForMod = /^(mod|mods|moderator|admin)$/.test(arg || '')
 
       if (askedForMod) {
         if (!isMod) {
           await postMessage({
             room,
-            message: 'Moderator commands are mod-only. Use `/commands games`, `/commands gifs`, `/commands music`, `/commands wallet`, or `/commands avatars`.'
+            message: 'Moderator commands are mod-only. Use `/games`, `/gifs`, `/music`, `/wallet`, or `/avatars`.'
           })
           return
         }
@@ -575,26 +502,42 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
         return
       }
 
-      const overview = [
-        '📖 Command Guide',
-        '',
-        'Use one of these to browse commands by category:',
+      const sections = []
+      sections.push([
+        '— Essentials —',
+        '- `/theme` — Show current room theme',
+        '- `/games` — List game commands',
+        '- `/music` — Music, queue, and review commands',
+        '- `/wallet` — Wallet and betting commands',
+        '- `/gifs` — GIF and fun commands',
+        '- `/avatars` — Avatar commands'
+      ].join('\n'))
+
+      sections.push([
+        '— Popular —',
+        '- `/album` — Album info for current song',
+        '- `/score` — Spotify popularity score',
+        '- `/reviewhelp` — How to review songs',
+        '- `/bankroll` — Wallet leaderboard',
+        '- `/suggestsongs` — Song suggestions'
+      ].join('\n'))
+
+      sections.push([
+        '— Category Shortcuts —',
         '- `/games`',
         '- `/gifs`',
         '- `/music`',
         '- `/wallet`',
-        '- `/avatars`',
-        '',
-        'You can also use:',
-        '- `/commands games`',
-        '- `/commands gifs`',
-        '- `/commands music`',
-        '- `/commands wallet`',
-        '- `/commands avatars`',
-        isMod ? '- `/commands mod`' : '- Mods can use `/commands mod` or `/mod`'
-      ].join('\n')
+        '- `/avatars`'
+      ].join('\n'))
 
-      await postMessage({ room, message: overview })
+      if (isMod) {
+        sections.push('- `/commands mod` — Moderator command list')
+      } else {
+        sections.push('- Mods can use `/commands mod` or `/mod`')
+      }
+
+      await postMessage({ room, message: ['📖 Commands', ...sections].join('\n\n') })
     } catch (err) {
       console.error('/commands error:', err)
       await postMessage({ room, message: 'Could not build the commands list.' })
