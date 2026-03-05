@@ -527,9 +527,7 @@ export async function handleBuyCar (ctx) {
 
     lines.push('Choose an option number:')
     lines.push('')
-    tierImageFiles.forEach((file, idx) => {
-      lines.push(`${idx + 1}. ${file}`)
-    })
+    lines.push('Options are shown in image posts below.')
     lines.push('')
     lines.push(`Buy with: /buycar ${tierKey} <option#>`)
     lines.push(`Example: /buycar ${tierKey} 1`)
