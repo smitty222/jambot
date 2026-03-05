@@ -22,6 +22,7 @@ import { addTracksToPlaylist, removeTrackFromPlaylist } from '../utils/playlistU
 import {
   getBalanceByNickname,
   getNicknamesFromWallets,
+  getTopNetWorthLeaderboard,
   addDollarsByUUID,
   loadWallets,
   removeFromUserWallet,
@@ -223,6 +224,7 @@ const COMMAND_GUIDES = {
     'Wallet',
     '- `/balance`',
     '- `/bankroll`',
+    '- `/networth`',
     '- `/career`',
     '- `/careerlosses [count]`',
     '- `/biggestlosers [count]`',
@@ -396,20 +398,20 @@ if (/^\/(gp|f1)\s+start\b/i.test(txt)) {
 }
 
 // Garage / team commands
-if (/^\/buycar\b/i.test(txt)) return handleBuyCar(payload)
+if (/^\/buycar\b/i.test(txt) || /^\/buy\s+car\b/i.test(txt)) return handleBuyCar(payload)
 if (/^\/mycars\b/i.test(txt)) return handleMyCars(payload)
-if (/^\/carstats\b/i.test(txt)) return handleCarStats(payload)
-if (/^\/f1stats\b/i.test(txt)) return handleF1Stats(payload)
-if (/^\/f1leaderboard\b/i.test(txt)) return handleF1Leaderboard(payload)
+if (/^\/carstats\b/i.test(txt) || /^\/car\s+stats\b/i.test(txt)) return handleCarStats(payload)
+if (/^\/f1stats\b/i.test(txt) || /^\/(f1|gp)\s+stats\b/i.test(txt)) return handleF1Stats(payload)
+if (/^\/f1leaderboard\b/i.test(txt) || /^\/(f1|gp)\s+leaderboard\b/i.test(txt)) return handleF1Leaderboard(payload)
 if (/^\/wear\b/i.test(txt)) return handleWearCommand(payload)
-if (/^\/carpics\b/i.test(txt)) return handleCarPics(payload)
+if (/^\/carpics\b/i.test(txt) || /^\/car\s+pics\b/i.test(txt)) return handleCarPics(payload)
 if (/^\/car\s+/i.test(txt)) return handleCarShow(payload)
 if (/^\/repair\s+/i.test(txt)) return handleRepairCar(payload)
-if (/^\/sellcar\b/i.test(txt)) return handleSellCar(payload)
+if (/^\/sellcar\b/i.test(txt) || /^\/sell\s+car\b/i.test(txt)) return handleSellCar(payload)
 if (/^\/team\b/i.test(txt)) return handleTeamCommand(payload)
 
 // Help
-if (/^\/(f1help|gphelp)\b/i.test(txt)) return handleF1Help(payload)
+if (/^\/(f1help|gphelp)\b/i.test(txt) || /^\/(f1|gp)\s+help\b/i.test(txt)) return handleF1Help(payload)
 
 // Betting (win-only) — only works during strategy lock window
 if (/^\/bet\s*\d+\s+\d+/i.test(txt)) {
@@ -1939,6 +1941,39 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
       await postMessage({
         room,
         message: 'There was an error fetching the bankroll information.'
+      })
+    }
+  }
+  if (payload.message.startsWith('/networth')) {
+    try {
+      const netWorthRows = getTopNetWorthLeaderboard(5)
+
+      if (!Array.isArray(netWorthRows) || netWorthRows.length === 0) {
+        await postMessage({
+          room,
+          message: 'No net worth data found yet.'
+        })
+        return
+      }
+
+      const formatted = netWorthRows.map((user, index) => {
+        const total = Math.round(Number(user.totalNetWorth) || 0).toLocaleString()
+        const wallet = Math.round(Number(user.balance) || 0).toLocaleString()
+        const cars = Math.round(Number(user.carValue) || 0).toLocaleString()
+        const horses = Math.round(Number(user.horseValue) || 0).toLocaleString()
+
+        return `${index + 1}. <@uid:${user.uuid}>: $${total} (Wallet: $${wallet} · Cars: $${cars} · Horses: $${horses})`
+      })
+
+      await postMessage({
+        room,
+        message: `🏦 **Top Net Worth Leaders** 🏦\n\n${formatted.join('\n')}`
+      })
+    } catch (error) {
+      console.error('Error fetching net worth leaderboard:', error)
+      await postMessage({
+        room,
+        message: 'There was an error fetching the net worth leaderboard.'
       })
     }
   }

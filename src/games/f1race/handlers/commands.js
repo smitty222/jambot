@@ -991,7 +991,50 @@ export async function handleCarStats (ctx) {
 }
 
 export async function handleF1Stats (ctx) {
-  return handleCarStats({ ...ctx, message: '/carstats' })
+  const room = ctx?.room || ROOM
+  const userId = ctx?.sender
+  const nick = await safeCall(getUserNickname, [userId]).catch(() => '@user')
+  const totals = await safeCall(getUserCarStatsSummary, [userId]).catch(() => null)
+  const topCars = await safeCall(getTopCarsByEarnings, [userId, 3]).catch(() => [])
+
+  const carsOwned = toInt(totals?.carsOwned)
+  if (!carsOwned) {
+    await postMessage({ room, message: `${nick}, you don’t own any cars yet. Try **/buycar**.` })
+    return
+  }
+
+  const totalEarnings = toInt(totals?.totalCarEarnings)
+  const totalBuy = toInt(totals?.totalPurchaseSpend)
+  const totalEntry = toInt(totals?.totalEntryFeesPaid)
+  const totalRepair = toInt(totals?.totalRepairSpend)
+  const netNoBuyIn = totalEarnings - totalEntry - totalRepair
+  const allInNet = netNoBuyIn - totalBuy
+  const avgFinish = Number(totals?.totalFinishCount || 0) > 0
+    ? (Number(totals.totalFinishSum || 0) / Number(totals.totalFinishCount || 1)).toFixed(2)
+    : null
+
+  const lines = []
+  lines.push(`🏁 **${nick} — F1 Driver Report**`)
+  lines.push(`🏎️ Cars: **${carsOwned}** · Races: **${toInt(totals?.totalRaces)}** · Wins: **${toInt(totals?.totalWins)}** · Podiums: **${toInt(totals?.totalPodiums)}**`)
+  lines.push(`📉 DNFs: **${toInt(totals?.totalDnfs)}** · ⚡ Poles: **${toInt(totals?.totalPoles)}** · ⏱️ Fastest Laps: **${toInt(totals?.totalFastestLaps)}**`)
+  lines.push(`🎯 Avg Finish: **${avgFinish ? `P${avgFinish}` : '—'}**`)
+  lines.push('')
+  lines.push(`💰 Return (earnings): **${fmtMoney(totalEarnings)}**`)
+  lines.push(`🧾 Costs: buy **${fmtMoney(totalBuy)}** · entry **${fmtMoney(totalEntry)}** · repair **${fmtMoney(totalRepair)}**`)
+  lines.push(`📈 Net (no buy-in): **${fmtMoney(netNoBuyIn)}**`)
+  lines.push(`🏦 Net (all-in): **${fmtMoney(allInNet)}**`)
+
+  if (topCars.length) {
+    lines.push('')
+    lines.push('🔥 **Top Cars by Return**')
+    topCars.forEach((c, idx) => {
+      lines.push(`${idx + 1}. ${carLabel(c)} · **${fmtMoney(toInt(c.careerEarnings))}**`)
+    })
+  }
+
+  lines.push('')
+  lines.push('More: `/carstats` · `/carstats <car name>` · `/f1leaderboard`')
+  await postMessage({ room, message: lines.join('\n') })
 }
 
 export async function handleF1Leaderboard (ctx) {

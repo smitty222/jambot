@@ -364,3 +364,111 @@ export function getAllNetTotals () {
   const rows = db.prepare('SELECT uuid, lifetime_net FROM users').all()
   return rows.map(({ uuid, lifetime_net }) => ({ uuid, lifetime_net }))
 }
+
+function tableExists (tableName) {
+  try {
+    const row = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+      .get(String(tableName))
+    return !!row
+  } catch {
+    return false
+  }
+}
+
+export function getTopNetWorthLeaderboard (limit = 5) {
+  const n = Math.max(1, Math.min(50, Math.floor(Number(limit || 5))))
+
+  const users = db.prepare(`
+    SELECT uuid, nickname, COALESCE(balance, 0) AS balance
+    FROM users
+  `).all()
+
+  const carValueByUser = new Map()
+  const horseValueByUser = new Map()
+
+  if (tableExists('cars')) {
+    const rows = db.prepare(`
+      SELECT ownerId AS uuid, COALESCE(SUM(price), 0) AS total
+      FROM cars
+      WHERE ownerId IS NOT NULL
+        AND ownerId != ''
+        AND COALESCE(retired, 0) = 0
+      GROUP BY ownerId
+    `).all()
+
+    for (const row of rows) {
+      carValueByUser.set(String(row.uuid), Number(row.total) || 0)
+    }
+  }
+
+  if (tableExists('horses')) {
+    const rows = db.prepare(`
+      SELECT ownerId AS uuid, COALESCE(SUM(price), 0) AS total
+      FROM horses
+      WHERE ownerId IS NOT NULL
+        AND ownerId != ''
+        AND COALESCE(retired, 0) = 0
+      GROUP BY ownerId
+    `).all()
+
+    for (const row of rows) {
+      horseValueByUser.set(String(row.uuid), Number(row.total) || 0)
+    }
+  }
+
+  const byUser = new Map()
+
+  for (const row of users) {
+    const uuid = String(row.uuid)
+    byUser.set(uuid, {
+      uuid,
+      nickname: row.nickname || 'Unknown',
+      balance: Number(row.balance) || 0,
+      carValue: 0,
+      horseValue: 0,
+      totalNetWorth: 0
+    })
+  }
+
+  for (const [uuid, value] of carValueByUser.entries()) {
+    if (!byUser.has(uuid)) {
+      byUser.set(uuid, {
+        uuid,
+        nickname: 'Unknown',
+        balance: 0,
+        carValue: 0,
+        horseValue: 0,
+        totalNetWorth: 0
+      })
+    }
+    byUser.get(uuid).carValue = value
+  }
+
+  for (const [uuid, value] of horseValueByUser.entries()) {
+    if (!byUser.has(uuid)) {
+      byUser.set(uuid, {
+        uuid,
+        nickname: 'Unknown',
+        balance: 0,
+        carValue: 0,
+        horseValue: 0,
+        totalNetWorth: 0
+      })
+    }
+    byUser.get(uuid).horseValue = value
+  }
+
+  const leaderboard = Array.from(byUser.values()).map(row => {
+    const totalNetWorth = (Number(row.balance) || 0) + (Number(row.carValue) || 0) + (Number(row.horseValue) || 0)
+    return { ...row, totalNetWorth }
+  })
+
+  return leaderboard
+    .sort((a, b) =>
+      (Number(b.totalNetWorth) - Number(a.totalNetWorth)) ||
+      (Number(b.balance) - Number(a.balance)) ||
+      String(a.uuid).localeCompare(String(b.uuid))
+    )
+    .slice(0, n)
+}
