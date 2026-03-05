@@ -2132,7 +2132,15 @@ ${blocks}
       // ✅ Handle feature commands BEFORE numeric parsing
       console.log('[SLOTS DEBUG]', { raw: payload.message, sub })
 
-      if (sub === 'free' || sub === 'bonus') {
+      if (
+        sub === 'free' ||
+        sub === 'bonus' ||
+        sub === 'stats' ||
+        sub === 'effective' ||
+        sub === 'eff' ||
+        sub === 'lifetime' ||
+        sub === 'life'
+      ) {
         const response = await handleSlotsCommand(userUUID, sub)
         await postMessage({ room, message: response })
         return
