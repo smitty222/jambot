@@ -7,17 +7,14 @@ import db from '../database/db.js'
 
 const symbols = ['🍒', '🍋', '🍊', '🍉', '🔔', '⭐', '💎', '🎟️']
 
-// Weighted reel tuning (sum=100)
-// ✅ CHANGE: tickets were too frequent → reduce 🎟️ from 10 → 4
-// Redistribute into fruit so base spins still feel active.
 const SYMBOL_WEIGHTS = {
-  '🍒': 18,
+  '🍒': 17, // was 18
   '🍋': 18,
   '🍊': 16,
   '🍉': 14,
   '🔔': 9,
   '⭐': 13,
-  '💎': 8,
+  '💎': 9, // was 8 ✅
   '🎟️': 4
 }
 
@@ -77,6 +74,7 @@ const BONUS_PERCENT_WEIGHTS = [
 // - Feature spins pay from a fixed paytable (NOT based on bet)
 // - Feature spins are interactive: /slots free
 // ✅ CHANGE: allow tickets to land DURING feature spins to award more feature spins
+// ✅ CHANGE: allow 💎💎💎 during feature spins to TRIGGER jackpot bonus session too (once per feature session)
 const FEATURE_MIN_TRIGGER_BET = 250
 const FEATURE_MAX_SPINS_PER_TRIGGER = 3
 const FEATURE_MAX_SPINS_PER_SESSION = 15
@@ -133,7 +131,7 @@ const COLLECTION_GOALS = {
   '🍉': 50,
   '🔔': 30,
   '⭐': 25,
-  '💎': 20,   // was 10
+  '💎': 20, // was 10
   '🎟️': 25
 }
 
@@ -147,7 +145,6 @@ const COLLECTION_REWARDS = {
   '💎': 1500, // was 25000 (reduced)
   '🎟️': 750
 }
-
 
 // Bets
 const MIN_BET = 1
@@ -497,10 +494,21 @@ async function spinFeatureOnce (userUUID) {
     return `No active FREE SPINS feature. Hit 🎟️ during a bet ≥ $${formatBalance(FEATURE_MIN_TRIGGER_BET)} to trigger it!`
   }
 
-  let { spinsLeft, spinsTotal, totalWon, startedAt } = session
+  // ✅ If a bonus is active, force bonus to resolve first (feature paused)
+  const activeBonus = getBonusSession(userUUID)
+  if (activeBonus) {
+    return [
+      '🚨 You have an active 💎 BONUS ROUND!',
+      `👉 Type /slots bonus to spin (${activeBonus.spinsLeft} left).`,
+      '⏸️ FREE SPINS are paused until the bonus ends.'
+    ].join('\n')
+  }
+
+  let { spinsLeft, spinsTotal, totalWon, startedAt, jackpotBonusUsed } = session
   spinsLeft = Number(spinsLeft || 0)
   spinsTotal = Number(spinsTotal || 0)
   totalWon = Number(totalWon || 0)
+  jackpotBonusUsed = Boolean(jackpotBonusUsed)
 
   if (spinsLeft <= 0 || spinsTotal <= 0) {
     clearFeatureSession(userUUID)
@@ -509,6 +517,35 @@ async function spinFeatureOnce (userUUID) {
 
   const spinNumber = (spinsTotal - spinsLeft) + 1
   const result = spinFeatureSlots()
+
+  // ✅ NEW: Feature spins can trigger the 💎 BONUS (jackpot slice) once per feature session
+  const isTripleDiamonds = result.join('') === '💎💎💎'
+  if (isTripleDiamonds && !jackpotBonusUsed) {
+    jackpotBonusUsed = true
+
+    const spinsTotalBonus = randInt(BONUS_SPINS_MIN, BONUS_SPINS_MAX)
+    const lockedJackpot = getJackpotValue()
+
+    saveBonusSession(userUUID, {
+      spinsLeft: spinsTotalBonus,
+      spinsTotal: spinsTotalBonus,
+      totalPct: 0,
+      lockedJackpot,
+      startedAt: new Date().toISOString()
+    })
+
+    // Pause feature session, keep remaining spins intact
+    saveFeatureSession(userUUID, { spinsLeft, spinsTotal, totalWon, startedAt, jackpotBonusUsed })
+
+    return [
+      renderSlot(result[0], result[1], result[2], `🎟️ FREE SPIN ${spinNumber}/${spinsTotal}`),
+      '\n🚨 💎💎💎 JACKPOT BONUS TRIGGERED (FROM FREE SPINS) 💎💎💎 🚨',
+      `🎁 BONUS SPINS: ${spinsTotalBonus}`,
+      `💰 Locked Jackpot: $${formatMoney(lockedJackpot)}`,
+      `👉 Type '/slots bonus' to start (Spin 1/${spinsTotalBonus}).`,
+      `⏸️ Your FREE SPINS session is paused — resume with '/slots free' after the bonus.`
+    ].join('\n')
+  }
 
   // tickets can land during feature to award more spins
   const ticketCount = result.filter(s => s === '🎟️').length
@@ -551,7 +588,7 @@ async function spinFeatureOnce (userUUID) {
   }
 
   if (spinsLeft > 0) {
-    saveFeatureSession(userUUID, { spinsLeft, spinsTotal, totalWon, startedAt })
+    saveFeatureSession(userUUID, { spinsLeft, spinsTotal, totalWon, startedAt, jackpotBonusUsed })
     lines.push(`👉 Type /slots free to spin again (${spinsLeft} left).`)
     return lines.join('\n')
   }
@@ -823,7 +860,8 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
             spinsLeft: spinsTotal,
             spinsTotal,
             totalWon: 0,
-            startedAt: new Date().toISOString()
+            startedAt: new Date().toISOString(),
+            jackpotBonusUsed: false // ✅ NEW: feature can trigger jackpot once
           })
 
           featureTriggerMessage = [
