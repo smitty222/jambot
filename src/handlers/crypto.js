@@ -114,7 +114,7 @@ function buildHelpMessage () {
     '`/crypto price <symbol>` – Show the current USD price for a coin (e.g. btc, eth).\n' +
     '`/crypto buy <symbol> <Amount>` – Buy a coin using cash from your wallet balance.\n' +
     '`/crypto sell <symbol> <Amount|all>` – Sell a coin for cash (sell by USD amount or your entire position).\n' +
-    '`/crypto portfolio` – Show your current crypto holdings and cash.\n' +
+    '`/crypto portfolio` – Show your current crypto holdings and total crypto value.\n' +
     '`/crypto top` – Show the top 10 coins by market cap.\n' +
     '`/crypto trending` – Show CoinGecko trending coins.\n' +
     '`/crypto help` – Show this help message.\n\n' +
@@ -203,11 +203,10 @@ export async function handleCryptoCommand ({ payload, room, args }) {
     }
 
     if (sub === 'portfolio') {
-      const cash = getUserWallet(userId)
       const positions = getPositions(userId)
 
       if (!positions.length) {
-        await postMessage({ room, message: `💼 Your crypto portfolio is empty. Wallet cash: $${formatUsd(cash)}.` })
+        await postMessage({ room, message: `💼 Your crypto portfolio is empty.\nTotal Crypto: $${formatUsd(0)}.` })
         return
       }
 
@@ -228,14 +227,13 @@ export async function handleCryptoCommand ({ payload, room, args }) {
         })
         .sort((a, b) => (b.value || 0) - (a.value || 0))
 
-      let totalValue = cash
+      let totalCrypto = 0
       const lines = enriched.map(pos => {
-        totalValue += pos.value
+        totalCrypto += pos.value
         return `${coinLabel(pos.symbol)}: ${formatQtyPortfolio(pos.quantity)} – worth $${formatUsd(pos.value)} (${formatSignedUsd(pos.pnlUsd)}) ${pnlEmoji(pos.pnlUsd)}`
       })
 
-      lines.push(`\nWallet cash: $${formatUsd(cash)}`)
-      lines.push(`Total Net Worth: $${formatUsd(totalValue)}`)
+      lines.push(`\nTotal Crypto: $${formatUsd(totalCrypto)}`)
 
       await postMessage({ room, message: lines.join('\n') })
       return
