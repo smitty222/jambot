@@ -343,7 +343,10 @@ export async function addSongsToCrate (crateId, songs, append = true, token) {
     }
   }
 
-  const candidateHosts = Array.from(new Set([cfg.ttGateway, process.env.TT_PUBLIC_API_BASE].filter(Boolean)))
+  const candidateHosts = Array.from(new Set([
+    cfg.ttGateway,
+    process.env.TT_PUBLIC_API_BASE || 'https://api.prod.tt.fm'
+  ].filter(Boolean)))
   const attempts = []
   for (const host of candidateHosts) {
     attempts.push({
