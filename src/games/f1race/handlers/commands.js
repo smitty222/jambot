@@ -71,6 +71,12 @@ const CAR_TIERS = {
   legendary: { price: 400000, base: { power: 76, handling: 75, aero: 74, reliability: 77, tire: 75 }, livery: '🟪' }
 }
 const TIER_ORDER = ['starter', 'pro', 'hyper', 'legendary']
+const TIER_PITCH = {
+  starter: 'Great first car. Cheap entry and repair costs.',
+  pro: 'Reliable all-rounder with stronger race pace.',
+  hyper: 'High-end speed package for serious contenders.',
+  legendary: 'Top-tier machine built to fight for wins.'
+}
 const RACE_MODES = {
   rookie: { label: 'ROOKIE', allowedTiers: new Set(['starter', 'pro']), payoutPlan: PRIZE_SPLIT_BY_MODE.rookie },
   open: { label: 'OPEN', allowedTiers: new Set(['starter', 'pro', 'hyper', 'legendary']), payoutPlan: PRIZE_SPLIT_BY_MODE.open },
@@ -240,48 +246,29 @@ function parseArg (txt, re) {
   return (String(txt || '').match(re) || [])[1]
 }
 
-function getTierStrengthIndex (tierKey) {
-  const tier = CAR_TIERS[tierKey]
-  if (!tier?.base) return 0
-  const b = tier.base
-  return (Number(b.power || 0) + Number(b.handling || 0) + Number(b.aero || 0) + Number(b.reliability || 0) + Number(b.tire || 0)) / 5
-}
-
-function getAffordableTiers (balance) {
-  const bal = Number(balance || 0)
-  return TIER_ORDER.filter((k) => bal >= Number(CAR_TIERS[k]?.price || Infinity))
-}
-
 function buildBuyCarShopCard (balance) {
   const bal = Number(balance || 0)
-  const starterIdx = getTierStrengthIndex('starter') || 1
 
   const lines = []
-  lines.push('F1 GARAGE — BUY A CAR')
+  lines.push('F1 GARAGE')
   lines.push('')
   lines.push(`Wallet: ${fmtMoney(bal)}`)
   lines.push('')
-  lines.push('Tier        Price      Entry      Repair/1%  Power Index  Edge vs Starter')
-  lines.push('--------------------------------------------------------------------------')
+  lines.push('Choose your tier:')
+  lines.push('')
 
   for (const key of TIER_ORDER) {
     const tier = CAR_TIERS[key]
-    const strength = getTierStrengthIndex(key)
-    const edgePct = ((strength / starterIdx) - 1) * 100
     const entry = getTierEntryFee(key)
     const repair = getTierRepairCostPerPoint(key)
-    const afford = bal >= tier.price ? 'YES' : 'NO'
 
-    lines.push(
-      `${key.padEnd(10)}  ${fmtMoney(tier.price).padStart(8)}  ${fmtMoney(entry).padStart(8)}  ${fmtMoney(repair).padStart(9)}  ${strength.toFixed(1).padStart(11)}  ${`${edgePct >= 0 ? '+' : ''}${edgePct.toFixed(1)}%`.padStart(15)}`
-    )
-    lines.push(`           Buy Now: ${afford}`)
+    lines.push(`${tier.livery} ${key.toUpperCase()} — ${fmtMoney(tier.price)}`)
+    lines.push(`${TIER_PITCH[key]}`)
+    lines.push(`Race costs: entry ${fmtMoney(entry)} · repair ${fmtMoney(repair)}/1% wear`)
+    lines.push('')
   }
 
-  const affordable = getAffordableTiers(bal)
-  lines.push('')
-  lines.push(`Affordable now: ${affordable.length ? affordable.map(t => t.toUpperCase()).join(', ') : 'none'}`)
-  lines.push('Buy: /buycar <starter|pro|hyper|legendary>')
+  lines.push('Buy with: /buycar <starter|pro|hyper|legendary>')
   lines.push('Example: /buycar pro')
 
   return lines.join('\n')
@@ -528,15 +515,12 @@ export async function handleBuyCar (ctx) {
   }
   if (bal < tier.price) {
     const shortBy = tier.price - bal
-    const affordable = getAffordableTiers(bal)
-    const alt = affordable.length ? `Affordable now: ${affordable.map(t => t.toUpperCase()).join(', ')}.` : 'You cannot afford any tier yet.'
     await postMessage({
       room,
       message:
         `❗ ${nick}, you need **${fmtMoney(tier.price)}** for **${tierKey.toUpperCase()}**.\n` +
         `Balance: **${fmtMoney(bal)}** · Short by: **${fmtMoney(shortBy)}**.\n` +
-        `${alt}\n` +
-        'Run `/buycar` to view the full tier table.'
+        'Run `/buycar` to view all tiers.'
     })
     return
   }
@@ -574,14 +558,10 @@ export async function handleBuyCar (ctx) {
   }
 
   const updated = await safeCall(getUserWallet, [userId]).catch(() => null)
-  const idx = getTierStrengthIndex(tierKey)
-  const entryFee = getTierEntryFee(tierKey)
-  const repairCost = getTierRepairCostPerPoint(tierKey)
   await postMessage({
     room,
     message:
       `✅ ${nick} bought a **${tierKey.toUpperCase()}** car: **${tier.livery} #${String(id).padStart(2, '0')} ${name}**\n` +
-      `📈 Tier Index: **${idx.toFixed(1)}** · Entry Fee: **${fmtMoney(entryFee)}** · Repair/1%: **${fmtMoney(repairCost)}**\n` +
       `💰 Balance: **${fmtMoney(updated)}**\n` +
       'Next: `/mycars`, `/carstats`, `/gp start open`',
     images: imageUrl ? [imageUrl] : undefined
@@ -789,7 +769,26 @@ export async function handleSellCar (ctx) {
   const nick = await safeCall(getUserNickname, [userId]).catch(() => '@user')
 
   if (!nameArg) {
-    await postMessage({ room, message: 'Usage: **/sellcar <car name>**' })
+    const cars = await safeCall(getUserCars, [userId]).catch(() => [])
+    if (!cars?.length) {
+      await postMessage({ room, message: `${nick}, you don’t own any cars yet. Try **/buycar**.` })
+      return
+    }
+
+    const lines = []
+    lines.push(`${nick}'s SELL VALUES`)
+    lines.push('')
+
+    const sorted = cars.slice().sort((a, b) => estimateResaleValue(b) - estimateResaleValue(a))
+    for (const c of sorted.slice(0, 12)) {
+      const resale = estimateResaleValue(c)
+      lines.push(`• ${carLabel(c)} — ${fmtMoney(resale)}`)
+    }
+    if (sorted.length > 12) lines.push(`…and ${sorted.length - 12} more cars.`)
+
+    lines.push('')
+    lines.push('Sell one: `/sellcar <car name>`')
+    await postMessage({ room, message: '```\n' + lines.join('\n') + '\n```' })
     return
   }
 

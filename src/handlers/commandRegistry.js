@@ -77,6 +77,7 @@ import {
 // rotation.  getAlbumList returns an array of album names (lower‑cased) or
 // an empty array if none have been queued yet.
 import { addQueuedAlbum, removeQueuedAlbum,listQueuedAlbums } from '../database/dbalbumqueue.js'
+import { getAllNetTotals } from '../database/dbwalletmanager.js'
 
 
 function extractSpotifyAlbumId (input) {
@@ -98,6 +99,52 @@ function extractSpotifyAlbumId (input) {
 
 function looksLikeSpotifyId (s) {
   return !!extractSpotifyAlbumId(s)
+}
+
+function formatWholeDollars (value) {
+  return Math.round(Number(value) || 0).toLocaleString('en-US')
+}
+
+async function postCareerLossesLeaderboard (room, args = '') {
+  const requested = Number.parseInt(String(args || '').trim(), 10)
+  const limit = Number.isFinite(requested) && requested > 0
+    ? Math.min(requested, 50)
+    : 10
+
+  const losses = getAllNetTotals()
+    .filter(row => Number(row?.lifetime_net) < 0)
+    .sort((a, b) => Number(a.lifetime_net) - Number(b.lifetime_net))
+    .slice(0, limit)
+
+  if (!losses.length) {
+    await postMessage({ room, message: 'No career gambling losses are recorded yet.' })
+    return
+  }
+
+  const names = await Promise.all(
+    losses.map(async ({ uuid }) => {
+      try {
+        return await getUserNicknameByUuid(uuid)
+      } catch {
+        return `<@uid:${uuid}>`
+      }
+    })
+  )
+
+  const lines = losses.map((row, i) => {
+    const lossAmount = formatWholeDollars(Math.abs(Number(row.lifetime_net)))
+    return `${i + 1}. ${names[i]} - -$${lossAmount}`
+  })
+
+  await postMessage({
+    room,
+    message: [
+      `📉 **Career Gambling Losses** (Top ${losses.length})`,
+      '_Biggest loser → least_',
+      '',
+      ...lines
+    ].join('\n')
+  })
 }
 
 
@@ -343,6 +390,14 @@ const commandRegistry = {
   // 🏆 Lotto stats: `/lottostats`
   lottostats: async ({ room }) => {
     await handleTopLotteryStatsCommand(room)
+  },
+
+  // 📉 Career losses leaderboard: `/careerlosses [count]`
+  careerlosses: async ({ room, args }) => {
+    await postCareerLossesLeaderboard(room, args)
+  },
+  biggestlosers: async ({ room, args }) => {
+    await postCareerLossesLeaderboard(room, args)
   },
 
   // 🏅 Lotto single number query: `/lotto #<number>`
@@ -636,8 +691,17 @@ ${blocks}
   gifs: async ({ room }) => {
     await postMessage({
       room,
-      message:
-        'Randomly selected GIFs:\n- /burp\n- /dance\n- /party\n- /beer\n- /fart\n- /tomatoes\n- /cheers'
+      message: [
+        '🎞️ GIF & Fun Commands',
+        '- `/burp` `/dance` `/party` `/beer` `/fart` `/cheers` `/tomatoes`',
+        '- `/trash` `/bonk` `/rigged` `/banger` `/peace`',
+        '- `/props` `/ass` `/titties` `/azz` `/shred`',
+        '- `/dog [breed] [sub-breed]`',
+        '',
+        'More grouped help:',
+        '- `/commands gifs`',
+        '- `/commands`'
+      ].join('\n')
     })
   },
 

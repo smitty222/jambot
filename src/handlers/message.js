@@ -137,6 +137,214 @@ function buildModSheet () {
   ].join('\n')
 }
 
+const COMMAND_GUIDES = {
+  games: [
+    '🎮 Games Commands',
+    '',
+    'Lottery & Roulette',
+    '- `/lottery`',
+    '- `/lotto #<number>`',
+    '- `/lottostats`',
+    '- `/lottowinners`',
+    '- `/roulette start`',
+    '- `/red <amount>` `/black <amount>` `/green <amount>`',
+    '- `/odd <amount>` `/even <amount>` `/high <amount>` `/low <amount>`',
+    '- `/number <1-36> <amount>` or `/<number> <amount>`',
+    '- `/dozen <1|2|3> <amount>`',
+    '',
+    'Slots, Blackjack, Craps',
+    '- `/slots [bet]`',
+    '- `/slotinfo`',
+    '- `/jackpot`',
+    '- `/blackjack` or `/bj`',
+    '- `/join`, `/bet <amount>`, `/hit`, `/stand`, `/double`, `/split`, `/surrender`',
+    '- `/craps help`',
+    '- `/crapsrecord`',
+    '',
+    'Horse Racing',
+    '- `/horserace`',
+    '- `/horse <number> <amount>` or `/horse<number> <amount>`',
+    '- `/buyhorse <tier>`',
+    '- `/myhorses`',
+    '- `/horsehelp` `/horserules` `/horseinfo`',
+    '- `/horsestats`',
+    '- `/tophorses`',
+    '- `/hof`',
+    '',
+    'F1 Racing',
+    '- `/f1race`',
+    '- `/buycar <tier>`',
+    '- `/mycars`',
+    '- `/wear <car #>`',
+    '- `/car <car #>`',
+    '- `/carpics`',
+    '- `/repair <car #>`',
+    '- `/sellcar <car #>`',
+    '- `/team`',
+    '- `/bet ...` (F1 bet formats)',
+    '- `/f1stats`',
+    '- `/f1leaderboard`',
+    '- `/f1help`',
+    '',
+    'Trivia',
+    '- `/triviastart`',
+    '- `/trivia`',
+    '- `/triviaend`'
+  ].join('\n'),
+  gifs: [
+    '🎞️ GIF & Fun Commands',
+    '',
+    'GIF picks',
+    '- `/gifs`',
+    '- `/burp` `/dance` `/party` `/beer` `/fart` `/cheers` `/tomatoes`',
+    '- `/trash` `/bonk` `/rigged` `/banger` `/peace`',
+    '- `/props` `/ass` `/titties` `/azz` `/shred`',
+    '',
+    'Pets & reactions',
+    '- `/dog`',
+    '- `/dog <breed>`',
+    '- `/dog <breed> <sub-breed>`',
+    '- `/bark` `/barkbark`',
+    '',
+    'Room fun',
+    '- `/djbeer` `/djbeers` `/getdjdrunk`',
+    '- `/jump`',
+    '- `/dive`',
+    '- `/escortme`',
+    '- `/jam` `/berad` `/cam` `/drink` `/shirley` `/ello` `/allen` `/secret`',
+    '- `/star` `/unstar`'
+  ].join('\n'),
+  music: [
+    '🎵 Music, Queue & Reviews',
+    '',
+    'Now playing & stats',
+    '- `/album`',
+    '- `/art`',
+    '- `/score`',
+    '- `/song`',
+    '- `/stats`',
+    '- `/mostplayed`',
+    '- `/topliked`',
+    '- `/topsongs`',
+    '- `/mytopsongs`',
+    '- `/topalbums`',
+    '- `/mytopalbums`',
+    '',
+    'Reviews',
+    '- `/reviewhelp`',
+    '- `/songreview <1-10>`',
+    '- `/albumreview <1-10>`',
+    '- `/rating`',
+    '',
+    'Suggestions & queue tools',
+    '- `/suggestsongs`',
+    '- `/searchalbum <artist>`',
+    '- `/newalbums [countryCode]`',
+    '- `/searchplaylist`',
+    '- `/qplaylist <spotifyPlaylistId>`',
+    '- `/qalbum <spotifyAlbumId|url|uri>`',
+    '- `/albumadd <spotifyAlbumId>`',
+    '- `/albumremove <spotifyAlbumId>`',
+    '- `/albumlist`',
+    '- `/addsong <song>`',
+    '- `/removesong <song>`',
+    '',
+    'Theme',
+    '- `/theme`',
+    '- `/settheme <name>` (mods)',
+    '- `/removetheme` (mods)'
+  ].join('\n'),
+  wallet: [
+    '💰 Wallet, Betting & Scores',
+    '',
+    'Wallet',
+    '- `/balance`',
+    '- `/bankroll`',
+    '- `/career`',
+    '- `/careerlosses [count]`',
+    '- `/biggestlosers [count]`',
+    '- `/getwallet`',
+    '- `/checkbalance <@user>`',
+    '- `/tip <@user> <amount>`',
+    '',
+    'Sports',
+    '- `/MLB [YYYY-MM-DD]`',
+    '- `/NHL [YYYY-MM-DD]`',
+    '- `/NBA [YYYY-MM-DD]`',
+    '- `/mlbodds`',
+    '- `/sportsbet ...`',
+    '- `/resolvebets` (mods/admin)'
+  ].join('\n'),
+  avatars: [
+    '🧑‍🎤 Avatar Commands',
+    '',
+    'User avatars',
+    '- `/randomavatar`',
+    '- `/dino` `/duck` `/spacebear` `/walrus`',
+    '- `/vibesguy` `/faces` `/dodo` `/dumdum` `/flowerpower`',
+    '- `/teacup` `/alien` `/alien2` `/roy` `/spooky` `/bouncer`',
+    '- `/record` `/jester` `/jukebox`',
+    '- `/anon` `/cyber` `/ghost` `/cosmic` `/lovable` `/grime`',
+    '- `/bearparty` `/winter` `/tvguy` `/pinkblanket`',
+    '- `/gaycam` `/gayian` `/gayalex` `/pajama`',
+    '',
+    'Bot avatars (mod-only)',
+    '- `/botrandom`',
+    '- `/bot1` `/bot2` `/bot3`',
+    '- `/botdino` `/botduck` `/botalien` `/botalien2`',
+    '- `/botpenguin` `/botwalrus`',
+    '- `/botspooky` `/botstaff` `/botwinter`'
+  ].join('\n'),
+  mod: [
+    '🛠️ Moderator Commands',
+    '',
+    '- `/status`',
+    '- `/bopon` `/bopoff`',
+    '- `/autodjon` `/autodjoff`',
+    '- `/songstatson` `/songstatsoff`',
+    '- `/greeton` `/greetoff`',
+    '- `/infoon` `/infooff` `/infotoggle`',
+    '- `/infotone <tone>`',
+    '- `/room <classic|ferry|barn|yacht|festival|stadium|theater>`',
+    '- `/settheme <name>`',
+    '- `/removetheme`',
+    '- `/addDJ [auto|discover]`',
+    '- `/removeDJ`',
+    '- `/spotlight`',
+    '- `/addavatar ...`',
+    '- `/removeavatar ...`',
+    '- `/blacklist+ ...`',
+    '- `/site`',
+    '- `/store`',
+    '- `/mod` (DM full moderator sheet)'
+  ].join('\n')
+}
+
+function resolveCommandGuideTopic (rawTopic = '') {
+  const key = String(rawTopic || '').toLowerCase()
+  const aliases = {
+    game: 'games',
+    games: 'games',
+    gif: 'gifs',
+    gifs: 'gifs',
+    fun: 'gifs',
+    music: 'music',
+    queue: 'music',
+    review: 'music',
+    reviews: 'music',
+    wallet: 'wallet',
+    money: 'wallet',
+    bankroll: 'wallet',
+    avatar: 'avatars',
+    avatars: 'avatars',
+    mod: 'mod',
+    mods: 'mod',
+    moderator: 'mod',
+    admin: 'mod'
+  }
+  return aliases[key] || null
+}
+
 /*
  * The DM admin allow list, helper functions and the DM command handler have
  * been moved to src/handlers/dmHandler.js. Keeping them here would bloat
@@ -264,7 +472,7 @@ if (/^\/wear\b/i.test(txt)) return handleWearCommand(payload)
 if (/^\/carpics\b/i.test(txt)) return handleCarPics(payload)
 if (/^\/car\s+/i.test(txt)) return handleCarShow(payload)
 if (/^\/repair\s+/i.test(txt)) return handleRepairCar(payload)
-if (/^\/sellcar\s+/i.test(txt)) return handleSellCar(payload)
+if (/^\/sellcar\b/i.test(txt)) return handleSellCar(payload)
 if (/^\/team\b/i.test(txt)) return handleTeamCommand(payload)
 
 // Help
@@ -344,73 +552,49 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
     try {
       const isMod = await isUserAuthorized(payload.sender, ttlUserToken)
       const arg = payload.message.trim().split(/\s+/)[1]?.toLowerCase()
-      const wantModInline = /^(mod|mods|moderator|admin|sheet)$/.test(arg || '')
-      const showAll = /^(all|everything)$/.test(arg || '')
+      const topic = resolveCommandGuideTopic(arg)
+      const askedForMod = topic === 'mod'
 
-      const sections = []
-
-      // Essentials
-      sections.push([
-        '— Essentials —',
-        '- `/theme` — Show current room theme',
-        '- `/games` — List available games',
-        '- `/escortme` — Stagedive after your next song',
-        '- `/dive` — Stagedive now',
-        '- `/djbeer` — Give the DJ a beer 🍺'
-      ].join('\n'))
-
-      // Music & Stats
-      sections.push([
-        '— Music & Stats —',
-        '- `/album` — Album info for the current song',
-        '- `/score` — Spotify popularity score',
-        '- `/reviewhelp` — How to review songs ⭐',
-        '- `/suggestsongs` — Songs suggested by Allen'
-      ].join('\n'))
-
-      // Wallet / Lotteries
-      sections.push([
-        '— Wallet & Lotto —',
-        '- `/bankroll` — Top wallet leaders 💰',
-        '- `/lottowinners` — Lottery ball winners 🎱',
-        '- `/lottostats` - Most Drawn Lotto Numbers'
-      ].join('\n'))
-
-      // Fun / GIFs
-      sections.push([
-        '— Fun —',
-        '- `/gifs` — Show GIF commands',
-        '- `/djbeer` — Beer again (because, priorities) 🍺'
-      ].join('\n'))
-
-      // Moderator section: show inline only if mod or explicitly asked
-      if (isMod || wantModInline || showAll) {
-        sections.push([
-          '— Moderator Quick Toggles —',
-          '- `/status` — Show bot toggles status',
-          '- `/bopon` | `/bopoff` — Auto-like on/off',
-          '- `/songstatson` | `/songstatsoff`',
-          '- `/greeton` | `/greetoff` — Greeting on/off',
-          '- `/infoon` | `/infooff` | `/infotoggle` — Info blurb on/off',
-          '- `/infotone <tone>` — Set info blurb tone (neutral, playful, cratedigger, hype, classy, chartbot, djtech, vibe)',
-          '- `/settheme <name>` | `/removetheme`',
-          '- `/room <style>` — Change room look (classic, ferry, barn, yacht, festival, stadium, theater)',
-          '- `/addDJ` | `/removeDJ`'
-        ].join('\n'))
-      } else {
-        sections.push('— Moderator Commands —\n- Mods can DM `/mod` to receive the full list.')
+      if (topic && topic !== 'mod') {
+        await postMessage({ room, message: COMMAND_GUIDES[topic] })
+        return
       }
 
-      // Post the assembled commands list
-      const message = ['📖 Commands', ...sections].join('\n\n')
-      await postMessage({ room, message })
-
-      // If a mod asked `/commands mod`, also DM them the full sheet
-      if (wantModInline && isMod) {
-        const modSheet = buildModSheet() // assumes you have this helper
+      if (askedForMod) {
+        if (!isMod) {
+          await postMessage({
+            room,
+            message: 'Moderator commands are mod-only. Use `/commands games`, `/commands gifs`, `/commands music`, `/commands wallet`, or `/commands avatars`.'
+          })
+          return
+        }
+        await postMessage({ room, message: COMMAND_GUIDES.mod })
+        const modSheet = buildModSheet()
         await sendDirectMessage(payload.sender, modSheet)
         await postMessage({ room, message: 'Mod Commands sent via DM' })
+        return
       }
+
+      const overview = [
+        '📖 Command Guide',
+        '',
+        'Use one of these to browse commands by category:',
+        '- `/games`',
+        '- `/gifs`',
+        '- `/music`',
+        '- `/wallet`',
+        '- `/avatars`',
+        '',
+        'You can also use:',
+        '- `/commands games`',
+        '- `/commands gifs`',
+        '- `/commands music`',
+        '- `/commands wallet`',
+        '- `/commands avatars`',
+        isMod ? '- `/commands mod`' : '- Mods can use `/commands mod` or `/mod`'
+      ].join('\n')
+
+      await postMessage({ room, message: overview })
     } catch (err) {
       console.error('/commands error:', err)
       await postMessage({ room, message: 'Could not build the commands list.' })
@@ -753,8 +937,14 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
   } else if (payload.message.startsWith('/games')) {
     await postMessage({
       room,
-      message: 'Games:\n- /trivia: Play Trivia\n- /lottery: Play the Lottery\n- /roulette: Play Roulette\n- /slots: Play Slots\n- /blackjack: Play Blackjack\n- /horserace\n- /slotinfo: Display slots payout info\n- /lotto (#):Insert number to get amount of times won\n- /lottostats: Get most won lottery numbers \n- /jackpot: Slots progressive jackpot value'
+      message: COMMAND_GUIDES.games
     })
+  } else if (payload.message.startsWith('/music')) {
+    await postMessage({ room, message: COMMAND_GUIDES.music })
+  } else if (payload.message.startsWith('/wallet')) {
+    await postMessage({ room, message: COMMAND_GUIDES.wallet })
+  } else if (payload.message.startsWith('/avatars')) {
+    await postMessage({ room, message: COMMAND_GUIDES.avatars })
   } else if (/^\/(?:theme|settheme|removetheme)\b/i.test(payload.message.trim())) {
     console.log('[MessageHandler] routing to theme handler:', payload.message)
     try {
