@@ -46,6 +46,60 @@ function speedFromOdds (decOdds) {
   return Math.max(0.95, Math.min(1.07, f))
 }
 
+function horseDec (horse) {
+  const dec = Number(horse?.oddsDecLocked ?? horse?.odds ?? 3.0)
+  if (!Number.isFinite(dec)) return 3.0
+  return Math.max(1.01, dec)
+}
+
+function settleSlip (slip, officialOrder, horses) {
+  const type = String(slip?.type || 'win').toLowerCase()
+  const amount = Math.floor(Number(slip?.amount || 0))
+  if (!Number.isFinite(amount) || amount <= 0) return 0
+
+  const first = officialOrder[0]
+  const second = officialOrder[1]
+  const third = officialOrder[2]
+
+  if (type === 'win') {
+    if (Number(slip?.horseIndex) !== first) return 0
+    return Math.floor(amount * horseDec(horses[first]))
+  }
+
+  if (type === 'place') {
+    const idx = Number(slip?.horseIndex)
+    if (idx !== first && idx !== second) return 0
+    const dec = 1 + ((horseDec(horses[idx]) - 1) * 0.55)
+    return Math.floor(amount * dec)
+  }
+
+  if (type === 'show') {
+    const idx = Number(slip?.horseIndex)
+    if (idx !== first && idx !== second && idx !== third) return 0
+    const dec = 1 + ((horseDec(horses[idx]) - 1) * 0.35)
+    return Math.floor(amount * dec)
+  }
+
+  if (type === 'exacta') {
+    const a = Number(slip?.firstIndex)
+    const b = Number(slip?.secondIndex)
+    if (a !== first || b !== second) return 0
+    const dec = Math.max(4, Math.min(30, 2 + horseDec(horses[a]) + horseDec(horses[b])))
+    return Math.floor(amount * dec)
+  }
+
+  if (type === 'trifecta') {
+    const a = Number(slip?.firstIndex)
+    const b = Number(slip?.secondIndex)
+    const c = Number(slip?.thirdIndex)
+    if (a !== first || b !== second || c !== third) return 0
+    const dec = Math.max(10, Math.min(80, 5 + ((horseDec(horses[a]) + horseDec(horses[b]) + horseDec(horses[c])) * 1.5)))
+    return Math.floor(amount * dec)
+  }
+
+  return 0
+}
+
 export async function runRace ({ horses, horseBets }) {
   if (!Array.isArray(horses) || horses.length === 0) return
 
@@ -132,26 +186,17 @@ export async function runRace ({ horses, horseBets }) {
   }
 
   state[winnerIdx].progress = FINISH
+  const finalOrder = state.map((h, i) => ({ i, p: h.progress }))
+    .sort((a, b) => (b.p - a.p) || (a.i - b.i))
+    .map(x => x.i)
+  const officialOrder = [winnerIdx, ...finalOrder.filter(i => i !== winnerIdx)]
 
   // --- payouts to bettors ---
   const payouts = {}
   for (const [userId, slips] of Object.entries(horseBets || {})) {
     let sum = 0
     for (const s of slips) {
-      if (s.horseIndex === winnerIdx) {
-        const w = horses[winnerIdx]
-        const num = Number(w?.oddsFrac?.num)
-        const den = Number(w?.oddsFrac?.den)
-
-        if (Number.isFinite(num) && Number.isFinite(den) && den > 0) {
-          const profit = s.amount * (num / den)
-          sum += Math.floor(s.amount + profit)
-        } else {
-          // ✅ Settlement fallback should match displayed/locked tote odds
-          const dec = Number(w?.oddsDecLocked ?? w?.odds ?? 3.0)
-          sum += Math.floor(s.amount * dec)
-        }
-      }
+      sum += settleSlip(s, officialOrder, horses)
     }
     if (sum > 0) {
       payouts[userId] = (payouts[userId] || 0) + sum

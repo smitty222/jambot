@@ -269,17 +269,80 @@ export async function handleHorseEntryAttempt (ctx) {
 export async function handleHorseBet (ctx) {
   if (!isBettingOpen) return
 
-  const txt = String(ctx.message || '')
+  const txt = String(ctx.message || '').trim()
   const sender = ctx.sender
-  const m = txt.match(/^\/horse\s*(\d+)\s+(\d+)\b/i)
-  if (!m) return
-
-  const idx = parseInt(m[1], 10) - 1
-  const amt = parseInt(m[2], 10)
-  if (Number.isNaN(idx) || Number.isNaN(amt) || amt <= 0 || idx < 0 || idx >= horses.length) return
-
-  const balance = await safeCall(getUserWallet, [sender])
   const nick = await safeCall(getUserNickname, [sender]).catch(() => '@user')
+
+  let slip = null
+  let betLabel = ''
+
+  const parseSingle = (re, type) => {
+    const m = txt.match(re)
+    if (!m) return null
+    const idx = parseInt(m[1], 10) - 1
+    const amt = parseInt(m[2], 10)
+    if (Number.isNaN(idx) || Number.isNaN(amt) || amt <= 0 || idx < 0 || idx >= horses.length) return null
+    return { slip: { type, horseIndex: idx, amount: amt }, amt, label: `${type.toUpperCase()} #${idx + 1}` }
+  }
+
+  const pWin = parseSingle(/^\/horse\s*(\d+)\s+(\d+)\b/i, 'win')
+  const pPlace = parseSingle(/^\/place\s*(\d+)\s+(\d+)\b/i, 'place')
+  const pShow = parseSingle(/^\/show\s*(\d+)\s+(\d+)\b/i, 'show')
+  const parsedSingle = pWin || pPlace || pShow
+  if (parsedSingle) {
+    slip = parsedSingle.slip
+    betLabel = parsedSingle.label
+  } else {
+    let m = txt.match(/^\/exacta\s+(\d+)\s*[-,\/]\s*(\d+)\s+(\d+)\b/i) ||
+            txt.match(/^\/exacta\s+(\d+)\s+(\d+)\s+(\d+)\b/i)
+    if (m) {
+      const first = parseInt(m[1], 10) - 1
+      const second = parseInt(m[2], 10) - 1
+      const amt = parseInt(m[3], 10)
+      if (
+        Number.isFinite(first) && Number.isFinite(second) && Number.isFinite(amt) &&
+        amt > 0 && first >= 0 && second >= 0 &&
+        first < horses.length && second < horses.length &&
+        first !== second
+      ) {
+        slip = { type: 'exacta', firstIndex: first, secondIndex: second, amount: amt }
+        betLabel = `EXACTA #${first + 1}-#${second + 1}`
+      }
+    }
+
+    if (!slip) {
+      m = txt.match(/^\/trifecta\s+(\d+)\s*[-,\/]\s*(\d+)\s*[-,\/]\s*(\d+)\s+(\d+)\b/i) ||
+          txt.match(/^\/trifecta\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\b/i)
+      if (m) {
+        const a = parseInt(m[1], 10) - 1
+        const b = parseInt(m[2], 10) - 1
+        const c = parseInt(m[3], 10) - 1
+        const amt = parseInt(m[4], 10)
+        const uniq = new Set([a, b, c]).size === 3
+        if (
+          Number.isFinite(a) && Number.isFinite(b) && Number.isFinite(c) && Number.isFinite(amt) &&
+          amt > 0 && a >= 0 && b >= 0 && c >= 0 &&
+          a < horses.length && b < horses.length && c < horses.length &&
+          uniq
+        ) {
+          slip = { type: 'trifecta', firstIndex: a, secondIndex: b, thirdIndex: c, amount: amt }
+          betLabel = `TRIFECTA #${a + 1}-#${b + 1}-#${c + 1}`
+        }
+      }
+    }
+  }
+  if (!slip) {
+    await safeCall(postMessage, [{
+      room: ROOM,
+      message: `${nick}, invalid bet format.\n` +
+        'Win: `/horse <#> <amt>` · Place: `/place <#> <amt>` · Show: `/show <#> <amt>`\n' +
+        'Exacta: `/exacta <#>-<#> <amt>` · Trifecta: `/trifecta <#>-<#>-<#> <amt>`'
+    }])
+    return
+  }
+
+  const amt = Number(slip.amount || 0)
+  const balance = await safeCall(getUserWallet, [sender])
   if (balance < amt) {
     await safeCall(postMessage, [{ room: ROOM, message: `${nick}, insufficient funds: $${balance}.` }])
     return
@@ -287,12 +350,11 @@ export async function handleHorseBet (ctx) {
 
   // NOTE: If debitGameBet returns a boolean in your DB layer, prefer checking it.
   await safeCall(debitGameBet, [sender, amt])
-  ;(horseBets[sender] ||= []).push({ horseIndex: idx, amount: amt })
+  ;(horseBets[sender] ||= []).push(slip)
 
-  const h = horses[idx]
   await safeCall(postMessage, [{
     room: ROOM,
-    message: `${nick} bets $${amt} on #${idx + 1} **${h.name}**!`
+    message: `${nick} bets $${amt} on **${betLabel}**!`
   }])
 }
 
@@ -390,7 +452,9 @@ async function openBetsPhase () {
         '```',
         card,
         '```',
-        `Place your bets using /horse <number> <amount> (for example, /horse 2 50) in the next ${BET_MS / 1000}s.`
+        `Bets open for ${BET_MS / 1000}s.`,
+        'Win: /horse <#> <amt> · Place: /place <#> <amt> · Show: /show <#> <amt>',
+        'Exacta: /exacta <#>-<#> <amt> · Trifecta: /trifecta <#>-<#>-<#> <amt>'
       ].join('\n')
     }])
 
@@ -400,7 +464,7 @@ async function openBetsPhase () {
       if (isBettingOpen) {
         safeCall(postMessage, [{
           room: ROOM,
-          message: '⌛ Halfway to post! Place your bet now using /horse <number> <amount> (e.g., /horse 1 25).'
+          message: '⌛ Halfway to post! Bet now: /horse, /place, /show, /exacta, /trifecta.'
         }])
       }
     }, BET_MS / 2)
@@ -725,7 +789,7 @@ function careerLeft (h) {
   return String(Math.max(0, limit - races))
 }
 
-function renderHorseTable (rows, { title = '', showOwner = false } = {}) {
+function renderHorseTable (rows, { title = '', showOwner = false, dividerTrim = 0 } = {}) {
   // Column widths tuned for CometChat
   const W_NUM = 2
   const W_NAME = showOwner ? 18 : 22
@@ -745,7 +809,7 @@ function renderHorseTable (rows, { title = '', showOwner = false } = {}) {
     `${padR('Status', W_STAT)}` +
     (showOwner ? ` ${padR('Owner', 14)}` : '')
 
-  const line = '-'.repeat(header.length)
+  const line = '-'.repeat(Math.max(0, header.length - Number(dividerTrim || 0)))
 
   const body = rows.map((r, idx) => {
     const h = r.horse || r
@@ -822,73 +886,36 @@ export async function handleMyHorsesCommand (ctx) {
     name: `${tierBadge(h.tier)} ${String(h.name || '')}`.trim()
   }))
 
-  const title = [
+  const summary = [
     `${nick}'s Stable (${arranged.length})`,
     `Active ${activeCount} · Retired ${retiredCount}`,
     `Tiers: Champion ${championCount} · Elite ${eliteCount} · Basic ${basicCount}`
   ].join('\n')
 
-  const table = renderHorseTable(displayRows, { title })
-  const footer = [
-    'Status: RET = retired',
-    'Details: /horsestats <horse name>   Pics: /horsepics   Sell: /sellhorse <horse name>'
-  ].join('\n')
+  const isRetired = (h) => !!h?.retired || Number(h?.retired) === 1
+  const activeRows = displayRows.filter(h => !isRetired(h))
+  const retiredRows = displayRows.filter(h => isRetired(h))
 
-  await postMessage({ room: ROOM, message: `${table}\n${footer}` })
-}
-
-export async function handleHorsePicsCommand (ctx) {
-  const room = ctx?.room || ROOM
-  const userId = ctx?.sender || ctx?.userId || ctx?.uid
-  const nick = await getUserNickname(userId)
-  const mine = await getUserHorses(userId)
-
-  if (!mine || mine.length === 0) {
-    await postMessage({
-      room,
-      message: `${nick}, you don’t own any horses yet. Use **/buyhorse <tier>** to get started.`
-    })
-    return
-  }
-
-  await ensurePersistentHorseImages(mine)
-  const withImages = mine.filter(h => h?.imageUrl)
-
-  if (!withImages.length) {
-    await postMessage({
-      room,
-      message: `📷 ${nick}, none of your horses currently have images. Add images to horse tier folders to enable this.`
-    })
-    return
-  }
-
-  const tierRank = { champion: 0, elite: 1, basic: 2 }
-  const sorted = withImages.slice().sort((a, b) => {
-    const at = tierRank[String(a?.tier || '').toLowerCase()] ?? 9
-    const bt = tierRank[String(b?.tier || '').toLowerCase()] ?? 9
-    if (at !== bt) return at - bt
-    return String(a?.name || '').localeCompare(String(b?.name || ''))
+  const activeTable = renderHorseTable(activeRows, {
+    title: `${summary}\n\nACTIVE`,
+    dividerTrim: 7
   })
+  const retiredTable = renderHorseTable(retiredRows, {
+    title: 'RETIRED',
+    dividerTrim: 7
+  })
+  const footer = 'Details: /horsedetails <horse name>   Sell: /sellhorse <horse name>'
 
-  for (const h of sorted.slice(0, 8)) {
-    const retired = (!!h?.retired || Number(h?.retired) === 1) ? ' · RETIRED' : ''
-    await postMessage({
-      room,
-      message: `📷 ${h.name} · ${String(h?.tier || '—').toUpperCase()}${retired}`,
-      images: [h.imageUrl]
-    })
-  }
-
-  if (sorted.length > 8) {
-    await postMessage({ room, message: `…and ${sorted.length - 8} more horses with images.` })
-  }
+  await postMessage({
+    room: ROOM,
+    message: `${activeTable}\n${retiredTable}\n${footer}`
+  })
 }
 
 export async function handleHorseStatsCommand (ctx) {
   const room = ctx?.room || ROOM
   const text = String(ctx?.message || '').trim()
-  // FIX: this should be \s not \\s
-  const nameArg = (text.match(/^\/horsestats\s+(.+)/i) || [])[1]
+  const nameArg = (text.match(/^\/(?:horsestats|horsedetails)\s+(.+)/i) || [])[1]
 
   const all = await getAllHorses()
   const horsesList = Array.isArray(all) ? all : []
@@ -1055,17 +1082,21 @@ export async function handleHorseHelpCommand (ctx) {
     '  /buyhorse <tier> [option#]  - browse/buy tier horses (basic, elite, champion)',
     '  /sellhorse [name]           - show sell values or sell one horse',
     '  /myhorses                   - view your stable and records',
-    '  /horsepics                  - view pictures of your horses',
     '',
     'Stats + Rankings',
-    '  /horsestats [name]          - horse details or global leaderboards',
+    '  /horsedetails [name]        - horse details or global leaderboards',
+    '  /horsestats [name]          - alias of /horsedetails',
     '  /tophorses                  - top user-owned horses by performance',
     '  /hof [newest|wins|winpct]   - hall of fame leaderboard',
     '  /hof <horse name>           - hall of fame plaque for one horse',
     '',
     'Race Flow',
     '  /horserace                  - start a race (opens owner entry window)',
-    '  /horse <number> <amount>    - place a bet during betting phase',
+    '  /horse <#> <amt>            - WIN bet',
+    '  /place <#> <amt>            - PLACE bet (top 2)',
+    '  /show <#> <amt>             - SHOW bet (top 3)',
+    '  /exacta <#>-<#> <amt>       - exact top 2 in order',
+    '  /trifecta <#>-<#>-<#> <amt> - exact top 3 in order',
     '  /horsehelp                  - show this help card',
     '',
     'Notes',
