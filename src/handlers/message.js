@@ -49,7 +49,7 @@ import { handleThemeCommand } from '../database/dbtheme.js'
 import { getUserSongReviews } from '../database/dbroomstatsmanager.js'
 import { fetchOddsForSport, formatOddsMessage } from '../utils/sportsBetAPI.js'
 import { saveOddsForSport, getOddsForSport } from '../utils/bettingOdds.js'
-import { startHorseRace, handleHorseBet, isWaitingForEntries, handleHorseEntryAttempt, handleHorseHelpCommand, handleHorseStatsCommand, handleTopHorsesCommand, handleMyHorsesCommand, handleHofPlaqueCommand } from '../games/horserace/handlers/commands.js'
+import { startHorseRace, handleHorseBet, isWaitingForEntries, handleHorseEntryAttempt, handleHorseHelpCommand, handleHorseStatsCommand, handleTopHorsesCommand, handleMyHorsesCommand, handleHorsePicsCommand, handleHofPlaqueCommand } from '../games/horserace/handlers/commands.js'
 import { QueueManager } from '../utils/queueManager.js'
 import db from '../database/db.js'
 import { handleAddAvatarCommand } from './addAvatar.js'
@@ -368,6 +368,7 @@ if (handled) return
   if (typeof payload.message === 'string' && payload.message.startsWith('/buyhorse')) return handleBuyHorse(payload)
   if (/^\/sellhorse\b/i.test(txt) || /^\/sell\s+horse\b/i.test(txt)) return handleSellHorse(payload)
   if (typeof payload.message === 'string' && payload.message.startsWith('/myhorses')) return handleMyHorsesCommand(payload)
+  if (/^\/horsepics\b/i.test(txt) || /^\/horse\s+pics\b/i.test(txt)) return handleHorsePicsCommand(payload)
   if (typeof payload.message === 'string' && payload.message.startsWith('/horsehelp')) { await handleHorseHelpCommand(payload); return }
   if (typeof payload.message === 'string' && payload.message.startsWith('/horserules')) { await handleHorseHelpCommand(payload); return }
   if (typeof payload.message === 'string' && payload.message.startsWith('/horseinfo')) { await handleHorseHelpCommand(payload); return }

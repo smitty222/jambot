@@ -831,10 +831,57 @@ export async function handleMyHorsesCommand (ctx) {
   const table = renderHorseTable(displayRows, { title })
   const footer = [
     'Status: RET = retired',
-    'Details: /horsestats <horse name>   Sell: /sellhorse <horse name>'
+    'Details: /horsestats <horse name>   Pics: /horsepics   Sell: /sellhorse <horse name>'
   ].join('\n')
 
   await postMessage({ room: ROOM, message: `${table}\n${footer}` })
+}
+
+export async function handleHorsePicsCommand (ctx) {
+  const room = ctx?.room || ROOM
+  const userId = ctx?.sender || ctx?.userId || ctx?.uid
+  const nick = await getUserNickname(userId)
+  const mine = await getUserHorses(userId)
+
+  if (!mine || mine.length === 0) {
+    await postMessage({
+      room,
+      message: `${nick}, you don’t own any horses yet. Use **/buyhorse <tier>** to get started.`
+    })
+    return
+  }
+
+  await ensurePersistentHorseImages(mine)
+  const withImages = mine.filter(h => h?.imageUrl)
+
+  if (!withImages.length) {
+    await postMessage({
+      room,
+      message: `📷 ${nick}, none of your horses currently have images. Add images to horse tier folders to enable this.`
+    })
+    return
+  }
+
+  const tierRank = { champion: 0, elite: 1, basic: 2 }
+  const sorted = withImages.slice().sort((a, b) => {
+    const at = tierRank[String(a?.tier || '').toLowerCase()] ?? 9
+    const bt = tierRank[String(b?.tier || '').toLowerCase()] ?? 9
+    if (at !== bt) return at - bt
+    return String(a?.name || '').localeCompare(String(b?.name || ''))
+  })
+
+  for (const h of sorted.slice(0, 8)) {
+    const retired = (!!h?.retired || Number(h?.retired) === 1) ? ' · RETIRED' : ''
+    await postMessage({
+      room,
+      message: `📷 ${h.name} · ${String(h?.tier || '—').toUpperCase()}${retired}`,
+      images: [h.imageUrl]
+    })
+  }
+
+  if (sorted.length > 8) {
+    await postMessage({ room, message: `…and ${sorted.length - 8} more horses with images.` })
+  }
 }
 
 export async function handleHorseStatsCommand (ctx) {
@@ -1008,6 +1055,7 @@ export async function handleHorseHelpCommand (ctx) {
     '  /buyhorse <tier> [option#]  - browse/buy tier horses (basic, elite, champion)',
     '  /sellhorse [name]           - show sell values or sell one horse',
     '  /myhorses                   - view your stable and records',
+    '  /horsepics                  - view pictures of your horses',
     '',
     'Stats + Rankings',
     '  /horsestats [name]          - horse details or global leaderboards',
