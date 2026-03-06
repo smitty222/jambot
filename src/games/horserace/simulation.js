@@ -52,52 +52,70 @@ function horseDec (horse) {
   return Math.max(1.01, dec)
 }
 
+function slipLabel (slip, horses) {
+  const type = String(slip?.type || 'win').toLowerCase()
+  const idxLabel = (i) => {
+    const idx = Number(i)
+    const h = horses?.[idx]
+    if (!Number.isFinite(idx) || !h) return '#?'
+    return `#${idx + 1} ${h.name}`
+  }
+
+  if (type === 'win') return `WIN ${idxLabel(slip?.horseIndex)}`
+  if (type === 'place') return `PLACE ${idxLabel(slip?.horseIndex)}`
+  if (type === 'show') return `SHOW ${idxLabel(slip?.horseIndex)}`
+  if (type === 'exacta') return `EXACTA ${idxLabel(slip?.firstIndex)} > ${idxLabel(slip?.secondIndex)}`
+  if (type === 'trifecta') return `TRIFECTA ${idxLabel(slip?.firstIndex)} > ${idxLabel(slip?.secondIndex)} > ${idxLabel(slip?.thirdIndex)}`
+  return 'BET'
+}
+
 function settleSlip (slip, officialOrder, horses) {
   const type = String(slip?.type || 'win').toLowerCase()
   const amount = Math.floor(Number(slip?.amount || 0))
-  if (!Number.isFinite(amount) || amount <= 0) return 0
+  if (!Number.isFinite(amount) || amount <= 0) return { payout: 0, label: slipLabel(slip, horses), amount }
 
   const first = officialOrder[0]
   const second = officialOrder[1]
   const third = officialOrder[2]
+  const label = slipLabel(slip, horses)
 
   if (type === 'win') {
-    if (Number(slip?.horseIndex) !== first) return 0
-    return Math.floor(amount * horseDec(horses[first]))
+    if (Number(slip?.horseIndex) !== first) return { payout: 0, label, amount }
+    return { payout: Math.floor(amount * horseDec(horses[first])), label, amount }
   }
 
   if (type === 'place') {
     const idx = Number(slip?.horseIndex)
-    if (idx !== first && idx !== second) return 0
+    if (idx !== first && idx !== second) return { payout: 0, label, amount }
     const dec = 1 + ((horseDec(horses[idx]) - 1) * 0.55)
-    return Math.floor(amount * dec)
+    return { payout: Math.floor(amount * dec), label, amount }
   }
 
   if (type === 'show') {
     const idx = Number(slip?.horseIndex)
-    if (idx !== first && idx !== second && idx !== third) return 0
+    if (idx !== first && idx !== second && idx !== third) return { payout: 0, label, amount }
     const dec = 1 + ((horseDec(horses[idx]) - 1) * 0.35)
-    return Math.floor(amount * dec)
+    return { payout: Math.floor(amount * dec), label, amount }
   }
 
   if (type === 'exacta') {
     const a = Number(slip?.firstIndex)
     const b = Number(slip?.secondIndex)
-    if (a !== first || b !== second) return 0
+    if (a !== first || b !== second) return { payout: 0, label, amount }
     const dec = Math.max(4, Math.min(30, 2 + horseDec(horses[a]) + horseDec(horses[b])))
-    return Math.floor(amount * dec)
+    return { payout: Math.floor(amount * dec), label, amount }
   }
 
   if (type === 'trifecta') {
     const a = Number(slip?.firstIndex)
     const b = Number(slip?.secondIndex)
     const c = Number(slip?.thirdIndex)
-    if (a !== first || b !== second || c !== third) return 0
+    if (a !== first || b !== second || c !== third) return { payout: 0, label, amount }
     const dec = Math.max(10, Math.min(80, 5 + ((horseDec(horses[a]) + horseDec(horses[b]) + horseDec(horses[c])) * 1.5)))
-    return Math.floor(amount * dec)
+    return { payout: Math.floor(amount * dec), label, amount }
   }
 
-  return 0
+  return { payout: 0, label, amount }
 }
 
 export async function runRace ({ horses, horseBets }) {
@@ -193,13 +211,25 @@ export async function runRace ({ horses, horseBets }) {
 
   // --- payouts to bettors ---
   const payouts = {}
+  const payoutDetails = {}
   for (const [userId, slips] of Object.entries(horseBets || {})) {
     let sum = 0
+    const details = []
     for (const s of slips) {
-      sum += settleSlip(s, officialOrder, horses)
+      const settled = settleSlip(s, officialOrder, horses)
+      const won = Number(settled?.payout || 0)
+      sum += won
+      if (won > 0) {
+        details.push({
+          bet: settled.label,
+          stake: Number(settled.amount || 0),
+          payout: won
+        })
+      }
     }
     if (sum > 0) {
       payouts[userId] = (payouts[userId] || 0) + sum
+      payoutDetails[userId] = details
       await safeCall(creditGameWin, [userId, sum])
     }
   }
@@ -288,6 +318,7 @@ export async function runRace ({ horses, horseBets }) {
     winnerIdx,
     raceState: state.map(x => ({ index: x.index, name: x.name, progress: x.progress })),
     payouts,
+    payoutDetails,
     ownerBonus,
     finishDistance: FINISH
   })

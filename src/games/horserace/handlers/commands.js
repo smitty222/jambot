@@ -647,7 +647,7 @@ if (!globalThis[LISTENER_GUARD_KEY]) {
     }
   })
 
-  bus.on('raceFinished', async ({ winnerIdx, raceState, payouts, ownerBonus, finishDistance }) => {
+  bus.on('raceFinished', async ({ winnerIdx, raceState, payouts, payoutDetails, ownerBonus, finishDistance }) => {
     try {
       await postGif('finish')
 
@@ -704,6 +704,15 @@ if (!globalThis[LISTENER_GUARD_KEY]) {
         ].join('\n')
       }])
 
+      const podium = rankOrder(raceState).slice(0, 3)
+      const podiumLines = []
+      if (podium[0] != null) podiumLines.push(`🥇 1st: ${displayState[podium[0]]?.name || raceState[podium[0]]?.name || '—'}`)
+      if (podium[1] != null) podiumLines.push(`🥈 2nd: ${displayState[podium[1]]?.name || raceState[podium[1]]?.name || '—'}`)
+      if (podium[2] != null) podiumLines.push(`🥉 3rd: ${displayState[podium[2]]?.name || raceState[podium[2]]?.name || '—'}`)
+      if (podiumLines.length) {
+        await safeCall(postMessage, [{ room: ROOM, message: podiumLines.join('\n') }])
+      }
+
       const payoutEntries = payouts && typeof payouts === 'object'
         ? Object.entries(payouts).filter(([, amount]) => Number(amount) > 0)
         : []
@@ -713,7 +722,13 @@ if (!globalThis[LISTENER_GUARD_KEY]) {
         for (const [userId, amount] of payoutEntries) {
           const nick = await safeCall(getUserNickname, [userId]).catch(() => null)
           const name = nick?.replace(/^@/, '') || `<@uid:${userId}>`
-          await safeCall(postMessage, [{ room: ROOM, message: `💵 ${name} wins **$${amount}**` }])
+          const details = Array.isArray(payoutDetails?.[userId]) ? payoutDetails[userId] : []
+          const detailText = details.length
+            ? details.slice(0, 2).map(d => `${d.bet} ($${d.stake} → $${d.payout})`).join(' · ')
+            : ''
+          const more = details.length > 2 ? ` · +${details.length - 2} more` : ''
+          const extra = detailText ? ` on ${detailText}${more}` : ''
+          await safeCall(postMessage, [{ room: ROOM, message: `💵 ${name} wins **$${amount}**${extra}` }])
           await DELAY(RESULTS_PACING.payoutLineBeatMs)
         }
       }
