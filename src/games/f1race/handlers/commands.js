@@ -40,22 +40,22 @@ const ENTRY_FEE_BY_TIER = {
   hyper: Number(process.env.F1_ENTRY_FEE_HYPER ?? 2500),
   legendary: Number(process.env.F1_ENTRY_FEE_LEGENDARY ?? 3750)
 }
-const HOUSE_RAKE_PCT = Number(process.env.F1_HOUSE_RAKE_PCT ?? 15) // percent
+const HOUSE_RAKE_PCT = Number(process.env.F1_HOUSE_RAKE_PCT ?? 5) // percent
 const PRIZE_SPLIT_BY_MODE = {
   rookie: [60, 30, 10], // top 3 paid
   open: [45, 25, 15, 10, 5],
   elite: [50, 23, 13, 9, 5]
 }
-const POLE_BONUS = Number(process.env.F1_POLE_BONUS ?? 250)
-const FASTEST_LAP_BONUS = Number(process.env.F1_FASTEST_LAP_BONUS ?? 300)
+const POLE_BONUS = Number(process.env.F1_POLE_BONUS ?? 500)
+const FASTEST_LAP_BONUS = Number(process.env.F1_FASTEST_LAP_BONUS ?? 750)
 
-const TEAM_CREATE_FEE = Number(process.env.F1_TEAM_CREATE_FEE ?? 50000)
-const TEAM_REROLL_FEE = Number(process.env.F1_TEAM_REROLL_FEE ?? 20000)
+const TEAM_CREATE_FEE = Number(process.env.F1_TEAM_CREATE_FEE ?? 10000)
+const TEAM_REROLL_FEE = Number(process.env.F1_TEAM_REROLL_FEE ?? 5000)
 const REPAIR_COST_PER_WEAR_BY_TIER = {
-  starter: Number(process.env.F1_REPAIR_COST_PER_POINT_STARTER ?? 40),
-  pro: Number(process.env.F1_REPAIR_COST_PER_POINT_PRO ?? 70),
-  hyper: Number(process.env.F1_REPAIR_COST_PER_POINT_HYPER ?? 110),
-  legendary: Number(process.env.F1_REPAIR_COST_PER_POINT_LEGENDARY ?? 160)
+  starter: Number(process.env.F1_REPAIR_COST_PER_POINT_STARTER ?? 20),
+  pro: Number(process.env.F1_REPAIR_COST_PER_POINT_PRO ?? 35),
+  hyper: Number(process.env.F1_REPAIR_COST_PER_POINT_HYPER ?? 55),
+  legendary: Number(process.env.F1_REPAIR_COST_PER_POINT_LEGENDARY ?? 80)
 }
 
 // Betting
@@ -195,8 +195,7 @@ function stat01 (v) {
 
 function carLabel (car) {
   const liv = String(car.livery || '').trim() || '⬛'
-  const num = String(car.id || rint(10, 99)).padStart(2, '0')
-  return `${liv} #${num} ${car.name}`.trim()
+  return `${liv} ${car.name}`.trim()
 }
 
 function teamLabel (team) {
@@ -303,10 +302,10 @@ function estimateResaleValue (car) {
   const earnings = Math.max(0, toInt(car?.careerEarnings))
 
   const basePctByTier = {
-    starter: 0.68,
-    pro: 0.64,
-    hyper: 0.60,
-    legendary: 0.56
+    starter: 0.80,
+    pro: 0.76,
+    hyper: 0.72,
+    legendary: 0.68
   }
   const basePct = basePctByTier[tier] ?? 0.62
   const baseValue = price * basePct
@@ -315,7 +314,7 @@ function estimateResaleValue (car) {
   const perfBonus = Math.min(price * 0.20, (wins * 800) + (podiums * 350) + (earnings * 0.03))
 
   const raw = Math.floor(baseValue * wearFactor + perfBonus)
-  const minFloor = Math.floor(price * 0.20)
+  const minFloor = Math.floor(price * 0.50)
   const maxCap = Math.floor(price * 0.95)
   return Math.max(minFloor, Math.min(maxCap, raw))
 }
@@ -627,7 +626,7 @@ export async function handleBuyCar (ctx) {
   await postMessage({
     room,
     message:
-      `✅ ${nick} bought a **${tierKey.toUpperCase()}** car: **${tier.livery} #${String(id).padStart(2, '0')} ${name}**\n` +
+      `✅ ${nick} bought a **${tierKey.toUpperCase()}** car: **${tier.livery} ${name}**\n` +
       `${selectedFile ? `🖼️ Chosen option: **#${selectedOption}**\n` : ''}` +
       `💰 Balance: **${fmtMoney(updated)}**\n` +
       'Next: `/mycars`, `/carstats`, `/gp start open`',
@@ -924,7 +923,7 @@ export async function handleCarPics (ctx) {
 }
 
 // ── Betting command ────────────────────────────────────────────────────
-// /bet <car#> <amount>
+// /bet <slot> <amount>
 export async function handleBetCommand (ctx) {
   if (!isBettingOpen) return
   const room = ctx?.room || ROOM
@@ -976,7 +975,7 @@ export async function handleBetCommand (ctx) {
   const oddsLabel = Number.isFinite(dec) ? `${dec.toFixed(2)}x` : '—'
   await postMessage({
     room,
-    message: `🎟️ ${nick} bets ${fmtMoney(amt)} on #${idx + 1} ${car.label} (odds ${oddsLabel})`
+    message: `🎟️ ${nick} bets ${fmtMoney(amt)} on slot ${idx + 1}: ${car.label} (odds ${oddsLabel})`
   })
 }
 
@@ -1325,7 +1324,8 @@ lockedOddsDec = oddsFromStrengths(strengths0)
     await safeCall(postMessage, [{
       room: ROOM,
       message: `Place your bets!\n` +
-        `• /bet <car#> <amount>  (min ${fmtMoney(BET_MIN)})\n`
+        `• /bet <slot> <amount>  (min ${fmtMoney(BET_MIN)})\n` +
+        '• Slot = betting board row number (1-6)\n'
     }])
 
     const previewRows = field.map((c, i) => ({
@@ -1520,7 +1520,7 @@ export async function handleF1Help (ctx) {
     '',
     '/gp start <mode>       - start a Grand Prix (rookie/open/elite)',
     '(during entry) type your exact car name to enter',
-    `(during betting) /bet <car#> <amount> - bet a car to win (min ${fmtMoney(BET_MIN)})`
+    `(during betting) /bet <slot> <amount> - bet by board row number (1-6), not a car ID (min ${fmtMoney(BET_MIN)})`
   ].join('\n')
 
   await postMessage({ room, message: '```\n' + msg + '\n```' })

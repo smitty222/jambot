@@ -706,9 +706,21 @@ if (!globalThis[LISTENER_GUARD_KEY]) {
 
       const podium = rankOrder(raceState).slice(0, 3)
       const podiumLines = []
-      if (podium[0] != null) podiumLines.push(`🥇 1st: ${displayState[podium[0]]?.name || raceState[podium[0]]?.name || '—'}`)
-      if (podium[1] != null) podiumLines.push(`🥈 2nd: ${displayState[podium[1]]?.name || raceState[podium[1]]?.name || '—'}`)
-      if (podium[2] != null) podiumLines.push(`🥉 3rd: ${displayState[podium[2]]?.name || raceState[podium[2]]?.name || '—'}`)
+      if (podium[0] != null) {
+        const i = podium[0]
+        const nm = displayState[i]?.name || raceState[i]?.name || '—'
+        podiumLines.push(`🥇 1st: ${nm} (#${i + 1})`)
+      }
+      if (podium[1] != null) {
+        const i = podium[1]
+        const nm = displayState[i]?.name || raceState[i]?.name || '—'
+        podiumLines.push(`🥈 2nd: ${nm} (#${i + 1})`)
+      }
+      if (podium[2] != null) {
+        const i = podium[2]
+        const nm = displayState[i]?.name || raceState[i]?.name || '—'
+        podiumLines.push(`🥉 3rd: ${nm} (#${i + 1})`)
+      }
       if (podiumLines.length) {
         await safeCall(postMessage, [{ room: ROOM, message: podiumLines.join('\n') }])
       }

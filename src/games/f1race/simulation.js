@@ -42,7 +42,7 @@ function pick (arr) { return arr[Math.floor(Math.random() * arr.length)] }
 
 // Stable bet key helper:
 // - user cars have numeric id -> "car:123"
-// - bots (id null) fall back to label -> "label:⬛ #16 Turbo Specter"
+// - bots (id null) fall back to label -> "label:⬛ Turbo Specter"
 function carBetKey (car) {
   if (!car) return ''
   if (car.id != null) return `car:${String(car.id)}`
