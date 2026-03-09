@@ -1543,8 +1543,8 @@ export async function startDragRace (tierArg = 'starter') {
     message:
       `🛣️ **DRAG RACE STARTING (${dragTier.toUpperCase()})** — first 2 eligible owners to enter are locked in.\n` +
       'Type your exact car name in chat to enter.\n' +
-      `Rules: same-tier only (${dragTier.toUpperCase()}) · 1v1 straight-line race · winner-take-all.\n` +
-      `Tier entry fee: ${fmtMoney(getTierEntryFee(dragTier))}\n` +
+      `Rules: same-tier only (${dragTier.toUpperCase()}) · 1v1 straight-line race · winner-take-all · empty slots filled by house bots.\n` +
+      'Entry fee: FREE\n' +
       `Guaranteed drag purse floor: ${fmtMoney(getDragGuaranteedPurse(dragTier))}`
   }])
 
@@ -1635,7 +1635,7 @@ async function lockEntriesAndOpenStrategy () {
     for (const c of enteredCars) {
       const ownerId = c.ownerId
       const tierKey = normalizeTierKey(c.tier)
-      const entryFee = getTierEntryFee(tierKey)
+      const entryFee = lockedRaceType === 'drag' ? 0 : getTierEntryFee(tierKey)
       const bal = await safeCall(getUserWallet, [ownerId]).catch(() => null)
       const nick = await safeCall(getUserNickname, [ownerId]).catch(() => '@user')
       if (typeof bal !== 'number' || bal < entryFee) {
@@ -1645,8 +1645,10 @@ async function lockEntriesAndOpenStrategy () {
         }])
         continue
       }
-      await safeCall(debitGameBet, [ownerId, entryFee])
-      if (c?.id != null) {
+      if (entryFee > 0) {
+        await safeCall(debitGameBet, [ownerId, entryFee])
+      }
+      if (entryFee > 0 && c?.id != null) {
         await safeCall(recordCarEntryFee, [c.id, entryFee]).catch(() => null)
       }
       totalEntryGross += entryFee
@@ -1654,7 +1656,7 @@ async function lockEntriesAndOpenStrategy () {
     }
     lockedEntryGross = totalEntryGross
 
-    // bots (grand prix only)
+    // bots (grand prix + drag backfill)
     const bots = []
     const used = new Set((all || []).map(c => String(c.name || '').toLowerCase()))
     for (const c of filtered) used.add(String(c.name || '').toLowerCase())
@@ -1672,7 +1674,32 @@ async function lockEntriesAndOpenStrategy () {
     }
     const botRange = botRangeByMode[lockedRaceMode] || botRangeByMode.open
 
-    if (lockedRaceType !== 'drag') {
+    if (lockedRaceType === 'drag') {
+      const dragTier = normalizeTierKey(lockedDragTier || 'starter')
+      const base = CAR_TIERS[dragTier]?.base || CAR_TIERS.starter.base
+      const dragLivery = CAR_TIERS[dragTier]?.livery || '⬛'
+      const jitterDrag = (x) => clamp(Number(x || 50) + rint(-3, 3), 35, 95)
+      for (let i = 0; i < need; i++) {
+        const name = generateCarName(used)
+        used.add(name.toLowerCase())
+        bots.push({
+          id: null,
+          ownerId: null,
+          name,
+          livery: dragLivery,
+          tier: dragTier,
+          price: 0,
+          power: jitterDrag(base.power),
+          handling: jitterDrag(base.handling),
+          aero: jitterDrag(base.aero),
+          reliability: jitterDrag(base.reliability),
+          tire: jitterDrag(base.tire),
+          wear: 0,
+          teamLabel: 'BOT',
+          imageUrl: null
+        })
+      }
+    } else {
       for (let i = 0; i < need; i++) {
         const name = generateCarName(used)
         used.add(name.toLowerCase())
@@ -1706,15 +1733,6 @@ async function lockEntriesAndOpenStrategy () {
       const label = carLabel(c)
       return { ...c, label, teamLabel: c.teamLabel || '—' }
     }).map(c => applyRaceModeBalanceToCar(c, lockedRaceMode))
-
-    if (lockedRaceType === 'drag' && field.length !== DRAG_FIELD_SIZE) {
-      await safeCall(postMessage, [{
-        room: ROOM,
-        message: `❗ Drag race canceled: need exactly ${DRAG_FIELD_SIZE} entered cars in ${String(lockedDragTier || '').toUpperCase()} tier.`
-      }])
-      cleanup()
-      return
-    }
 
     // ✅ lock track + odds for the betting window (transparent, fair)
     lockedTrack = (lockedRaceType === 'drag') ? pickDragTrack() : pickTrack()
