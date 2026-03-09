@@ -25,6 +25,8 @@ const TIRE_START = { soft: 1.035, med: 1.020, hard: 1.008 }
 const MODE_MULT = { push: 1.020, norm: 1.000, save: 0.988 }
 const MODE_WEAR = { push: 8, norm: 5, save: 3 }
 const MODE_DNF = { push: 0.010, norm: 0.005, save: 0.0025 }
+const TIER_PAYOUT_MULT = { starter: 1.00, pro: 1.08, hyper: 1.22, legendary: 1.40 }
+const TIER_WEAR_MULT = { starter: 1.00, pro: 0.94, hyper: 0.82, legendary: 0.70 }
 
 const DELAY = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -48,6 +50,27 @@ function carBetKey (car) {
   if (car.id != null) return `car:${String(car.id)}`
   const lbl = String(car.label || '').trim()
   return lbl ? `label:${lbl}` : ''
+}
+
+function normalizeTierKey (tierKey) {
+  const key = String(tierKey || '').toLowerCase()
+  return Object.prototype.hasOwnProperty.call(TIER_PAYOUT_MULT, key) ? key : 'starter'
+}
+
+function payoutMultiplierForCar (car) {
+  const tier = normalizeTierKey(car?.tier)
+  return Number(TIER_PAYOUT_MULT[tier] ?? 1)
+}
+
+function tierScaledBonus (car, baseBonus) {
+  const base = Math.max(0, Math.floor(Number(baseBonus || 0)))
+  if (base <= 0) return 0
+  return Math.floor(base * payoutMultiplierForCar(car))
+}
+
+function wearMultiplierForCar (car) {
+  const tier = normalizeTierKey(car?.tier)
+  return Number(TIER_WEAR_MULT[tier] ?? 1)
 }
 
 function computePaceScalar (car, track, legIndex) {
@@ -215,10 +238,13 @@ export async function runRace ({
     startPos: idx
   }))
 
-  if (poleBonus > 0 && poleWinnerOwnerId) {
-    await safeCall(creditGameWin, [poleWinnerOwnerId, poleBonus]).catch(() => null)
+  const poleCar = (poleWinnerCarId != null) ? cars.find(c => c?.id === poleWinnerCarId) : null
+  const paidPoleBonus = tierScaledBonus(poleCar, poleBonus)
+
+  if (paidPoleBonus > 0 && poleWinnerOwnerId) {
+    await safeCall(creditGameWin, [poleWinnerOwnerId, paidPoleBonus]).catch(() => null)
     if (poleWinnerCarId != null) {
-      await safeCall(addCarEarnings, [poleWinnerCarId, poleBonus, { pole: true }]).catch(() => null)
+      await safeCall(addCarEarnings, [poleWinnerCarId, paidPoleBonus, { pole: true }]).catch(() => null)
     }
   }
 
@@ -380,7 +406,11 @@ export async function runRace ({
   for (let place = 0; place < paidPlaces; place++) {
     const idx = finishOrder[place]
     const car = cars[idx]
-    if (car?.ownerId) eligible.push({ place, idx, ownerId: car.ownerId, weight: Number(payoutPlan?.[place] ?? 0) })
+    if (car?.ownerId) {
+      const baseWeight = Number(payoutPlan?.[place] ?? 0)
+      const payoutMult = payoutMultiplierForCar(car)
+      eligible.push({ place, idx, ownerId: car.ownerId, weight: baseWeight * payoutMult, payoutMult })
+    }
   }
 
   const weightSum = eligible.reduce((sum, e) => sum + e.weight, 0)
@@ -400,12 +430,14 @@ export async function runRace ({
 
   let fastestLapAwarded = null
   if (fastestLapBonus > 0 && fastestLap?.ownerId) {
-    await safeCall(creditGameWin, [fastestLap.ownerId, fastestLapBonus]).catch(() => null)
+    const fastestCar = cars?.[fastestLap.index]
+    const paidFastestLapBonus = tierScaledBonus(fastestCar, fastestLapBonus)
+    await safeCall(creditGameWin, [fastestLap.ownerId, paidFastestLapBonus]).catch(() => null)
     const fastestCarId = cars?.[fastestLap.index]?.id
     if (fastestCarId != null) {
-      await safeCall(addCarEarnings, [fastestCarId, fastestLapBonus, { fastestLap: true }]).catch(() => null)
+      await safeCall(addCarEarnings, [fastestCarId, paidFastestLapBonus, { fastestLap: true }]).catch(() => null)
     }
-    fastestLapAwarded = { ...fastestLap, bonus: fastestLapBonus }
+    fastestLapAwarded = { ...fastestLap, bonus: paidFastestLapBonus }
   }
 
   // ✅ Bet settlement
@@ -458,7 +490,8 @@ export async function runRace ({
       const c = cars[i]
       if (!c?.id) continue
       const modeKey = String(c.modeChoice || 'norm').toLowerCase()
-      const wearDelta = MODE_WEAR[modeKey] ?? 5
+      const baseWear = MODE_WEAR[modeKey] ?? 5
+      const wearDelta = Math.max(1, Math.round(baseWear * wearMultiplierForCar(c)))
       await safeCall(updateCarAfterRaceResult, [c.id, {
         win: i === winnerIdx,
         wearDelta,
@@ -490,7 +523,7 @@ export async function runRace ({
     track,
     prizePool,
     fastestLap: fastestLapAwarded,
-    poleBonus: poleBonus > 0 ? poleBonus : 0,
+    poleBonus: paidPoleBonus,
     poleWinnerOwnerId: poleWinnerOwnerId || null
   })
 }

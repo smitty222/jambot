@@ -35,10 +35,10 @@ const STRAT_MS = 45_000
 const MIN_FIELD = 6
 
 const ENTRY_FEE_BY_TIER = {
-  starter: Number(process.env.F1_ENTRY_FEE_STARTER ?? 1000),
+  starter: Number(process.env.F1_ENTRY_FEE_STARTER ?? 1200),
   pro: Number(process.env.F1_ENTRY_FEE_PRO ?? 1500),
-  hyper: Number(process.env.F1_ENTRY_FEE_HYPER ?? 2500),
-  legendary: Number(process.env.F1_ENTRY_FEE_LEGENDARY ?? 3750)
+  hyper: Number(process.env.F1_ENTRY_FEE_HYPER ?? 2200),
+  legendary: Number(process.env.F1_ENTRY_FEE_LEGENDARY ?? 3000)
 }
 const HOUSE_RAKE_PCT = Number(process.env.F1_HOUSE_RAKE_PCT ?? 5) // percent
 const PRIZE_SPLIT_BY_MODE = {
@@ -46,16 +46,21 @@ const PRIZE_SPLIT_BY_MODE = {
   open: [45, 25, 15, 10, 5],
   elite: [50, 23, 13, 9, 5]
 }
+const GUARANTEED_PURSE_BY_MODE = {
+  rookie: Number(process.env.F1_PURSE_FLOOR_ROOKIE ?? 8000),
+  open: Number(process.env.F1_PURSE_FLOOR_OPEN ?? 20000),
+  elite: Number(process.env.F1_PURSE_FLOOR_ELITE ?? 55000)
+}
 const POLE_BONUS = Number(process.env.F1_POLE_BONUS ?? 500)
 const FASTEST_LAP_BONUS = Number(process.env.F1_FASTEST_LAP_BONUS ?? 750)
 
 const TEAM_CREATE_FEE = Number(process.env.F1_TEAM_CREATE_FEE ?? 10000)
 const TEAM_REROLL_FEE = Number(process.env.F1_TEAM_REROLL_FEE ?? 5000)
 const REPAIR_COST_PER_WEAR_BY_TIER = {
-  starter: Number(process.env.F1_REPAIR_COST_PER_POINT_STARTER ?? 20),
-  pro: Number(process.env.F1_REPAIR_COST_PER_POINT_PRO ?? 35),
-  hyper: Number(process.env.F1_REPAIR_COST_PER_POINT_HYPER ?? 55),
-  legendary: Number(process.env.F1_REPAIR_COST_PER_POINT_LEGENDARY ?? 80)
+  starter: Number(process.env.F1_REPAIR_COST_PER_POINT_STARTER ?? 24),
+  pro: Number(process.env.F1_REPAIR_COST_PER_POINT_PRO ?? 32),
+  hyper: Number(process.env.F1_REPAIR_COST_PER_POINT_HYPER ?? 45),
+  legendary: Number(process.env.F1_REPAIR_COST_PER_POINT_LEGENDARY ?? 58)
 }
 
 // Betting
@@ -82,6 +87,7 @@ const RACE_MODES = {
   open: { label: 'OPEN', allowedTiers: new Set(['starter', 'pro', 'hyper', 'legendary']), payoutPlan: PRIZE_SPLIT_BY_MODE.open },
   elite: { label: 'ELITE', allowedTiers: new Set(['hyper', 'legendary']), payoutPlan: PRIZE_SPLIT_BY_MODE.elite }
 }
+const TIER_PAYOUT_MULT = { starter: 1.00, pro: 1.08, hyper: 1.22, legendary: 1.40 }
 
 // ── Visuals: car images (local tier folders) ───────────────────────────────
 // Place your images in:
@@ -235,17 +241,30 @@ function getTierRepairCostPerPoint (tierKey) {
   return Math.max(0, Math.floor(raw))
 }
 
+function getTierPayoutMultiplier (tierKey) {
+  const normalized = normalizeTierKey(tierKey)
+  return Number(TIER_PAYOUT_MULT[normalized] ?? 1)
+}
+
+function getModeGuaranteedPurse (modeKey) {
+  const key = String(modeKey || 'open').toLowerCase()
+  const raw = Number(GUARANTEED_PURSE_BY_MODE[key] ?? GUARANTEED_PURSE_BY_MODE.open)
+  return Math.max(0, Math.floor(raw))
+}
+
 function estimateFullRepairCost (car) {
   const tierKey = normalizeTierKey(car?.tier)
   const wearToRemove = Math.max(0, Math.floor(Number(car?.wear || 0)))
   return wearToRemove * getTierRepairCostPerPoint(tierKey)
 }
 
-function prizePoolFromGrossFees (grossFees) {
+function prizePoolFromGrossFees (grossFees, modeKey = 'open') {
   const gross = Math.max(0, Math.floor(Number(grossFees || 0)))
   const rake = Math.floor(gross * (HOUSE_RAKE_PCT / 100))
-  const net = Math.max(0, gross - rake)
-  return { gross, rake, net }
+  const fromFees = Math.max(0, gross - rake)
+  const guaranteed = getModeGuaranteedPurse(modeKey)
+  const net = fromFees + guaranteed
+  return { gross, rake, fromFees, guaranteed, net }
 }
 
 function parseArg (txt, re) {
@@ -267,10 +286,13 @@ function buildBuyCarShopCard (balance) {
     const tier = CAR_TIERS[key]
     const entry = getTierEntryFee(key)
     const repair = getTierRepairCostPerPoint(key)
+    const value = estimateTierValueMetrics(key)
 
     lines.push(`${tier.livery} ${key.toUpperCase()} — ${fmtMoney(tier.price)}`)
     lines.push(`${TIER_PITCH[key]}`)
     lines.push(`Race costs: entry ${fmtMoney(entry)} · repair ${fmtMoney(repair)}/1% wear`)
+    lines.push(`Projected return/race (OPEN): ${fmtMoney(value.expectedNetPerRace)}`)
+    lines.push(`Approx break-even (OPEN): ${value.breakEvenLabel}`)
     lines.push('')
   }
 
@@ -293,6 +315,64 @@ function carCareerNet (car) {
   return earnings - entry - repair - buyin
 }
 
+function tierBaseStrength (tierKey) {
+  const tier = CAR_TIERS[tierKey]
+  if (!tier?.base) return 0
+  const b = tier.base
+  const weighted =
+    (Number(b.power || 0) * 0.24) +
+    (Number(b.handling || 0) * 0.24) +
+    (Number(b.aero || 0) * 0.20) +
+    (Number(b.reliability || 0) * 0.20) +
+    (Number(b.tire || 0) * 0.12)
+  return Math.max(1, weighted)
+}
+
+function estimateTierValueMetrics (tierKey) {
+  const key = normalizeTierKey(tierKey)
+  const entry = getTierEntryFee(key)
+  const repairPerPoint = getTierRepairCostPerPoint(key)
+  const wearMultByTier = {
+    starter: 1.00,
+    pro: 0.94,
+    hyper: 0.82,
+    legendary: 0.70
+  }
+
+  const strengths = TIER_ORDER.map((t) => tierBaseStrength(t))
+  const adjusted = TIER_ORDER.map((t, i) => strengths[i] * getTierPayoutMultiplier(t))
+  const idx = TIER_ORDER.indexOf(key)
+  const myStrength = Math.max(1, adjusted[idx] || adjusted[0] || 1)
+  const totalStrength = Math.max(1, adjusted.reduce((sum, n) => sum + n, 0))
+
+  // OPEN-mode baseline for shop guidance.
+  const avgEntry = Math.floor(TIER_ORDER.reduce((sum, t) => sum + getTierEntryFee(t), 0) / Math.max(1, TIER_ORDER.length))
+  const fieldSize = Math.max(6, MIN_FIELD)
+  const feePool = Math.floor(avgEntry * fieldSize * (1 - (HOUSE_RAKE_PCT / 100)))
+  const pool = feePool + getModeGuaranteedPurse('open')
+  const payoutWeights = PRIZE_SPLIT_BY_MODE.open
+  const payoutMass = payoutWeights.reduce((sum, w) => sum + Number(w || 0), 0) / 100
+
+  const share = myStrength / totalStrength
+  const expectedPrize = Math.floor(pool * payoutMass * share)
+  const expectedPole = Math.floor(POLE_BONUS * share)
+  const expectedFastLap = Math.floor(FASTEST_LAP_BONUS * share * 1.08)
+  const expectedGross = expectedPrize + expectedPole + expectedFastLap
+
+  const expectedWear = Math.max(1, Math.round(5 * (wearMultByTier[key] ?? 1)))
+  const expectedRepair = expectedWear * repairPerPoint
+  const expectedNetPerRace = expectedGross - entry - expectedRepair
+
+  const buyIn = Number(CAR_TIERS[key]?.price || 0)
+  let breakEvenLabel = 'unlikely at average results'
+  if (expectedNetPerRace > 0) {
+    const races = Math.ceil(buyIn / expectedNetPerRace)
+    breakEvenLabel = `~${races} races`
+  }
+
+  return { expectedNetPerRace, breakEvenLabel }
+}
+
 function estimateResaleValue (car) {
   const price = Math.max(0, toInt(car?.price))
   const tier = String(car?.tier || 'starter').toLowerCase()
@@ -303,19 +383,46 @@ function estimateResaleValue (car) {
 
   const basePctByTier = {
     starter: 0.80,
-    pro: 0.76,
-    hyper: 0.72,
-    legendary: 0.68
+    pro: 0.79,
+    hyper: 0.80,
+    legendary: 0.82
   }
   const basePct = basePctByTier[tier] ?? 0.62
   const baseValue = price * basePct
 
-  const wearFactor = Math.max(0.45, 1 - (wear * 0.005))
-  const perfBonus = Math.min(price * 0.20, (wins * 800) + (podiums * 350) + (earnings * 0.03))
+  const wearFloorByTier = {
+    starter: 0.48,
+    pro: 0.52,
+    hyper: 0.58,
+    legendary: 0.64
+  }
+  const wearFactor = Math.max(wearFloorByTier[tier] ?? 0.45, 1 - (wear * 0.0046))
+
+  const perfMultByTier = {
+    starter: 1.00,
+    pro: 1.08,
+    hyper: 1.20,
+    legendary: 1.35
+  }
+  const perfMult = perfMultByTier[tier] ?? 1
+  const perfBonusRaw = ((wins * 900) + (podiums * 420) + (earnings * 0.035)) * perfMult
+  const perfBonus = Math.min(price * 0.30, perfBonusRaw)
 
   const raw = Math.floor(baseValue * wearFactor + perfBonus)
-  const minFloor = Math.floor(price * 0.50)
-  const maxCap = Math.floor(price * 0.95)
+  const minFloorByTier = {
+    starter: 0.50,
+    pro: 0.56,
+    hyper: 0.63,
+    legendary: 0.70
+  }
+  const maxCapByTier = {
+    starter: 0.95,
+    pro: 0.96,
+    hyper: 0.975,
+    legendary: 0.985
+  }
+  const minFloor = Math.floor(price * (minFloorByTier[tier] ?? 0.50))
+  const maxCap = Math.floor(price * (maxCapByTier[tier] ?? 0.95))
   return Math.max(minFloor, Math.min(maxCap, raw))
 }
 
@@ -1180,6 +1287,7 @@ export async function startF1Race (modeArg = 'open') {
     message:
       `🏎️ **${modeConfig.label} GRAND PRIX STARTING!** Owners: type your car’s exact name in the next ${ENTRY_MS / 1000}s to enter.\n` +
       `${raceModeSummary(normalizedMode)}\n` +
+      `Guaranteed purse floor (${modeConfig.label}): ${fmtMoney(getModeGuaranteedPurse(normalizedMode))}\n` +
       'Tier entry fees (charged at lock-in):\n' +
       `• STARTER: ${fmtMoney(getTierEntryFee('starter'))}\n` +
       `• PRO: ${fmtMoney(getTierEntryFee('pro'))}\n` +
@@ -1364,8 +1472,14 @@ async function startRaceRun () {
 
     field = seeded
 
-    const { gross, rake, net } = prizePoolFromGrossFees(lockedEntryGross)
+    const { gross, rake, fromFees, guaranteed, net } = prizePoolFromGrossFees(lockedEntryGross, lockedRaceMode)
     const poleWinnerOwnerId = field[0]?.ownerId || null
+
+    await postMessage({
+      room: ROOM,
+      message: `💰 Prize Pool: ${fmtMoney(net)} (fees ${fmtMoney(fromFees)} + floor ${fmtMoney(guaranteed)}; rake ${fmtMoney(rake)} from ${fmtMoney(gross)} gross fees)`
+    })
+    await DELAY(500)
 
     // ── VISUALS: circuit splash + lights ───────────────────────────────
     // Announce track name first (no bold, explicit format)
@@ -1392,9 +1506,10 @@ await DELAY(1200)
 if (poleWinnerOwnerId && POLE_BONUS > 0) {
   const nick = await safeCall(getUserNickname, [poleWinnerOwnerId]).catch(() => null)
   const tag = nick?.replace(/^@/, '') || `<@uid:${poleWinnerOwnerId}>`
+  const poleDisplayBonus = Math.floor(POLE_BONUS * getTierPayoutMultiplier(field[0]?.tier))
   await safeCall(postMessage, [{
     room: ROOM,
-    message: `🎯 Pole Position Bonus goes to ${tag} (${fmtMoney(POLE_BONUS)})`
+    message: `🎯 Pole Position Bonus goes to ${tag} (${fmtMoney(poleDisplayBonus)})`
   }])
   await DELAY(800)
 }
