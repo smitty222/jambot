@@ -398,32 +398,38 @@ export async function runRace ({
     ? { index: fastest.index, label: fastest.label, ownerId: fastest.ownerId, time: fastest.bestLapTime }
     : null
 
-  // Prize payouts: redistribute house weight to user-owned finishers in paid places
+  // Prize payouts: split by paid-place weights across all finishers in paid places.
+  // Bot-owned shares are retained by the house (not redistributed to users).
   const payouts = {}
   const paidPlaces = Math.min(5, finishOrder.length)
-
-  const eligible = []
+  const paidEntries = []
   for (let place = 0; place < paidPlaces; place++) {
     const idx = finishOrder[place]
     const car = cars[idx]
-    if (car?.ownerId) {
-      const baseWeight = Number(payoutPlan?.[place] ?? 0)
-      const payoutMult = payoutMultiplierForCar(car)
-      eligible.push({ place, idx, ownerId: car.ownerId, weight: baseWeight * payoutMult, payoutMult })
-    }
+    const baseWeight = Number(payoutPlan?.[place] ?? 0)
+    const payoutMult = payoutMultiplierForCar(car)
+    paidEntries.push({
+      place,
+      idx,
+      ownerId: car?.ownerId || null,
+      weight: baseWeight * payoutMult
+    })
   }
 
-  const weightSum = eligible.reduce((sum, e) => sum + e.weight, 0)
+  const weightSum = paidEntries.reduce((sum, e) => sum + e.weight, 0)
   if (weightSum > 0) {
-    for (const e of eligible) {
+    for (const e of paidEntries) {
       const amt = Math.floor((Number(prizePool || 0) * (e.weight / weightSum)))
-      if (amt > 0) {
-        payouts[e.ownerId] = (payouts[e.ownerId] || 0) + amt
-        await safeCall(creditGameWin, [e.ownerId, amt])
-        const paidCarId = cars?.[e.idx]?.id
-        if (paidCarId != null) {
-          await safeCall(addCarEarnings, [paidCarId, amt]).catch(() => null)
-        }
+      if (amt <= 0) continue
+
+      // Bot shares are intentionally retained by house.
+      if (!e.ownerId) continue
+
+      payouts[e.ownerId] = (payouts[e.ownerId] || 0) + amt
+      await safeCall(creditGameWin, [e.ownerId, amt])
+      const paidCarId = cars?.[e.idx]?.id
+      if (paidCarId != null) {
+        await safeCall(addCarEarnings, [paidCarId, amt]).catch(() => null)
       }
     }
   }

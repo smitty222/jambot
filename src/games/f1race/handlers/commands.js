@@ -38,7 +38,7 @@ const ENTRY_FEE_BY_TIER = {
   starter: Number(process.env.F1_ENTRY_FEE_STARTER ?? 1200),
   pro: Number(process.env.F1_ENTRY_FEE_PRO ?? 1500),
   hyper: Number(process.env.F1_ENTRY_FEE_HYPER ?? 2200),
-  legendary: Number(process.env.F1_ENTRY_FEE_LEGENDARY ?? 3000)
+  legendary: Number(process.env.F1_ENTRY_FEE_LEGENDARY ?? 5500)
 }
 const HOUSE_RAKE_PCT = Number(process.env.F1_HOUSE_RAKE_PCT ?? 5) // percent
 const PRIZE_SPLIT_BY_MODE = {
@@ -67,6 +67,12 @@ const REPAIR_COST_PER_WEAR_BY_TIER = {
 const BET_MIN = Number(process.env.F1_BET_MIN ?? 25)
 const BET_MAX = Number(process.env.F1_BET_MAX ?? 10000)
 const ODDS_EDGE_PCT = Number(process.env.F1_ODDS_EDGE_PCT ?? 15) // house edge in odds calc
+const BET_MARKET_MULT_BY_TIER = {
+  starter: Number(process.env.F1_BET_MARKET_MULT_STARTER ?? 1.00),
+  pro: Number(process.env.F1_BET_MARKET_MULT_PRO ?? 1.03),
+  hyper: Number(process.env.F1_BET_MARKET_MULT_HYPER ?? 1.12),
+  legendary: Number(process.env.F1_BET_MARKET_MULT_LEGENDARY ?? 1.30)
+}
 
 // Car tiers: higher ceiling, not guaranteed wins.
 const CAR_TIERS = {
@@ -88,6 +94,10 @@ const RACE_MODES = {
   elite: { label: 'ELITE', allowedTiers: new Set(['hyper', 'legendary']), payoutPlan: PRIZE_SPLIT_BY_MODE.elite }
 }
 const TIER_PAYOUT_MULT = { starter: 1.00, pro: 1.08, hyper: 1.22, legendary: 1.40 }
+const ELITE_MODE_STAT_DELTA_BY_TIER = {
+  hyper: Number(process.env.F1_ELITE_STAT_DELTA_HYPER ?? 1),
+  legendary: Number(process.env.F1_ELITE_STAT_DELTA_LEGENDARY ?? -2)
+}
 
 // ── Visuals: car images (local tier folders) ───────────────────────────────
 // Place your images in:
@@ -244,6 +254,30 @@ function getTierRepairCostPerPoint (tierKey) {
 function getTierPayoutMultiplier (tierKey) {
   const normalized = normalizeTierKey(tierKey)
   return Number(TIER_PAYOUT_MULT[normalized] ?? 1)
+}
+
+function getBetMarketMultiplier (tierKey) {
+  const normalized = normalizeTierKey(tierKey)
+  const raw = Number(BET_MARKET_MULT_BY_TIER[normalized] ?? BET_MARKET_MULT_BY_TIER.starter)
+  return Math.max(0.9, Math.min(1.5, raw))
+}
+
+function applyRaceModeBalanceToCar (car, modeKey) {
+  if (!car || modeKey !== 'elite') return car
+
+  const tierKey = normalizeTierKey(car?.tier)
+  const statDelta = Number(ELITE_MODE_STAT_DELTA_BY_TIER[tierKey] ?? 0)
+  if (!Number.isFinite(statDelta) || statDelta === 0) return car
+
+  const tune = (v) => clamp(Math.round(Number(v || 0) + statDelta), 35, 95)
+  return {
+    ...car,
+    power: tune(car.power),
+    handling: tune(car.handling),
+    aero: tune(car.aero),
+    reliability: tune(car.reliability),
+    tire: tune(car.tire)
+  }
 }
 
 function getModeGuaranteedPurse (modeKey) {
@@ -449,11 +483,16 @@ function computeStrength (car, track) {
   return Math.max(0.001, base)
 }
 
-function oddsFromStrengths (strengths) {
-  const sum = strengths.reduce((a, b) => a + b, 0)
+function oddsFromStrengths (strengths, cars = []) {
+  const marketStrengths = strengths.map((s, i) => {
+    const tierKey = normalizeTierKey(cars?.[i]?.tier)
+    return Math.max(0.0001, Number(s || 0) * getBetMarketMultiplier(tierKey))
+  })
+
+  const sum = marketStrengths.reduce((a, b) => a + b, 0)
   const edge = clamp(Number(ODDS_EDGE_PCT || 15) / 100, 0, 0.35)
 
-  return strengths.map(s => {
+  return marketStrengths.map(s => {
     const p = s / Math.max(1e-9, sum)
     const decRaw = (1 / Math.max(0.0005, p)) * (1 - edge)
     const clamped = clamp(decRaw, 1.01, 15.0)
@@ -1071,11 +1110,28 @@ export async function handleBetCommand (ctx) {
     return
   }
 
+  const slips = (bets[sender] ||= [])
+  const alreadyBetSameCar = slips.some((s) => {
+    const key = String(s?.betKey || '').trim()
+    if (key && key === betKey) return true
+
+    // Back-compat with any legacy slips that may still use carIndex.
+    const legacyIdx = Number(s?.carIndex)
+    return Number.isFinite(legacyIdx) && legacyIdx === idx
+  })
+  if (alreadyBetSameCar) {
+    await postMessage({
+      room,
+      message: `❗ ${nick}, you already placed a bet on slot ${idx + 1} (${car.label}) this race. One bet per car.`
+    })
+    return
+  }
+
   // Debit stake immediately
   await safeCall(debitGameBet, [sender, amt])
 
   // Store slip (new format)
-  ;(bets[sender] ||= []).push({ betKey, amount: amt })
+  slips.push({ betKey, amount: amt })
 
   // Display odds if available (should be, once you compute odds during betting)
   const dec = lockedOddsDec?.[idx]
@@ -1287,6 +1343,7 @@ export async function startF1Race (modeArg = 'open') {
     message:
       `🏎️ **${modeConfig.label} GRAND PRIX STARTING!** Owners: type your car’s exact name in the next ${ENTRY_MS / 1000}s to enter.\n` +
       `${raceModeSummary(normalizedMode)}\n` +
+      `${normalizedMode === 'elite' ? 'Elite balance: HYPER gets a small pace bump; LEGENDARY gets a small pace trim.\n' : ''}` +
       `Guaranteed purse floor (${modeConfig.label}): ${fmtMoney(getModeGuaranteedPurse(normalizedMode))}\n` +
       'Tier entry fees (charged at lock-in):\n' +
       `• STARTER: ${fmtMoney(getTierEntryFee('starter'))}\n` +
@@ -1417,13 +1474,13 @@ async function lockEntriesAndOpenStrategy () {
     field = [...withTeam, ...bots].map(c => {
       const label = carLabel(c)
       return { ...c, label, teamLabel: c.teamLabel || '—' }
-    })
+    }).map(c => applyRaceModeBalanceToCar(c, lockedRaceMode))
 
     // ✅ lock track + odds for the betting window (transparent, fair)
 lockedTrack = pickTrack()
 
 const strengths0 = field.map(c => computeStrength(c, lockedTrack))
-lockedOddsDec = oddsFromStrengths(strengths0)
+lockedOddsDec = oddsFromStrengths(strengths0, field)
 
     // Open strategy + betting window
     isStratOpen = true
