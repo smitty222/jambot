@@ -26,7 +26,7 @@ import {
 import { bus, safeCall } from '../service.js'
 import { runRace } from '../simulation.js'
 import { pickTrack, pickDragTrack } from '../utils/track.js'
-import { renderGrid, renderRaceProgress, fmtMoney } from '../utils/render.js'
+import { renderGrid, renderRaceProgress, renderDragProgress, fmtMoney } from '../utils/render.js'
 
 const ROOM = process.env.ROOM_UUID
 
@@ -57,10 +57,10 @@ const GUARANTEED_PURSE_BY_MODE = {
   elite: Number(process.env.F1_PURSE_FLOOR_ELITE ?? 55000)
 }
 const DRAG_GUARANTEED_PURSE_BY_TIER = {
-  starter: Number(process.env.F1_DRAG_PURSE_FLOOR_STARTER ?? 2500),
-  pro: Number(process.env.F1_DRAG_PURSE_FLOOR_PRO ?? 5500),
-  hyper: Number(process.env.F1_DRAG_PURSE_FLOOR_HYPER ?? 14000),
-  legendary: Number(process.env.F1_DRAG_PURSE_FLOOR_LEGENDARY ?? 32000)
+  starter: Number(process.env.F1_DRAG_PURSE_FLOOR_STARTER ?? 500),
+  pro: Number(process.env.F1_DRAG_PURSE_FLOOR_PRO ?? 900),
+  hyper: Number(process.env.F1_DRAG_PURSE_FLOOR_HYPER ?? 1400),
+  legendary: Number(process.env.F1_DRAG_PURSE_FLOOR_LEGENDARY ?? 2000)
 }
 const POLE_BONUS = Number(process.env.F1_POLE_BONUS ?? 500)
 const FASTEST_LAP_BONUS = Number(process.env.F1_FASTEST_LAP_BONUS ?? 750)
@@ -1865,9 +1865,16 @@ if (!globalThis[LISTENER_GUARD_KEY]) {
     if (_lastProgress === sig && (legIndex % 2 === 1)) return
     _lastProgress = sig
 
-    const phaseLabel = raceType === 'drag' ? 'SPLIT' : 'LAP'
-    const title = `${track.emoji} ${track.name} — ${phaseLabel} ${legIndex + 1}/${legsTotal}`
-    const msg = renderRaceProgress(raceState, { title, barCells: 14, nameWidth: 18 })
+    const msg = raceType === 'drag'
+      ? renderDragProgress(raceState, {
+          title: `${track.emoji} ${track.name} — PROGRESS`,
+          barCells: 24,
+          nameWidth: 18
+        })
+      : renderRaceProgress(raceState, {
+          title: `${track.emoji} ${track.name} — LAP ${legIndex + 1}/${legsTotal}`,
+          nameWidth: 18
+        })
 
     const lines = []
     lines.push(msg)

@@ -89,6 +89,31 @@ export function renderRaceProgress (rows, {
   return '```\n' + [title, header, line, ...body].join('\n') + '\n```'
 }
 
+export function renderDragProgress (rows, {
+  title = 'DRAG RACE',
+  nameWidth = 18,
+  barCells = 24
+} = {}) {
+  function progressBar (p01) {
+    const p = Math.max(0, Math.min(1, Number(p01 || 0)))
+    const filled = Math.max(0, Math.min(barCells, Math.round(p * barCells)))
+    const empty = Math.max(0, barCells - filled)
+    return `[${'█'.repeat(filled)}${'·'.repeat(empty)}]`
+  }
+
+  const lines = [title]
+  for (const r of rows) {
+    const name = clamp(r.label, nameWidth)
+    if (r?.dnf) {
+      lines.push(`${name} DNF`)
+      continue
+    }
+    const pct = `${Math.round(Math.max(0, Math.min(1, Number(r.progress01 || 0))) * 100)}%`.padStart(4, ' ')
+    lines.push(`${name} ${progressBar(r.progress01)} ${pct}`)
+  }
+  return '```\n' + lines.join('\n') + '\n```'
+}
+
 export function fmtMoney (n) {
   const x = Math.floor(Number(n || 0))
   return '$' + x.toLocaleString('en-US')

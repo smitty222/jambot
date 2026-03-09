@@ -393,7 +393,9 @@ export async function runRace ({
       track
     })
 
-    const delay = (leg >= legsTotal - 2) ? Math.max(1600, legDelayMs - 250) : legDelayMs
+    const delay = raceKind === 'drag'
+      ? legDelayMs
+      : ((leg >= legsTotal - 2) ? Math.max(1600, legDelayMs - 250) : legDelayMs)
     await DELAY(delay)
   }
 
