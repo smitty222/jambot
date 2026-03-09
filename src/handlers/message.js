@@ -2077,37 +2077,40 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
       })
     }
   } else if (payload.message.startsWith('/slotinfo')) {
-    const infoMessage = [
-      '🎰 SLOTS INFO',
-      '',
-      'Symbols',
-      '- High: 💎 ⭐ 🔔',
-      '- Low: 🍉 🍊 🍋 🍒',
-      '- Wild: 🃏 (substitutes line symbols)',
-      '- Scatter: 🎟️ (pays anywhere)',
-      '',
-      'How Wins Work',
-      '- One payline: left to right',
-      '- 2 or 3 matching (wild helps)',
-      '- 🎟️🎟️ pays, 🎟️🎟️🎟️ pays more',
-      '',
-      'Free Spins Feature',
-      '- Trigger: 2+ 🎟️ on bet >= $25',
-      '- Awards 6 free spins',
-      '- Retrigger: 2+ 🎟️ adds +1 free spin',
-      '- Use `/slots free` while active',
-      '',
-      'Jackpot + Collections',
-      '- Jackpot hits on 💎💎💎',
-      '- Progressive jackpot grows each spin',
-      '- Collections progress on bets >= $100',
-      '',
-      'Useful Commands',
-      '- `/slots <bet>`',
-      '- `/slots free`',
-      '- `/slots stats` `/slots eff` `/slots life`',
-      '- `/jackpot`'
-    ].join('\n')
+  // Create a message that contains information about the slots scoring system
+    const infoMessage = `
+    🎰 **Slots Scoring System Info** 🎰
+
+    **Slot Symbols:**
+    - 🍒: Cherries
+    - 🍋: Lemons
+    - 🍊: Oranges
+    - 🍉: Watermelons
+    - 🔔: Bells
+    - ⭐: Stars
+    - 💎: Diamonds
+
+    **Payouts for 3 Matching Symbols:**
+    - 🍊🍊🍊: 3x
+    - 🍋🍋🍋: 4x
+    - 🍒🍒🍒: 5x
+    - 🍉🍉🍉: 6x
+    - 🔔🔔🔔: 8x
+    - ⭐⭐⭐: 10x
+    - 💎💎💎: 20x
+
+    **Payouts for 2 Matching Symbols:**
+    - 🍊🍊: 1.2x
+    - 🍋🍋: 1.5x
+    - 🍉🍉: 2.5x
+    - 🍒🍒: 2x
+    - 🔔🔔: 3x
+    - ⭐⭐: 4x
+    - 💎💎: 5x
+
+    **Jackpot Contribution:**
+    - 5% of your bet contributes to the progressive jackpot! 🎉
+  `
 
     // Send the slot information as a message
     await postMessage({
