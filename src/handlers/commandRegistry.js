@@ -10,7 +10,6 @@ import { logger } from '../utils/logging.js'
 
 // Game and feature handlers
 import { handleSlotsCommand } from './slots.js'
-import { handleSlotsV2Command } from './slots_v2.js'
 import { handleCryptoCommand } from './crypto.js'
 import {
   startRouletteGame,
@@ -90,16 +89,6 @@ function buildSlotsInfoMessage () {
     '- `/slots effective` (or `/slots eff`) show active contribution/share',
     '- `/slots lifetime` (or `/slots life`) show lifetime contribution',
     '- `/jackpot` show the current jackpot'
-  ].join('\n')
-}
-
-function buildSlots2InfoMessage () {
-  return [
-    '🎰 Slots2 Commands',
-    '- `/slots2 <bet>` play a spin',
-    '- `/slots2 free` play free spins',
-    '- `/slots2 jackpot` show v2 jackpot',
-    '- `/slots2 info` show v2 rules'
   ].join('\n')
 }
 
@@ -224,38 +213,6 @@ const commandRegistry = {
     }
 
     const response = await handleSlotsCommand(userUUID, betAmount)
-    await postMessage({ room, message: response })
-  },
-
-  // 🎰 Slots V2: `/slots2 [betAmount]`
-  slots2: async ({ payload, room }) => {
-    const parts = (payload?.message || '').trim().split(/\s+/)
-    const userUUID = payload?.sender
-    let arg = ''
-    if (parts.length > 1) arg = String(parts[1] || '').trim().toLowerCase()
-
-    if (arg === 'info' || arg === 'help') {
-      await postMessage({ room, message: buildSlots2InfoMessage() })
-      return
-    }
-
-    if (arg === 'free' || arg === 'jackpot' || arg === 'jp') {
-      const response = await handleSlotsV2Command(userUUID, arg)
-      await postMessage({ room, message: response })
-      return
-    }
-
-    let betAmount = 1
-    if (arg) {
-      const amt = parseFloat(arg)
-      if (!Number.isFinite(amt) || amt <= 0) {
-        await postMessage({ room, message: 'Please provide a valid bet amount.' })
-        return
-      }
-      betAmount = amt
-    }
-
-    const response = await handleSlotsV2Command(userUUID, betAmount)
     await postMessage({ room, message: response })
   },
 

@@ -33,7 +33,6 @@ import {
   getLifetimeNet
 } from '../database/dbwalletmanager.js'
 import { getJackpotValue, handleSlotsCommand, formatBalance } from './slots.js'
-import { handleSlotsV2Command } from './slots_v2.js'
 import {
   openBetting, joinTable, leaveTable,
   handleBlackjackBet, handleHit, handleStand, handleDouble, handleSurrender, handleSplit,
@@ -2026,40 +2025,7 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
   }
 
   /// ///////////////////// SLOTS //////////////////////////////
-  if (/^\/slots2(\s|$)/i.test(payload.message)) {
-    try {
-      const args = payload.message.trim().split(/\s+/)
-      const sub = (args[1] || '').toLowerCase()
-      const userUUID = payload.sender
-
-      if (sub === 'free' || sub === 'jackpot' || sub === 'jp' || sub === 'info' || sub === 'help') {
-        const response = await handleSlotsV2Command(userUUID, sub)
-        await postMessage({ room, message: response })
-        return
-      }
-
-      let betAmount = 1
-      if (args.length > 1) {
-        betAmount = parseFloat(args[1])
-        if (isNaN(betAmount) || betAmount <= 0) {
-          await postMessage({
-            room,
-            message: 'Please provide a valid bet amount.'
-          })
-          return
-        }
-      }
-
-      const response = await handleSlotsV2Command(userUUID, betAmount)
-      await postMessage({ room, message: response })
-    } catch (err) {
-      console.error('Error processing the /slots2 command:', err)
-      await postMessage({
-        room,
-        message: 'An error occurred while processing slots2.'
-      })
-    }
-  } else if (/^\/slots(\s|$)/i.test(payload.message)) {
+  if (/^\/slots(\s|$)/i.test(payload.message)) {
     console.error('[SLOTS HIT]', payload.message)
     await postMessage({ room, message: 'SLOTS HANDLER HIT ✅' })
 
@@ -2111,40 +2077,37 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
       })
     }
   } else if (payload.message.startsWith('/slotinfo')) {
-  // Create a message that contains information about the slots scoring system
-    const infoMessage = `
-    🎰 **Slots Scoring System Info** 🎰
-
-    **Slot Symbols:**
-    - 🍒: Cherries
-    - 🍋: Lemons
-    - 🍊: Oranges
-    - 🍉: Watermelons
-    - 🔔: Bells
-    - ⭐: Stars
-    - 💎: Diamonds
-
-    **Payouts for 3 Matching Symbols:**
-    - 🍊🍊🍊: 3x
-    - 🍋🍋🍋: 4x
-    - 🍒🍒🍒: 5x
-    - 🍉🍉🍉: 6x
-    - 🔔🔔🔔: 8x
-    - ⭐⭐⭐: 10x
-    - 💎💎💎: 20x
-
-    **Payouts for 2 Matching Symbols:**
-    - 🍊🍊: 1.2x
-    - 🍋🍋: 1.5x
-    - 🍉🍉: 2.5x
-    - 🍒🍒: 2x
-    - 🔔🔔: 3x
-    - ⭐⭐: 4x
-    - 💎💎: 5x
-
-    **Jackpot Contribution:**
-    - 5% of your bet contributes to the progressive jackpot! 🎉
-  `
+    const infoMessage = [
+      '🎰 SLOTS INFO',
+      '',
+      'Symbols',
+      '- High: 💎 ⭐ 🔔',
+      '- Low: 🍉 🍊 🍋 🍒',
+      '- Wild: 🃏 (substitutes line symbols)',
+      '- Scatter: 🎟️ (pays anywhere)',
+      '',
+      'How Wins Work',
+      '- One payline: left to right',
+      '- 2 or 3 matching (wild helps)',
+      '- 🎟️🎟️ pays, 🎟️🎟️🎟️ pays more',
+      '',
+      'Free Spins Feature',
+      '- Trigger: 2+ 🎟️ on bet >= $25',
+      '- Awards 6 free spins',
+      '- Retrigger: 2+ 🎟️ adds +1 free spin',
+      '- Use `/slots free` while active',
+      '',
+      'Jackpot + Collections',
+      '- Jackpot hits on 💎💎💎',
+      '- Progressive jackpot grows each spin',
+      '- Collections progress on bets >= $100',
+      '',
+      'Useful Commands',
+      '- `/slots <bet>`',
+      '- `/slots free`',
+      '- `/slots stats` `/slots eff` `/slots life`',
+      '- `/jackpot`'
+    ].join('\n')
 
     // Send the slot information as a message
     await postMessage({
