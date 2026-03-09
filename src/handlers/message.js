@@ -33,6 +33,7 @@ import {
   getLifetimeNet
 } from '../database/dbwalletmanager.js'
 import { getJackpotValue, handleSlotsCommand, formatBalance } from './slots.js'
+import { handleSlotsV2Command } from './slots_v2.js'
 import {
   openBetting, joinTable, leaveTable,
   handleBlackjackBet, handleHit, handleStand, handleDouble, handleSurrender, handleSplit,
@@ -76,10 +77,7 @@ const ttlUserToken = process.env.TTL_USER_TOKEN
 export const /* deprecated_roomThemes */roomThemes = {}
 const userstagedive = {}
 
-const queueManager = new QueueManager(
-  'src/data/djQueue.json', // your file path
-  getUserNickname // optional nickname fetcher
-)
+const queueManager = new QueueManager(getUserNickname)
 
 export async function getUserNickname (userId) {
   return `<@uid:${userId}>`
@@ -203,6 +201,9 @@ const COMMAND_GUIDES = {
     '',
     'Suggestions & queue tools',
     '- `/suggestsongs`',
+    '- `/q`',
+    '- `/q+`',
+    '- `/q-`',
     '- `/searchalbum <artist>`',
     '- `/newalbums [countryCode]`',
     '- `/searchplaylist`',
@@ -1069,7 +1070,7 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
     } catch (error) {
       console.error('Error removing DJ:', error)
     }
-  } else if (payload.message.startsWith('/q+')) {
+  } else if (/^\/q\+(?:\s|$)/i.test(txt)) {
     const result = await queueManager.joinQueue(payload.sender)
     const mention = `<@uid:${payload.sender}>`
 
@@ -1079,27 +1080,18 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
         ? `${mention}; you joined the queue.`
         : `${mention}; you're already in the queue.`
     })
-  } else if (payload.message.startsWith('/q-')) {
-    const queue = await queueManager.getQueue()
-    const userInQueue = queue.find(u => u.userId === payload.sender)
-
+  } else if (/^\/q-(?:\s|$)/i.test(txt)) {
     const mention = `<@uid:${payload.sender}>`
-
-    if (!userInQueue) {
-      await postMessage({ room, message: `${mention}; you're not in the queue.` })
-      return
-    }
 
     const removed = await queueManager.leaveQueue(payload.sender)
 
     if (removed) {
       await postMessage({ room, message: `${mention}; you left the queue.` })
     } else {
-      await postMessage({ room, message: `${mention}; failed to remove you from the queue.` })
+      await postMessage({ room, message: `${mention}; you're not in the queue.` })
     }
-  } else if (payload.message.startsWith('/q')) {
+  } else if (/^\/q\b/i.test(txt)) {
     const queue = await queueManager.getQueue()
-    const { currentIndex = 0 } = await queueManager.loadQueue()
 
     if (!queue || queue.length === 0) {
       await postMessage({ room, message: 'The queue is empty.' })
@@ -1107,7 +1099,7 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
     }
 
     const list = queue.map((user, index) => {
-      const marker = index === currentIndex ? ' (up next)' : ''
+      const marker = index === 0 ? ' (up next)' : ''
       return `${index + 1}. ${user.username}${marker}`
     }).join('\n')
 
@@ -2034,7 +2026,40 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
   }
 
   /// ///////////////////// SLOTS //////////////////////////////
-  if (payload.message.startsWith('/slots')) {
+  if (/^\/slots2(\s|$)/i.test(payload.message)) {
+    try {
+      const args = payload.message.trim().split(/\s+/)
+      const sub = (args[1] || '').toLowerCase()
+      const userUUID = payload.sender
+
+      if (sub === 'free' || sub === 'jackpot' || sub === 'jp' || sub === 'info' || sub === 'help') {
+        const response = await handleSlotsV2Command(userUUID, sub)
+        await postMessage({ room, message: response })
+        return
+      }
+
+      let betAmount = 1
+      if (args.length > 1) {
+        betAmount = parseFloat(args[1])
+        if (isNaN(betAmount) || betAmount <= 0) {
+          await postMessage({
+            room,
+            message: 'Please provide a valid bet amount.'
+          })
+          return
+        }
+      }
+
+      const response = await handleSlotsV2Command(userUUID, betAmount)
+      await postMessage({ room, message: response })
+    } catch (err) {
+      console.error('Error processing the /slots2 command:', err)
+      await postMessage({
+        room,
+        message: 'An error occurred while processing slots2.'
+      })
+    }
+  } else if (/^\/slots(\s|$)/i.test(payload.message)) {
     console.error('[SLOTS HIT]', payload.message)
     await postMessage({ room, message: 'SLOTS HANDLER HIT ✅' })
 

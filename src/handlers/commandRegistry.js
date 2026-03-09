@@ -10,6 +10,7 @@ import { logger } from '../utils/logging.js'
 
 // Game and feature handlers
 import { handleSlotsCommand } from './slots.js'
+import { handleSlotsV2Command } from './slots_v2.js'
 import { handleCryptoCommand } from './crypto.js'
 import {
   startRouletteGame,
@@ -89,6 +90,16 @@ function buildSlotsInfoMessage () {
     '- `/slots effective` (or `/slots eff`) show active contribution/share',
     '- `/slots lifetime` (or `/slots life`) show lifetime contribution',
     '- `/jackpot` show the current jackpot'
+  ].join('\n')
+}
+
+function buildSlots2InfoMessage () {
+  return [
+    '🎰 Slots2 Commands',
+    '- `/slots2 <bet>` play a spin',
+    '- `/slots2 free` play free spins',
+    '- `/slots2 jackpot` show v2 jackpot',
+    '- `/slots2 info` show v2 rules'
   ].join('\n')
 }
 
@@ -213,6 +224,38 @@ const commandRegistry = {
     }
 
     const response = await handleSlotsCommand(userUUID, betAmount)
+    await postMessage({ room, message: response })
+  },
+
+  // 🎰 Slots V2: `/slots2 [betAmount]`
+  slots2: async ({ payload, room }) => {
+    const parts = (payload?.message || '').trim().split(/\s+/)
+    const userUUID = payload?.sender
+    let arg = ''
+    if (parts.length > 1) arg = String(parts[1] || '').trim().toLowerCase()
+
+    if (arg === 'info' || arg === 'help') {
+      await postMessage({ room, message: buildSlots2InfoMessage() })
+      return
+    }
+
+    if (arg === 'free' || arg === 'jackpot' || arg === 'jp') {
+      const response = await handleSlotsV2Command(userUUID, arg)
+      await postMessage({ room, message: response })
+      return
+    }
+
+    let betAmount = 1
+    if (arg) {
+      const amt = parseFloat(arg)
+      if (!Number.isFinite(amt) || amt <= 0) {
+        await postMessage({ room, message: 'Please provide a valid bet amount.' })
+        return
+      }
+      betAmount = amt
+    }
+
+    const response = await handleSlotsV2Command(userUUID, betAmount)
     await postMessage({ room, message: response })
   },
 
@@ -368,20 +411,26 @@ const commandRegistry = {
       }
 
       const lines = albums.map((a, i) => {
-        const title = a.albumName || 'Unknown Album'
-        const artist = a.artistName || 'Unknown Artist'
-        const id = a.spotifyAlbumId || '—'
-        return `${String(i + 1).padStart(2, '0')}. ${title} — ${artist} (${id})`
-      }).join('\n')
+        const title = String(a.albumName || 'Unknown Album').trim()
+        const artist = String(a.artistName || 'Unknown Artist').trim()
+        const id = String(a.spotifyAlbumId || '').trim() || '—'
+        const spotifyUrl = String(a.spotifyUrl || '').trim()
+        const submittedBy = String(a.submittedByNickname || '').trim()
+
+        let line = `${String(i + 1).padStart(2, '0')}. *${title}* — ${artist}\n`
+        line += `    🆔 \`${id}\``
+        if (spotifyUrl) line += `  •  🔗 ${spotifyUrl}`
+        if (submittedBy) line += `\n    🙋 Added by: ${submittedBy}`
+        return line
+      }).join('\n\n')
 
       await postMessage({
-  room,
-  message:
-    `🎧 Albums in the queue (${albums.length}):\n` +
-    '```' +
-    `\n${lines}\n` +
-    '```'
-})
+        room,
+        message:
+          `🎧 **Album Queue**\n` +
+          `📦 ${albums.length} queued album${albums.length === 1 ? '' : 's'}\n\n` +
+          `${lines}`
+      })
 
     } catch (err) {
       logger.error('[albumlist] Error:', err?.message || err)
@@ -607,11 +656,17 @@ Please contact an admin to link your account to use this command.`
         return
       }
 
-      const tracks = await getAlbumTracks(albumId)
+      const [albumInfo, tracks] = await Promise.all([
+        getSpotifyAlbumInfo(albumId),
+        getAlbumTracks(albumId)
+      ])
+
       if (!tracks || tracks.length === 0) {
         await postMessage({
           room,
-          message: `❌ *No tracks found for album \`${albumId}\`.*`
+          message:
+`❌ *Couldn’t find tracks for that album.*
+🆔 \`${albumId}\``
         })
         return
       }
@@ -633,7 +688,9 @@ Please contact an admin to link your account to use this command.`
       if (!formattedTracks.length) {
         await postMessage({
           room,
-          message: `❌ *No queueable tracks found for album \`${albumId}\`.*`
+          message:
+`❌ *No queueable tracks were found for that album.*
+🆔 \`${albumId}\``
         })
         return
       }
@@ -641,12 +698,20 @@ Please contact an admin to link your account to use this command.`
       const queueResult = await addSongsToCrate(crateId, formattedTracks, true, token)
       const addedCount = Number(queueResult?.added || 0)
       const skippedCount = Number(queueResult?.skipped || 0)
+      const albumName = albumInfo?.albumName || 'Unknown Album'
+      const artistName = albumInfo?.artistName || 'Unknown Artist'
+      const spotifyUrl = albumInfo?.spotifyUrl || ''
+      const totalTracks = Number(albumInfo?.trackCount || tracks.length || formattedTracks.length)
+
       await postMessage({
         room,
         message:
 `✅ *Album Queued!*
 
-🎵 Added *${addedCount} track(s)* from album \`${albumId}\` to your queue.${skippedCount > 0 ? `\n⚠️ Skipped ${skippedCount} track(s) that could not be resolved.` : ''}  
+📀 *${albumName}*
+🎤 *${artistName}*
+🎵 Added *${addedCount}/${totalTracks}* track(s) to your queue.${skippedCount > 0 ? `\n⚠️ Skipped *${skippedCount}* track(s) that could not be resolved.` : ''}
+${spotifyUrl ? `🔗 ${spotifyUrl}\n` : ''}🆔 \`${albumId}\`  
 Please refresh your page for the queue to update`
       })
     } catch (error) {

@@ -52,28 +52,27 @@ export class QueueManager {
 
   // Add a user if they're not already queued
   async joinQueue (userId) {
-    // Are they already in queue?
-    const exists = db.prepare(
-      'SELECT username FROM dj_queue WHERE userId = ? LIMIT 1'
-    ).get(userId)
-
-    if (exists) {
-      return {
-        success: false,
-        username: exists.username || 'Unknown'
-      }
-    }
-
     const username = await this.resolveUsername(userId)
 
-    db.prepare(`
-      INSERT INTO dj_queue (userId, username, joinedAt)
+    const info = db.prepare(`
+      INSERT OR IGNORE INTO dj_queue (userId, username, joinedAt)
       VALUES (?, ?, ?)
     `).run(userId, username, new Date().toISOString())
 
+    const inserted = db.prepare(
+      'SELECT username FROM dj_queue WHERE userId = ? LIMIT 1'
+    ).get(userId)
+
+    if (info.changes === 0) {
+      return {
+        success: false,
+        username: inserted?.username || username
+      }
+    }
+
     return {
       success: true,
-      username
+      username: inserted?.username || username
     }
   }
 

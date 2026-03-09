@@ -206,7 +206,7 @@ Please be ready to press *Play Music* when the stage opens.`
             message:
 `📢 *Album wrapping up in 60 seconds!*  
 No one is in the queue.  
-Want to go next? Type \`q+\` to claim your spot and play an album!`
+Want to go next? Type \`/q+\` to claim your spot and play an album!`
           })
         }
       }, reminderTime)
