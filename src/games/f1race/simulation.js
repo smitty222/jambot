@@ -10,7 +10,9 @@ import { stat01 } from './utils/track.js'
 const ROOM = process.env.ROOM_UUID
 
 export const LEGS = 6
+const DRAG_LEGS = 4
 const LEG_DELAY_MS = 3900
+const DRAG_LEG_DELAY_MS = 2200
 const FINISH = 1.0
 
 // Tuning
@@ -128,16 +130,17 @@ function perLegFromRaceProb (pRace, legsRemaining) {
   return 1 - Math.pow(1 - Math.max(0, Math.min(0.99, pRace)), 1 / L)
 }
 
-function gapLabel (leaderProg, prog, legIndex, track) {
+function gapLabel (leaderProg, prog, legIndex, track, legsTotal = LEGS) {
   const d = Math.max(0, leaderProg - prog)
   const scale = Number(track?.gapScale || 78.0)
   const sec = d * scale
-  const decimals = (legIndex >= LEGS - 1) ? 3 : 2
+  const decimals = (legIndex >= legsTotal - 1) ? 3 : 2
   return `+${sec.toFixed(decimals)}`
 }
 
-function maybeRaceControlEvent (legIndex) {
-  if (legIndex >= LEGS - 1) return null
+function maybeRaceControlEvent (legIndex, raceType = 'gp', legsTotal = LEGS) {
+  if (raceType === 'drag') return null
+  if (legIndex >= legsTotal - 1) return null
   const r = rand()
   if (r < 0.075) return { type: 'safety_car' }
   if (r < 0.20) return { type: 'yellow' }
@@ -211,6 +214,7 @@ function tryOvertakes ({ state, cars, order, events, leg, track }) {
 export async function runRace ({
   cars,
   track,
+  raceType = 'gp',
   prizePool,
   payoutPlan,
   poleBonus = 0,
@@ -223,6 +227,9 @@ export async function runRace ({
   lockedOddsDec = []
 }) {
   if (!Array.isArray(cars) || cars.length === 0) return
+  const raceKind = String(raceType || 'gp').toLowerCase() === 'drag' ? 'drag' : 'gp'
+  const legsTotal = raceKind === 'drag' ? DRAG_LEGS : LEGS
+  const legDelayMs = raceKind === 'drag' ? DRAG_LEG_DELAY_MS : LEG_DELAY_MS
 
   const state = cars.map((c, idx) => ({
     index: idx,
@@ -250,11 +257,11 @@ export async function runRace ({
 
   let prevOrder = null
 
-  for (let leg = 0; leg < LEGS; leg++) {
+  for (let leg = 0; leg < legsTotal; leg++) {
     const active = state.filter(s => !s.dnf)
     if (active.length <= 1) break
 
-    const rcEvent = maybeRaceControlEvent(leg)
+    const rcEvent = maybeRaceControlEvent(leg, raceKind, legsTotal)
     track._rc = rcEvent?.type || null
 
     const avg = active.reduce((sum, s) => sum + s.progress, 0) / active.length
@@ -266,7 +273,8 @@ export async function runRace ({
       const pace = computePaceScalar(car, track, leg)
 
       const yellowMult = (rcEvent?.type === 'yellow') ? 0.96 : 1.0
-      const raw = (FINISH / (LEGS * 9.4)) * pace * yellowMult * (1 + randn(0, NOISE_SD))
+      const dragPaceFactor = raceKind === 'drag' ? 8.2 : 9.4
+      const raw = (FINISH / (legsTotal * dragPaceFactor)) * pace * yellowMult * (1 + randn(0, NOISE_SD))
       const blended = MOMENTUM_BLEND * s.lastDelta + (1 - MOMENTUM_BLEND) * Math.max(0, raw)
 
       const diff = s.progress - avg
@@ -281,9 +289,9 @@ export async function runRace ({
         : 90.0 - (pace * 6.0) + randRange(-0.35, 0.35)
       if (lapTime < s.bestLapTime) s.bestLapTime = lapTime
 
-      if (leg >= 1) {
+      if (leg >= 1 && raceKind !== 'drag') {
         const pRace = dnfChanceRace(car, track)
-        const legsRemaining = (LEGS - leg)
+        const legsRemaining = (legsTotal - leg)
         let pLeg = perLegFromRaceProb(pRace, legsRemaining)
 
         if (rcEvent?.type === 'yellow') pLeg *= 0.80
@@ -313,7 +321,9 @@ export async function runRace ({
     if (rcEvent?.type === 'safety_car') events.push('🚨 SAFETY CAR DEPLOYED — field bunches up!')
     else if (rcEvent?.type === 'yellow') events.push('🟡 Yellow flag — sector slow.')
 
-    tryOvertakes({ state, cars, order, events, leg, track })
+    if (raceKind !== 'drag') {
+      tryOvertakes({ state, cars, order, events, leg, track })
+    }
 
     order = state
       .map((s, i) => ({ i, p: s.progress, dnf: s.dnf }))
@@ -332,7 +342,7 @@ export async function runRace ({
         label: s.label,
         teamLabel: s.teamLabel,
         progress01: clamp01(s.progress),
-        gap: (i === order[0]) ? '+0.00' : gapLabel(leaderProg, s.progress, leg, track),
+        gap: (i === order[0]) ? '+0.00' : gapLabel(leaderProg, s.progress, leg, track, legsTotal),
         dnf: s.dnf,
         dnfReason: s.dnfReason
       }
@@ -374,9 +384,16 @@ export async function runRace ({
 
     prevOrder = order
 
-    bus.emit('turn', { legIndex: leg, legsTotal: LEGS, raceState: rows, events, track })
+    bus.emit('turn', {
+      legIndex: leg,
+      legsTotal,
+      raceType: raceKind,
+      raceState: rows,
+      events,
+      track
+    })
 
-    const delay = (leg >= LEGS - 2) ? 3000 : LEG_DELAY_MS
+    const delay = (leg >= legsTotal - 2) ? Math.max(1600, legDelayMs - 250) : legDelayMs
     await DELAY(delay)
   }
 

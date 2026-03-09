@@ -39,10 +39,25 @@ const TRACKS = [
   }
 ]
 
+const DRAG_TRACK = {
+  key: 'dragstrip',
+  name: 'Head-to-Head Drag Strip',
+  emoji: '🛣️',
+  raceType: 'drag',
+  weights: { power: 0.56, handling: 0.08, aero: 0.18, tire: 0.10, reliability: 0.08 },
+  dnfBase: 0.012,
+  gapScale: 52,
+  imageUrl: 'https://raw.githubusercontent.com/smitty222/jambot/main/src/games/f1race/assets/tracks/dragrace.jpg'
+}
+
 export function pickTrack () {
   // return a fresh copy so we can attach ephemeral fields (like _rc) safely
   const t = TRACKS[Math.floor(Math.random() * TRACKS.length)]
   return { ...t }
+}
+
+export function pickDragTrack () {
+  return { ...DRAG_TRACK }
 }
 
 export function clamp01 (x) {

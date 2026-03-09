@@ -69,7 +69,7 @@ import {
   isSpotlightProtected,
   isSpotlightActive
 } from '../handlers/spotlight.js'
-import { handleCarEntryAttempt, handleBetCommand, startF1Race, handleBuyCar, handleMyCars, handleWearCommand, handleCarShow, handleCarPics, handleRepairCar, handleRenameCar, handleSellCar, handleTeamCommand, handleF1Help, handleCarStats, handleF1Stats, handleF1Leaderboard } from '../games/f1race/handlers/commands.js'
+import { handleCarEntryAttempt, handleBetCommand, startF1Race, startDragRace, handleBuyCar, handleMyCars, handleWearCommand, handleCarShow, handleCarPics, handleRepairCar, handleRenameCar, handleSellCar, handleTeamCommand, handleF1Help, handleCarStats, handleF1Stats, handleF1Leaderboard } from '../games/f1race/handlers/commands.js'
 
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
@@ -395,6 +395,14 @@ if (/^\/(gp|f1)\s+start\b/i.test(txt)) {
   const mode = (txt.match(/^\/(?:gp|f1)\s+start(?:\s+(\w+))?\b/i) || [])[1] || 'open'
   console.log('▶ dispatch → startF1Race')
   startF1Race(mode).catch(console.error)
+  return
+}
+
+// Start Drag (support "/drag start")
+if (/^\/drag\s+start\b/i.test(txt)) {
+  const tier = (txt.match(/^\/drag\s+start(?:\s+(\w+))?\b/i) || [])[1] || 'starter'
+  console.log('▶ dispatch → startDragRace')
+  startDragRace(tier).catch(console.error)
   return
 }
 
