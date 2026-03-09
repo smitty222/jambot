@@ -55,13 +55,14 @@ function buildStrip (countMap) {
 
 const REEL_STRIPS = [
   buildStrip({
-    '🍒': 14, '🍋': 14, '🍊': 12, '🍉': 9, '🔔': 7, '⭐': 5, '💎': 3, '🃏': 2, '🎟️': 2
+    // Small-room tuning: slightly higher jackpot symbol density.
+    '🍒': 11, '🍋': 14, '🍊': 12, '🍉': 9, '🔔': 7, '⭐': 5, '💎': 6, '🃏': 2, '🎟️': 2
   }),
   buildStrip({
-    '🍒': 13, '🍋': 13, '🍊': 11, '🍉': 9, '🔔': 7, '⭐': 6, '💎': 4, '🃏': 2, '🎟️': 1
+    '🍒': 11, '🍋': 12, '🍊': 11, '🍉': 9, '🔔': 7, '⭐': 6, '💎': 7, '🃏': 2, '🎟️': 1
   }),
   buildStrip({
-    '🍒': 14, '🍋': 14, '🍊': 11, '🍉': 8, '🔔': 7, '⭐': 5, '💎': 3, '🃏': 2, '🎟️': 1
+    '🍒': 11, '🍋': 13, '🍊': 11, '🍉': 8, '🔔': 7, '⭐': 5, '💎': 7, '🃏': 2, '🎟️': 1
   })
 ]
 
@@ -124,6 +125,30 @@ function joinForChat (lines) {
     for (const p of parts) out.push(...wrapLine(p))
   }
   return out.join('\n')
+}
+
+function makeBar (value, total, width = 8) {
+  const safeTotal = Math.max(1, Number(total) || 1)
+  const safeValue = Math.max(0, Math.min(safeTotal, Number(value) || 0))
+  const filled = Math.round((safeValue / safeTotal) * width)
+  return `${'█'.repeat(filled)}${'░'.repeat(width - filled)}`
+}
+
+function renderSpinCard (header, symbols) {
+  return [
+    `┌─ ${header}`,
+    `│ ${symbols[0]}  ${symbols[1]}  ${symbols[2]}`,
+    '└────────────'
+  ]
+}
+
+function winTier (win, bet, jackpotHit) {
+  if (jackpotHit) return 'JACKPOT'
+  if (win <= 0) return 'MISS'
+  const ratio = win / Math.max(1, Number(bet) || 1)
+  if (ratio >= 20) return 'MEGA HIT'
+  if (ratio >= 8) return 'BIG WIN'
+  return 'WIN'
 }
 
 function randInt (min, max) {
@@ -240,27 +265,33 @@ function scoreLineLeftToRight (line) {
 
 function evaluateBaseSpin (line, bet) {
   let win = 0
-  const events = []
+  let lineWin = 0
+  let scatterPay = 0
+  let lineSymbol = ''
+  let lineCount = 0
 
   const lineOutcome = scoreLineLeftToRight(line)
   if (lineOutcome.multiplier > 0) {
-    const lineWin = bet * lineOutcome.multiplier
+    lineWin = bet * lineOutcome.multiplier
     win += lineWin
-    events.push(`💥 LINE WIN ${lineOutcome.symbol} x${lineOutcome.count}: +$${formatMoney(lineWin)}`)
+    lineSymbol = lineOutcome.symbol
+    lineCount = lineOutcome.count
   }
 
   const scatters = line.filter(s => s === SCATTER).length
   if (scatters >= 2) {
-    const scatterPay = bet * (scatters === 2 ? 1 : 3)
+    scatterPay = bet * (scatters === 2 ? 1 : 3)
     win += scatterPay
-    events.push(`🎟️ SCATTER PAY x${scatters}: +$${formatMoney(scatterPay)}`)
   }
 
   const jackpotHit = line[0] === HIGH_2 && line[1] === HIGH_2 && line[2] === HIGH_2
 
   return {
     win,
-    events,
+    lineWin,
+    lineSymbol,
+    lineCount,
+    scatterPay,
     scatters,
     jackpotHit,
     featureTrigger: scatters === 3 && bet >= FEATURE_MIN_TRIGGER_BET
@@ -333,22 +364,31 @@ async function spinFeatureOnce (userUUID) {
   spinsLeft -= 1
 
   const lines = []
-  lines.push(renderSlot(symbols[0], symbols[1], symbols[2], `🎟️ FREE SPIN ${spinNumber}/${spinsTotal} (x${mult})`))
-  if (result.events.length) lines.push(...result.events)
-  if (retrigger) lines.push(`🔁 RETRIGGER: +${FEATURE_RETRIGGER_SPINS} spins, multiplier now x${mult}`)
+  const progressDone = spinNumber
+  const progressBar = makeBar(progressDone, spinsTotal)
+  lines.push(...renderSpinCard(`🎟️ FREE ${spinNumber}/${spinsTotal} x${mult}`, symbols))
+  lines.push(`Progress: ${progressBar} ${progressDone}/${spinsTotal}`)
+
+  if (result.lineWin > 0) {
+    lines.push(`Line ${result.lineSymbol} x${result.lineCount}: +$${formatMoney(result.lineWin)}`)
+  }
+  if (result.scatterPay > 0) {
+    lines.push(`Scatter x${result.scatters}: +$${formatMoney(result.scatterPay)}`)
+  }
+  if (retrigger) lines.push(`🔁 Retrigger: +${FEATURE_RETRIGGER_SPINS}, mult x${mult}`)
   if (jackpot.line) lines.push(jackpot.line)
-  if (featureWin <= 0) lines.push('— NO WIN —')
+  lines.push(`Result: ${winTier(featureWin, 1, result.jackpotHit)} +$${formatMoney(featureWin)}`)
 
   if (spinsLeft > 0) {
     saveFeatureSession(userUUID, { spinsLeft, spinsTotal, totalWon, mult })
-    lines.push(`👉 Type /slots free to spin again (${spinsLeft} left).`)
+    lines.push(`Next: /slots2 free (${spinsLeft} left)`)
     return joinForChat(lines)
   }
 
   clearFeatureSession(userUUID)
   const balance = await getUserWallet(userUUID)
-  lines.push(`💰 TOTAL FEATURE WINS: +$${formatMoney(totalWon)}`)
-  lines.push(`🪙 BALANCE: $${formatBalance(balance)}`)
+  lines.push(`Feature total: +$${formatMoney(totalWon)}`)
+  lines.push(`Bal: $${formatBalance(balance)}`)
   return joinForChat(lines)
 }
 
@@ -413,12 +453,15 @@ async function playSlotsV2 (userUUID, betSize = DEFAULT_BET) {
     const newJackpot = jackpot.newJackpot
 
     return joinForChat([
-      renderSlot(symbols[0], symbols[1], symbols[2]),
-      result.events.length ? result.events.join('\n') : '— NO WIN —',
+      ...renderSpinCard('🎰 SLOTS2', symbols),
+      result.lineWin > 0 ? `Line ${result.lineSymbol} x${result.lineCount}: +$${formatMoney(result.lineWin)}` : '',
+      result.scatterPay > 0 ? `Scatter x${result.scatters}: +$${formatMoney(result.scatterPay)}` : '',
+      `Result: ${winTier(totalWin, bet, result.jackpotHit)} +$${formatMoney(totalWin)}`,
       jackpot.line,
-      `🪙 BALANCE: $${formatBalance(balance)}`,
+      `Bal: $${formatBalance(balance)}`,
       featureMsg,
-      `💰 JACKPOT: $${formatMoney(newJackpot)}  📈 +$${formatMoney(jackpotInc)}`
+      `Jackpot: $${formatMoney(newJackpot)}`,
+      `JP add: +$${formatMoney(jackpotInc)}`
     ].filter(Boolean))
   } catch (err) {
     console.error('[SlotsV2] play error:', err)
