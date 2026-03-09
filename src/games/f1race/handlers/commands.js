@@ -517,7 +517,8 @@ function oddsFromStrengths (strengths, cars = []) {
 
   if (lockedRaceType === 'drag' && marketStrengths.length === 2) {
     const avg = (marketStrengths[0] + marketStrengths[1]) / 2
-    const compress = 0.72
+    const gapRatio = Math.abs(marketStrengths[0] - marketStrengths[1]) / Math.max(1e-9, avg)
+    const compress = clamp(0.50 - (gapRatio * 1.10), 0.18, 0.50)
     marketStrengths = marketStrengths.map((s) => (s * (1 - compress)) + (avg * compress))
   }
 
@@ -1678,7 +1679,9 @@ async function lockEntriesAndOpenStrategy () {
       const dragTier = normalizeTierKey(lockedDragTier || 'starter')
       const base = CAR_TIERS[dragTier]?.base || CAR_TIERS.starter.base
       const dragLivery = CAR_TIERS[dragTier]?.livery || '⬛'
-      const jitterDrag = (x) => clamp(Number(x || 50) + rint(-3, 3), 35, 95)
+      const dragBotBiasByTier = { starter: 0, pro: 1, hyper: 2, legendary: 3 }
+      const botBias = Number(dragBotBiasByTier[dragTier] ?? 0)
+      const jitterDrag = (x) => clamp(Number(x || 50) + botBias + rint(-2, 4), 35, 96)
       for (let i = 0; i < need; i++) {
         const name = generateCarName(used)
         used.add(name.toLowerCase())
@@ -1901,7 +1904,7 @@ if (!globalThis[LISTENER_GUARD_KEY]) {
     await postMessage({ room: ROOM, message: lines.join('\n') })
   })
 
-  bus.on('raceFinished', async ({ finishOrder, cars, payouts, payoutDetails, betPayouts, track, prizePool, fastestLap }) => {
+  bus.on('raceFinished', async ({ finishOrder, cars, payouts, payoutDetails, betPayouts, betSettlements, track, prizePool, fastestLap }) => {
     try {
       const top = finishOrder.slice(0, Math.min(8, finishOrder.length))
       const payoutByIndex = new Map(
@@ -1939,18 +1942,37 @@ if (!globalThis[LISTENER_GUARD_KEY]) {
         })
       }
 
+      const raceMap = (payouts && typeof payouts === 'object') ? payouts : {}
+      const betMap = (betSettlements && typeof betSettlements === 'object') ? betSettlements : {}
+      const users = [...new Set([...Object.keys(raceMap), ...Object.keys(betMap)])]
+
+      if (users.length) {
+        const rows = []
+        const fmtSignedMoney = (n) => `${n >= 0 ? '+' : '-'}${fmtMoney(Math.abs(n))}`
+        rows.push('SETTLEMENT BREAKDOWN')
+        rows.push('')
+
+        for (const userId of users.slice(0, 12)) {
+          const nick = await safeCall(getUserNickname, [userId]).catch(() => null)
+          const tag = nick?.replace(/^@/, '') || `<@uid:${userId}>`
+          const raceWin = Math.max(0, Math.floor(Number(raceMap[userId] || 0)))
+          const b = betMap[userId] || { staked: 0, returned: 0, net: 0 }
+          const betReturned = Math.max(0, Math.floor(Number(b.returned || 0)))
+          const betNet = Math.floor(Number(b.net || 0))
+          const totalNet = raceWin + betNet
+          rows.push(
+            `${tag} · Race ${fmtMoney(raceWin)} · Bet return ${fmtMoney(betReturned)} (net ${fmtSignedMoney(betNet)}) · Total net ${fmtSignedMoney(totalNet)}`
+          )
+        }
+
+        await postMessage({ room: ROOM, message: '```\n' + rows.join('\n') + '\n```' })
+      }
+
       const betWinners = betPayouts && typeof betPayouts === 'object'
         ? Object.entries(betPayouts).filter(([, amt]) => Number(amt) > 0)
         : []
-
       if (betWinners.length) {
-        for (const [userId, amt] of betWinners.slice(0, 10)) {
-          const nick = await safeCall(getUserNickname, [userId]).catch(() => null)
-          const tag = nick?.replace(/^@/, '') || `<@uid:${userId}>`
-          await postMessage({ room: ROOM, message: `💵 ${tag} wins **${fmtMoney(amt)}** on bets` })
-        }
-
-        await postMessage({ room: ROOM, message: '🎟️ Bets settled. Winners have been paid.' })
+        await postMessage({ room: ROOM, message: '🎟️ Bets settled. Bet return and net are shown in the settlement breakdown.' })
       }
     } finally {
       cleanup()

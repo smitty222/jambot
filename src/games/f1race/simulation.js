@@ -477,12 +477,15 @@ export async function runRace ({
   // - NEW slips: { betKey: "car:123" | "label:..." , amount }
   // - OLD slips: { carIndex, amount } (less safe; fallback only)
   const betPayouts = {}
+  const betSettlements = {}
   for (const [userId, slips] of Object.entries(bets || {})) {
     let totalWin = 0
+    let totalStaked = 0
 
     for (const s of (slips || [])) {
       const amt = Number(s.amount)
       if (!Number.isFinite(amt) || amt <= 0) continue
+      totalStaked += amt
 
       // Prefer stable betKey matching
       const slipKey = String(s.betKey || '').trim()
@@ -508,6 +511,14 @@ export async function runRace ({
     if (totalWin > 0) {
       betPayouts[userId] = (betPayouts[userId] || 0) + totalWin
       await safeCall(creditGameWin, [userId, totalWin])
+    }
+
+    if (totalStaked > 0 || totalWin > 0) {
+      betSettlements[userId] = {
+        staked: Math.floor(totalStaked),
+        returned: Math.floor(totalWin),
+        net: Math.floor(totalWin - totalStaked)
+      }
     }
   }
 
@@ -553,6 +564,7 @@ export async function runRace ({
     payouts,
     payoutDetails,
     betPayouts,
+    betSettlements,
     track,
     prizePool,
     fastestLap: fastestLapAwarded,
