@@ -401,6 +401,7 @@ export async function runRace ({
   // Prize payouts: split by paid-place weights across all finishers in paid places.
   // Bot-owned shares are retained by the house (not redistributed to users).
   const payouts = {}
+  const payoutDetails = []
   const paidPlaces = Math.min(5, finishOrder.length)
   const paidEntries = []
   for (let place = 0; place < paidPlaces; place++) {
@@ -426,6 +427,12 @@ export async function runRace ({
       if (!e.ownerId) continue
 
       payouts[e.ownerId] = (payouts[e.ownerId] || 0) + amt
+      payoutDetails.push({
+        place: e.place + 1,
+        idx: e.idx,
+        ownerId: e.ownerId,
+        amount: amt
+      })
       await safeCall(creditGameWin, [e.ownerId, amt])
       const paidCarId = cars?.[e.idx]?.id
       if (paidCarId != null) {
@@ -525,6 +532,7 @@ export async function runRace ({
     finishOrder,
     cars: cars.map((c, i) => ({ index: i, label: c.label, ownerId: c.ownerId || null, imageUrl: c.imageUrl || null })),
     payouts,
+    payoutDetails,
     betPayouts,
     track,
     prizePool,

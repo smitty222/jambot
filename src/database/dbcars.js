@@ -327,6 +327,18 @@ export function setCarTeam (id, teamId) {
     .run(teamId != null ? Number(teamId) : null, Number(id))
 }
 
+export function renameCarOwnedByUser (id, ownerId, newName) {
+  ensureCarsTable()
+  const trimmed = String(newName || '').trim()
+  if (!trimmed) return false
+
+  const info = db
+    .prepare('UPDATE cars SET name = ? WHERE id = ? AND ownerId = ?')
+    .run(trimmed, Number(id), String(ownerId))
+
+  return Number(info?.changes || 0) > 0
+}
+
 export function deleteCarOwnedByUser (id, ownerId) {
   ensureCarsTable()
   const info = db

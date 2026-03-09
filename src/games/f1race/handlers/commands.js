@@ -12,6 +12,7 @@ import {
   insertCar,
   getAllCars,
   getUserCars,
+  getCarByNameCaseInsensitive,
   setCarWear,
   setCarImageUrl,
   recordCarEntryFee,
@@ -19,6 +20,7 @@ import {
   getUserCarStatsSummary,
   getTopCarsByEarnings,
   getTopOwnersByCarReturn,
+  renameCarOwnedByUser,
   deleteCarOwnedByUser
 } from '../../../database/dbcars.js'
 
@@ -56,6 +58,7 @@ const FASTEST_LAP_BONUS = Number(process.env.F1_FASTEST_LAP_BONUS ?? 750)
 
 const TEAM_CREATE_FEE = Number(process.env.F1_TEAM_CREATE_FEE ?? 10000)
 const TEAM_REROLL_FEE = Number(process.env.F1_TEAM_REROLL_FEE ?? 5000)
+const CAR_RENAME_FEE = Number(process.env.F1_CAR_RENAME_FEE ?? 5000)
 const REPAIR_COST_PER_WEAR_BY_TIER = {
   starter: Number(process.env.F1_REPAIR_COST_PER_POINT_STARTER ?? 24),
   pro: Number(process.env.F1_REPAIR_COST_PER_POINT_PRO ?? 32),
@@ -484,10 +487,18 @@ function computeStrength (car, track) {
 }
 
 function oddsFromStrengths (strengths, cars = []) {
-  const marketStrengths = strengths.map((s, i) => {
+  let marketStrengths = strengths.map((s, i) => {
     const tierKey = normalizeTierKey(cars?.[i]?.tier)
     return Math.max(0.0001, Number(s || 0) * getBetMarketMultiplier(tierKey))
   })
+
+  // In ELITE mode, slightly compress strengths toward the mean so odds board
+  // stays tighter and reflects a more competitive top-tier field.
+  if (lockedRaceMode === 'elite' && marketStrengths.length > 1) {
+    const avg = marketStrengths.reduce((a, b) => a + b, 0) / marketStrengths.length
+    const compress = 0.18
+    marketStrengths = marketStrengths.map((s) => (s * (1 - compress)) + (avg * compress))
+  }
 
   const sum = marketStrengths.reduce((a, b) => a + b, 0)
   const edge = clamp(Number(ODDS_EDGE_PCT || 15) / 100, 0, 0.35)
@@ -1037,6 +1048,98 @@ export async function handleSellCar (ctx) {
   })
 }
 
+export async function handleRenameCar (ctx) {
+  const room = ctx?.room || ROOM
+  const userId = ctx?.sender
+  const text = String(ctx?.message || '').trim()
+  const argsRaw = (text.match(/^\/(?:renamecar|carrename|rename\s+car)\s+(.+)$/i) || [])[1] || ''
+  const nick = await safeCall(getUserNickname, [userId]).catch(() => '@user')
+
+  if (!argsRaw || !argsRaw.includes('|')) {
+    await postMessage({ room, message: `Usage: **/renamecar <current name> | <new name>** (costs ${fmtMoney(CAR_RENAME_FEE)})` })
+    return
+  }
+
+  if (isAccepting || isStratOpen || isRunning) {
+    await postMessage({ room, message: `⛔ ${nick}, car renames are disabled while a Grand Prix is active.` })
+    return
+  }
+
+  const [fromRaw, toRaw] = argsRaw.split('|')
+  const fromName = String(fromRaw || '').trim()
+  const newName = String(toRaw || '').trim().replace(/\s+/g, ' ')
+
+  if (!fromName || !newName) {
+    await postMessage({ room, message: `Usage: **/renamecar <current name> | <new name>**` })
+    return
+  }
+  if (newName.length < 3 || newName.length > 28) {
+    await postMessage({ room, message: `❗ ${nick}, new car name must be 3-28 characters.` })
+    return
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9 .'-]*[A-Za-z0-9]$/.test(newName)) {
+    await postMessage({ room, message: `❗ ${nick}, use letters/numbers/spaces plus . ' - for car names.` })
+    return
+  }
+
+  const cars = await safeCall(getUserCars, [userId]).catch(() => [])
+  if (!cars?.length) {
+    await postMessage({ room, message: `${nick}, you don’t own any cars yet. Try **/buycar**.` })
+    return
+  }
+
+  const q = String(fromName).toLowerCase()
+  const car =
+    cars.find(c => String(c.name || '').toLowerCase() === q) ||
+    cars.find(c => String(c.name || '').toLowerCase().includes(q))
+
+  if (!car) {
+    await postMessage({ room, message: `❗ ${nick}, couldn’t find that car in your garage.` })
+    return
+  }
+
+  if (String(car.name || '').toLowerCase() === newName.toLowerCase()) {
+    await postMessage({ room, message: `ℹ️ ${nick}, that car is already named **${newName}**.` })
+    return
+  }
+
+  const taken = await safeCall(getCarByNameCaseInsensitive, [newName]).catch(() => null)
+  if (taken && Number(taken.id) !== Number(car.id)) {
+    await postMessage({ room, message: `❗ ${nick}, **${newName}** is already taken. Choose a different name.` })
+    return
+  }
+
+  const bal = await safeCall(getUserWallet, [userId]).catch(() => null)
+  if (typeof bal !== 'number' || bal < CAR_RENAME_FEE) {
+    await postMessage({
+      room,
+      message: `❗ ${nick}, renaming a car costs **${fmtMoney(CAR_RENAME_FEE)}**. Balance: **${fmtMoney(bal)}**.`
+    })
+    return
+  }
+
+  const debited = await safeCall(debitGameBet, [userId, CAR_RENAME_FEE]).catch(() => false)
+  if (!debited) {
+    await postMessage({ room, message: `⚠️ ${nick}, couldn't process rename payment. Try again.` })
+    return
+  }
+
+  const renamed = await safeCall(renameCarOwnedByUser, [car.id, userId, newName]).catch(() => false)
+  if (!renamed) {
+    await safeCall(addToUserWallet, [userId, CAR_RENAME_FEE, nick]).catch(() => null)
+    await postMessage({ room, message: `⚠️ ${nick}, couldn't rename that car right now. Your ${fmtMoney(CAR_RENAME_FEE)} was refunded.` })
+    return
+  }
+
+  const updated = await safeCall(getUserWallet, [userId]).catch(() => null)
+  await postMessage({
+    room,
+    message:
+      `🪪 ${nick} renamed **${carLabel(car)}** to **${car.livery || '⬛'} ${newName}** for **${fmtMoney(CAR_RENAME_FEE)}**.\n` +
+      `💰 Balance: **${fmtMoney(updated)}**`
+  })
+}
+
 export async function handleCarPics (ctx) {
   const room = ctx?.room || ROOM
   const userId = ctx?.sender
@@ -1443,6 +1546,19 @@ async function lockEntriesAndOpenStrategy () {
     const used = new Set((all || []).map(c => String(c.name || '').toLowerCase()))
     for (const c of filtered) used.add(String(c.name || '').toLowerCase())
 
+    const botRangeByMode = {
+      rookie: {
+        power: [54, 64], handling: [54, 64], aero: [52, 62], reliability: [55, 66], tire: [53, 64]
+      },
+      open: {
+        power: [58, 70], handling: [58, 70], aero: [56, 68], reliability: [59, 72], tire: [57, 70]
+      },
+      elite: {
+        power: [67, 79], handling: [67, 79], aero: [66, 78], reliability: [68, 80], tire: [67, 79]
+      }
+    }
+    const botRange = botRangeByMode[lockedRaceMode] || botRangeByMode.open
+
     for (let i = 0; i < need; i++) {
       const name = generateCarName(used)
       used.add(name.toLowerCase())
@@ -1453,11 +1569,11 @@ async function lockEntriesAndOpenStrategy () {
         livery: '⬛',
         tier: 'bot',
         price: 0,
-        power: rint(50, 70),
-        handling: rint(50, 70),
-        aero: rint(48, 68),
-        reliability: rint(52, 72),
-        tire: rint(48, 70),
+        power: rint(botRange.power[0], botRange.power[1]),
+        handling: rint(botRange.handling[0], botRange.handling[1]),
+        aero: rint(botRange.aero[0], botRange.aero[1]),
+        reliability: rint(botRange.reliability[0], botRange.reliability[1]),
+        tire: rint(botRange.tire[0], botRange.tire[1]),
         wear: 0,
         teamLabel: '—',
         imageUrl: null
@@ -1617,9 +1733,13 @@ if (!globalThis[LISTENER_GUARD_KEY]) {
     await postMessage({ room: ROOM, message: lines.join('\n') })
   })
 
-  bus.on('raceFinished', async ({ finishOrder, cars, payouts, betPayouts, track, prizePool, fastestLap }) => {
+  bus.on('raceFinished', async ({ finishOrder, cars, payouts, payoutDetails, betPayouts, track, prizePool, fastestLap }) => {
     try {
       const top = finishOrder.slice(0, Math.min(8, finishOrder.length))
+      const payoutByIndex = new Map(
+        (Array.isArray(payoutDetails) ? payoutDetails : [])
+          .map((row) => [Number(row?.idx), Number(row?.amount || 0)])
+      )
 
       const lines = []
       lines.push(`RESULTS — ${track.emoji} ${track.name}`)
@@ -1629,7 +1749,7 @@ if (!globalThis[LISTENER_GUARD_KEY]) {
       const paid = top.slice(0, 5).map((idx, place) => {
         const c = cars[idx]
         const tag = c.ownerId ? `<@uid:${c.ownerId}>` : 'House'
-        const pay = c.ownerId ? (payouts?.[c.ownerId] || 0) : 0
+        const pay = c.ownerId ? (payoutByIndex.get(Number(idx)) || 0) : 0
         return `${place + 1}. ${c.label} — ${tag}${pay ? ` · ${fmtMoney(pay)}` : ''}`
       })
       lines.push(...paid)
@@ -1687,6 +1807,7 @@ export async function handleF1Help (ctx) {
     '/wear [name]           - show wear for all cars or one car',
     '/car <name>            - show your car (image + stats)',
     '/repair <name>         - fully repair wear on one car',
+    `/renamecar a | b       - rename a car (costs ${fmtMoney(CAR_RENAME_FEE)})`,
     '/sellcar <name>        - sell a car back for cash',
     '/carpics               - show photos of your cars',
     '',
