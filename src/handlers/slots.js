@@ -1,4 +1,8 @@
-import { debitGameBet, creditGameWin, getUserWallet } from '../database/dbwalletmanager.js'
+import {
+  getUserWallet,
+  applyGameDeltaInTransaction,
+  syncWalletBalanceFromDb
+} from '../database/dbwalletmanager.js'
 import db from '../database/db.js'
 
 // ───────────────────────────────────────────────────────────
@@ -454,20 +458,28 @@ function getBonusSession (userUUID) {
   }
 }
 
-function saveBonusSession (userUUID, session) {
+function saveBonusSession (userUUID, session, options = {}) {
+  const throwOnError = Boolean(options?.throwOnError)
   try {
     const now = new Date().toISOString()
     slotStmts.saveBonusSession.run(userUUID, JSON.stringify(session), now)
+    return true
   } catch (e) {
     console.error('[Slots] saveBonusSession error:', e)
+    if (throwOnError) throw e
+    return false
   }
 }
 
-function clearBonusSession (userUUID) {
+function clearBonusSession (userUUID, options = {}) {
+  const throwOnError = Boolean(options?.throwOnError)
   try {
     slotStmts.clearBonusSession.run(userUUID)
+    return true
   } catch (e) {
     console.error('[Slots] clearBonusSession error:', e)
+    if (throwOnError) throw e
+    return false
   }
 }
 
@@ -508,28 +520,41 @@ async function spinBonusOnce (userUUID) {
 
   totalPct = Math.min(totalPct, BONUS_MAX_TOTAL_PERCENT)
   const jackpotWon = lockedJackpot * (totalPct / 100)
+  let newJackpot = JACKPOT_SEED
+  try {
+    const settleBonusTx = db.transaction(() => {
+      if (jackpotWon > 0) {
+        const creditResult = applyGameDeltaInTransaction(userUUID, jackpotWon, {
+          updateCache: false,
+          meta: {
+            source: 'slots',
+            category: 'jackpot_bonus',
+            note: 'Slots bonus round jackpot slice'
+          }
+        })
+        if (!creditResult.ok) throw new Error('BONUS_CREDIT_FAILED')
+      }
 
-  if (jackpotWon > 0) {
-    await creditGameWin(userUUID, jackpotWon, null, {
-      source: 'slots',
-      category: 'jackpot_bonus',
-      note: 'Slots bonus round jackpot slice'
+      const currentJackpot = getJackpotValue()
+      newJackpot = Math.max(JACKPOT_SEED, currentJackpot - jackpotWon)
+      updateJackpotValue(newJackpot)
+
+      // Keep "effective" contribution aligned with remaining jackpot-funded pot.
+      const beforeContribPot = Math.max(0, currentJackpot - JACKPOT_SEED)
+      const afterContribPot = Math.max(0, newJackpot - JACKPOT_SEED)
+      const retainedRatio = beforeContribPot > 0 ? (afterContribPot / beforeContribPot) : 1
+      scaleEffectiveJackpotContributions(retainedRatio)
+
+      clearBonusSession(userUUID, { throwOnError: true })
     })
+
+    settleBonusTx()
+  } catch (e) {
+    console.error('[Slots] bonus settlement failed:', e)
+    return 'An error occurred while settling your bonus round.'
   }
 
-  const currentJackpot = getJackpotValue()
-  const newJackpot = Math.max(JACKPOT_SEED, currentJackpot - jackpotWon)
-  updateJackpotValue(newJackpot)
-
-  // Keep "effective" contribution aligned with remaining jackpot-funded pot.
-  const beforeContribPot = Math.max(0, currentJackpot - JACKPOT_SEED)
-  const afterContribPot = Math.max(0, newJackpot - JACKPOT_SEED)
-  const retainedRatio = beforeContribPot > 0 ? (afterContribPot / beforeContribPot) : 1
-  scaleEffectiveJackpotContributions(retainedRatio)
-
-  clearBonusSession(userUUID)
-
-  const balance = await getUserWallet(userUUID)
+  const balance = syncWalletBalanceFromDb(userUUID)
 
   lines.push(`🏆 JACKPOT SLICE COMPLETE: ${totalPct}%`)
   lines.push(`💰 WON: +$${formatMoney(jackpotWon)} (locked pot: $${formatMoney(lockedJackpot)})`)
@@ -554,20 +579,28 @@ function getFeatureSession (userUUID) {
   }
 }
 
-function saveFeatureSession (userUUID, session) {
+function saveFeatureSession (userUUID, session, options = {}) {
+  const throwOnError = Boolean(options?.throwOnError)
   try {
     const now = new Date().toISOString()
     slotStmts.saveFeatureSession.run(userUUID, JSON.stringify(session), now)
+    return true
   } catch (e) {
     console.error('[Slots] saveFeatureSession error:', e)
+    if (throwOnError) throw e
+    return false
   }
 }
 
-function clearFeatureSession (userUUID) {
+function clearFeatureSession (userUUID, options = {}) {
+  const throwOnError = Boolean(options?.throwOnError)
   try {
     slotStmts.clearFeatureSession.run(userUUID)
+    return true
   } catch (e) {
     console.error('[Slots] clearFeatureSession error:', e)
+    if (throwOnError) throw e
+    return false
   }
 }
 
@@ -622,39 +655,114 @@ async function spinFeatureOnce (userUUID) {
     ].join('\n')
   }
 
-  let { spinsLeft, spinsTotal, totalWon, startedAt, jackpotBonusUsed } = session
-  spinsLeft = Number(spinsLeft || 0)
-  spinsTotal = Number(spinsTotal || 0)
-  totalWon = Number(totalWon || 0)
-  jackpotBonusUsed = Boolean(jackpotBonusUsed)
+  let spinsLeft = 0
+  let spinsTotal = 0
+  let totalWon = 0
+  let startedAt = null
+  let jackpotBonusUsed = false
 
-  if (spinsLeft <= 0 || spinsTotal <= 0) {
-    clearFeatureSession(userUUID)
-    return 'Feature session expired.'
-  }
+  let spinNumber = 0
+  let result = []
+  let ticketCount = 0
+  let grantedSpins = 0
+  let outcome = { payout: 0, type: 'NONE', line: '' }
+  let win = 0
 
-  const spinNumber = (spinsTotal - spinsLeft) + 1
-  const result = spinFeatureSlots()
+  let triggeredBonusFromFeature = false
+  let spinsTotalBonus = 0
+  let lockedJackpot = 0
+  let finishedFeature = false
 
-  // ✅ NEW: Feature spins can trigger the 💎 BONUS (jackpot slice) once per feature session
-  const isTripleDiamonds = result.join('') === '💎💎💎'
-  if (isTripleDiamonds && !jackpotBonusUsed) {
-    jackpotBonusUsed = true
+  try {
+    const settleFeatureTx = db.transaction(() => {
+      const fresh = getFeatureSession(userUUID)
+      if (!fresh) throw new Error('FEATURE_SESSION_MISSING')
 
-    const spinsTotalBonus = randInt(BONUS_SPINS_MIN, BONUS_SPINS_MAX)
-    const lockedJackpot = getJackpotValue()
+      spinsLeft = Number(fresh.spinsLeft || 0)
+      spinsTotal = Number(fresh.spinsTotal || 0)
+      totalWon = Number(fresh.totalWon || 0)
+      startedAt = fresh.startedAt
+      jackpotBonusUsed = Boolean(fresh.jackpotBonusUsed)
 
-    saveBonusSession(userUUID, {
-      spinsLeft: spinsTotalBonus,
-      spinsTotal: spinsTotalBonus,
-      totalPct: 0,
-      lockedJackpot,
-      startedAt: new Date().toISOString()
+      if (spinsLeft <= 0 || spinsTotal <= 0) {
+        clearFeatureSession(userUUID, { throwOnError: true })
+        throw new Error('FEATURE_SESSION_EXPIRED')
+      }
+
+      spinNumber = (spinsTotal - spinsLeft) + 1
+      result = spinFeatureSlots()
+
+      // ✅ NEW: Feature spins can trigger the 💎 BONUS (jackpot slice) once per feature session
+      const isTripleDiamonds = result.join('') === '💎💎💎'
+      if (isTripleDiamonds && !jackpotBonusUsed) {
+        triggeredBonusFromFeature = true
+        jackpotBonusUsed = true
+
+        spinsTotalBonus = randInt(BONUS_SPINS_MIN, BONUS_SPINS_MAX)
+        lockedJackpot = getJackpotValue()
+
+        saveBonusSession(userUUID, {
+          spinsLeft: spinsTotalBonus,
+          spinsTotal: spinsTotalBonus,
+          totalPct: 0,
+          lockedJackpot,
+          startedAt: new Date().toISOString()
+        }, { throwOnError: true })
+
+        // Pause feature session, keep remaining spins intact
+        saveFeatureSession(userUUID, { spinsLeft, spinsTotal, totalWon, startedAt, jackpotBonusUsed }, { throwOnError: true })
+        return
+      }
+
+      // tickets can land during feature to award more spins
+      ticketCount = result.filter(s => s === '🎟️').length
+      if (ticketCount > 0) {
+        const add = Math.min(ticketCount, FEATURE_MAX_SPINS_PER_TRIGGER)
+        const roomLeft = FEATURE_MAX_SPINS_PER_SESSION - spinsTotal
+        grantedSpins = Math.max(0, Math.min(add, roomLeft))
+
+        if (grantedSpins > 0) {
+          spinsLeft += grantedSpins
+          spinsTotal += grantedSpins
+        }
+      }
+
+      outcome = evaluateFeatureLine(result)
+      win = Number(outcome.payout || 0)
+
+      if (win > 0) {
+        totalWon += win
+        const payoutResult = applyGameDeltaInTransaction(userUUID, win, {
+          updateCache: false,
+          meta: {
+            source: 'slots',
+            category: 'feature_win',
+            note: `Feature spin ${spinNumber}/${spinsTotal}`
+          }
+        })
+        if (!payoutResult.ok) throw new Error('FEATURE_PAYOUT_FAILED')
+      }
+
+      spinsLeft -= 1
+      if (spinsLeft > 0) {
+        saveFeatureSession(userUUID, { spinsLeft, spinsTotal, totalWon, startedAt, jackpotBonusUsed }, { throwOnError: true })
+      } else {
+        clearFeatureSession(userUUID, { throwOnError: true })
+        finishedFeature = true
+      }
     })
 
-    // Pause feature session, keep remaining spins intact
-    saveFeatureSession(userUUID, { spinsLeft, spinsTotal, totalWon, startedAt, jackpotBonusUsed })
+    settleFeatureTx()
+  } catch (e) {
+    const code = String(e?.message || '')
+    if (code === 'FEATURE_SESSION_EXPIRED' || code === 'FEATURE_SESSION_MISSING') {
+      return 'Feature session expired.'
+    }
+    console.error('[Slots] feature settlement failed:', e)
+    return 'An error occurred while settling your free spin.'
+  }
 
+  if (triggeredBonusFromFeature) {
     return [
       renderSlot(result[0], result[1], result[2], `🎟️ FREE SPIN ${spinNumber}/${spinsTotal}`),
       '\n🚨 💎💎💎 JACKPOT BONUS TRIGGERED (FROM FREE SPINS) 💎💎💎 🚨',
@@ -665,38 +773,11 @@ async function spinFeatureOnce (userUUID) {
     ].join('\n')
   }
 
-  // tickets can land during feature to award more spins
-  const ticketCount = result.filter(s => s === '🎟️').length
-  if (ticketCount > 0) {
-    const add = Math.min(ticketCount, FEATURE_MAX_SPINS_PER_TRIGGER)
-    const roomLeft = FEATURE_MAX_SPINS_PER_SESSION - spinsTotal
-    const granted = Math.max(0, Math.min(add, roomLeft))
-
-    if (granted > 0) {
-      spinsLeft += granted
-      spinsTotal += granted
-    }
-  }
-
-  const outcome = evaluateFeatureLine(result)
-  const win = Number(outcome.payout || 0)
-
-  if (win > 0) {
-    totalWon += win
-    await creditGameWin(userUUID, win, null, {
-      source: 'slots',
-      category: 'feature_win',
-      note: `Feature spin ${spinNumber}/${spinsTotal}`
-    })
-  }
-
-  spinsLeft -= 1
-
   const lines = []
   lines.push(renderSlot(result[0], result[1], result[2], `🎟️ FREE SPIN ${spinNumber}/${spinsTotal}`))
 
-  if (ticketCount > 0) {
-    lines.push(`🎟️ +${Math.min(ticketCount, FEATURE_MAX_SPINS_PER_TRIGGER)} EXTRA FEATURE SPIN${ticketCount === 1 ? '' : 'S'}!`)
+  if (grantedSpins > 0) {
+    lines.push(`🎟️ +${grantedSpins} EXTRA FEATURE SPIN${grantedSpins === 1 ? '' : 'S'}!`)
   }
 
   if (win > 0) {
@@ -709,15 +790,12 @@ async function spinFeatureOnce (userUUID) {
     lines.push('— NO WIN —')
   }
 
-  if (spinsLeft > 0) {
-    saveFeatureSession(userUUID, { spinsLeft, spinsTotal, totalWon, startedAt, jackpotBonusUsed })
+  if (!finishedFeature) {
     lines.push(`👉 Type /slots free to spin again (${spinsLeft} left).`)
     return lines.join('\n')
   }
 
-  clearFeatureSession(userUUID)
-
-  const balance = await getUserWallet(userUUID)
+  const balance = syncWalletBalanceFromDb(userUUID)
   lines.push(`💰 TOTAL FEATURE WINS: +$${formatMoney(totalWon)}`)
   lines.push(`🪙 BALANCE: $${formatBalance(balance)}`)
 
@@ -813,7 +891,7 @@ function maybeMilestoneAnnouncement (before, after) {
 // Symbol collection progression
 // ───────────────────────────────────────────────────────────
 
-async function applyCollectionProgress (userUUID, spins) {
+function applyCollectionProgress (userUUID, spins) {
   const col = getUserCollection(userUUID)
   const counts = col.counts || {}
   const tiers = col.tiers || {}
@@ -869,14 +947,6 @@ async function applyCollectionProgress (userUUID, spins) {
 
   saveUserCollection(userUUID, { counts, tiers, halfNotifs })
 
-  if (totalReward > 0) {
-    await creditGameWin(userUUID, totalReward, null, {
-      source: 'slots',
-      category: 'collection_reward',
-      note: 'Slots collection tier reward'
-    })
-  }
-
   return { unlockedLines: unlocked, progressLines: progress, rewardTotal: totalReward }
 }
 
@@ -913,21 +983,11 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
       return `Invalid bet amount. Your balance is $${formatBalance(balance)}.`
     }
 
-    await debitGameBet(userUUID, bet, {
-      source: 'slots',
-      category: 'bet',
-      note: `Base spin bet ${formatBalance(bet)}`
-    })
-
-    let jackpot = getJackpotValue()
-    const beforeJackpot = jackpot
-    const contribBet = Math.min(bet, JACKPOT_CONTRIB_BET_CAP)
-    const jackpotIncrement = contribBet * JACKPOT_INCREMENT_RATE
-    jackpot += jackpotIncrement
-    updateJackpotValue(jackpot)
-    recordJackpotContribution(userUUID, jackpotIncrement)
-
-    const milestoneLine = maybeMilestoneAnnouncement(beforeJackpot, jackpot)
+    let jackpot = 0
+    let jackpotIncrement = 0
+    let milestoneLine = null
+    let resetInfo = { didReset: false, current: getYearMonthKey() }
+    let collection = { unlockedLines: [], progressLines: [], rewardTotal: 0 }
 
     const spinLines = []
     const allSpinResults = []
@@ -940,86 +1000,127 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
     let bonusTriggeredThisPlay = false
     let featureTriggeredThisPlay = false
 
-    const playOneSpin = (prefix) => {
-      // ✅ Option A in action: tickets can’t appear if bet < FEATURE_MIN_TRIGGER_BET
-      const result = spinSlots(bet)
-      allSpinResults.push(result)
+    const settleSpinTx = db.transaction(() => {
+      const debitResult = applyGameDeltaInTransaction(userUUID, -Math.abs(bet), {
+        requireSufficientFunds: true,
+        updateCache: false,
+        meta: {
+          source: 'slots',
+          category: 'bet',
+          note: `Base spin bet ${formatBalance(bet)}`
+        }
+      })
 
-      const outcome = evaluateLine(result)
-      const win = bet * outcome.multiplier * HOUSE_EDGE
-      totalWinnings += win
-
-      const diamondCount = result.filter(s => s === '💎').length
-      if (diamondCount === 2) nearMissLines.push('😮 NEAR MISS: Two 💎!')
-
-      if (result.join('') === '💎💎💎' && !bonusTriggeredThisPlay) {
-        bonusTriggeredThisPlay = true
-
-        const spinsTotal = randInt(BONUS_SPINS_MIN, BONUS_SPINS_MAX)
-        const lockedJackpot = jackpot
-
-        saveBonusSession(userUUID, {
-          spinsLeft: spinsTotal,
-          spinsTotal,
-          totalPct: 0,
-          lockedJackpot,
-          startedAt: new Date().toISOString()
-        })
-
-        bonusTriggerMessage = [
-          '\n🚨 💎💎💎 BONUS TRIGGERED 💎💎💎 🚨',
-          `🎁 FEATURE ROUND UNLOCKED: ${spinsTotal} BONUS SPINS`,
-          `💰 Locked Jackpot: $${formatMoney(lockedJackpot)}`,
-          `👉 Type '/slots bonus' to start (Spin 1/${spinsTotal}).`
-        ].join('\n')
+      if (!debitResult.ok) {
+        throw new Error('INSUFFICIENT_FUNDS')
       }
 
-      if (!featureTriggeredThisPlay && bet >= FEATURE_MIN_TRIGGER_BET) {
-        const ticketCountRaw = result.filter(s => s === '🎟️').length
-        const ticketCount = Math.min(ticketCountRaw, FEATURE_MAX_SPINS_PER_TRIGGER)
+      jackpot = getJackpotValue()
+      const beforeJackpot = jackpot
+      const contribBet = Math.min(bet, JACKPOT_CONTRIB_BET_CAP)
+      jackpotIncrement = contribBet * JACKPOT_INCREMENT_RATE
+      jackpot += jackpotIncrement
+      updateJackpotValue(jackpot)
+      recordJackpotContribution(userUUID, jackpotIncrement)
 
-        if (ticketCount > 0) {
-          featureTriggeredThisPlay = true
+      milestoneLine = maybeMilestoneAnnouncement(beforeJackpot, jackpot)
 
-          const spinsTotal = Math.min(ticketCount, FEATURE_MAX_SPINS_PER_SESSION)
+      const playOneSpin = (prefix) => {
+        // ✅ Option A in action: tickets can’t appear if bet < FEATURE_MIN_TRIGGER_BET
+        const result = spinSlots(bet)
+        allSpinResults.push(result)
 
-          saveFeatureSession(userUUID, {
+        const outcome = evaluateLine(result)
+        const win = bet * outcome.multiplier * HOUSE_EDGE
+        totalWinnings += win
+
+        const diamondCount = result.filter(s => s === '💎').length
+        if (diamondCount === 2) nearMissLines.push('😮 NEAR MISS: Two 💎!')
+
+        if (result.join('') === '💎💎💎' && !bonusTriggeredThisPlay) {
+          bonusTriggeredThisPlay = true
+
+          const spinsTotal = randInt(BONUS_SPINS_MIN, BONUS_SPINS_MAX)
+          const lockedJackpot = jackpot
+
+          saveBonusSession(userUUID, {
             spinsLeft: spinsTotal,
             spinsTotal,
-            totalWon: 0,
-            startedAt: new Date().toISOString(),
-            jackpotBonusUsed: false // ✅ NEW: feature can trigger jackpot once
-          })
+            totalPct: 0,
+            lockedJackpot,
+            startedAt: new Date().toISOString()
+          }, { throwOnError: true })
 
-          featureTriggerMessage = [
-            '\n🎟️ FREE SPINS FEATURE UNLOCKED 🎟️',
-            `🎁 You won ${spinsTotal} FEATURE SPIN${spinsTotal === 1 ? '' : 'S'}`,
-            `👉 Type '/slots free' to start (Spin 1/${spinsTotal}).`
+          bonusTriggerMessage = [
+            '\n🚨 💎💎💎 BONUS TRIGGERED 💎💎💎 🚨',
+            `🎁 FEATURE ROUND UNLOCKED: ${spinsTotal} BONUS SPINS`,
+            `💰 Locked Jackpot: $${formatMoney(lockedJackpot)}`,
+            `👉 Type '/slots bonus' to start (Spin 1/${spinsTotal}).`
           ].join('\n')
         }
+
+        if (!featureTriggeredThisPlay && bet >= FEATURE_MIN_TRIGGER_BET) {
+          const ticketCountRaw = result.filter(s => s === '🎟️').length
+          const ticketCount = Math.min(ticketCountRaw, FEATURE_MAX_SPINS_PER_TRIGGER)
+
+          if (ticketCount > 0) {
+            featureTriggeredThisPlay = true
+
+            const spinsTotal = Math.min(ticketCount, FEATURE_MAX_SPINS_PER_SESSION)
+
+            saveFeatureSession(userUUID, {
+              spinsLeft: spinsTotal,
+              spinsTotal,
+              totalWon: 0,
+              startedAt: new Date().toISOString(),
+              jackpotBonusUsed: false // ✅ NEW: feature can trigger jackpot once
+            }, { throwOnError: true })
+
+            featureTriggerMessage = [
+              '\n🎟️ FREE SPINS FEATURE UNLOCKED 🎟️',
+              `🎁 You won ${spinsTotal} FEATURE SPIN${spinsTotal === 1 ? '' : 'S'}`,
+              `👉 Type '/slots free' to start (Spin 1/${spinsTotal}).`
+            ].join('\n')
+          }
+        }
+
+        spinLines.push(renderSlot(result[0], result[1], result[2], prefix))
       }
 
-      spinLines.push(renderSlot(result[0], result[1], result[2], prefix))
-    }
+      playOneSpin('🎰 SLOTS')
 
-    playOneSpin('🎰 SLOTS')
+      if (totalWinnings > 0) {
+        const payoutResult = applyGameDeltaInTransaction(userUUID, totalWinnings, {
+          updateCache: false,
+          meta: {
+            source: 'slots',
+            category: 'spin_win',
+            note: `Base spin payout on $${formatBalance(bet)} bet`
+          }
+        })
+        if (!payoutResult.ok) throw new Error('PAYOUT_FAILED')
+      }
 
-    if (totalWinnings > 0) {
-      await creditGameWin(userUUID, totalWinnings, null, {
-        source: 'slots',
-        category: 'spin_win',
-        note: `Base spin payout on $${formatBalance(bet)} bet`
-      })
-    }
+      resetInfo = maybeResetCollectionsMonthly()
 
-    const resetInfo = maybeResetCollectionsMonthly()
+      if (bet >= COLLECTION_MIN_BET) {
+        collection = applyCollectionProgress(userUUID, allSpinResults)
+        if (collection.rewardTotal > 0) {
+          const collectionPayout = applyGameDeltaInTransaction(userUUID, collection.rewardTotal, {
+            updateCache: false,
+            meta: {
+              source: 'slots',
+              category: 'collection_reward',
+              note: 'Slots collection tier reward'
+            }
+          })
+          if (!collectionPayout.ok) throw new Error('COLLECTION_PAYOUT_FAILED')
+        }
+      }
+    })
 
-    let collection = { unlockedLines: [], rewardTotal: 0 }
-    if (bet >= COLLECTION_MIN_BET) {
-      collection = await applyCollectionProgress(userUUID, allSpinResults)
-    }
-
-    balance = await getUserWallet(userUUID)
+    settleSpinTx()
+    balance = syncWalletBalanceFromDb(userUUID)
 
     const didWin = totalWinnings > 0
     const resultLine = didWin
@@ -1052,6 +1153,10 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
       jackpotLine // jackpot at very bottom
     ].filter(Boolean).join('\n')
   } catch (err) {
+    if (String(err?.message || '') === 'INSUFFICIENT_FUNDS') {
+      const balance = syncWalletBalanceFromDb(userUUID)
+      return `Invalid bet amount. Your balance is $${formatBalance(balance)}.`
+    }
     console.error('Slots error:', err)
     return 'An error occurred while playing slots.'
   }

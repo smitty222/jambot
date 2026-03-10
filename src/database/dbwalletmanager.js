@@ -22,13 +22,12 @@ import { logger } from '../utils/logging.js'
 // In-memory wallet cache. Reading balances from the DB on every
 // operation causes synchronous blocking (db.prepare().get()) and
 // repeated disk I/O. To minimise latency, we initialise a cache on
-// first use and update it for subsequent reads. Writes still persist
-// to the database, but are scheduled via setImmediate so they don’t
-// block the event loop on the hot path.
+// first use and update it for subsequent reads. Writes persist to
+// the database synchronously to avoid lost updates on process crash.
 //
 // The cache is a Map keyed by user UUID → balance (number). When
 // wallets are created or updated, the cache is updated immediately
-// and a synchronous DB write is deferred via setImmediate.
+// and persisted to the DB synchronously.
 const walletCache = new Map()
 const NET_WORTH_TTL_MS = Number(process.env.NET_WORTH_TTL_MS ?? 30_000)
 const netWorthCache = {
@@ -63,8 +62,7 @@ function invalidateNetWorthCache () {
   netWorthCache.promise = null
 }
 
-// Persist a single user balance to the DB. Called asynchronously via
-// setImmediate from getUserWallet/addToUserWallet/removeFromUserWallet.
+// Persist a single user balance to the DB.
 function persistWallet (uuid, balance) {
   try {
     // Upsert the balance into the users table. We default the
@@ -373,13 +371,11 @@ export function getUserWallet (userUUID) {
   if (walletCache.has(userUUID)) {
     return walletCache.get(userUUID)
   }
-  // Initialise a new wallet with $50 if not present. We update the cache
-  // immediately and persist to DB asynchronously.
+  // Initialise a new wallet with $50 if not present.
   const initialBalance = 50
   walletCache.set(userUUID, initialBalance)
   invalidateNetWorthCache()
-  // Persist asynchronously to avoid blocking the event loop.
-  setImmediate(() => persistWallet(userUUID, initialBalance))
+  persistWallet(userUUID, initialBalance)
   return initialBalance
 }
 
@@ -390,8 +386,7 @@ export function removeFromUserWallet (userUUID, amount, meta = null) {
   const newBalance = roundToTenth(current - amount)
   walletCache.set(userUUID, newBalance)
   invalidateNetWorthCache()
-  // Persist asynchronously
-  setImmediate(() => persistWallet(userUUID, newBalance))
+  persistWallet(userUUID, newBalance)
   if (meta) recordEconomyEvent(userUUID, -Math.abs(amount), newBalance, meta)
   return true
 }
@@ -404,8 +399,7 @@ export async function addToUserWallet (userUUID, amount, nickname = null, meta =
   const newBalance = roundToTenth(current + amount)
   walletCache.set(userUUID, newBalance)
   invalidateNetWorthCache()
-  // Persist asynchronously
-  setImmediate(() => persistWallet(userUUID, newBalance))
+  persistWallet(userUUID, newBalance)
   if (meta) recordEconomyEvent(userUUID, Math.abs(amount), newBalance, meta)
   return true
 }
@@ -604,6 +598,68 @@ function updateLifetimeNet (userUUID, amount) {
   }
 }
 
+function ensureWalletRowForAtomicUpdate (userUUID, nickname = null) {
+  if (!userUUID) return
+
+  const row = db.prepare('SELECT uuid FROM users WHERE uuid = ?').get(userUUID)
+  if (row?.uuid) return
+
+  const cleanNickname = sanitizeNickname(nickname) || userUUID
+  db.prepare(`
+    INSERT INTO users (uuid, nickname, balance, lifetime_net)
+    VALUES (?, ?, 50, 0)
+    ON CONFLICT(uuid) DO NOTHING
+  `).run(userUUID, cleanNickname)
+}
+
+export function syncWalletBalanceFromDb (userUUID) {
+  if (!userUUID) return 0
+
+  ensureWalletRowForAtomicUpdate(userUUID)
+  const row = db.prepare('SELECT balance FROM users WHERE uuid = ?').get(userUUID)
+  const balance = roundToTenth(Number(row?.balance || 0))
+  walletCache.set(userUUID, balance)
+  invalidateNetWorthCache()
+  return balance
+}
+
+export function applyGameDeltaInTransaction (userUUID, delta, options = {}) {
+  const amount = Number(delta)
+  if (!userUUID || !Number.isFinite(amount) || amount === 0) {
+    return { ok: false, balance: 0, reason: 'INVALID_AMOUNT' }
+  }
+
+  const meta = options?.meta || null
+  const nickname = options?.nickname || null
+  const requireSufficientFunds = Boolean(options?.requireSufficientFunds)
+  const updateCache = options?.updateCache !== false
+
+  ensureWalletRowForAtomicUpdate(userUUID, nickname)
+
+  const row = db.prepare('SELECT balance FROM users WHERE uuid = ?').get(userUUID)
+  const currentBalance = roundToTenth(Number(row?.balance || 0))
+
+  if (requireSufficientFunds && amount < 0 && currentBalance < Math.abs(amount)) {
+    return { ok: false, balance: currentBalance, reason: 'INSUFFICIENT_FUNDS' }
+  }
+
+  const newBalance = roundToTenth(currentBalance + amount)
+  if (requireSufficientFunds && newBalance < 0) {
+    return { ok: false, balance: currentBalance, reason: 'INSUFFICIENT_FUNDS' }
+  }
+
+  db.prepare('UPDATE users SET balance = ? WHERE uuid = ?').run(newBalance, userUUID)
+  updateLifetimeNet(userUUID, amount)
+  if (meta) recordEconomyEvent(userUUID, amount, newBalance, meta)
+
+  if (updateCache) {
+    walletCache.set(userUUID, newBalance)
+    invalidateNetWorthCache()
+  }
+
+  return { ok: true, balance: newBalance }
+}
+
 /**
  * Remove a game bet from the user’s wallet and record a negative net.
  * Returns true on success (sufficient funds), false otherwise.
@@ -613,14 +669,16 @@ function updateLifetimeNet (userUUID, amount) {
  */
 export function debitGameBet (userUUID, amount, meta = null) {
   if (!Number.isFinite(amount) || amount <= 0) return false
-  const success = removeFromUserWallet(userUUID, amount, {
-    source: meta?.source || 'game',
-    category: meta?.category || 'bet',
-    note: meta?.note || null,
-    ...(meta && typeof meta === 'object' ? meta : {})
+  const result = applyGameDeltaInTransaction(userUUID, -Math.abs(amount), {
+    requireSufficientFunds: true,
+    meta: {
+      source: meta?.source || 'game',
+      category: meta?.category || 'bet',
+      note: meta?.note || null,
+      ...(meta && typeof meta === 'object' ? meta : {})
+    }
   })
-  if (success) updateLifetimeNet(userUUID, -amount)
-  return success
+  return result.ok
 }
 
 /**
@@ -633,14 +691,16 @@ export function debitGameBet (userUUID, amount, meta = null) {
  */
 export async function creditGameWin (userUUID, amount, nickname = null, meta = null) {
   if (!Number.isFinite(amount) || amount <= 0) return false
-  const success = await addToUserWallet(userUUID, amount, nickname, {
-    source: meta?.source || 'game',
-    category: meta?.category || 'win',
-    note: meta?.note || null,
-    ...(meta && typeof meta === 'object' ? meta : {})
+  const result = applyGameDeltaInTransaction(userUUID, Math.abs(amount), {
+    nickname,
+    meta: {
+      source: meta?.source || 'game',
+      category: meta?.category || 'win',
+      note: meta?.note || null,
+      ...(meta && typeof meta === 'object' ? meta : {})
+    }
   })
-  if (success) updateLifetimeNet(userUUID, amount)
-  return success
+  return result.ok
 }
 
 /**
