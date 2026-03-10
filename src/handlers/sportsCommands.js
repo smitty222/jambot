@@ -8,7 +8,11 @@ import {
 } from '../utils/API.js'
 import { fetchOddsForSport, formatOddsMessage } from '../utils/sportsBetAPI.js'
 import { saveOddsForSport, getOddsForSport } from '../utils/bettingOdds.js'
-import { placeSportsBet, resolveCompletedBets } from '../utils/sportsBet.js'
+import {
+  placeSportsBet,
+  resolveCompletedBets,
+  getOpenBetsForUser
+} from '../utils/sportsBet.js'
 import { getUserWallet } from '../database/dbwalletmanager.js'
 import { getSenderNickname } from '../utils/helpers.js'
 import {
@@ -26,6 +30,14 @@ const SPORT_ALIASES = {
 
 const SUPPORTED_SPORTS = Object.keys(SPORT_ALIASES)
 
+const SCORE_HANDLERS = {
+  mlb: handleMlbScoresCommand,
+  nba: handleNbaScoresCommand,
+  ncaab: handleNcaabScoresCommand,
+  nhl: handleNhlScoresCommand,
+  nfl: handleNflScoresCommand
+}
+
 export function parseSportAlias (value = '') {
   const sportAlias = String(value || '').trim().toLowerCase()
   return {
@@ -34,31 +46,58 @@ export function parseSportAlias (value = '') {
   }
 }
 
-export function buildSportsInfoMessage () {
+export function buildSportsInfoMessage (topic = '') {
+  const normalizedTopic = String(topic || '').trim().toLowerCase()
+
+  if (normalizedTopic === 'scores') {
+    return [
+      '🏈 Sports Scores',
+      '',
+      'Use `/sports scores <sport> [YYYY-MM-DD]`',
+      'Examples:',
+      '- `/sports scores nba`',
+      '- `/sports scores ncaab 2026-03-18`',
+      '',
+      `Sports: ${SUPPORTED_SPORTS.join(', ')}`,
+      'Shortcuts still work: `/mlb`, `/nba`, `/ncaab`, `/nhl`, `/nfl`'
+    ].join('\n')
+  }
+
+  if (normalizedTopic === 'odds' || normalizedTopic === 'betting' || normalizedTopic === 'bets') {
+    return [
+      '🎟️ Sports Betting',
+      '',
+      'Most common:',
+      '- `/sports odds nba`',
+      '- `/sports bet nba 1 lakers ml 25`',
+      '- `/sports bets`',
+      '- `/sports bets <@uid:USER>`',
+      '- `/sports resolve [sport]`',
+      '',
+      'Notes:',
+      '- `TYPE` can be `ml` or `spread`',
+      `- Sports: ${SUPPORTED_SPORTS.join(', ')}`,
+      '',
+      'Shortcuts still work: `/odds`, `/sportsbet`, `/mybets`, `/openbets`, `/resolvebets`'
+    ].join('\n')
+  }
+
   return [
-    '🏈 Sports Commands',
+    '🏈 Sports',
     '',
-    '- `/sportsinfo`',
+    'Most common:',
+    '- `/sports scores nba`',
+    '- `/sports odds ncaab`',
+    '- `/sports bet nba 1 lakers ml 25`',
+    '- `/sports bets`',
+    '- `/sports resolve`',
     '',
-    'Scores',
-    '- `/mlb [YYYY-MM-DD]`',
-    '- `/nba [YYYY-MM-DD]`',
-    '- `/ncaab [YYYY-MM-DD]`',
-    '- `/nhl [YYYY-MM-DD]`',
-    '- `/nfl [YYYY-MM-DD]`',
+    'More help:',
+    '- `/sportsinfo scores`',
+    '- `/sportsinfo betting`',
     '',
-    'Odds',
-    '- `/odds <mlb|nba|ncaab|nhl|nfl>`',
-    '- `/mlbodds`',
-    '',
-    'Betting',
-    '- `/sportsbet SPORT INDEX TEAM TYPE AMOUNT`',
-    '- `TYPE` can be `ml` or `spread`',
-    '- Example: `/sportsbet nba 1 lakers ml 25`',
-    '',
-    'Resolution',
-    '- `/resolvebets [sport]`',
-    '- If no sport is provided, all supported sports are checked.'
+    `Sports: ${SUPPORTED_SPORTS.join(', ')}`,
+    'Shortcuts still work: `/nba`, `/odds nfl`, `/mybets`'
   ].join('\n')
 }
 
@@ -104,8 +143,128 @@ export function parseSportsBetArgs (message = '') {
   }
 }
 
+function parseUidFromMentionOrRaw (value = '') {
+  const trimmed = String(value || '').trim()
+  const mentionMatch = /<@uid:([\w-]+)>/i.exec(trimmed)
+  if (mentionMatch?.[1]) return mentionMatch[1]
+  return /^[\w-]{6,}$/.test(trimmed) ? trimmed : ''
+}
+
+function formatSportLabel (sportKey) {
+  const labels = {
+    baseball_mlb: 'MLB',
+    basketball_nba: 'NBA',
+    basketball_ncaab: 'NCAAB',
+    americanfootball_nfl: 'NFL',
+    icehockey_nhl: 'NHL'
+  }
+
+  return labels[sportKey] || sportKey
+}
+
+function formatOpenBetLine (bet, game) {
+  const matchup = game?.awayTeam && game?.homeTeam
+    ? `${game.awayTeam} @ ${game.homeTeam}`
+    : `Game ${Number(bet.gameIndex || 0) + 1}`
+
+  return [
+    `${formatSportLabel(bet.sport)} · ${matchup}`,
+    `Pick: ${String(bet.team || '').toUpperCase()} ${String(bet.type || '').toUpperCase()} at ${bet.odds > 0 ? `+${bet.odds}` : bet.odds}`,
+    `Risk: $${Number(bet.amount || 0)}`
+  ].join(' | ')
+}
+
 export async function handleMlbScoresCommand ({ payload, room }) {
   return createMlbScoresCommandHandler()({ payload, room })
+}
+
+export async function handleSportsCommand ({ payload, room }) {
+  return createSportsCommandHandler()({ payload, room })
+}
+
+export function createSportsCommandHandler (deps = {}) {
+  const {
+    postMessage: postMessageImpl = postMessage,
+    buildSportsInfoMessage: buildSportsInfoMessageImpl = buildSportsInfoMessage,
+    scoreHandlers = SCORE_HANDLERS,
+    handleOddsCommand: handleOddsCommandImpl = handleOddsCommand,
+    handleSportsBetCommand: handleSportsBetCommandImpl = handleSportsBetCommand,
+    handleMyBetsCommand: handleMyBetsCommandImpl = handleMyBetsCommand,
+    handleOpenBetsCommand: handleOpenBetsCommandImpl = handleOpenBetsCommand,
+    handleResolveBetsCommand: handleResolveBetsCommandImpl = handleResolveBetsCommand
+  } = deps
+
+  return async function handleSportsCommandImpl ({ payload, room }) {
+    const parts = String(payload?.message || '').trim().split(/\s+/)
+    const subcommand = String(parts[1] || '').toLowerCase()
+
+    if (!subcommand || subcommand === 'help' || subcommand === 'info') {
+      await postMessageImpl({ room, message: buildSportsInfoMessageImpl(parts[2]) })
+      return
+    }
+
+    if (subcommand === 'scores' || subcommand === 'score') {
+      const sportAlias = String(parts[2] || '').toLowerCase()
+      const handler = scoreHandlers[sportAlias]
+      if (!handler) {
+        await postMessageImpl({
+          room,
+          message: `Usage: /sports scores <${SUPPORTED_SPORTS.join('|')}> [YYYY-MM-DD]`
+        })
+        return
+      }
+      const requestedDate = parts[3] ? ` ${parts[3]}` : ''
+      await handler({
+        payload: { ...payload, message: `/${sportAlias}${requestedDate}`.trim() },
+        room
+      })
+      return
+    }
+
+    if (subcommand === 'odds') {
+      const sportAlias = String(parts[2] || '').toLowerCase()
+      await handleOddsCommandImpl({
+        payload: { ...payload, message: `/odds ${sportAlias}`.trim() },
+        room
+      })
+      return
+    }
+
+    if (subcommand === 'bet') {
+      const args = parts.slice(2).join(' ')
+      await handleSportsBetCommandImpl({
+        payload: { ...payload, message: `/sportsbet ${args}`.trim() },
+        room
+      })
+      return
+    }
+
+    if (subcommand === 'bets') {
+      if (parts[2]) {
+        await handleOpenBetsCommandImpl({
+          payload: { ...payload, message: `/openbets ${parts.slice(2).join(' ')}`.trim() },
+          room
+        })
+        return
+      }
+      await handleMyBetsCommandImpl({
+        payload: { ...payload, message: '/mybets' },
+        room
+      })
+      return
+    }
+
+    if (subcommand === 'resolve') {
+      const sportAlias = parts[2] ? ` ${parts[2]}` : ''
+      await handleResolveBetsCommandImpl({
+        payload: { ...payload, message: `/resolvebets${sportAlias}` },
+        room
+      })
+      return
+    }
+
+    await postMessageImpl({ room, message: buildSportsInfoMessageImpl() })
+  }
 }
 
 export function createMlbScoresCommandHandler (deps = {}) {
@@ -292,6 +451,64 @@ export function createSportsBetCommandHandler (deps = {}) {
   }
 }
 
+export async function handleMyBetsCommand ({ payload, room }) {
+  return createOpenBetsCommandHandler()({ payload, room, forceSelf: true })
+}
+
+export async function handleOpenBetsCommand ({ payload, room }) {
+  return createOpenBetsCommandHandler()({ payload, room })
+}
+
+export function createOpenBetsCommandHandler (deps = {}) {
+  const {
+    postMessage: postMessageImpl = postMessage,
+    getSenderNickname: getSenderNicknameImpl = getSenderNickname,
+    getOpenBetsForUser: getOpenBetsForUserImpl = getOpenBetsForUser,
+    getOddsForSport: getOddsForSportImpl = getOddsForSport
+  } = deps
+
+  return async function handleOpenBetsCommandImpl ({ payload, room, forceSelf = false }) {
+    const senderUUID = payload?.sender
+    const parts = String(payload?.message || '').trim().split(/\s+/)
+    const targetUUID = forceSelf ? senderUUID : (parseUidFromMentionOrRaw(parts[1]) || senderUUID)
+    const openBets = await getOpenBetsForUserImpl(targetUUID)
+
+    if (!openBets.length) {
+      const nick = targetUUID === senderUUID
+        ? 'You'
+        : await getSenderNicknameImpl(targetUUID).catch(() => `<@uid:${targetUUID}>`)
+      await postMessageImpl({
+        room,
+        message: targetUUID === senderUUID
+          ? 'You have no open sports bets.'
+          : `${nick} has no open sports bets.`
+      })
+      return
+    }
+
+    const oddsBySport = new Map()
+    const lines = []
+
+    for (const bet of openBets) {
+      if (!oddsBySport.has(bet.sport)) {
+        oddsBySport.set(bet.sport, await getOddsForSportImpl(bet.sport))
+      }
+      const games = oddsBySport.get(bet.sport) || []
+      const game = games.find(entry => entry.id === bet.gameId) || games[bet.gameIndex] || null
+      lines.push(`- ${formatOpenBetLine(bet, game)}`)
+    }
+
+    const headerName = targetUUID === senderUUID
+      ? 'Your'
+      : `${await getSenderNicknameImpl(targetUUID).catch(() => `<@uid:${targetUUID}>`)}'s`
+
+    await postMessageImpl({
+      room,
+      message: [`🎟️ ${headerName} Open Bets`, '', ...lines].join('\n')
+    })
+  }
+}
+
 export async function handleResolveBetsCommand ({ room }) {
   return createResolveBetsCommandHandler()({ room })
 }
@@ -321,6 +538,7 @@ export function createResolveBetsCommandHandler (deps = {}) {
   }
 }
 
-export async function handleSportsInfoCommand ({ room }) {
-  await postMessage({ room, message: buildSportsInfoMessage() })
+export async function handleSportsInfoCommand ({ payload, room }) {
+  const parts = String(payload?.message || '').trim().split(/\s+/)
+  await postMessage({ room, message: buildSportsInfoMessage(parts[1]) })
 }

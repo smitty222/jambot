@@ -128,6 +128,28 @@ export async function resolveCompletedBets (sportKey) {
   if (updated) await saveBets(bets)
 }
 
+export async function getOpenBetsForUser (userUUID) {
+  const bets = await loadBets()
+  const rows = []
+
+  for (const [gameId, gameBets] of Object.entries(bets)) {
+    for (const bet of gameBets || []) {
+      if (bet?.senderUUID !== userUUID || bet?.status !== 'pending') continue
+
+      rows.push({
+        ...bet,
+        gameId
+      })
+    }
+  }
+
+  return rows.sort((a, b) => {
+    const sportCompare = String(a.sport || '').localeCompare(String(b.sport || ''))
+    if (sportCompare !== 0) return sportCompare
+    return Number(a.gameIndex || 0) - Number(b.gameIndex || 0)
+  })
+}
+
 function calculateWinnings (amount, odds) {
   return odds > 0
     ? Math.round((amount * odds) / 100) // +138 -> win $138 on $100

@@ -124,6 +124,17 @@ export const COMMAND_GUIDES = {
     '- `/store`',
     '- `/site`'
   ].join('\n'),
+  crypto: [
+    '🪙 Crypto Commands',
+    '',
+    '- `/crypto help`',
+    '- `/crypto price <symbol>`',
+    '- `/crypto buy <symbol> <amount>`',
+    '- `/crypto sell <symbol> <amount|all>`',
+    '- `/crypto portfolio`',
+    '- `/crypto top`',
+    '- `/crypto trending`'
+  ].join('\n'),
   music: [
     '🎵 Music, Queue & Reviews',
     '',
@@ -196,13 +207,11 @@ export const COMMAND_GUIDES = {
     '',
     'Sports',
     '- `/sportsinfo`',
-    '- `/mlb [YYYY-MM-DD]`',
-    '- `/nba [YYYY-MM-DD]`',
-    '- `/ncaab [YYYY-MM-DD]`',
-    '- `/nhl [YYYY-MM-DD]`',
-    '- `/nfl [YYYY-MM-DD]`',
-    '- `/odds <mlb|nba|ncaab|nhl|nfl>`',
-    '- `/mlbodds`'
+    '- `/sports scores <sport> [YYYY-MM-DD]`',
+    '- `/sports odds <sport>`',
+    '- `/sports bet <sport> <index> <team> <ml|spread> <amount>`',
+    '- `/sports bets [<@uid:USER>]`',
+    '- `/sports resolve [sport]`'
   ].join('\n'),
   avatars: [
     '🧑‍🎤 Avatar Commands',
@@ -270,6 +279,7 @@ export function createRoomUtilityHandlers (deps = {}) {
         games: COMMAND_GUIDES.games,
         gif: COMMAND_GUIDES.fun,
         gifs: COMMAND_GUIDES.fun,
+        crypto: COMMAND_GUIDES.crypto,
         music: COMMAND_GUIDES.music,
         playlist: COMMAND_GUIDES.queue,
         playlists: COMMAND_GUIDES.queue,
@@ -309,6 +319,7 @@ export function createRoomUtilityHandlers (deps = {}) {
         '- `/music` — Music, queue, and review commands',
         '- `/wallet` — Wallet and betting commands',
         '- `/commands sports` — Sports scores, odds, and betting',
+        '- `/commands crypto` — Crypto portfolio game commands',
         '- `/gifs` — GIF and fun commands',
         '- `/avatars` — Avatar commands'
       ].join('\n'))
@@ -330,6 +341,7 @@ export function createRoomUtilityHandlers (deps = {}) {
         '- `/commands queue`',
         '- `/commands wallet` or `/wallet`',
         '- `/commands sports`',
+        '- `/commands crypto`',
         '- `/commands fun` or `/gifs`',
         '- `/commands trivia`',
         '- `/commands avatars` or `/avatars`'

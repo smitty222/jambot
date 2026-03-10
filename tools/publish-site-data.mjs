@@ -5,6 +5,10 @@ import Database from 'better-sqlite3'
 import process from 'process'
 import { getCryptoPrice } from '../src/utils/cryptoPrice.js'
 import { publishDbSnapshot } from './publishSnapshot.js'
+import {
+  PUBLIC_SITE_COMMAND_GROUPS,
+  MOD_SITE_COMMAND_GROUPS
+} from '../src/handlers/siteCommandCatalog.js'
 
 // ── Resolve API + auth ───────────────────────────────────────
 const API_BASE = process.env.API_BASE
@@ -58,9 +62,8 @@ function minutesSince (ts) {
   return diffMs / 60000
 }
 
-function tryReadJson (p) { try { return JSON.parse(fs.readFileSync(p, 'utf-8')) } catch { return null } }
-const commands = tryReadJson(process.env.COMMANDS_JSON || 'site/commands.public.json') || []
-const commandsMod = tryReadJson(process.env.COMMANDS_MOD_JSON || 'site/commands.mod.json') || []
+const commands = PUBLIC_SITE_COMMAND_GROUPS
+const commandsMod = MOD_SITE_COMMAND_GROUPS
 
 async function postJson (pathname, payload) {
   if (!API_BASE || !PUBLISH_TOKEN) {

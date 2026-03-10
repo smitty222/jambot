@@ -11,9 +11,11 @@ import {
   createSongReviewCommandHandler
 } from '../src/handlers/handlerFactories.js'
 import {
+  createSportsCommandHandler,
   createNflScoresCommandHandler,
   createNcaabScoresCommandHandler,
   createOddsCommandHandler,
+  createOpenBetsCommandHandler,
   createResolveBetsCommandHandler,
   createSportsBetCommandHandler,
   buildSportsInfoMessage
@@ -191,6 +193,60 @@ test('createOddsCommandHandler fetches and stores odds for the selected sport', 
   assert.deepEqual(posted, [{ room: 'room-1', message: 'odds:basketball_ncaab' }])
 })
 
+test('createSportsCommandHandler routes score requests through the requested league', async () => {
+  const seen = []
+  const handler = createSportsCommandHandler({
+    postMessage: async () => {},
+    scoreHandlers: {
+      nba: async ({ payload }) => seen.push(payload.message)
+    }
+  })
+
+  await handler({
+    payload: { sender: 'user-1', message: '/sports scores nba 2026-03-18' },
+    room: 'room-1'
+  })
+
+  assert.deepEqual(seen, ['/nba 2026-03-18'])
+})
+
+test('createSportsCommandHandler routes odds and bets subcommands', async () => {
+  const seenOdds = []
+  const seenBets = []
+  const handler = createSportsCommandHandler({
+    postMessage: async () => {},
+    handleOddsCommand: async ({ payload }) => seenOdds.push(payload.message),
+    handleSportsBetCommand: async ({ payload }) => seenBets.push(payload.message)
+  })
+
+  await handler({
+    payload: { sender: 'user-1', message: '/sports odds nfl' },
+    room: 'room-1'
+  })
+  await handler({
+    payload: { sender: 'user-1', message: '/sports bet nba 1 lakers ml 25' },
+    room: 'room-1'
+  })
+
+  assert.deepEqual(seenOdds, ['/odds nfl'])
+  assert.deepEqual(seenBets, ['/sportsbet nba 1 lakers ml 25'])
+})
+
+test('createSportsCommandHandler routes bets to self by default', async () => {
+  const seen = []
+  const handler = createSportsCommandHandler({
+    postMessage: async () => {},
+    handleMyBetsCommand: async ({ payload }) => seen.push(payload.message)
+  })
+
+  await handler({
+    payload: { sender: 'user-1', message: '/sports bets' },
+    room: 'room-1'
+  })
+
+  assert.deepEqual(seen, ['/mybets'])
+})
+
 test('createResolveBetsCommandHandler resolves all sports by default', async () => {
   const posted = []
   const resolved = []
@@ -217,14 +273,80 @@ test('createResolveBetsCommandHandler resolves all sports by default', async () 
   }])
 })
 
+test('createOpenBetsCommandHandler shows the caller open bets by default', async () => {
+  const posted = []
+  const handler = createOpenBetsCommandHandler({
+    postMessage: async (msg) => posted.push(msg),
+    getSenderNickname: async () => '@bettor',
+    getOpenBetsForUser: async () => [{
+      sport: 'basketball_nba',
+      gameId: 'game-1',
+      gameIndex: 0,
+      team: 'LAL',
+      type: 'ml',
+      odds: 120,
+      amount: 25
+    }],
+    getOddsForSport: async () => [{
+      id: 'game-1',
+      awayTeam: 'Boston Celtics',
+      homeTeam: 'Los Angeles Lakers'
+    }]
+  })
+
+  await handler({
+    payload: { sender: 'user-1', message: '/mybets' },
+    room: 'room-1',
+    forceSelf: true
+  })
+
+  assert.deepEqual(posted, [{
+    room: 'room-1',
+    message: '🎟️ Your Open Bets\n\n- NBA · Boston Celtics @ Los Angeles Lakers | Pick: LAL ML at +120 | Risk: $25'
+  }])
+})
+
+test('createOpenBetsCommandHandler supports looking up another users open bets', async () => {
+  const posted = []
+  const seenUsers = []
+  const handler = createOpenBetsCommandHandler({
+    postMessage: async (msg) => posted.push(msg),
+    getSenderNickname: async () => '@otheruser',
+    getOpenBetsForUser: async (userId) => {
+      seenUsers.push(userId)
+      return []
+    },
+    getOddsForSport: async () => []
+  })
+
+  await handler({
+    payload: { sender: 'self-1', message: '/openbets <@uid:other-1>' },
+    room: 'room-1'
+  })
+
+  assert.deepEqual(seenUsers, ['other-1'])
+  assert.deepEqual(posted, [{
+    room: 'room-1',
+    message: '@otheruser has no open sports bets.'
+  }])
+})
+
 test('buildSportsInfoMessage documents the multi-sport flow', () => {
   const message = buildSportsInfoMessage()
 
-  assert.match(message, /\/sportsinfo/)
-  assert.match(message, /\/ncaab \[YYYY-MM-DD]/)
-  assert.match(message, /\/odds <mlb\|nba\|ncaab\|nhl\|nfl>/)
-  assert.match(message, /\/sportsbet SPORT INDEX TEAM TYPE AMOUNT/)
-  assert.match(message, /\/resolvebets \[sport]/)
+  assert.match(message, /\/sports scores nba/)
+  assert.match(message, /\/sports odds ncaab/)
+  assert.match(message, /\/sports bet nba 1 lakers ml 25/)
+  assert.match(message, /\/sports bets/)
+  assert.match(message, /\/sports resolve/)
+})
+
+test('buildSportsInfoMessage supports focused betting help', () => {
+  const message = buildSportsInfoMessage('betting')
+
+  assert.match(message, /\/sports odds nba/)
+  assert.match(message, /\/sports bets <@uid:USER>/)
+  assert.match(message, /Shortcuts still work: `\/odds`, `\/sportsbet`, `\/mybets`, `\/openbets`, `\/resolvebets`/)
 })
 
 test('dispatchWithRegistry routes /tip through the real tip handler logic', async () => {

@@ -84,6 +84,32 @@ test('dispatchWithRegistry routes /commands queue through the room utility handl
   assert.match(posted[0].message, /\/qplaylist <spotifyPlaylistId>/)
 })
 
+test('dispatchWithRegistry routes /commands crypto through the room utility handler', async () => {
+  const posted = []
+  const handlers = createRoomUtilityHandlers({
+    postMessage: async (msg) => posted.push(msg),
+    sendDirectMessage: async () => {},
+    isUserAuthorized: async () => false
+  })
+
+  const handled = await dispatchWithRegistry({
+    txt: '/commands crypto',
+    payload: { sender: 'user-1', message: '/commands crypto' },
+    room: 'room-1',
+    context: { ttlUserToken: 'token' },
+    registry: { commands: handlers.commands },
+    resolveDispatchCommand: (txt) => resolveDispatchCommand(txt, new Set(['commands'])),
+    handleRouletteBet: async () => {},
+    postMessage: async (msg) => posted.push(msg),
+    logger: { error () {} }
+  })
+
+  assert.equal(handled, true)
+  assert.equal(posted.length, 1)
+  assert.match(posted[0].message, /🪙 Crypto Commands/)
+  assert.match(posted[0].message, /\/crypto portfolio/)
+})
+
 test('default /commands response exposes all major command hubs', async () => {
   const posted = []
   const handlers = createRoomUtilityHandlers({
@@ -104,6 +130,7 @@ test('default /commands response exposes all major command hubs', async () => {
   assert.match(posted[0].message, /\/commands queue/)
   assert.match(posted[0].message, /\/commands wallet/)
   assert.match(posted[0].message, /\/commands sports/)
+  assert.match(posted[0].message, /\/commands crypto/)
   assert.match(posted[0].message, /\/commands fun/)
   assert.match(posted[0].message, /\/commands trivia/)
   assert.match(posted[0].message, /\/commands avatars/)

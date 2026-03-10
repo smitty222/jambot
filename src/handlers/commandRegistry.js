@@ -112,6 +112,7 @@ import {
 } from './walletCommands.js'
 import { handleSuggestSongsCommand } from './suggestionCommands.js'
 import {
+  handleSportsCommand,
   handleMlbScoresCommand,
   handleNhlScoresCommand,
   handleNbaScoresCommand,
@@ -121,7 +122,9 @@ import {
   handleMlbOddsCommand,
   handleSportsBetCommand,
   handleResolveBetsCommand,
-  handleSportsInfoCommand
+  handleSportsInfoCommand,
+  handleMyBetsCommand,
+  handleOpenBetsCommand
 } from './sportsCommands.js'
 import {
   handleCheckBalanceCommand,
@@ -759,6 +762,9 @@ const commandRegistry = {
     // Pass the entire message to the helper which extracts and validates the number
     await handleSingleNumberQuery(room, payload.message)
   },
+  sports: async ({ payload, room }) => {
+    await handleSportsCommand({ payload, room })
+  },
   mlb: async ({ payload, room }) => {
     await handleMlbScoresCommand({ payload, room })
   },
@@ -783,11 +789,17 @@ const commandRegistry = {
   sportsbet: async ({ payload, room }) => {
     await handleSportsBetCommand({ payload, room })
   },
+  mybets: async ({ payload, room }) => {
+    await handleMyBetsCommand({ payload, room })
+  },
+  openbets: async ({ payload, room }) => {
+    await handleOpenBetsCommand({ payload, room })
+  },
   resolvebets: async ({ payload, room }) => {
     await handleResolveBetsCommand({ payload, room })
   },
-  sportsinfo: async ({ room }) => {
-    await handleSportsInfoCommand({ room })
+  sportsinfo: async ({ payload, room }) => {
+    await handleSportsInfoCommand({ payload, room })
   },
   reviewhelp: async ({ room }) => {
     await handleReviewHelpCommand({ room })

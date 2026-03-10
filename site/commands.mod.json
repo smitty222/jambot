@@ -1,144 +1,80 @@
 [
   {
+    "group": "Moderator Hubs",
+    "items": [
+      "/commands mod",
+      "/mod"
+    ]
+  },
+  {
     "group": "Room Design",
     "items": [
       "/room classic",
       "/room ferry",
       "/room barn",
-      "/room theater",
+      "/room yacht",
       "/room festival",
       "/room stadium",
-      "/room yacht"
+      "/room theater"
     ]
   },
   {
-    "group": "Theme",
+    "group": "Themes & Info",
     "items": [
-      "/settheme <Albums|Covers|Rock|Country|Rap|Name Game>",
-      "/removetheme"
-    ]
-  },
-  {
-    "group": "Bot Toggles",
-    "items": [
+      "/settheme <name>",
+      "/removetheme",
       "/status",
-      "/addDJ",
-      "/removeDJ",
-      "/bopon | /bopoff",
-      "/songstatson | /songstatsoff",
-      "/greeton | /greetoff",
-      "/infoon | /infooff | /infotoggle",
+      "/infoon",
+      "/infooff",
+      "/infotoggle",
       "/infotone <neutral|playful|cratedigger|hype|classy|chartbot|djtech|vibe>"
     ]
   },
   {
-  "group": "Avatar",
-  "items": [
-    "/cyber",
-    "/cosmic",
-    "/walrus",
-    "/spacebear",
-    "/lovable",
-    "/dino",
-    "/duck",
-    "/alien",
-    "/alien2",
-    "/penguin",
-    "/vibesguy",
-    "/faces",
-    "/tvguy",
-    "/pinkblanket",
-    "/blanket",
-    "/dodododo",
-    "/flowerpower",
-    "/dumdum",
-    "/ghost",
-    "/anon",
-    "/bouncer",
-    "/spooky",
-    "/record",
-    "/jukebox",
-    "/teacup",
-    "/roy",
-    "/grime",
-    "/bearparty",
-    "/winter",
-    "/dodo",
-    "/randomavatar",
-    "/bot1",
-    "/bot2",
-    "/bot3",
-    "/botwalrus",
-    "/botdino",
-    "/botduck",
-    "/botalien",
-    "/botalien2",
-    "/botpenguin",
-    "/botspooky",
-    "/botstaff",
-    "/botwinter",
-    "/botrandom"
-  ]
-},
-  {
-    "group": "Secret",
+    "group": "Bot DJ Controls",
     "items": [
-      "/secret",
-      "/bark",
-      "/barkbark",
-      "/djbeers",
-      "/getdjdrunk",
-      "/jam",
-      "/ass",
-      "/azz",
-      "/cam",
-      "/shirley",
-      "/berad",
-      "/ello",
-      "/allen",
-      "/jump",
-      "/drink",
-      "/gaycam",
-      "/gayian",
-      "/gaycam"
+      "/addDJ",
+      "/addDJ auto",
+      "/addDJ discover",
+      "/removeDJ",
+      "/bopon",
+      "/bopoff",
+      "/autodjon",
+      "/autodjoff",
+      "/songstatson",
+      "/songstatsoff",
+      "/greeton",
+      "/greetoff",
+      "/spotlight"
     ]
   },
   {
-    "group": "Allen @ Triggers",
+    "group": "Avatar Admin",
     "items": [
-      "hide",
-      "create an image <prompt>",
-      "did the Yankees win?",
-      "you good?",
-      "whats 9 + 10?",
-      "dj with us",
-      "stop djing",
-      "get tf off the stage",
-      "are you a bot?", 
-      "spin that wheel",
-      "this song (include 'this song' in any phrase for Allen to recognize currently playing"
+      "/addavatar ...",
+      "/removeavatar ...",
+      "/botrandom",
+      "/bot1",
+      "/bot2",
+      "/bot3",
+      "/botdino",
+      "/botduck",
+      "/botalien",
+      "/botalien2",
+      "/botpenguin",
+      "/botwalrus",
+      "/botspooky",
+      "/botstaff",
+      "/botwinter"
     ]
   },
   {
-    "group": "Spotify Playlists",
+    "group": "Playlist & Admin Tools",
     "items": [
-      "/addsong : https://open.spotify.com/playlist/61vNvZ72Ay7rQgFZYmDixU",
-      "/addsong <beach> : https://open.spotify.com/playlist/4Tt9V6IcbWzNslWjcq1fHW",
-      "/addsong <happy> : https://open.spotify.com/playlist/2RVTpHNYkbo0L9CoTlfEbV",
-      "/addsong <dance> : https://open.spotify.com/playlist/49mjqOEOIzlagk8pSrRGFY",
-      "/removesong : https://open.spotify.com/playlist/61vNvZ72Ay7rQgFZYmDixU",
-      "/removesong <beach> : https://open.spotify.com/playlist/4Tt9V6IcbWzNslWjcq1fHW",
-      "/removesong <happy> : https://open.spotify.com/playlist/2RVTpHNYkbo0L9CoTlfEbV",
-      "/removesong <dance> : https://open.spotify.com/playlist/49mjqOEOIzlagk8pSrRGFY",
-      "/blacklist+ : Allen will never play this song again",
-      "/blacklist- : Remove a song from the blacklist"
-    ]
-  },
-  {
-    "group": "Albums",
-    "items": [
-      "/searchalbums",
-      "/qalbum"
+      "/addmoney <@user> <amount>",
+      "/blacklist+",
+      "/site",
+      "/store"
     ]
   }
 ]
