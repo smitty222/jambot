@@ -52,7 +52,7 @@ const HOUSE_RAKE_PCT = env.f1HouseRakePct // percent
 const PRIZE_SPLIT_BY_MODE = {
   rookie: [60, 30, 10], // top 3 paid
   open: [45, 25, 15, 10, 5],
-  elite: [50, 23, 13, 9, 5]
+  elite: [42, 27, 18, 10, 3]
 }
 const GUARANTEED_PURSE_BY_MODE = {
   rookie: env.f1PurseFloorRookie,
@@ -83,6 +83,8 @@ const GARAGE_UPKEEP_PER_EXTRA_CAR_BY_TIER = {
   hyper: env.f1GarageUpkeepPerExtraHyper,
   legendary: env.f1GarageUpkeepPerExtraLegendary
 }
+const ENTRY_WEAR_WARN_THRESHOLD = 60
+const ENTRY_WEAR_DANGER_THRESHOLD = 80
 
 // Betting
 const BET_MIN = env.f1BetMin
@@ -410,6 +412,14 @@ function estimateFullRepairCost (car) {
   const tierKey = normalizeTierKey(car?.tier)
   const wearToRemove = Math.max(0, Math.floor(Number(car?.wear || 0)))
   return wearToRemove * getTierRepairCostPerPoint(tierKey)
+}
+
+function getEntryWearWarning (car) {
+  const wear = Math.max(0, Math.floor(Number(car?.wear || 0)))
+  if (wear < ENTRY_WEAR_WARN_THRESHOLD) return ''
+
+  const severity = wear >= ENTRY_WEAR_DANGER_THRESHOLD ? '⚠️' : '🟡'
+  return `${severity} ${carLabel(car)} is entering at **${wear}% wear**. Full repair: **${fmtMoney(estimateFullRepairCost(car))}**. Use \`/repair ${car.name}\` if you want to clean it up before race lock.`
 }
 
 function prizePoolFromGrossFees (grossFees, modeKey = 'open') {
@@ -1736,6 +1746,10 @@ export async function handleCarEntryAttempt (ctx) {
   entered.add(car.id)
   const nick = await safeCall(getUserNickname, [sender]).catch(() => '@user')
   await safeCall(postMessage, [{ room: ROOM, message: `✅ ${nick?.replace(/^@/, '')} entered ${carLabel(car)}!` }])
+  const wearWarning = getEntryWearWarning(car)
+  if (wearWarning) {
+    await safeCall(postMessage, [{ room: ROOM, message: wearWarning }])
+  }
 
   if (lockedRaceType === 'drag' && entered.size >= DRAG_FIELD_SIZE) {
     if (entryTimer) {

@@ -17,24 +17,18 @@ import dotenv from 'dotenv'
 dotenv.config()
 
 /**
- * Helper for reading environment variables with optional validation.
+ * Helper for reading environment variables with defaults.
  *
  * @param {string} name The name of the environment variable to read.
  * @param {Object} opts
- * @param {boolean} [opts.required=false] Whether this variable is mandatory.
  * @param {any} [opts.defaultValue] A fallback value if the variable is
- *   undefined. This value is ignored if `required` is true and the
- *   environment variable is missing.
+ *   undefined.
  * @returns {string|undefined} The value of the environment variable or the
  *   supplied default.
- * @throws If the variable is required and missing.
  */
-function getEnv (name, { required = false, defaultValue } = {}) {
+function getEnv (name, { defaultValue } = {}) {
   const raw = process.env[name]
   if (raw === undefined || raw === '') {
-    if (required) {
-      throw new Error(`Configuration error: required env var ${name} is not set`)
-    }
     return defaultValue
   }
   return raw
@@ -55,9 +49,9 @@ export const env = {
   port: getNumberEnv('PORT', 8080),
 
   // Chat/CometChat configuration
-  chatApiKey: getEnv('CHAT_API_KEY', { required: true }),
-  chatToken: getEnv('CHAT_TOKEN', { required: true }),
-  chatUserId: getEnv('CHAT_USER_ID', { required: true }),
+  chatApiKey: getEnv('CHAT_API_KEY'),
+  chatToken: getEnv('CHAT_TOKEN'),
+  chatUserId: getEnv('CHAT_USER_ID'),
   chatReplyId: getEnv('CHAT_REPLY_ID'),
   chatAvatarId: getEnv('CHAT_AVATAR_ID', { defaultValue: 'lovable-pixel' }),
   chatName: getEnv('CHAT_NAME', { defaultValue: 'Allen' }),
@@ -66,11 +60,11 @@ export const env = {
   chatAuthKey: getEnv('CHAT_AUTH_KEY'),
 
   // Room/bot configuration
-  roomUuid: getEnv('ROOM_UUID', { required: true }),
+  roomUuid: getEnv('ROOM_UUID'),
   roomSlug: getEnv('ROOM_SLUG', { defaultValue: 'just-jams' }),
   joinRoom: getEnv('JOIN_ROOM'),
   botUserUuid: getEnv('BOT_USER_UUID'),
-  ttlUserToken: getEnv('TTL_USER_TOKEN', { required: true }),
+  ttlUserToken: getEnv('TTL_USER_TOKEN'),
   tokenRole: getEnv('TOKEN_ROLE'),
   spotifyCredentials: getEnv('SPOTIFY_CREDENTIALS'),
 
@@ -185,19 +179,27 @@ export const env = {
   themeForce: getEnv('FORCE_ALBUM_THEME')
 }
 
+const REQUIRED_ENV_VARS = [
+  ['CHAT_API_KEY', env.chatApiKey],
+  ['CHAT_TOKEN', env.chatToken],
+  ['CHAT_USER_ID', env.chatUserId],
+  ['ROOM_UUID', env.roomUuid],
+  ['TTL_USER_TOKEN', env.ttlUserToken]
+]
+
 /**
- * Runs validation on all required environment variables. If a required
- * variable is missing, the above getEnv helper will already throw. This
- * function simply exists so you can import and call it from your entry
- * point to perform the checks during startup.
+ * Runs validation on the required runtime environment variables. Importing
+ * this module stays safe in tests; the application entry point calls this
+ * function to enforce production/runtime requirements before boot.
  */
 export function validateConfig () {
-  const requiredValues = [
-    env.chatApiKey,
-    env.chatToken,
-    env.chatUserId,
-    env.roomUuid,
-    env.ttlUserToken
-  ]
-  return requiredValues.every(v => v !== undefined && v !== '')
+  const missing = REQUIRED_ENV_VARS
+    .filter(([, value]) => value === undefined || value === '')
+    .map(([name]) => name)
+
+  if (missing.length > 0) {
+    throw new Error(`Configuration error: required env var${missing.length > 1 ? 's' : ''} ${missing.join(', ')} ${missing.length > 1 ? 'are' : 'is'} not set`)
+  }
+
+  return true
 }

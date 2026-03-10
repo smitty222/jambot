@@ -6,6 +6,7 @@ import { addCarEarnings, updateCarAfterRaceResult } from '../../database/dbcars.
 import { postMessage } from '../../libs/cometchat.js'
 import { getUserNickname } from '../../utils/nickname.js'
 import { stat01 } from './utils/track.js'
+import { env } from '../../config.js'
 
 const ROOM = process.env.ROOM_UUID
 
@@ -29,6 +30,14 @@ const MODE_WEAR = { push: 8, norm: 5, save: 3 }
 const MODE_DNF = { push: 0.010, norm: 0.005, save: 0.0025 }
 const TIER_PAYOUT_MULT = { starter: 1.00, pro: 1.08, hyper: 1.22, legendary: 1.40 }
 const TIER_WEAR_MULT = { starter: 1.00, pro: 0.94, hyper: 0.82, legendary: 0.70 }
+const ENTRY_FEE_BY_TIER = {
+  starter: env.f1EntryFeeStarter,
+  pro: env.f1EntryFeePro,
+  hyper: env.f1EntryFeeHyper,
+  legendary: env.f1EntryFeeLegendary
+}
+const ELITE_PAID_PLACE_FLOOR_COUNT = 4
+const ELITE_MIN_PROFIT_OVER_ENTRY = 500
 
 const DELAY = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -72,6 +81,19 @@ function tierScaledBonus (car, baseBonus, raceMode = 'open', raceType = 'gp') {
   const base = Math.max(0, Math.floor(Number(baseBonus || 0)))
   if (base <= 0) return 0
   return Math.floor(base * payoutMultiplierForCar(car, raceMode, raceType))
+}
+
+function minimumPlacePayoutForCar (car, place, raceMode = 'open', raceType = 'gp') {
+  if (String(raceType || 'gp').toLowerCase() !== 'gp') return 0
+  if (String(raceMode || 'open').toLowerCase() !== 'elite') return 0
+  if (!car?.ownerId) return 0
+  if (Number(place) >= ELITE_PAID_PLACE_FLOOR_COUNT) return 0
+
+  const tier = normalizeTierKey(car?.tier)
+  const entryFee = Math.max(0, Math.floor(Number(ENTRY_FEE_BY_TIER[tier] ?? 0)))
+  if (entryFee <= 0) return 0
+
+  return entryFee + ELITE_MIN_PROFIT_OVER_ENTRY
 }
 
 function wearMultiplierForCar (car) {
@@ -422,8 +444,9 @@ export async function runRace ({
     ? { index: fastest.index, label: fastest.label, ownerId: fastest.ownerId, time: fastest.bestLapTime }
     : null
 
-  // Prize payouts: split by paid-place weights across all finishers in paid places.
-  // Bot-owned shares are retained by the house (not redistributed to users).
+  // Prize payouts:
+  // - Only owner cars participate in the paid-place split.
+  // - In elite GP, P1-P4 are guaranteed to clear their own entry fee.
   const payouts = {}
   const payoutDetails = []
   const paidPlaces = Math.min(5, finishOrder.length)
@@ -431,12 +454,13 @@ export async function runRace ({
   for (let place = 0; place < paidPlaces; place++) {
     const idx = finishOrder[place]
     const car = cars[idx]
+    if (!car?.ownerId) continue
     const baseWeight = Number(payoutPlan?.[place] ?? 0)
     const payoutMult = payoutMultiplierForCar(car, raceMode, raceKind)
     paidEntries.push({
       place,
       idx,
-      ownerId: car?.ownerId || null,
+      ownerId: car.ownerId,
       weight: baseWeight * payoutMult
     })
   }
@@ -444,11 +468,11 @@ export async function runRace ({
   const weightSum = paidEntries.reduce((sum, e) => sum + e.weight, 0)
   if (weightSum > 0) {
     for (const e of paidEntries) {
-      const amt = Math.floor((Number(prizePool || 0) * (e.weight / weightSum)))
+      const car = cars?.[e.idx]
+      const baseAmt = Math.floor((Number(prizePool || 0) * (e.weight / weightSum)))
+      const floorAmt = minimumPlacePayoutForCar(car, e.place, raceMode, raceKind)
+      const amt = Math.max(baseAmt, floorAmt)
       if (amt <= 0) continue
-
-      // Bot shares are intentionally retained by house.
-      if (!e.ownerId) continue
 
       payouts[e.ownerId] = (payouts[e.ownerId] || 0) + amt
       payoutDetails.push({
