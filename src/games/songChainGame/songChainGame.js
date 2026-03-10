@@ -117,8 +117,8 @@ function formatLeaderboard () {
           : index === 1
             ? '🥈'
             : index === 2
-            ? '🥉'
-            : '🎵'
+              ? '🥉'
+              : '🎵'
       const titleTag = getCompactEquippedTitleTag(uid, 7)
       const name = compactLeaderboardName(uid, titleTag ? 8 : 10)
       return `${medal} ${titleTag ? `${titleTag} ` : ''}${name} ${score}pt`

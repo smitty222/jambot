@@ -80,7 +80,6 @@ const POINT_BET_SECS = Number(process.env.CRAPS_POINT_BET_SECS ?? 45)
 
 const PLACES = [4, 5, 6, 8, 9, 10]
 
-
 const POS = '🟢'
 const NEG = '🔴'
 const PUSH = '⚪'
@@ -96,7 +95,6 @@ function loseLine (name, amt) {
 function pushLine (name, amt) {
   return `${PUSH} ${name.padEnd(18)} push ${fmtMoney(amt)}`
 }
-
 
 /* ───────────────────────── State ───────────────────────── */
 
@@ -126,7 +124,6 @@ function rollRulesLine (mode, point) {
 
   return '🎯 Rules: roll to continue'
 }
-
 
 function freshState () {
   return {
@@ -189,19 +186,6 @@ async function phaseLine (room, title, lines = []) {
     ...(lines || [])
   ].filter(Boolean).join('\n')
   await say(room, msg)
-}
-
-
-const BANNER = '━━━━━━━━━━━━━━━━━━━━━'
-
-async function phaseBanner (room, title, lines = []) {
-  const body = [
-    BANNER,
-    title,
-    ...(lines || []),
-    BANNER
-  ].join('\n')
-  await sayCode(room, '', body)
 }
 
 async function getDisplayName (st, uuid) {
@@ -315,9 +299,7 @@ function outcomeLabel ({ phase, total, point }) {
   return '—'
 }
 
-
-const DIE = { 1:'1️⃣', 2:'2️⃣', 3:'3️⃣', 4:'4️⃣', 5:'5️⃣', 6:'6️⃣' }
-
+const DIE = { 1: '1️⃣', 2: '2️⃣', 3: '3️⃣', 4: '4️⃣', 5: '5️⃣', 6: '6️⃣' }
 
 function formatRollCard ({ rollCount, d1, d2, total, point, phase }) {
   const pointStr = point ? `POINT ${point}` : 'COME-OUT'
@@ -332,8 +314,6 @@ function formatRollCard ({ rollCount, d1, d2, total, point, phase }) {
     `🔥 ${label}`
   ].join('\n')
 }
-
-
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -354,14 +334,9 @@ async function shooterTurnPrompt (room, st, mode = '', { minimal = false } = {})
     `🎲 **SHOOTER TURN** → ${who}\n` +
     `Mode: **${mode || '—'}** • (⏱️ ${ROLL_SECS}s)\n` +
     `${rules}\n` +
-    `👉 Type **/roll**`
+    '👉 Type **/roll**'
   )
 }
-
-
-
-
-
 
 /* ───────────────────────── Point betting window ───────────────────────── */
 
@@ -382,7 +357,7 @@ async function openPointBetting (room, reasonLine = '') {
   await say(
     room,
     `🟦 **Side bets open** (${POINT_BET_SECS}s) — ` +
-    `**/come <amt> /dontcome <amt> /place <num> <amt> /removeplace <num>**`
+    '**/come <amt> /dontcome <amt> /place <num> <amt> /removeplace <num>**'
   )
 
   if (reasonLine) await say(room, reasonLine)
@@ -423,8 +398,6 @@ async function closePointBettingStartRoll (room) {
   startRollTimer(room, PHASES.POINT)
 }
 
-
-
 /* ───────────────────────── Join / Betting / Roll timer ───────────────────────── */
 
 async function autoSeat (st, uuid, room) {
@@ -451,11 +424,10 @@ async function openJoinWindow (room, starterUuid) {
   if (starterUuid) await autoSeat(st, starterUuid, room)
 
   await say(
-  room,
+    room,
   `🎲 **Craps table OPEN** (${JOIN_SECS}s)\n` +
-  `Type **/craps join** to sit at the table.`
-)
-
+  'Type **/craps join** to sit at the table.'
+  )
 
   st.timers.join = setTimeout(async () => {
     st.timers.join = null
@@ -501,8 +473,6 @@ async function closeJoinOpenBetting (room) {
   }, BET_SECS * 1000)
 }
 
-
-
 // Come-out betting window again (same shooter; does NOT reset other bets)
 async function openComeOutBetting (room, reasonLine = '') {
   const st = S(room)
@@ -533,9 +503,6 @@ async function openComeOutBetting (room, reasonLine = '') {
     await closeBettingBeginComeOut(room)
   }, BET_SECS * 1000)
 }
-
-
-
 
 function startRollTimer (room, phase) {
   const st = S(room)
@@ -585,9 +552,9 @@ async function handleShooterRollTimeout (room) {
     st.rollCount = 0
     st.roundResults = Object.create(null)
     await phaseLine(room, 'PHASE: IDLE', [
-  'Round cancelled. Bets refunded.',
+      'Round cancelled. Bets refunded.',
   `Type ${bold('/craps')} to start again.`
-])
+    ])
     return
   }
 
@@ -616,9 +583,9 @@ async function closeBettingBeginComeOut (room) {
   if (!hasAnyBets(st)) {
     st.phase = PHASES.IDLE
     await phaseLine(room, 'PHASE: IDLE', [
-  'No active bets. Table closed.',
+      'No active bets. Table closed.',
   `Type ${bold('/craps')} to open a new join window.`
-])
+    ])
     return
   }
 
@@ -709,8 +676,8 @@ async function placeComeBet (kind, user, amount, room) {
     return
   }
   if (st.phase !== PHASES.POINT) {
-  await say(room, 'Come/Don\'t Come only during the point phase.')
-  return
+    await say(room, 'Come/Don\'t Come only during the point phase.')
+    return
   }
   if (!Number.isFinite(amt) || amt < MIN_BET || amt > MAX_BET) {
     await say(room, `${mention(user)} invalid amount. Min ${fmtMoney(MIN_BET)}, Max ${fmtMoney(MAX_BET)}.`)
@@ -743,8 +710,8 @@ async function placePlaceBet (num, user, amount, room) {
     return
   }
   if (st.phase !== PHASES.POINT) {
-  await say(room, 'Place bets only during the point phase.')
-  return
+    await say(room, 'Place bets only during the point phase.')
+    return
   }
   if (!PLACES.includes(n)) {
     await say(room, `Valid place numbers: ${PLACES.join(', ')}.`)
@@ -823,10 +790,9 @@ async function shooterRoll (user, room) {
   if (!isShooter(user, st)) { await say(room, `${mention(user)} only the shooter may roll.`); return }
 
   if (![PHASES.COME_OUT, PHASES.POINT].includes(st.phase)) {
-  await say(room, 'Not a rolling phase.')
-  return
-}
-
+    await say(room, 'Not a rolling phase.')
+    return
+  }
 
   stopRollTimer(room)
 
@@ -834,13 +800,13 @@ async function shooterRoll (user, room) {
   st.rollCount++
 
   await sayCode(room, '', formatRollCard({
-  rollCount: st.rollCount,
-  d1,
-  d2,
-  total,
-  point: st.point,
-  phase: st.phase
-}))
+    rollCount: st.rollCount,
+    d1,
+    d2,
+    total,
+    point: st.point,
+    phase: st.phase
+  }))
 
   // COME-OUT phase
   if (st.phase === PHASES.COME_OUT) {
@@ -857,10 +823,13 @@ async function shooterRoll (user, room) {
       const dpLines = await settleDontPass(st, 'lose')
 
       const board = await buildResolutionsBoard(st, [
-        { title: 'RESOLUTIONS', lines: [
-          ...(passLines.length ? ['PASS', ...passLines, ''] : []),
-          ...(dpLines.length ? ["DON'T PASS", ...dpLines] : [])
-        ].filter(Boolean) }
+        {
+          title: 'RESOLUTIONS',
+          lines: [
+            ...(passLines.length ? ['PASS', ...passLines, ''] : []),
+            ...(dpLines.length ? ["DON'T PASS", ...dpLines] : [])
+          ].filter(Boolean)
+        }
       ])
       if (board) await sayCode(room, '', board)
 
@@ -874,10 +843,13 @@ async function shooterRoll (user, room) {
       const dpLines = await settleDontPass(st, total === 12 ? 'push' : 'win')
 
       const board = await buildResolutionsBoard(st, [
-        { title: 'RESOLUTIONS', lines: [
-          ...(passLines.length ? ['PASS', ...passLines, ''] : []),
-          ...(dpLines.length ? ["DON'T PASS", ...dpLines] : [])
-        ].filter(Boolean) }
+        {
+          title: 'RESOLUTIONS',
+          lines: [
+            ...(passLines.length ? ['PASS', ...passLines, ''] : []),
+            ...(dpLines.length ? ["DON'T PASS", ...dpLines] : [])
+          ].filter(Boolean)
+        }
       ])
       if (board) await sayCode(room, '', board)
 
@@ -888,9 +860,9 @@ async function shooterRoll (user, room) {
 
     // Point established
     st.point = total
-await say(room, `🟢 Point established: **${st.point}**`)
-await openPointBetting(room) // one-time side bets window
-return
+    await say(room, `🟢 Point established: **${st.point}**`)
+    await openPointBetting(room) // one-time side bets window
+    return
   }
 
   // POINT phase
@@ -908,10 +880,13 @@ return
     const dpLines = await settleDontPass(st, 'lose')
 
     const lineBoard = await buildResolutionsBoard(st, [
-      { title: 'POINT HIT — LINE BETS', lines: [
-        ...(passLines.length ? ['PASS', ...passLines, ''] : []),
-        ...(dpLines.length ? ["DON'T PASS", ...dpLines] : [])
-      ].filter(Boolean) }
+      {
+        title: 'POINT HIT — LINE BETS',
+        lines: [
+          ...(passLines.length ? ['PASS', ...passLines, ''] : []),
+          ...(dpLines.length ? ["DON'T PASS", ...dpLines] : [])
+        ].filter(Boolean)
+      }
     ])
     if (lineBoard) await sayCode(room, '', lineBoard)
 
@@ -925,10 +900,13 @@ return
     const dpLines = await settleDontPass(st, 'win')
 
     const lineBoard = await buildResolutionsBoard(st, [
-      { title: 'SEVEN-OUT — LINE BETS', lines: [
-        ...(passLines.length ? ['PASS', ...passLines, ''] : []),
-        ...(dpLines.length ? ["DON'T PASS", ...dpLines] : [])
-      ].filter(Boolean) }
+      {
+        title: 'SEVEN-OUT — LINE BETS',
+        lines: [
+          ...(passLines.length ? ['PASS', ...passLines, ''] : []),
+          ...(dpLines.length ? ["DON'T PASS", ...dpLines] : [])
+        ].filter(Boolean)
+      }
     ])
     if (lineBoard) await sayCode(room, '', lineBoard)
 
@@ -936,11 +914,8 @@ return
     return
   }
 
- 
-await shooterTurnPrompt(room, st, `POINT (${st.point})`, { minimal: true })
-startRollTimer(room, PHASES.POINT)
-return
-
+  await shooterTurnPrompt(room, st, `POINT (${st.point})`, { minimal: true })
+  startRollTimer(room, PHASES.POINT)
 }
 
 /* ───────────────────────── Settlements / Resolutions ───────────────────────── */
@@ -955,11 +930,9 @@ async function settlePass (st, outcome) {
       await creditGameWin(u, amt * 2)
       addRoundResult(st, u, amt)
       lines.push(winLine(name, amt))
-
     } else if (outcome === 'push') {
       await creditGameWin(u, amt)
       lines.push(pushLine(name, amt))
-
     } else {
       addRoundResult(st, u, -amt)
       lines.push(loseLine(name, amt))
@@ -969,7 +942,6 @@ async function settlePass (st, outcome) {
   st.pass = Object.create(null)
   return lines
 }
-
 
 async function settleDontPass (st, outcome) {
   const lines = []
@@ -981,11 +953,9 @@ async function settleDontPass (st, outcome) {
       await creditGameWin(u, amt * 2)
       addRoundResult(st, u, amt)
       lines.push(winLine(name, amt))
-
     } else if (outcome === 'push') {
       await creditGameWin(u, amt)
       lines.push(pushLine(name, amt))
-
     } else {
       addRoundResult(st, u, -amt)
       lines.push(loseLine(name, amt))
@@ -995,7 +965,6 @@ async function settleDontPass (st, outcome) {
   st.dontPass = Object.create(null)
   return lines
 }
-
 
 async function resolveComeWaiting (total, st) {
   const lines = []
@@ -1008,7 +977,6 @@ async function resolveComeWaiting (total, st) {
       await creditGameWin(u, amt * 2)
       addRoundResult(st, u, amt)
       lines.push(`${POS} ${name.padEnd(18)} COME +${fmtMoney(amt)}`)
-
     } else if ([2, 3, 12].includes(total)) {
       if (total === 12) {
         await creditGameWin(u, amt)
@@ -1017,7 +985,6 @@ async function resolveComeWaiting (total, st) {
         addRoundResult(st, u, -amt)
         lines.push(`${NEG} ${name.padEnd(18)} COME -${fmtMoney(amt)}`)
       }
-
     } else {
       // travels to a come point
       st.comePoint[u] = { num: total, amt }
@@ -1035,15 +1002,12 @@ async function resolveComeWaiting (total, st) {
       await creditGameWin(u, amt * 2)
       addRoundResult(st, u, amt)
       lines.push(`${POS} ${name.padEnd(18)} DONT-COME +${fmtMoney(amt)}`)
-
     } else if (total === 12) {
       await creditGameWin(u, amt)
       lines.push(`${PUSH} ${name.padEnd(18)} DONT-COME push ${fmtMoney(amt)}`)
-
     } else if (total === 7 || total === 11) {
       addRoundResult(st, u, -amt)
       lines.push(`${NEG} ${name.padEnd(18)} DONT-COME -${fmtMoney(amt)}`)
-
     } else {
       // travels to a don't-come point
       st.dontComePoint[u] = { num: total, amt }
@@ -1055,7 +1019,6 @@ async function resolveComeWaiting (total, st) {
 
   return lines
 }
-
 
 async function resolveComePoints (total, st) {
   const lines = []
@@ -1069,7 +1032,6 @@ async function resolveComePoints (total, st) {
       addRoundResult(st, u, o.amt)
       lines.push(`${POS} ${name.padEnd(18)} COME(${o.num}) +${fmtMoney(o.amt)}`)
       delete st.comePoint[u]
-
     } else if (total === 7) {
       addRoundResult(st, u, -o.amt)
       lines.push(`${NEG} ${name.padEnd(18)} COME(${o.num}) -${fmtMoney(o.amt)}`)
@@ -1086,7 +1048,6 @@ async function resolveComePoints (total, st) {
       addRoundResult(st, u, o.amt)
       lines.push(`${POS} ${name.padEnd(18)} DONT(${o.num}) +${fmtMoney(o.amt)}`)
       delete st.dontComePoint[u]
-
     } else if (total === o.num) {
       addRoundResult(st, u, -o.amt)
       lines.push(`${NEG} ${name.padEnd(18)} DONT(${o.num}) -${fmtMoney(o.amt)}`)
@@ -1096,7 +1057,6 @@ async function resolveComePoints (total, st) {
 
   return lines
 }
-
 
 async function resolvePlace (total, st) {
   const lines = []
@@ -1135,7 +1095,6 @@ async function resolvePlace (total, st) {
   return lines
 }
 
-
 /* ───────────────────────── Hand End ───────────────────────── */
 
 function nextShooter (st) {
@@ -1160,26 +1119,25 @@ async function endHand (room, reason) {
 
   // Hand totals board
   // Hand totals board (🟢 up / 🔴 down / ⚪ even)
-const rrKeys = Object.keys(st.roundResults || {})
-if (rrKeys.length) {
-  const lines = []
+  const rrKeys = Object.keys(st.roundResults || {})
+  if (rrKeys.length) {
+    const lines = []
 
-  // Optional: sort biggest winners first
-  rrKeys.sort((a, b) => Number(st.roundResults[b] || 0) - Number(st.roundResults[a] || 0))
+    // Optional: sort biggest winners first
+    rrKeys.sort((a, b) => Number(st.roundResults[b] || 0) - Number(st.roundResults[a] || 0))
 
-  for (const u of rrKeys) {
-    const name = await getDisplayName(st, u)
-    const amt = Number(st.roundResults[u] || 0)
+    for (const u of rrKeys) {
+      const name = await getDisplayName(st, u)
+      const amt = Number(st.roundResults[u] || 0)
 
-    const chip = amt > 0 ? '🟢' : (amt < 0 ? '🔴' : '⚪')
-    const sign = amt > 0 ? '+' : (amt < 0 ? '-' : '±')
+      const chip = amt > 0 ? '🟢' : (amt < 0 ? '🔴' : '⚪')
+      const sign = amt > 0 ? '+' : (amt < 0 ? '-' : '±')
 
-    lines.push(`${chip} ${name.padEnd(18)} ${sign}${fmtMoney(Math.abs(amt))}`)
+      lines.push(`${chip} ${name.padEnd(18)} ${sign}${fmtMoney(Math.abs(amt))}`)
+    }
+
+    await sayCode(room, 'HAND TOTALS', lines.join('\n'))
   }
-
-  await sayCode(room, 'HAND TOTALS', lines.join('\n'))
-}
-
 
   // Record check
   if (st.rollCount > st.record.rolls) {
@@ -1204,14 +1162,12 @@ if (rrKeys.length) {
   st.phase = PHASES.IDLE
 
   await phaseLine(room, 'PHASE: IDLE', [
-  st.pendingNextShooter
-    ? `Next shooter in line (if they re-join): ${mention(st.pendingNextShooter)}`
-    : 'Next shooter in line: —',
+    st.pendingNextShooter
+      ? `Next shooter in line (if they re-join): ${mention(st.pendingNextShooter)}`
+      : 'Next shooter in line: —',
   `Type ${bold('/craps')} to open a new join window.`
-])
-
+  ])
 }
-
 
 /* ───────────────────────── Table mgmt / Bets view ───────────────────────── */
 

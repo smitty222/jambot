@@ -7,7 +7,6 @@ import { getCompactEquippedTitleTag } from '../database/dbprestige.js'
 const userPoints = {}
 let letterChallengeTimer = null
 let currentChallengeLetter = null
-let currentDJ = null
 let totalRounds = 0
 const currentRoundPlays = new Set()
 
@@ -56,8 +55,7 @@ function getLeaderboard () {
 // Score a DJ’s track
 export async function scoreLetterChallenge (bot) {
   const theme = getTheme(bot.roomUUID)?.toLowerCase()
-  if (!theme || !theme.includes('name game')) {
-  }
+  if (!theme || !theme.includes('name game')) return
 
   const songTitle = bot.currentSong?.trackName || ''
   const artistName = bot.currentSong?.artistName || ''
@@ -87,7 +85,6 @@ export async function scoreLetterChallenge (bot) {
     })
 
     currentChallengeLetter = null
-    currentDJ = null
     return
   }
 
@@ -139,7 +136,6 @@ export async function scoreLetterChallenge (bot) {
   })
 
   currentChallengeLetter = null
-  currentDJ = null
 }
 
 // Schedule the challenge near end of song
@@ -167,7 +163,6 @@ export function scheduleLetterChallenge (bot) {
     const letter = getRandomLetter()
     const djUUIDs = getCurrentDJUUIDs(bot.state)
 
-    const currentPlayingDJ = djUUIDs[0]
     const nextDJ = djUUIDs[1]
 
     if (!nextDJ) {
@@ -175,8 +170,6 @@ export function scheduleLetterChallenge (bot) {
     }
 
     currentChallengeLetter = letter
-    currentDJ = nextDJ
-
     await postMessage({
       room: bot.roomUUID,
       message: `🎯 **Letter Challenge Time!** 🔡\n<@uid:${nextDJ}> — your next track must start with **"${letter}"**!\n🎁 Bonus points for multiple matching words, artist name, or track popularity!`

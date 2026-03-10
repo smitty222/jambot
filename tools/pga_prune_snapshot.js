@@ -28,7 +28,7 @@ async function main () {
   console.log('[pga][prune] keepDays=', keepDays, 'keepFinals=', keepFinals, 'cutoff=', cutoff)
 
   // Count before
-  const before = db.prepare(`SELECT COUNT(*) AS n FROM pga_leaderboard_snapshots`).get()?.n || 0
+  const before = db.prepare('SELECT COUNT(*) AS n FROM pga_leaderboard_snapshots').get()?.n || 0
 
   let res
   if (keepFinals) {
@@ -44,7 +44,7 @@ async function main () {
     `).run(cutoff)
   }
 
-  const after = db.prepare(`SELECT COUNT(*) AS n FROM pga_leaderboard_snapshots`).get()?.n || 0
+  const after = db.prepare('SELECT COUNT(*) AS n FROM pga_leaderboard_snapshots').get()?.n || 0
 
   // Optional: vacuum occasionally (not every run)
   // NOTE: VACUUM can be expensive; only do it if you want and not too frequently.

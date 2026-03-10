@@ -9,7 +9,7 @@ import { getTheme } from '../utils/themeManager.js'
 // that logCurrentSong() writes to room_stats.
 import { buildNormKey } from '../database/normalizesong.js'
 import db from '../database/db.js'
-import { roomBot } from '../index.js'
+import { roomBot } from '../runtime/roomBot.js'
 
 // ───────────────────────────────────────────────────────────
 // Logging (defaults to info; set LOG_LEVEL=debug for extra detail)
@@ -91,8 +91,7 @@ function normalizeTone (raw) {
   return TONES.includes(aliased) ? aliased : 'neutral'
 }
 
-// Hard-disable the info blurb in this AI-free build:
-let INFO_BLURB_ENABLED = false
+// Hard-disable the info blurb in this AI-free build.
 let INFO_BLURB_TONE = (() => {
   const v = readSetting(KEY_INFOBLURB_TONE)
   if (v === null) {
@@ -103,9 +102,9 @@ let INFO_BLURB_TONE = (() => {
   return normalizeTone(v)
 })()
 
-export function enableNowPlayingInfoBlurb () { INFO_BLURB_ENABLED = false; writeSetting(KEY_INFOBLURB_ENABLED, '0') }
-export function disableNowPlayingInfoBlurb () { INFO_BLURB_ENABLED = false; writeSetting(KEY_INFOBLURB_ENABLED, '0') }
-export function setNowPlayingInfoBlurb (enabled) { INFO_BLURB_ENABLED = false; writeSetting(KEY_INFOBLURB_ENABLED, '0') }
+export function enableNowPlayingInfoBlurb () { writeSetting(KEY_INFOBLURB_ENABLED, '0') }
+export function disableNowPlayingInfoBlurb () { writeSetting(KEY_INFOBLURB_ENABLED, '0') }
+export function setNowPlayingInfoBlurb () { writeSetting(KEY_INFOBLURB_ENABLED, '0') }
 export function isNowPlayingInfoBlurbEnabled () { return false }
 export function setNowPlayingInfoBlurbTone (tone) {
   const norm = normalizeTone(tone)
@@ -130,7 +129,12 @@ function decodeEntities (s = '') {
     .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
 }
 function safeText (str) {
-  return String(str ?? '').replace(/[\u0000-\u001F\u007F]/g, '')
+  return Array.from(String(str ?? ''))
+    .filter((ch) => {
+      const c = ch.charCodeAt(0)
+      return c >= 0x20 && c !== 0x7F
+    })
+    .join('')
 }
 
 // ───────────────────────────────────────────────────────────
@@ -146,7 +150,7 @@ async function postWithRetry ({ room, message }, tries = 2) {
       lastErr = e
       const wait = 300 + Math.floor(Math.random() * 300)
       console.warn('[NowPlaying][POST][RETRY]', { attempt: i + 1, wait })
-      await new Promise(r => setTimeout(r, wait))
+      await new Promise((resolve) => setTimeout(resolve, wait))
     }
   }
   console.error('[NowPlaying][POST][FAILED]', lastErr?.message || lastErr)

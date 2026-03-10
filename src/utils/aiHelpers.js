@@ -26,8 +26,8 @@ export function expandSongQuestion (rawQ, song) {
   return q.replace(
     /THE_SONG/g,
     `this song:\n${songCard}\n\n` +
-    `Write a short, fun blurb with notable facts (samples, origin, chart peaks, vibe). ` +
-    `Then give 1 similar-track recommendation (artist – track) and why.`
+    'Write a short, fun blurb with notable facts (samples, origin, chart peaks, vibe). ' +
+    'Then give 1 similar-track recommendation (artist – track) and why.'
   )
 }
 
@@ -47,8 +47,8 @@ export function expandAlbumQuestion (rawQ, albumName, artistName) {
   return q.replace(
     /THE_ALBUM/g,
     `this album:\n${albumCard}\n\n` +
-    `Write a short, fun blurb (context/era, standout tracks, reception). ` +
-    `Then recommend 1 similar album and why.`
+    'Write a short, fun blurb (context/era, standout tracks, reception). ' +
+    'Then recommend 1 similar album and why.'
   )
 }
 
@@ -107,7 +107,7 @@ export async function safeAskQuestion (prompt, askFn, logger, { timeoutMs = DEFA
   try {
     const result = await Promise.race([
       askFn(prompt),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('AI_TIMEOUT')), timeoutMs))
+      new Promise((_resolve, reject) => setTimeout(() => reject(new Error('AI_TIMEOUT')), timeoutMs))
     ])
 
     const txt = extractText(result)

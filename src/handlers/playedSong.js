@@ -1,9 +1,8 @@
 import { postMessage } from '../libs/cometchat.js'
-import { roomBot } from '../index.js'
-import { fetchSongData, getAlbumTracks, spotifyTrackInfo } from '../utils/API.js'
+import { roomBot } from '../runtime/roomBot.js'
+import { getAlbumTracks, spotifyTrackInfo } from '../utils/API.js'
 import { roomThemes } from '../utils/roomThemes.js'
 import { getCurrentDJUUIDs } from '../libs/bot.js'
-import { askQuestion } from '../libs/ai.js'
 import { getUserNickname } from '../utils/nickname.js'
 import { QueueManager } from '../utils/queueManager.js'
 
@@ -28,17 +27,7 @@ const parseDuration = (durationStr) => {
   return (minutes * 60 + seconds) * 1000
 }
 
-// ---- DB-first theme lookups (mirror bot.js) ----
-let sqliteThemeDbPromise = null
-async function getSqliteThemeDb () {
-  if (!sqliteThemeDbPromise) {
-    sqliteThemeDbPromise = sqliteOpen({
-      filename: process.env.DB_FILE || './mydb.sqlite',
-      driver: sqlite3.Database
-    })
-  }
-  return sqliteThemeDbPromise
-}
+// ---- DB-first theme lookup (mirror bot.js) ----
 function getThemeViaBetterSqlite (room) {
   try {
     const row = db.prepare('SELECT theme FROM themes WHERE roomId = ?').get(room)
@@ -48,21 +37,9 @@ function getThemeViaBetterSqlite (room) {
   }
   return null
 }
-async function getThemeViaSqlite (room) {
-  try {
-    const sdb = await getSqliteThemeDb()
-    const row = await sdb.get('SELECT theme FROM themes WHERE roomId = ?', room)
-    if (row?.theme) return { theme: String(row.theme), source: 'sqlite3' }
-  } catch (e) {
-    console.warn('[AlbumTheme] sqlite3 lookup error:', e?.message || e)
-  }
-  return null
-}
 async function getRoomTheme (room) {
   const b = getThemeViaBetterSqlite(room)
   if (b) { console.log(`[AlbumTheme] theme from ${b.source}: "${b.theme}"`); return b.theme }
-  const s = await getThemeViaSqlite(room)
-  if (s) { console.log(`[AlbumTheme] theme from ${s.source}: "${s.theme}"`); return s.theme }
   const t = roomThemes[room] || ''
   console.log(`[AlbumTheme] theme fallback: "${t}"`)
   return t
@@ -116,8 +93,6 @@ const handleAlbumTheme = async (_payload) => {
     const progressBar = renderProgressBar(reliableTrackNumber, trackCount)
 
     const currentDJUuid = getCurrentDJUUIDs(roomBot.state)[0]
-    const currentDJName = await getUserNickname(currentDJUuid)
-
     const isFirst = reliableTrackNumber === 1
     const isMidpoint = reliableTrackNumber === Math.floor(trackCount / 2)
     const isLast = reliableTrackNumber === trackCount
@@ -135,7 +110,7 @@ const handleAlbumTheme = async (_payload) => {
 `🎧 *Album Session Started*  
 ───────────────────────── 
 👤 DJ: <@uid:${currentDJUuid}>  
-📀 Album: *${albumName}*  	
+📀 Album: *${albumName}*
 🎤 Artist: *${artistName}*  
 📅 Released: ${formattedReleaseDate}  
 💿 Track: ${reliableTrackNumber} of ${trackCount}  

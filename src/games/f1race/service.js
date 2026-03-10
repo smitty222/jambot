@@ -18,7 +18,7 @@ export async function safeCall (fn, args = [], retries = 1, delayMs = 120) {
       return await fn(...args)
     } catch (err) {
       lastError = err
-      if (i < retries) await new Promise(r => setTimeout(r, delayMs))
+      if (i < retries) await new Promise((resolve) => setTimeout(resolve, delayMs))
     }
   }
   const error = new Error(`${fn.name || 'anonymous'} failed after ${retries + 1} attempts: ${lastError?.message}`)

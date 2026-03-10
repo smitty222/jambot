@@ -26,9 +26,9 @@ function filterFanDuelOnly (games) {
 
       return {
         id: game.id,
-        commence_time: game.commence_time,
-        home_team: game.home_team,
-        away_team: game.away_team,
+        commenceTime: game.commence_time,
+        homeTeam: game.home_team,
+        awayTeam: game.away_team,
         bookmaker: {
           key: fanduel.key,
           title: fanduel.title,
@@ -48,32 +48,32 @@ function filterFanDuelOnly (games) {
 
 export function formatOddsMessage (games, sportKey) {
   return '🎲 Today\'s MLB Odds:\n\n' + games.slice(0, 5).map((game, i) => {
-    const { bookmaker, home_team, away_team, commence_time } = game
+    const { bookmaker, homeTeam, awayTeam, commenceTime } = game
     const h2h = bookmaker?.markets?.find(m => m.key === 'h2h')?.outcomes || []
     const spreads = bookmaker?.markets?.find(m => m.key === 'spreads')?.outcomes || []
 
     // Time formatting
-    const gameTime = new Date(commence_time)
+    const gameTime = new Date(commenceTime)
     const timeStr = gameTime.toLocaleTimeString('en-US', {
       hour: 'numeric',
       minute: '2-digit'
     })
 
     // Abbreviations
-    const awayAbbr = teamAbbreviations[away_team] || away_team.slice(0, 3).toUpperCase()
-    const homeAbbr = teamAbbreviations[home_team] || home_team.slice(0, 3).toUpperCase()
+    const awayAbbr = teamAbbreviations[awayTeam] || awayTeam.slice(0, 3).toUpperCase()
+    const homeAbbr = teamAbbreviations[homeTeam] || homeTeam.slice(0, 3).toUpperCase()
 
     // Moneyline
     const oddsMap = Object.fromEntries(h2h.map(o => [o.name, formatOdds(o.price)]))
-    const awayML = oddsMap[away_team] || 'N/A'
-    const homeML = oddsMap[home_team] || 'N/A'
+    const awayML = oddsMap[awayTeam] || 'N/A'
+    const homeML = oddsMap[homeTeam] || 'N/A'
 
     // Spread
     const spreadMap = Object.fromEntries(spreads.map(o => [o.name, { point: o.point, price: formatOdds(o.price) }]))
-    const awaySpread = spreadMap[away_team] ? `${formatSpread(spreadMap[away_team].point)} (${spreadMap[away_team].price})` : 'N/A'
-    const homeSpread = spreadMap[home_team] ? `${formatSpread(spreadMap[home_team].point)} (${spreadMap[home_team].price})` : 'N/A'
+    const awaySpread = spreadMap[awayTeam] ? `${formatSpread(spreadMap[awayTeam].point)} (${spreadMap[awayTeam].price})` : 'N/A'
+    const homeSpread = spreadMap[homeTeam] ? `${formatSpread(spreadMap[homeTeam].point)} (${spreadMap[homeTeam].price})` : 'N/A'
 
-    return `${i + 1}. ${away_team} @ ${home_team}\n` +
+    return `${i + 1}. ${awayTeam} @ ${homeTeam}\n` +
              `🕒 ${timeStr}\n` +
              `🧢 ML — ${awayAbbr}: ${awayML} | ${homeAbbr}: ${homeML}\n` +
              `📏 Spread — ${awayAbbr}: ${awaySpread} | ${homeAbbr}: ${homeSpread}`
@@ -116,10 +116,12 @@ export async function getLatestScoresForSport (sportKey, daysFrom = 1) {
 
         return {
           id: game.id,
-          home_team: game.home_team,
-          away_team: game.away_team,
-          home_score: scoreData.home,
-          away_score: scoreData.away
+          homeTeam: game.home_team,
+          awayTeam: game.away_team,
+          scores: {
+            home: scoreData.home,
+            away: scoreData.away
+          }
         }
       })
 

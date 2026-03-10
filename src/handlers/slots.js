@@ -199,6 +199,60 @@ try {
   console.error('[Slots] Failed ensuring tables:', e)
 }
 
+const slotStmts = {
+  readSetting: db.prepare('SELECT value FROM app_settings WHERE key = ?'),
+  writeSetting: db.prepare(`
+    INSERT INTO app_settings(key, value)
+    VALUES(?, ?)
+    ON CONFLICT(key) DO UPDATE SET value=excluded.value
+  `),
+  clearCollections: db.prepare('DELETE FROM slot_collections'),
+  recordJackpotContribution: db.prepare(`
+    INSERT INTO slot_jackpot_contributions (userUUID, lifetimeContributed, effectiveContributed, updatedAt)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(userUUID) DO UPDATE SET
+      lifetimeContributed = lifetimeContributed + excluded.lifetimeContributed,
+      effectiveContributed = effectiveContributed + excluded.effectiveContributed,
+      updatedAt = excluded.updatedAt
+  `),
+  scaleEffectiveContributions: db.prepare(`
+    UPDATE slot_jackpot_contributions
+    SET effectiveContributed = effectiveContributed * ?,
+        updatedAt = ?
+  `),
+  getUserJackpotContribution: db.prepare(`
+    SELECT lifetimeContributed, effectiveContributed
+    FROM slot_jackpot_contributions
+    WHERE userUUID = ?
+  `),
+  getJackpotContributionTotals: db.prepare(`
+    SELECT COALESCE(SUM(effectiveContributed), 0) AS totalEffective
+    FROM slot_jackpot_contributions
+  `),
+  getJackpotValue: db.prepare('SELECT progressiveJackpot FROM jackpot WHERE id = 1'),
+  updateJackpotValue: db.prepare('UPDATE jackpot SET progressiveJackpot = ? WHERE id = 1'),
+  getBonusSession: db.prepare('SELECT data FROM slot_bonus_sessions WHERE userUUID = ?'),
+  saveBonusSession: db.prepare(`
+    INSERT INTO slot_bonus_sessions(userUUID, data, updatedAt)
+    VALUES(?, ?, ?)
+    ON CONFLICT(userUUID) DO UPDATE SET data=excluded.data, updatedAt=excluded.updatedAt
+  `),
+  clearBonusSession: db.prepare('DELETE FROM slot_bonus_sessions WHERE userUUID = ?'),
+  getFeatureSession: db.prepare('SELECT data FROM slot_feature_sessions WHERE userUUID = ?'),
+  saveFeatureSession: db.prepare(`
+    INSERT INTO slot_feature_sessions(userUUID, data, updatedAt)
+    VALUES(?, ?, ?)
+    ON CONFLICT(userUUID) DO UPDATE SET data=excluded.data, updatedAt=excluded.updatedAt
+  `),
+  clearFeatureSession: db.prepare('DELETE FROM slot_feature_sessions WHERE userUUID = ?'),
+  getUserCollection: db.prepare('SELECT data FROM slot_collections WHERE userUUID = ?'),
+  saveUserCollection: db.prepare(`
+    INSERT INTO slot_collections(userUUID, data, updatedAt)
+    VALUES(?, ?, ?)
+    ON CONFLICT(userUUID) DO UPDATE SET data=excluded.data, updatedAt=excluded.updatedAt
+  `)
+}
+
 // ───────────────────────────────────────────────────────────
 // Helpers
 // ───────────────────────────────────────────────────────────
@@ -229,7 +283,7 @@ function formatMoney (amount) {
 
 function readSetting (key) {
   try {
-    const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key)
+    const row = slotStmts.readSetting.get(key)
     return row?.value ?? null
   } catch (e) {
     console.error('[Slots] readSetting error:', e)
@@ -239,11 +293,7 @@ function readSetting (key) {
 
 function writeSetting (key, value) {
   try {
-    db.prepare(`
-      INSERT INTO app_settings(key, value)
-      VALUES(?, ?)
-      ON CONFLICT(key) DO UPDATE SET value=excluded.value
-    `).run(key, String(value))
+    slotStmts.writeSetting.run(key, String(value))
   } catch (e) {
     console.error('[Slots] writeSetting error:', e)
   }
@@ -266,7 +316,7 @@ function maybeResetCollectionsMonthly () {
 
   if (last !== current) {
     try {
-      db.prepare('DELETE FROM slot_collections').run()
+      slotStmts.clearCollections.run()
       writeSetting(COLLECTION_RESET_KEY, current)
       console.log(`[Slots] Collections reset for new month: ${current}`)
       return { didReset: true, current }
@@ -285,14 +335,7 @@ function recordJackpotContribution (userUUID, amount) {
 
   try {
     const now = new Date().toISOString()
-    db.prepare(`
-      INSERT INTO slot_jackpot_contributions (userUUID, lifetimeContributed, effectiveContributed, updatedAt)
-      VALUES (?, ?, ?, ?)
-      ON CONFLICT(userUUID) DO UPDATE SET
-        lifetimeContributed = lifetimeContributed + excluded.lifetimeContributed,
-        effectiveContributed = effectiveContributed + excluded.effectiveContributed,
-        updatedAt = excluded.updatedAt
-    `).run(userUUID, inc, inc, now)
+    slotStmts.recordJackpotContribution.run(userUUID, inc, inc, now)
   } catch (e) {
     console.error('[Slots] recordJackpotContribution error:', e)
   }
@@ -306,11 +349,7 @@ function scaleEffectiveJackpotContributions (retainedRatio) {
   const now = new Date().toISOString()
 
   try {
-    db.prepare(`
-      UPDATE slot_jackpot_contributions
-      SET effectiveContributed = effectiveContributed * ?,
-          updatedAt = ?
-    `).run(clamped, now)
+    slotStmts.scaleEffectiveContributions.run(clamped, now)
   } catch (e) {
     console.error('[Slots] scaleEffectiveJackpotContributions error:', e)
   }
@@ -318,16 +357,8 @@ function scaleEffectiveJackpotContributions (retainedRatio) {
 
 function getUserJackpotContributionStats (userUUID) {
   try {
-    const row = db.prepare(`
-      SELECT lifetimeContributed, effectiveContributed
-      FROM slot_jackpot_contributions
-      WHERE userUUID = ?
-    `).get(userUUID)
-
-    const totals = db.prepare(`
-      SELECT COALESCE(SUM(effectiveContributed), 0) AS totalEffective
-      FROM slot_jackpot_contributions
-    `).get()
+    const row = slotStmts.getUserJackpotContribution.get(userUUID)
+    const totals = slotStmts.getJackpotContributionTotals.get()
 
     const lifetimeContributed = Number(row?.lifetimeContributed || 0)
     const effectiveContributed = Number(row?.effectiveContributed || 0)
@@ -354,12 +385,12 @@ function getUserJackpotContributionStats (userUUID) {
 }
 
 function getJackpotValue () {
-  const row = db.prepare('SELECT progressiveJackpot FROM jackpot WHERE id = 1').get()
+  const row = slotStmts.getJackpotValue.get()
   return Number(row?.progressiveJackpot || JACKPOT_SEED)
 }
 
 function updateJackpotValue (newValue) {
-  db.prepare('UPDATE jackpot SET progressiveJackpot = ? WHERE id = 1').run(Number(newValue))
+  slotStmts.updateJackpotValue.run(Number(newValue))
   console.log(`🎰 Jackpot updated: $${newValue}`)
 }
 
@@ -414,7 +445,7 @@ function spinFeatureSlots () {
 
 function getBonusSession (userUUID) {
   try {
-    const row = db.prepare('SELECT data FROM slot_bonus_sessions WHERE userUUID = ?').get(userUUID)
+    const row = slotStmts.getBonusSession.get(userUUID)
     if (!row?.data) return null
     return JSON.parse(row.data)
   } catch (e) {
@@ -426,11 +457,7 @@ function getBonusSession (userUUID) {
 function saveBonusSession (userUUID, session) {
   try {
     const now = new Date().toISOString()
-    db.prepare(`
-      INSERT INTO slot_bonus_sessions(userUUID, data, updatedAt)
-      VALUES(?, ?, ?)
-      ON CONFLICT(userUUID) DO UPDATE SET data=excluded.data, updatedAt=excluded.updatedAt
-    `).run(userUUID, JSON.stringify(session), now)
+    slotStmts.saveBonusSession.run(userUUID, JSON.stringify(session), now)
   } catch (e) {
     console.error('[Slots] saveBonusSession error:', e)
   }
@@ -438,7 +465,7 @@ function saveBonusSession (userUUID, session) {
 
 function clearBonusSession (userUUID) {
   try {
-    db.prepare('DELETE FROM slot_bonus_sessions WHERE userUUID = ?').run(userUUID)
+    slotStmts.clearBonusSession.run(userUUID)
   } catch (e) {
     console.error('[Slots] clearBonusSession error:', e)
   }
@@ -518,7 +545,7 @@ async function spinBonusOnce (userUUID) {
 
 function getFeatureSession (userUUID) {
   try {
-    const row = db.prepare('SELECT data FROM slot_feature_sessions WHERE userUUID = ?').get(userUUID)
+    const row = slotStmts.getFeatureSession.get(userUUID)
     if (!row?.data) return null
     return JSON.parse(row.data)
   } catch (e) {
@@ -530,11 +557,7 @@ function getFeatureSession (userUUID) {
 function saveFeatureSession (userUUID, session) {
   try {
     const now = new Date().toISOString()
-    db.prepare(`
-      INSERT INTO slot_feature_sessions(userUUID, data, updatedAt)
-      VALUES(?, ?, ?)
-      ON CONFLICT(userUUID) DO UPDATE SET data=excluded.data, updatedAt=excluded.updatedAt
-    `).run(userUUID, JSON.stringify(session), now)
+    slotStmts.saveFeatureSession.run(userUUID, JSON.stringify(session), now)
   } catch (e) {
     console.error('[Slots] saveFeatureSession error:', e)
   }
@@ -542,7 +565,7 @@ function saveFeatureSession (userUUID, session) {
 
 function clearFeatureSession (userUUID) {
   try {
-    db.prepare('DELETE FROM slot_feature_sessions WHERE userUUID = ?').run(userUUID)
+    slotStmts.clearFeatureSession.run(userUUID)
   } catch (e) {
     console.error('[Slots] clearFeatureSession error:', e)
   }
@@ -707,7 +730,7 @@ async function spinFeatureOnce (userUUID) {
 
 function getUserCollection (userUUID) {
   try {
-    const row = db.prepare('SELECT data FROM slot_collections WHERE userUUID = ?').get(userUUID)
+    const row = slotStmts.getUserCollection.get(userUUID)
     if (!row?.data) return { counts: {}, tiers: {}, halfNotifs: {} }
     const parsed = JSON.parse(row.data)
     return {
@@ -724,11 +747,7 @@ function getUserCollection (userUUID) {
 function saveUserCollection (userUUID, collection) {
   try {
     const now = new Date().toISOString()
-    db.prepare(`
-      INSERT INTO slot_collections(userUUID, data, updatedAt)
-      VALUES(?, ?, ?)
-      ON CONFLICT(userUUID) DO UPDATE SET data=excluded.data, updatedAt=excluded.updatedAt
-    `).run(userUUID, JSON.stringify(collection), now)
+    slotStmts.saveUserCollection.run(userUUID, JSON.stringify(collection), now)
   } catch (e) {
     console.error('[Slots] saveUserCollection error:', e)
   }

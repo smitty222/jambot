@@ -23,7 +23,6 @@ const DEAL_ONE_TO_EACH_ON_SPLIT = true // standard feel
 
 // UX pacing (base)
 const SUSPENSE_MS = Number(process.env.BJ_SUSPENSE_MS ?? 700)
-const DRAW_PAUSE_MS = Number(process.env.BJ_DRAW_PAUSE_MS ?? 650)
 
 // Cinematic beats (optional overrides)
 const BEAT_MIN_MS = Number(process.env.BJ_BEAT_MIN_MS ?? 450)
@@ -108,7 +107,7 @@ const TABLES = new Map()
 // ─────────────────────────────────────────────────────────────
 // Utils
 // ─────────────────────────────────────────────────────────────
-const sleep = (ms) => new Promise(res => setTimeout(res, ms))
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 function randInt (min, max) {
   const a = Math.max(0, Number(min) || 0)
@@ -1080,7 +1079,8 @@ async function dealerPlay (ctx) {
   let { total, soft } = handValue(st.dealerHand)
   let drew = 0
 
-  while (total < 17 || (total === 17 && soft === true && HIT_SOFT_17)) {
+  const shouldDealerHit = () => total < 17 || (HIT_SOFT_17 && total === 17 && soft === true)
+  while (shouldDealerHit()) {
     await postMessage({ room: ctx.room, message: '🎲 Dealer hits...' })
     await beat(550, 950)
 
@@ -1106,21 +1106,21 @@ async function settleRound (ctx) {
   const st = getTable(ctx)
   normalizeHandOrder(st)
   for (const turn of st.handOrder) {
-  const p = st.players.get(turn.uuid)
-  if (!p) continue
-  if (!Array.isArray(p.hands) || p.hands.length === 0) {
-    p.hands = [{
-      cards: [],
-      bet: p.bet || 0,
-      done: true,
-      busted: false,
-      surrendered: false,
-      doubled: false,
-      actionCount: 0,
-      isSplitHand: false
-    }]
+    const p = st.players.get(turn.uuid)
+    if (!p) continue
+    if (!Array.isArray(p.hands) || p.hands.length === 0) {
+      p.hands = [{
+        cards: [],
+        bet: p.bet || 0,
+        done: true,
+        busted: false,
+        surrendered: false,
+        doubled: false,
+        actionCount: 0,
+        isSplitHand: false
+      }]
+    }
   }
-}
   let biggestThisHand = { uuid: null, profit: 0 }
 
   st.phase = 'payout'

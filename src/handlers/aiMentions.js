@@ -78,20 +78,20 @@ function buildRoastPrompt ({ targetMention, roomName, roastTopic, maxChars = 120
   const topicLine = roastTopic ? `Use this safe topic: ${roastTopic}\n` : ''
 
   return (
-    `You are a playful roast comic in a friendly music listening room.\n` +
+    'You are a playful roast comic in a friendly music listening room.\n' +
     `Target: ${targetMention}\n` +
     (roomName ? `Room: ${roomName}\n` : '') +
     topicLine +
-    `Rules:\n` +
-    `- Brief 1 to 3 sentences.\n` +
+    'Rules:\n' +
+    '- Brief 1 to 3 sentences.\n' +
     `- Max ${maxChars} characters.\n` +
-    `- Lighthearted and not actually mean.\n` +
-    `- No slurs, no threats, no hate.\n` +
-    `- Do NOT mention or insult protected traits (race, religion, nationality, gender/sex, sexuality, disability, etc.).\n` +
-    `- No appearance/body insults (weight, face, etc.).\n` +
-    `- Focus on harmless habits: music taste, aux behavior, taking forever to pick a song, emoji spam.\n` +
-    `- End with 😉 or 🎧.\n\n` +
-    `Write the roast now.`
+    '- Lighthearted and not actually mean.\n' +
+    '- No slurs, no threats, no hate.\n' +
+    '- Do NOT mention or insult protected traits (race, religion, nationality, gender/sex, sexuality, disability, etc.).\n' +
+    '- No appearance/body insults (weight, face, etc.).\n' +
+    '- Focus on harmless habits: music taste, aux behavior, taking forever to pick a song, emoji spam.\n' +
+    '- End with 😉 or 🎧.\n\n' +
+    'Write the roast now.'
   )
 }
 
@@ -154,7 +154,7 @@ export async function handleAIMention ({
       await postMessage({
         room,
         message:
-          "I can’t roast someone about appearance or personal traits. Give me a harmless topic like their music taste, aux behavior, or emoji spam 😅🎧"
+          'I can’t roast someone about appearance or personal traits. Give me a harmless topic like their music taste, aux behavior, or emoji spam 😅🎧'
       })
       return true
     }
@@ -297,7 +297,7 @@ export async function handleAIMention ({
   try {
     const result = await Promise.race([
       askQuestion(question),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('AI_TIMEOUT')), Number(process.env.AI_TIMEOUT_MS ?? 45_000)))
+      new Promise((_resolve, reject) => setTimeout(() => reject(new Error('AI_TIMEOUT')), Number(process.env.AI_TIMEOUT_MS ?? 45_000)))
     ])
 
     const text = (typeof result?.text === 'string' ? result.text.trim() : '')

@@ -1,4 +1,4 @@
-import { roomBot } from '../index.js'
+import { roomBot } from '../runtime/roomBot.js'
 import { postMessage } from '../libs/cometchat.js'
 // Use the standalone nickname util instead of importing from the monolithic
 // message handler. This avoids a circular dependency and makes the

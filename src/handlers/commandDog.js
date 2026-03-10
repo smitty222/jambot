@@ -12,7 +12,7 @@ function parseBreed (args = []) {
   if (!Array.isArray(args) || args.length === 0) return null
   const safe = args
     .filter(Boolean)
-    .map(s => String(s).toLowerCase().replace(/[^a-z\-]/g, '')) // keep letters & hyphen
+    .map(s => String(s).toLowerCase().replace(/[^a-z-]/g, '')) // keep letters & hyphen
     .filter(s => s.length > 0)
   if (safe.length === 0) return null
   // If two parts, treat as breed/sub-breed for dog.ceo (e.g., hound/afghan)

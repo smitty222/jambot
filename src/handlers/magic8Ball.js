@@ -1,6 +1,5 @@
 // src/commands/magic8ball.js
-import { removeFromUserWallet, getUserWallet } from '../database/dbwalletmanager.js'
-import { getUserNickname } from './message.js'
+import { getUserWallet } from '../database/dbwalletmanager.js'
 
 // Classic Magic 8-Ball responses
 const magic8BallResponses = [
@@ -48,8 +47,6 @@ export async function askMagic8Ball (userUUID, question) {
   // Pick a random response
   const randomIndex = Math.floor(Math.random() * magic8BallResponses.length)
   const answer = magic8BallResponses[randomIndex]
-
-  const nickname = await getUserNickname(userUUID) || 'You'
 
   return answer
 }

@@ -3,8 +3,8 @@ import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
 import { handleAIMention } from './aiMentions.js'
 import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, displayTriviaInfo } from '../handlers/triviaCommands.js'
 import { logger } from '../utils/logging.js'
-import { isUserAuthorized, fetchSpotifyPlaylistTracks, fetchUserData, fetchSongData, updateRoomInfo, isUserOwner, searchSpotify, getMLBScores, getNHLScores, getNBAScores, getSimilarTracks, getTopChartTracks, getRandomDogImage, getPGALeaderboard } from '../utils/API.js'
-import { handleLotteryCommand, handleLotteryNumber, handleTopLotteryStatsCommand, handleSingleNumberQuery, handleLotteryCheck, LotteryGameActive, getLotteryWinners } from '../database/dblotterymanager.js'
+import { isUserAuthorized, fetchSpotifyPlaylistTracks, fetchSongData, updateRoomInfo, getMLBScores, getNHLScores, getNBAScores, getRandomDogImage, getPGALeaderboard } from '../utils/API.js'
+import { handleLotteryCommand, handleLotteryNumber, handleTopLotteryStatsCommand, handleSingleNumberQuery, LotteryGameActive, getLotteryWinners } from '../database/dblotterymanager.js'
 import { formatMention } from '../utils/names.js'
 import { enableSongStats, disableSongStats, isSongStatsEnabled, saveSongReview, getAverageRating } from '../utils/voteCounts.js'
 import {
@@ -17,31 +17,24 @@ import {
 } from '../handlers/userJoined.js'
 import { startRouletteGame } from './roulette.js'
 import { getCurrentDJ, getCurrentDJUUIDs } from '../libs/bot.js'
-import { readRecentSongs } from '../database/dbrecentsongsmanager.js'
 import { addTracksToPlaylist, removeTrackFromPlaylist } from '../utils/playlistUpdate.js'
 import {
   getBalanceByNickname,
   getNicknamesFromWallets,
-  getNetWorthForUser,
-  getTopNetWorthLeaderboard,
-  addDollarsByUUID,
-  loadWallets,
   removeFromUserWallet,
   getUserWallet,
   transferTip,
-  addOrUpdateUser,
-  getLifetimeNet
+  addOrUpdateUser
 } from '../database/dbwalletmanager.js'
 import { getCompactEquippedTitleTag } from '../database/dbprestige.js'
-import { getJackpotValue, handleSlotsCommand, formatBalance } from './slots.js'
+import { getJackpotValue, handleSlotsCommand } from './slots.js'
 import {
   openBetting, joinTable, leaveTable,
   handleBlackjackBet, handleHit, handleStand, handleDouble, handleSurrender, handleSplit,
   getFullTableView, getPhase
 } from '../games/blackjack/blackJack.js'
-import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand, handleRandomCyberCommand, handleVibesGuyCommand, handleFacesCommand, handleDoDoCommand, handleFlowerPowerCommand, handleDumDumCommand, handleRandomCosmicCommand, handleRandomLovableCommand, handleBot3Command, handleAnonCommand, handleGhostCommand, handleTeacupCommand, handleBouncerCommand, handleSpookyCommand, handleRecordGuyCommand, handleJukeboxCommand, handleBotSpookyCommand, handleAlienCommand, handleAlien2Command, handleRoyCommand, handleGrimehouseCommand, handleBotStaffCommand, handleBearPartyCommand, handleWinterCommand, handleBotWinterCommand, handleGayCamCommand,handleGayIanCommand, handleJesterCommand, handleGayAlexCommand, handleTVguyCommand, handleRandomPajamaCommand } from './avatarCommands.js'
+import { handleDinoCommand, handleBotDinoCommand, handleRandomAvatarCommand, handleBotRandomAvatarCommand, handleSpaceBearCommand, handleBotDuckCommand, handleBotAlien2Command, handleBotAlienCommand, handleWalrusCommand, handleBotWalrusCommand, handleBotPenguinCommand, handleBot2Command, handleBot1Command, handleDuckCommand, handleRandomCyberCommand, handleVibesGuyCommand, handleFacesCommand, handleDoDoCommand, handleFlowerPowerCommand, handleDumDumCommand, handleRandomCosmicCommand, handleRandomLovableCommand, handleBot3Command, handleAnonCommand, handleGhostCommand, handleTeacupCommand, handleBouncerCommand, handleSpookyCommand, handleRecordGuyCommand, handleJukeboxCommand, handleBotSpookyCommand, handleAlienCommand, handleAlien2Command, handleRoyCommand, handleGrimehouseCommand, handleBotStaffCommand, handleBearPartyCommand, handleWinterCommand, handleBotWinterCommand, handleGayCamCommand, handleGayIanCommand, handleJesterCommand, handleGayAlexCommand, handleTVguyCommand, handlePinkBlanketCommand, handleRandomPajamaCommand } from './avatarCommands.js'
 import { markUser, getMarkedUser } from '../utils/removalQueue.js'
-import { extractUserFromText, isLotteryQuestion } from '../database/dblotteryquestionparser.js'
 import { askMagic8Ball } from './magic8Ball.js'
 import { storeItems } from '../libs/jamflowStore.js'
 import { saveAlbumReview, getTopAlbumReviews, getUserAlbumReviews } from '../database/dbalbumstatsmanager.js'
@@ -61,17 +54,13 @@ import { dispatchCommand } from './commandRegistry.js'
 import { handleDirectMessage } from './dmHandler.js'
 import { getCurrentState } from '../database/dbcurrent.js'
 import { usersToBeRemoved } from '../utils/usersToBeRemoved.js'
-import { parseTipAmount, randomTipGif, splitEvenly, naturalJoin, getSenderNickname } from '../utils/helpers.js'
+import { parseTipAmount, randomTipGif, getSenderNickname } from '../utils/helpers.js'
 import { handleBuyHorse, handleSellHorse } from '../games/horserace/horseManager.js'
-import { handleAddMoneyCommand } from './addMoney.js'
 import {
-  startSpotlight,
   startPaidSpotlight,
-  isSpotlightProtected,
-  isSpotlightActive
+  isSpotlightProtected
 } from '../handlers/spotlight.js'
 import { handleCarEntryAttempt, handleBetCommand, startF1Race, startDragRace, handleBuyCar, handleMyCars, handleWearCommand, handleCarShow, handleCarPics, handleRepairCar, handleRenameCar, handleSellCar, handleTeamCommand, handleF1Help, handleCarStats, handleF1Stats, handleF1Leaderboard } from '../games/f1race/handlers/commands.js'
-
 
 const ttlUserToken = process.env.TTL_USER_TOKEN
 export const /* deprecated_roomThemes */roomThemes = {}
@@ -342,17 +331,19 @@ export default async (payload, room, state, roomBot) => {
     return
   }
 
-  const handled = await handleAIMention({
-  payload,
-  room,
-  roomBot,
-  startRouletteGame,
-  handleBotRandomAvatarCommand,
-  logger
-})
-if (handled) return
+  if (!txt.startsWith('/')) {
+    const handled = await handleAIMention({
+      payload,
+      room,
+      roomBot,
+      startRouletteGame,
+      handleBotRandomAvatarCommand,
+      logger
+    })
+    if (handled) return
+  }
 
-    // ⛳ PGA leaderboard (ESPN)
+  // ⛳ PGA leaderboard (ESPN)
   if (/^\/pga\b/i.test(txt)) {
     console.log('▶ dispatch → getPGALeaderboard', txt)
     try {
@@ -364,7 +355,6 @@ if (handled) return
     }
     return
   }
-
 
   // ─── HORSE‐RACE ENTRY & COMMANDS ────────────────────────────────────────
 
@@ -415,58 +405,58 @@ if (handled) return
   }
 
   // ─── END CRAPS BLOCK ──────────────────────────
-// ─── F1 / GRAND PRIX ───────────────────────────────────────────────
+  // ─── F1 / GRAND PRIX ───────────────────────────────────────────────
 
-// Start GP (support "/gp start" and "/f1 start")
-if (/^\/(gp|f1)\s+start\b/i.test(txt)) {
-  const mode = (txt.match(/^\/(?:gp|f1)\s+start(?:\s+(\w+))?\b/i) || [])[1] || 'open'
-  console.log('▶ dispatch → startF1Race')
-  startF1Race(mode).catch(console.error)
-  return
-}
+  // Start GP (support "/gp start" and "/f1 start")
+  if (/^\/(gp|f1)\s+start\b/i.test(txt)) {
+    const mode = (txt.match(/^\/(?:gp|f1)\s+start(?:\s+(\w+))?\b/i) || [])[1] || 'open'
+    console.log('▶ dispatch → startF1Race')
+    startF1Race(mode).catch(console.error)
+    return
+  }
 
-// Start Drag (support "/drag start")
-if (/^\/drag\s+start\b/i.test(txt)) {
-  const tier = (txt.match(/^\/drag\s+start(?:\s+(\w+))?\b/i) || [])[1] || 'starter'
-  console.log('▶ dispatch → startDragRace')
-  startDragRace(tier).catch(console.error)
-  return
-}
+  // Start Drag (support "/drag start")
+  if (/^\/drag\s+start\b/i.test(txt)) {
+    const tier = (txt.match(/^\/drag\s+start(?:\s+(\w+))?\b/i) || [])[1] || 'starter'
+    console.log('▶ dispatch → startDragRace')
+    startDragRace(tier).catch(console.error)
+    return
+  }
 
-// Garage / team commands
-if (/^\/buycar\b/i.test(txt) || /^\/buy\s+car\b/i.test(txt)) return handleBuyCar(payload)
-if (/^\/mycars\b/i.test(txt)) return handleMyCars(payload)
-if (/^\/carstats\b/i.test(txt) || /^\/car\s+stats\b/i.test(txt)) return handleCarStats(payload)
-if (/^\/f1stats\b/i.test(txt) || /^\/(f1|gp)\s+stats\b/i.test(txt)) return handleF1Stats(payload)
-if (/^\/f1leaderboard\b/i.test(txt) || /^\/(f1|gp)\s+leaderboard\b/i.test(txt)) return handleF1Leaderboard(payload)
-if (/^\/wear\b/i.test(txt)) return handleWearCommand(payload)
-if (/^\/carpics\b/i.test(txt) || /^\/car\s+pics\b/i.test(txt)) return handleCarPics(payload)
-if (/^\/car\s+/i.test(txt)) return handleCarShow(payload)
-if (/^\/repair\s+/i.test(txt)) return handleRepairCar(payload)
-if (/^\/renamecar\b/i.test(txt) || /^\/carrename\b/i.test(txt) || /^\/rename\s+car\b/i.test(txt)) return handleRenameCar(payload)
-if (/^\/sellcar\b/i.test(txt) || /^\/sell\s+car\b/i.test(txt)) return handleSellCar(payload)
-if (/^\/team\b/i.test(txt)) return handleTeamCommand(payload)
+  // Garage / team commands
+  if (/^\/buycar\b/i.test(txt) || /^\/buy\s+car\b/i.test(txt)) return handleBuyCar(payload)
+  if (/^\/mycars\b/i.test(txt)) return handleMyCars(payload)
+  if (/^\/carstats\b/i.test(txt) || /^\/car\s+stats\b/i.test(txt)) return handleCarStats(payload)
+  if (/^\/f1stats\b/i.test(txt) || /^\/(f1|gp)\s+stats\b/i.test(txt)) return handleF1Stats(payload)
+  if (/^\/f1leaderboard\b/i.test(txt) || /^\/(f1|gp)\s+leaderboard\b/i.test(txt)) return handleF1Leaderboard(payload)
+  if (/^\/wear\b/i.test(txt)) return handleWearCommand(payload)
+  if (/^\/carpics\b/i.test(txt) || /^\/car\s+pics\b/i.test(txt)) return handleCarPics(payload)
+  if (/^\/car\s+/i.test(txt)) return handleCarShow(payload)
+  if (/^\/repair\s+/i.test(txt)) return handleRepairCar(payload)
+  if (/^\/renamecar\b/i.test(txt) || /^\/carrename\b/i.test(txt) || /^\/rename\s+car\b/i.test(txt)) return handleRenameCar(payload)
+  if (/^\/sellcar\b/i.test(txt) || /^\/sell\s+car\b/i.test(txt)) return handleSellCar(payload)
+  if (/^\/team\b/i.test(txt)) return handleTeamCommand(payload)
 
-// Help
-if (/^\/(f1help|gphelp)\b/i.test(txt) || /^\/(f1|gp)\s+help\b/i.test(txt)) return handleF1Help(payload)
+  // Help
+  if (/^\/(f1help|gphelp)\b/i.test(txt) || /^\/(f1|gp)\s+help\b/i.test(txt)) return handleF1Help(payload)
 
-// Betting (win-only) — only works during strategy lock window
-if (/^\/bet\s*\d+\s+\d+/i.test(txt)) {
-  console.log('▶ dispatch → handleBetCommand')
-  await handleBetCommand(payload)
-  return
-}
+  // Betting (win-only) — only works during strategy lock window
+  if (/^\/bet\s*\d+\s+\d+/i.test(txt)) {
+    console.log('▶ dispatch → handleBetCommand')
+    await handleBetCommand(payload)
+    return
+  }
 
-// IMPORTANT: during entry/strategy phases, allow non-slash car entry attempt.
-// (Only your f1race handler will accept it if entry is actually open.)
-if (typeof payload.message === 'string' && payload.message.length > 0 && !payload.message.startsWith('/')) {
-  await handleCarEntryAttempt(payload)
-}
+  // IMPORTANT: during entry/strategy phases, allow non-slash car entry attempt.
+  // (Only your f1race handler will accept it if entry is actually open.)
+  if (typeof payload.message === 'string' && payload.message.length > 0 && !payload.message.startsWith('/')) {
+    await handleCarEntryAttempt(payload)
+  }
 
-// Always call these; they no-op unless the correct phase is open
-await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting open)
+  // Always call these; they no-op unless the correct phase is open
+  await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting open)
 
-// ─── END F1 BLOCK ────────────────────────────────────────────────
+  // ─── END F1 BLOCK ────────────────────────────────────────────────
 
   // Handle Gifs Sent in Chat
   if (payload?.message?.type === 'ChatGif') {
@@ -490,8 +480,17 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
     if (dispatched) return
   } catch (e) {
     logger.error('[Dispatcher] Error dispatching command:', e?.message || e)
-  
+
     // ─── NON-MENTION COMMANDS (top-level else-if chain) ──────────────────────
+  }
+
+  // Non-command chatter is already handled above (AI mentions, race entry).
+  // Skip the legacy slash-command chain unless lottery capture is active.
+  if (!txt.startsWith('/')) {
+    if (LotteryGameActive) {
+      await handleLotteryNumber(payload)
+    }
+    return
   }
 
   /// //////////// LOTTERY GAME ////////////////////////////////////////////
@@ -597,10 +596,7 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
       console.error('Error sending /mod sheet:', error)
       await postMessage({ room, message: 'Error sending mod commands.' })
     }
-  }
-
-  // ===== /gifs (simple readable list with hyphens) =====
-  else if (payload.message.startsWith('/gifs')) {
+  } else if (payload.message.startsWith('/gifs')) {
     await postMessage({
       room,
       message:
@@ -672,6 +668,7 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
 
     /// /////////////////////////// SPORTS ODDS /////////////////////////////
   } else if (payload.message === '/mlbodds') {
+    let oddsMsg = null
     try {
       const sport = 'baseball_mlb'
       const data = await fetchOddsForSport(sport)
@@ -679,11 +676,11 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
 
       saveOddsForSport(sport, data)
 
-      const oddsMsg = formatOddsMessage(data, sport)
+      oddsMsg = formatOddsMessage(data, sport)
       await postMessage({ room, message: oddsMsg })
     } catch (error) {
       console.error('Error fetching or posting MLB odds:', error)
-      console.log(oddsMsg)
+      if (oddsMsg) console.log(oddsMsg)
       await postMessage({ room, message: 'Sorry, something went wrong fetching MLB odds.' })
     }
   } else if (payload.message.startsWith('/sportsbet')) {
@@ -771,9 +768,6 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
       room,
       message: 'testing!'
     })
-
-  
-
   } else if (payload.message.startsWith('/crapsrecord')) {
     // Fetch the current record, preferring the stored nickname in the
     // users table when available. If both the craps_records nickname and
@@ -1169,8 +1163,7 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
     } catch (error) {
       console.error('Error handling /dive command:', error)
     }
-
-       } else if (payload.message.startsWith('/begonebitch')) {
+  } else if (payload.message.startsWith('/begonebitch')) {
     try {
       const callerUuid = payload.sender
       const callerName = await getSenderNickname(callerUuid).catch(() => `<@uid:${callerUuid}>`)
@@ -1211,10 +1204,9 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
       }
 
       if (isSpotlightProtected(currentDJ)) {
-  await postMessage({ room, message: `🚫 Spotlight mode: that DJ is protected.` })
-  return
-}
-
+        await postMessage({ room, message: '🚫 Spotlight mode: that DJ is protected.' })
+        return
+      }
 
       // Wallet check
       const balance = await getUserWallet(callerUuid)
@@ -1256,8 +1248,8 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
 
       // 3) funny gif
       const gifs = [
-        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExb3c3aDU4MXkyNTNuenkxY2l1dDBrMnBpZ244MjY4MDhzdnB5eWYxdyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/9Rp27Gpwjx1n2/giphy.gif', 
-        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExb3c3aDU4MXkyNTNuenkxY2l1dDBrMnBpZ244MjY4MDhzdnB5eWYxdyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/MX5vcczsj1rw4ySjcl/giphy.gif', 
+        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExb3c3aDU4MXkyNTNuenkxY2l1dDBrMnBpZ244MjY4MDhzdnB5eWYxdyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/9Rp27Gpwjx1n2/giphy.gif',
+        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExb3c3aDU4MXkyNTNuenkxY2l1dDBrMnBpZ244MjY4MDhzdnB5eWYxdyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/MX5vcczsj1rw4ySjcl/giphy.gif',
         'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExZDVxbmlpd3A0b3lta256Mm1teG1xdXMwMzVtaTJld29hZzJtOHlkYSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/3oEhmHaxNpPrSymkIo/giphy.gif',
         'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExemNkbmVlOXZjdDM3dnN4ZnAyemNtb2NqdWtlOWQ1bmo0YW95NzBrdyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/EOIHxXCGiPPIT2Xl9t/giphy.gif',
         'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExemNkbmVlOXZjdDM3dnN4ZnAyemNtb2NqdWtlOWQ1bmo0YW95NzBrdyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/2rWwvPlNJIuP7Ndy0W/giphy.gif'
@@ -1276,7 +1268,7 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
       await delay(800)
       await postMessage({
         room,
-        message: `👋 BEGONE.`
+        message: '👋 BEGONE.'
       })
 
       await delay(450)
@@ -1284,8 +1276,6 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
     } catch (error) {
       console.error('Error handling /begonebitch command:', error)
     }
-
-
   } else if (payload.message.startsWith('/escortme')) {
     try {
       const senderUUID = payload.sender
@@ -1308,8 +1298,7 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
     } catch (error) {
       console.error('Error handling /escortme command:', error)
     }
-
-      } else if (payload.message.startsWith('/spotlight')) {
+  } else if (payload.message.startsWith('/spotlight')) {
     await startPaidSpotlight({
       payload,
       room,
@@ -1325,7 +1314,7 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
 
   /// /////////////// Secret Commands /////////////////////
   } else if (payload.message.startsWith('/secret')) {
-    const isAuthorized = await isUserAuthorized(senderUuid, ttlUserToken)
+    const isAuthorized = await isUserAuthorized(payload.sender, ttlUserToken)
     if (!isAuthorized) {
       await postMessage({
         room,
@@ -1420,24 +1409,24 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
       console.error('Error processing command:', error.message)
     }
   } else if (payload.message.startsWith('/allen')) {
-  try {
-    const danceImageOptions = [
-      'https://media.giphy.com/media/sA8nO56Gj9RHq/giphy.gif?cid=790b7611h6b5ihdlko5foubqcifo0e3h0i7e6p1vo2h8znzj&ep=v1_gifs_search&rid=giphy.gif&ct=g'
-    ]
+    try {
+      const danceImageOptions = [
+        'https://media.giphy.com/media/sA8nO56Gj9RHq/giphy.gif?cid=790b7611h6b5ihdlko5foubqcifo0e3h0i7e6p1vo2h8znzj&ep=v1_gifs_search&rid=giphy.gif&ct=g'
+      ]
 
-    const rawUrl = danceImageOptions[Math.floor(Math.random() * danceImageOptions.length)]
-    const u = new URL(rawUrl)
-    u.search = '' // ✅ remove ?cid=... etc
-    const cleanUrl = u.toString()
+      const rawUrl = danceImageOptions[Math.floor(Math.random() * danceImageOptions.length)]
+      const u = new URL(rawUrl)
+      u.search = '' // ✅ remove ?cid=... etc
+      const cleanUrl = u.toString()
 
-    await postMessage({
-      room,
-      message: '',
-      images: [cleanUrl]
-    })
-  } catch (error) {
-    console.error('Error processing command:', error.message)
-  }
+      await postMessage({
+        room,
+        message: '',
+        images: [cleanUrl]
+      })
+    } catch (error) {
+      console.error('Error processing command:', error.message)
+    }
   } else if (payload.message.startsWith('/props')) {
     try {
       const danceImageOptions = [
@@ -1844,76 +1833,6 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
 
   /// //////////////////////// Wallet Stuff ////////////////////////////////////
 
-  if (payload.message.startsWith('/balance')) {
-    const userId = payload.sender // Get the user's ID from the payload
-
-    // Await the nickname to ensure it resolves to a string
-    const nickname = await getUserNickname(userId)
-
-    // Load the wallets from persistent storage
-    const wallets = await loadWallets() // Ensure you have this function defined to load wallets
-
-    // Retrieve the user's wallet object
-    const userWallet = wallets[userId]
-
-    if (userWallet && userWallet.balance !== undefined) {
-      // Access the balance property directly
-      const balance = userWallet.balance
-      const formattedBalance = formatBalance(balance) // Format the balance with commas
-
-      await postMessage({
-        room: process.env.ROOM_UUID,
-        message: `${nickname}, your current balance is $${formattedBalance}.`
-      })
-    } else {
-      await postMessage({
-        room: process.env.ROOM_UUID,
-        message: `${nickname}, you do not have a wallet yet. You can use /getwallet`
-      })
-    }
-  }
-  if (payload.message.startsWith('/career')) {
-  // Look up the user's lifetime net win/loss (positive or negative)
-    const userId = payload.sender
-    const nickname = await getUserNickname(userId)
-    const net = getLifetimeNet(userId)
-
-    // Round to whole dollars and format with sign and commas
-    const rounded = Math.round(net)
-    const absNet = Math.abs(rounded).toLocaleString('en-US')
-    const sign = rounded >= 0 ? '+' : '-'
-
-    await postMessage({
-      room: process.env.ROOM_UUID,
-      message: `${nickname}, your career gambling net total is ${sign}$${absNet}.`
-    })
-  }
-
-  if (payload.message.startsWith('/getwallet')) {
-    const userId = payload.sender // Get the user's ID from the payload
-    const nickname = await getUserNickname(userId) // Get the user's nickname
-
-    // Load the wallets from persistent storage
-    const wallets = await loadWallets()
-
-    // Check if the user already has a wallet
-    if (wallets[userId]) {
-      await postMessage({
-        room,
-        message: `${nickname}, you already have a wallet with $${wallets[userId].balance}.`
-      })
-    } else {
-      // Initialize the wallet with a default balance
-      const defaultBalance = 50
-      wallets[userId] = { balance: defaultBalance }
-
-      await postMessage({
-        room,
-        message: `${nickname}, your wallet has been initialized with $${defaultBalance}.`
-      })
-    }
-  }
-
   // Command to handle balance request for another user
   if (payload.message.startsWith('/checkbalance')) {
     const args = payload.message.split(' ').slice(1) // Get arguments after the command
@@ -1977,72 +1896,6 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
       })
     }
   }
-  if (payload.message.startsWith('/networth')) {
-    try {
-      const user = await getNetWorthForUser(payload.sender)
-      const total = Math.round(Number(user?.totalNetWorth) || 0).toLocaleString()
-      const cash = Math.round(Number(user?.cash) || 0).toLocaleString()
-      const cars = Math.round(Number(user?.carValue) || 0).toLocaleString()
-      const horses = Math.round(Number(user?.horseValue) || 0).toLocaleString()
-      const crypto = Math.round(Number(user?.cryptoValue) || 0).toLocaleString()
-
-      await postMessage({
-        room,
-        message:
-          `🏦 <@uid:${payload.sender}> Net Worth: **$${total}**\n` +
-          `Cash: $${cash} · Cars: $${cars} · Horses: $${horses} · Crypto: $${crypto}`
-      })
-    } catch (error) {
-      console.error('Error fetching user net worth:', error)
-      await postMessage({
-        room,
-        message: 'There was an error fetching your net worth.'
-      })
-    }
-  }
-  if (payload.message.startsWith('/topnetworth')) {
-    try {
-      const netWorthRows = await getTopNetWorthLeaderboard(5)
-
-      if (!Array.isArray(netWorthRows) || netWorthRows.length === 0) {
-        await postMessage({
-          room,
-          message: 'No net worth data found yet.'
-        })
-        return
-      }
-
-      const formatted = netWorthRows.map((user, index) => {
-        const total = Math.round(Number(user.totalNetWorth) || 0).toLocaleString()
-        const cash = Math.round(Number(user.cash) || 0).toLocaleString()
-        const cars = Math.round(Number(user.carValue) || 0).toLocaleString()
-        const horses = Math.round(Number(user.horseValue) || 0).toLocaleString()
-        const crypto = Math.round(Number(user.cryptoValue) || 0).toLocaleString()
-
-        return [
-          formatCompactMoneyLine({
-            rank: index + 1,
-            uuid: user.uuid,
-            name: user.nickname,
-            amount: user.totalNetWorth
-          }),
-          `   C${cash} Ca${cars} H${horses} X${crypto}`
-        ].join('\n')
-      })
-
-      await postMessage({
-        room,
-        message: `🏦 **Top Net Worth Leaders** 🏦\n\n${formatted.join('\n')}`
-      })
-    } catch (error) {
-      console.error('Error fetching top net worth leaderboard:', error)
-      await postMessage({
-        room,
-        message: 'There was an error fetching the top net worth leaderboard.'
-      })
-    }
-  }
-
   if (payload.message.startsWith('/lottowinners')) {
     try {
       const winners = getLotteryWinners()
@@ -2244,10 +2097,7 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
     if (cmd === 'double') return await handleDouble(userUUID, nickname, ctx)
     if (cmd === 'surrender') return await handleSurrender(userUUID, nickname, ctx)
     if (cmd === 'split') return await handleSplit(userUUID, nickname, ctx)
-  }
-
-  /// /////////////////////// BOT AVATAR UPDATES //////////////////////////
-  else if (payload.message.startsWith('/botrandom')) {
+  } else if (payload.message.startsWith('/botrandom')) {
   // signature: (room, postMessage, ttlUserToken)
     await handleBotRandomAvatarCommand(
       room,
@@ -2351,11 +2201,7 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
       payload.sender,
       ttlUserToken
     )
-  }
-
-  /// /////////////////////// USER AVATAR UPDATES //////////////////////////
-
-  else if (payload.message.startsWith('/dino')) {
+  } else if (payload.message.startsWith('/dino')) {
     await handleDinoCommand(payload.sender, room, postMessage)
   } else if (payload.message.startsWith('/teacup')) {
     await handleTeacupCommand(payload.sender, room, postMessage)
@@ -2421,10 +2267,7 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
     await handleRandomPajamaCommand(payload.sender, room, postMessage)
   } else if (payload.message.startsWith('/randomavatar')) {
     await handleRandomAvatarCommand(payload.sender, room, postMessage)
-  }
-
-  /// /////////////////////// Add Avatar //////////////////////////
-  else if (/^\/addavatar\b/i.test(payload.message)) {
+  } else if (/^\/addavatar\b/i.test(payload.message)) {
     const roomId = payload.room ?? process.env.ROOM_UUID
 
     try {
@@ -3061,7 +2904,6 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
       // No args or help → show current + options
       if (args.length === 0 || /^(help|\\?)$/i.test(args[0] || '')) {
         const tones = VALID_TONES
-        const aliases = ['nerd→cratedigger', 'fun→playful', 'chart→chartbot', 'tech→djtech', 'chill→vibe']
         await postMessage({
           room,
           message:
@@ -3196,13 +3038,12 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
       })
     }
   } else if (
-  /^\/greet(?:\s|$)/i.test(payload.message.trim()) ||
+    /^\/greet(?:\s|$)/i.test(payload.message.trim()) ||
   /^\/greetoff$/i.test(payload.message.trim())
-) {
-  const room = payload.room || process.env.ROOM_UUID
-  const parts = payload.message.trim().split(/\s+/)
-  const sub = (parts[1] || '').toLowerCase()
-
+  ) {
+    const room = payload.room || process.env.ROOM_UUID
+    const parts = payload.message.trim().split(/\s+/)
+    const sub = (parts[1] || '').toLowerCase()
 
     if (sub === 'standard') {
       enableGreetingMessages()
@@ -3434,7 +3275,6 @@ Set with: /infotone <tone>`
       try { return new Date(iso).toLocaleString('en-US', { timeZone: TZ }) } catch { return String(iso) }
     }
     const pct = (num, den) => den > 0 ? Math.round((num / den) * 100) : 0
-    const perPlay = (num, den) => den > 0 ? (num / den).toFixed(1) : '0.00'
 
     // Accept "mm:ss", seconds, or milliseconds; fallback to live song duration fields
     const formatDuration = (raw, fallbacks = []) => {
@@ -3511,14 +3351,9 @@ Set with: /infotone <tone>`
       const likes = songStats.likes ?? 0
       const dislikes = songStats.dislikes ?? 0
       const hearts = songStats.stars ?? 0 // "stars" column == ❤️
-      const net = likes - dislikes // 👍 minus 👎
-      const netPP = perPlay(net, plays)
 
       const likeRate = pct(likes, plays)
       const disRate = pct(dislikes, plays)
-      const heartRate = pct(hearts, plays)
-      const heartsPP = perPlay(hearts, plays)
-      const engagePP = perPlay(likes + dislikes + hearts, plays)
 
       const avg = (avgLive != null)
         ? avgLive
@@ -3710,75 +3545,6 @@ Set with: /infotone <tone>`
         message: 'No song is currently playing or track info is missing.'
       })
     }
-  } else if (payload.message.startsWith('/suggestsongs')) {
-    const recentSongs = readRecentSongs()
-
-    if (!recentSongs || recentSongs.length === 0) {
-      await postMessage({
-        room,
-        message: "I don't have any recent songs to suggest right now."
-      })
-      return
-    }
-
-    const suggestedTracks = []
-    const seenArtists = new Set()
-    const seenTracks = new Set()
-
-    for (const song of recentSongs.slice(0, 5)) {
-      const { artistName, trackName } = song
-      const similar = await getSimilarTracks(artistName, trackName)
-
-      for (const suggestion of similar) {
-        const artist = suggestion.artistName.trim().toLowerCase()
-        const track = suggestion.trackName.trim().toLowerCase()
-        const uniqueKey = `${artist} - ${track}`
-
-        if (seenArtists.has(artist) || seenTracks.has(uniqueKey)) continue
-
-        seenArtists.add(artist)
-        seenTracks.add(uniqueKey)
-        suggestedTracks.push(suggestion)
-
-        if (suggestedTracks.length >= 5) break
-      }
-
-      if (suggestedTracks.length >= 5) break
-    }
-
-    const customDataSongs = []
-
-    for (const { trackName, artistName } of suggestedTracks) {
-      try {
-        const trackDetails = await searchSpotify(artistName, trackName)
-        if (trackDetails && trackDetails.spotifyUrl) {
-          const songData = await fetchSongData(trackDetails.spotifyTrackID)
-          customDataSongs.push({
-            song: {
-              ...songData,
-              musicProviders: songData.musicProvidersIds,
-              status: 'SUCCESS'
-            }
-          })
-        }
-      } catch (err) {
-        console.warn(`❌ Failed to process ${trackName} by ${artistName}:`, err.message)
-      }
-    }
-
-    if (customDataSongs.length > 0) {
-      await postMessage({
-        room,
-        message: '🎧 Here are 5 new songs you might enjoy:',
-        customData: { songs: customDataSongs }
-      })
-    } else {
-      await postMessage({
-        room,
-        message: "Sorry, I couldn't find any playable suggestions from Last.fm."
-      })
-    }
-    /// /////////////// BLACKLIST  //////////////////////////////
   } else if (payload.message.startsWith('/blacklist+')) {
     try {
       const currentSong = roomBot.currentSong

@@ -60,7 +60,6 @@ export async function endSpotlight ({ room, roomBot, postMessage }) {
   }
 
   const hostUuid = spotlight.hostUuid
-  const hostName = spotlight.hostName || (hostUuid ? `<@uid:${hostUuid}>` : 'DJ')
 
   // Remove host (best effort)
   try {
@@ -126,7 +125,7 @@ export async function startSpotlight ({
   spotlight.hostName = callerName
   spotlight.startedAt = Date.now()
 
-  await postMessage({ room, message: `🎭 SPOTLIGHT MODE ACTIVATED\nClearing the stage…` })
+  await postMessage({ room, message: '🎭 SPOTLIGHT MODE ACTIVATED\nClearing the stage…' })
 
   // Remove everyone currently on stage
   // Prefer roomBot.state.djs if present (most accurate)

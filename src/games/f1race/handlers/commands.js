@@ -3,6 +3,7 @@
 import { postMessage } from '../../../libs/cometchat.js'
 import { readdirSync } from 'fs'
 import path from 'path'
+import { fileURLToPath } from 'url'
 import { getUserWallet, debitGameBet, addToUserWallet, creditGameWin, getProgressiveWealthFee } from '../../../database/dbwalletmanager.js'
 import { getUserNickname } from '../../../utils/nickname.js'
 import { fetchCurrentUsers } from '../../../utils/API.js'
@@ -130,20 +131,50 @@ const ELITE_MODE_STAT_DELTA_BY_TIER = {
 const CAR_IMAGE_BASE_URL = (process.env.F1_CAR_IMAGE_BASE_URL ||
   'https://raw.githubusercontent.com/smitty222/jambot/main/src/games/f1race/assets/cars').replace(/\/$/, '')
 
-const CAR_ASSETS_DIR = path.resolve(process.cwd(), 'src/games/f1race/assets/cars')
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const CAR_ASSETS_DIR = path.resolve(__dirname, '../assets/cars')
 const ALLOWED_IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif'])
+const carTierFilesCache = new Map()
+
+function readTierImageFiles (tier) {
+  const dir = path.join(CAR_ASSETS_DIR, tier)
+  return readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name)
+    .filter((name) => ALLOWED_IMAGE_EXT.has(path.extname(name).toLowerCase()))
+}
+
+function primeCarImageCache () {
+  try {
+    const tiers = readdirSync(CAR_ASSETS_DIR, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name.toLowerCase())
+
+    for (const tier of tiers) {
+      carTierFilesCache.set(tier, readTierImageFiles(tier))
+    }
+  } catch {
+    carTierFilesCache.clear()
+  }
+}
+
+primeCarImageCache()
 
 function listTierImageFiles (tierKey) {
   const tier = String(tierKey || '').toLowerCase()
   if (!tier) return []
 
+  if (carTierFilesCache.has(tier)) {
+    return carTierFilesCache.get(tier)
+  }
+
   try {
-    const dir = path.join(CAR_ASSETS_DIR, tier)
-    return readdirSync(dir, { withFileTypes: true })
-      .filter((entry) => entry.isFile())
-      .map((entry) => entry.name)
-      .filter((name) => ALLOWED_IMAGE_EXT.has(path.extname(name).toLowerCase()))
+    const files = readTierImageFiles(tier)
+    carTierFilesCache.set(tier, files)
+    return files
   } catch {
+    carTierFilesCache.set(tier, [])
     return []
   }
 }
@@ -743,7 +774,7 @@ export async function handleBuyCar (ctx) {
   const parts = argsRaw.trim().split(/\s+/).filter(Boolean)
   const tierArg = parts[0]?.toLowerCase()
   const pickArg = parts[1]
-  const tierAliases = { '1': 'starter', '2': 'pro', '3': 'hyper', '4': 'legendary' }
+  const tierAliases = { 1: 'starter', 2: 'pro', 3: 'hyper', 4: 'legendary' }
   const tierKey = tierAliases[tierArg] || tierArg
   const nick = await safeCall(getUserNickname, [userId]).catch(() => '@user')
   const bal = await safeCall(getUserWallet, [userId]).catch(() => null)
@@ -759,7 +790,7 @@ export async function handleBuyCar (ctx) {
       room,
       message:
         `❗ Unknown tier \`${tierKey}\`.\n` +
-        `Use: \`/buycar starter\`, \`/buycar pro\`, \`/buycar hyper\`, \`/buycar legendary\`\n` +
+        'Use: `/buycar starter`, `/buycar pro`, `/buycar hyper`, `/buycar legendary`\n' +
         'or open the shop with `/buycar`.'
     })
     return
@@ -992,7 +1023,7 @@ export async function handleCarShow (ctx) {
   const nick = await safeCall(getUserNickname, [userId]).catch(() => '@user')
 
   if (!nameArg) {
-    await postMessage({ room, message: `Usage: **/car <car name>**` })
+    await postMessage({ room, message: 'Usage: **/car <car name>**' })
     return
   }
 
@@ -1180,7 +1211,7 @@ export async function handleRenameCar (ctx) {
 
   const fromName = String(argsRaw.split('|')[0] || '').trim()
   if (!fromName) {
-    await postMessage({ room, message: `Usage: **/renamecar <current name>**` })
+    await postMessage({ room, message: 'Usage: **/renamecar <current name>**' })
     return
   }
 
@@ -1878,10 +1909,10 @@ async function lockEntriesAndOpenStrategy () {
     }])
 
     const previewRows = field.map((c, i) => ({
-  label: c.label,
-  teamLabel: c.teamLabel,
-  odds: formatOdds(lockedOddsDec[i])
-}))
+      label: c.label,
+      teamLabel: c.teamLabel,
+      odds: formatOdds(lockedOddsDec[i])
+    }))
     await safeCall(postMessage, [{
       room: ROOM,
       message: renderGrid(previewRows, {
@@ -1941,57 +1972,57 @@ async function startRaceRun () {
 
     // ── VISUALS: circuit splash + lights ───────────────────────────────
     // Announce track name first (no bold, explicit format)
-await postMessage({
-  room: ROOM,
-  message: `${lockedRaceType === 'drag' ? '🛣️ Strip Name' : '🏁 Track Name'}: ${track.name.toUpperCase()}`
-})
+    await postMessage({
+      room: ROOM,
+      message: `${lockedRaceType === 'drag' ? '🛣️ Strip Name' : '🏁 Track Name'}: ${track.name.toUpperCase()}`
+    })
 
-await DELAY(600)
+    await DELAY(600)
 
-// Then send image
-if (track?.imageUrl) {
-  await postMessage({
-    room: ROOM,
-    message: '',
-    images: [track.imageUrl]
-  })
-  await DELAY(900)
-}
+    // Then send image
+    if (track?.imageUrl) {
+      await postMessage({
+        room: ROOM,
+        message: '',
+        images: [track.imageUrl]
+      })
+      await DELAY(900)
+    }
 
-await DELAY(1200)
+    await DELAY(1200)
 
-// 2) Pole bonus announcement also feels better pre-start (optional)
-if (lockedRaceType !== 'drag' && poleWinnerOwnerId && POLE_BONUS > 0) {
-  const nick = await safeCall(getUserNickname, [poleWinnerOwnerId]).catch(() => null)
-  const tag = nick?.replace(/^@/, '') || `<@uid:${poleWinnerOwnerId}>`
-  const poleDisplayBonus = Math.floor(POLE_BONUS * getTierPayoutMultiplier(field[0]?.tier))
-  await safeCall(postMessage, [{
-    room: ROOM,
-    message: `🎯 Pole Position Bonus goes to ${tag} (${fmtMoney(poleDisplayBonus)})`
-  }])
-  await DELAY(800)
-}
+    // 2) Pole bonus announcement also feels better pre-start (optional)
+    if (lockedRaceType !== 'drag' && poleWinnerOwnerId && POLE_BONUS > 0) {
+      const nick = await safeCall(getUserNickname, [poleWinnerOwnerId]).catch(() => null)
+      const tag = nick?.replace(/^@/, '') || `<@uid:${poleWinnerOwnerId}>`
+      const poleDisplayBonus = Math.floor(POLE_BONUS * getTierPayoutMultiplier(field[0]?.tier))
+      await safeCall(postMessage, [{
+        room: ROOM,
+        message: `🎯 Pole Position Bonus goes to ${tag} (${fmtMoney(poleDisplayBonus)})`
+      }])
+      await DELAY(800)
+    }
 
-await postMessage({ room: ROOM, message: 'Final checks complete.' })
-await DELAY(900)
+    await postMessage({ room: ROOM, message: 'Final checks complete.' })
+    await DELAY(900)
 
-// 3) Now do the dramatic lights
-await sendLightsOutSequence(ROOM)
+    // 3) Now do the dramatic lights
+    await sendLightsOutSequence(ROOM)
 
-// 4) Start the race
-await runRace({
-  cars: field,
-  track,
-  raceType: lockedRaceType,
-  prizePool: net,
-  payoutPlan: lockedPayoutPlan,
-  poleBonus: lockedRaceType === 'drag' ? 0 : POLE_BONUS,
-  fastestLapBonus: lockedRaceType === 'drag' ? 0 : FASTEST_LAP_BONUS,
-  poleWinnerOwnerId,
-  poleWinnerCarId: field[0]?.id ?? null,
-  bets,
-  lockedOddsDec
-})
+    // 4) Start the race
+    await runRace({
+      cars: field,
+      track,
+      raceType: lockedRaceType,
+      prizePool: net,
+      payoutPlan: lockedPayoutPlan,
+      poleBonus: lockedRaceType === 'drag' ? 0 : POLE_BONUS,
+      fastestLapBonus: lockedRaceType === 'drag' ? 0 : FASTEST_LAP_BONUS,
+      poleWinnerOwnerId,
+      poleWinnerCarId: field[0]?.id ?? null,
+      bets,
+      lockedOddsDec
+    })
   } catch (e) {
     console.error('[f1race] startRaceRun error:', e)
     await safeCall(postMessage, [{ room: ROOM, message: '❌ Race failed to start.' }])
@@ -2011,14 +2042,14 @@ if (!globalThis[LISTENER_GUARD_KEY]) {
 
     const msg = raceType === 'drag'
       ? renderDragProgress(raceState, {
-          title: `${track.emoji} ${track.name} — PROGRESS`,
-          barCells: 24,
-          nameWidth: 18
-        })
+        title: `${track.emoji} ${track.name} — PROGRESS`,
+        barCells: 24,
+        nameWidth: 18
+      })
       : renderRaceProgress(raceState, {
-          title: `${track.emoji} ${track.name} — LAP ${legIndex + 1}/${legsTotal}`,
-          nameWidth: 18
-        })
+        title: `${track.emoji} ${track.name} — LAP ${legIndex + 1}/${legsTotal}`,
+        nameWidth: 18
+      })
 
     const lines = []
     lines.push(msg)

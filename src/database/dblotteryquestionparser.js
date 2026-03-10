@@ -1,9 +1,4 @@
-import path from 'path'
-import { fileURLToPath } from 'url'
 import { loadUsersFromDb } from './dbusermanager.js'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
 
 let users = {}
 
@@ -13,8 +8,7 @@ try {
   console.error('❌ Failed to load users from DB:', err)
 }
 
-const mentionRegex = /<@uid:([a-f0-9\-]+)>/i
-const nicknameRegex = /([\w\s\-]+)/i
+const mentionRegex = /<@uid:([a-f0-9-]+)>/i
 
 const lotteryQuestionPatterns = [
   /has\s+(.+?)\s+ever\s+won\s+(the\s+)?(lottery|lotto)(\s+before)?\??/i,
@@ -38,7 +32,7 @@ const lotteryQuestionPatterns = [
 ]
 
 export function normalizeUserMention (text) {
-  return text.replace(/<@uid:([a-f0-9\-]+)>/gi, (match, userId) => {
+  return text.replace(/<@uid:([a-f0-9-]+)>/gi, (match, userId) => {
     return users[userId]?.nickname || match
   })
 }

@@ -40,7 +40,7 @@ function ensureCarsTable () {
   // ✅ lightweight migration: add imageUrl if missing
   if (!columnExists('cars', 'imageUrl')) {
     try {
-      db.exec(`ALTER TABLE cars ADD COLUMN imageUrl TEXT;`)
+      db.exec('ALTER TABLE cars ADD COLUMN imageUrl TEXT;')
     } catch (e) {
       // if two processes race to migrate, ignore duplicate-column-ish errors
       console.warn('[dbcars] imageUrl migration skipped:', e?.message)
@@ -72,8 +72,8 @@ function ensureCarsTable () {
     }
   }
 
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_cars_owner ON cars(ownerId);`)
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_cars_team ON cars(teamId);`)
+  db.exec('CREATE INDEX IF NOT EXISTS idx_cars_owner ON cars(ownerId);')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_cars_team ON cars(teamId);')
 }
 
 ensureCarsTable()
@@ -123,24 +123,24 @@ export function insertCar (car) {
 
 export function getAllCars () {
   ensureCarsTable()
-  return db.prepare(`SELECT * FROM cars`).all()
+  return db.prepare('SELECT * FROM cars').all()
 }
 
 export function getUserCars (ownerId) {
   ensureCarsTable()
   return db
-    .prepare(`SELECT * FROM cars WHERE ownerId = ? ORDER BY retired ASC, wins DESC, races ASC, name ASC`)
+    .prepare('SELECT * FROM cars WHERE ownerId = ? ORDER BY retired ASC, wins DESC, races ASC, name ASC')
     .all(String(ownerId))
 }
 
 export function getCarById (id) {
   ensureCarsTable()
-  return db.prepare(`SELECT * FROM cars WHERE id = ?`).get(Number(id))
+  return db.prepare('SELECT * FROM cars WHERE id = ?').get(Number(id))
 }
 
 export function getCarByNameCaseInsensitive (name) {
   ensureCarsTable()
-  return db.prepare(`SELECT * FROM cars WHERE lower(name) = lower(?)`).get(String(name))
+  return db.prepare('SELECT * FROM cars WHERE lower(name) = lower(?)').get(String(name))
 }
 
 export function updateCarAfterRace (id, { win = false, wearDelta = 0 }) {
@@ -152,7 +152,7 @@ export function updateCarAfterRace (id, { win = false, wearDelta = 0 }) {
   const newWins = Number(car.wins || 0) + (win ? 1 : 0)
   const newWear = Math.max(0, Math.min(100, Number(car.wear || 0) + Math.floor(wearDelta)))
 
-  db.prepare(`UPDATE cars SET races = ?, wins = ?, wear = ? WHERE id = ?`)
+  db.prepare('UPDATE cars SET races = ?, wins = ?, wear = ? WHERE id = ?')
     .run(newRaces, newWins, newWear, Number(id))
 
   return true
@@ -317,13 +317,13 @@ export function getTopOwnersByCarReturn (limit = 10) {
 export function setCarWear (id, wear) {
   ensureCarsTable()
   const w = Math.max(0, Math.min(100, Math.floor(Number(wear || 0))))
-  return db.prepare(`UPDATE cars SET wear = ? WHERE id = ?`).run(w, Number(id))
+  return db.prepare('UPDATE cars SET wear = ? WHERE id = ?').run(w, Number(id))
 }
 
 export function setCarTeam (id, teamId) {
   ensureCarsTable()
   return db
-    .prepare(`UPDATE cars SET teamId = ? WHERE id = ?`)
+    .prepare('UPDATE cars SET teamId = ? WHERE id = ?')
     .run(teamId != null ? Number(teamId) : null, Number(id))
 }
 
@@ -350,6 +350,6 @@ export function deleteCarOwnedByUser (id, ownerId) {
 // ✅ optional helper if you ever want to change an image later
 export function setCarImageUrl (id, imageUrl) {
   ensureCarsTable()
-  return db.prepare(`UPDATE cars SET imageUrl = ? WHERE id = ?`)
+  return db.prepare('UPDATE cars SET imageUrl = ? WHERE id = ?')
     .run(imageUrl ? String(imageUrl) : null, Number(id))
 }

@@ -129,7 +129,7 @@ const RESULTS_PACING = {
 async function postCountdown (n = 5) {
   for (let i = n; i >= 1; i--) {
     await postMessage({ room: ROOM, message: `⏱️ Post time in ${i}…` })
-    await new Promise(r => setTimeout(r, 800))
+    await new Promise((resolve) => setTimeout(resolve, 800))
   }
   await postMessage({ room: ROOM, message: '🏁 *And they’re off!*' })
 }
@@ -324,7 +324,7 @@ export async function handleHorseBet (ctx) {
     slip = parsedSingle.slip
     betLabel = parsedSingle.label
   } else {
-    let m = txt.match(/^\/exacta\s+(\d+)\s*[-,\/]\s*(\d+)\s+(\d+)\b/i) ||
+    let m = txt.match(/^\/exacta\s+(\d+)\s*[-,/]\s*(\d+)\s+(\d+)\b/i) ||
             txt.match(/^\/exacta\s+(\d+)\s+(\d+)\s+(\d+)\b/i)
     if (m) {
       const first = parseInt(m[1], 10) - 1
@@ -342,7 +342,7 @@ export async function handleHorseBet (ctx) {
     }
 
     if (!slip) {
-      m = txt.match(/^\/trifecta\s+(\d+)\s*[-,\/]\s*(\d+)\s*[-,\/]\s*(\d+)\s+(\d+)\b/i) ||
+      m = txt.match(/^\/trifecta\s+(\d+)\s*[-,/]\s*(\d+)\s*[-,/]\s*(\d+)\s+(\d+)\b/i) ||
           txt.match(/^\/trifecta\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\b/i)
       if (m) {
         const a = parseInt(m[1], 10) - 1

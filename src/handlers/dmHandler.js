@@ -8,7 +8,7 @@
 
 import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
 import { isUserAuthorized } from '../utils/API.js'
-import { addDollarsByUUID, getUserWallet } from '../database/dbwalletmanager.js'
+import { getUserWallet } from '../database/dbwalletmanager.js'
 
 // Build an allow list of UUIDs that are always considered DM admins.
 const DM_ALLOW_LIST = new Set(
@@ -20,13 +20,6 @@ const DM_ALLOW_LIST = new Set(
 
 // TTL user token used for mod checks. See utils/API.js for details.
 const ttlUserToken = process.env.TTL_USER_TOKEN
-
-// Parse a Turntable-style mention (<@uid:abc123>) into a raw UUID string.
-function parseUidFromMention (s) {
-  if (!s) return ''
-  const m = /<@uid:([\w-]+)>/i.exec(s)
-  return m?.[1] || s.trim()
-}
 
 // Determine whether the sender is allowed to use admin DM commands.
 async function isDmAdmin (uuid) {

@@ -116,11 +116,13 @@ export default {
     if (method === 'POST' && url.pathname === '/api/publishCommands') {
       const authErr = requirePublish(); if (authErr) return authErr
       let body; try { body = await request.json() } catch { return json(env, request, { error: 'invalid JSON' }, 400) }
-      const { commands, commands_mod } = body || {}
+      const { commands, commands_mod: commandsMod } = body || {}
 
       const result = {}
       if (commands) result.commands = await putIfChanged(env, 'commands', commands)
-      if (commands_mod) result.commands_mod = await putIfChanged(env, 'commands_mod', commands_mod)
+      if (commandsMod) {
+        Object.assign(result, { commands_mod: await putIfChanged(env, 'commands_mod', commandsMod) })
+      }
 
       return json(env, request, { ok: true, ...result })
     }

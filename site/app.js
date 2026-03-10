@@ -1,4 +1,5 @@
 // site/app.js (modern12)
+/* global localStorage */
 const APP_VER = 'modern12'
 console.log('[jj] app.js booted', APP_VER, new Date().toISOString())
 
@@ -59,13 +60,12 @@ const els = {
   crapsRecord: $('crapsRecord'),
   lotteryWinners: $('lotteryWinners'),
 
-    // crypto performance
+  // crypto performance
   gamesCryptoTopWinner: $('gamesCryptoTopWinner'),
   gamesCryptoTopLoser: $('gamesCryptoTopLoser'),
   gamesCryptoSelect: $('gamesCryptoSelect'),
   gamesCryptoResult: $('gamesCryptoResult'),
   gamesCryptoUpdated: $('gamesCryptoUpdated'),
-
 
   // wrapped
   tabWrapped: $('tabWrapped'),
@@ -120,7 +120,6 @@ const els = {
   albumsList: $('albumsList'),
   albumQueue: $('albumQueue'),
   albumQueueUpdated: $('albumQueueUpdated'),
-
 
   // songs
   songSearch: $('songSearch'),
@@ -672,7 +671,6 @@ function wireCryptoSelect () {
   })
 }
 
-
 function renderCareerUI (extremes, rows) {
   const topG = extremes?.topGainer
   const topL = extremes?.topLoser
@@ -750,7 +748,7 @@ async function refreshGames () {
     } else {
       // Sort by max rolls descending and by achieved date descending to ensure we take
       // the highest and most recent record.  Some rooms may have multiple records.
-      const sortedRec = Array.isArray(rec) ? [...rec].sort((a, b) => {
+      const sortedRec = [...rec].sort((a, b) => {
         const aRolls = Number(a.maxRolls ?? a.max_rolls ?? 0)
         const bRolls = Number(b.maxRolls ?? b.max_rolls ?? 0)
         if (bRolls !== aRolls) return bRolls - aRolls
@@ -758,8 +756,8 @@ async function refreshGames () {
         const aDate = new Date(a.achievedAt || a.achieved_at || 0)
         const bDate = new Date(b.achievedAt || b.achieved_at || 0)
         return bDate - aDate
-      }) : rec
-      const r = Array.isArray(sortedRec) ? sortedRec[0] : sortedRec
+      })
+      const r = sortedRec[0]
       // Build a richer card: highlight max rolls and shooter
       const maxRolls = Number(r.maxRolls ?? r.max_rolls ?? 0)
       const shooter = r.shooterNickname || r.shooter || '—'
@@ -885,7 +883,7 @@ async function refreshGames () {
     if (els.gamesCareerResult) els.gamesCareerResult.textContent = `Error: ${e.message}`
   }
 
-    // Crypto performance
+  // Crypto performance
   try {
     if (els.gamesCryptoTopWinner || els.gamesCryptoSelect) {
       const [extremes, rows] = await Promise.all([
@@ -900,7 +898,6 @@ async function refreshGames () {
   } catch (e) {
     if (els.gamesCryptoResult) els.gamesCryptoResult.textContent = `Error: ${e.message}`
   }
-
 }
 
 // ------------- Album Queue (Up Next) -------------
@@ -927,7 +924,7 @@ function renderAlbumQueue () {
     const cover = art
       ? `<img src="${escapeHtml(art)}" alt="" loading="lazy" referrerpolicy="no-referrer"
               style="width:56px;height:56px;object-fit:cover;border-radius:10px;border:1px solid rgba(255,255,255,.10);" />`
-      : `<div style="width:56px;height:56px;border-radius:10px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);"></div>`
+      : '<div style="width:56px;height:56px;border-radius:10px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);"></div>'
 
     const inner = `
       <div style="display:flex;gap:12px;align-items:center;">
@@ -962,7 +959,7 @@ async function refreshAlbumQueue () {
 
     renderAlbumQueue()
   } catch (e) {
-    if (els.albumQueue) els.albumQueue.innerHTML = `<div class="muted small">Queue unavailable.</div>`
+    if (els.albumQueue) els.albumQueue.innerHTML = '<div class="muted small">Queue unavailable.</div>'
     if (els.albumQueueUpdated) els.albumQueueUpdated.textContent = ''
     console.warn('[albums] queue failed:', e?.message || e)
   }
@@ -1451,7 +1448,6 @@ async function refreshAll () {
     setInterval(refreshWrapped, 60000)
     setInterval(refreshDjWrapped, 60000)
     setInterval(refreshAlbumQueue, 30000)
-
   } catch (e) {
     console.error('[jj] init failed', e)
     toast('Init failed: ' + e.message)

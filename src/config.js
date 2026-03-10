@@ -104,11 +104,12 @@ export const env = {
  * point to perform the checks during startup.
  */
 export function validateConfig () {
-  // Accessing each property will trigger getEnv and throw if required
-  void env.chatApiKey
-  void env.chatToken
-  void env.chatUserId
-  void env.roomUuid
-  void env.ttlUserToken
-  return true
+  const requiredValues = [
+    env.chatApiKey,
+    env.chatToken,
+    env.chatUserId,
+    env.roomUuid,
+    env.ttlUserToken
+  ]
+  return requiredValues.every(v => v !== undefined && v !== '')
 }

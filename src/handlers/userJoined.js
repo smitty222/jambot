@@ -1,10 +1,6 @@
 // userJoined.js
 import { postMessage } from '../libs/cometchat.js'
 import { logger } from '../utils/logging.js'
-// Use the shared roomThemes object from its dedicated util instead of
-// pulling it through the message handler. This avoids circular
-// dependencies and makes theme updates globally visible.
-import { roomThemes } from '../utils/roomThemes.js'
 import * as themeManager from '../utils/themeManager.js'
 import { askQuestion } from '../libs/ai.js'
 
@@ -117,7 +113,7 @@ Examples (format only):
   try {
     const res = await Promise.race([
       askQuestion(prompt),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('AI_TIMEOUT')), AI_TIMEOUT_MS))
+      new Promise((_resolve, reject) => setTimeout(() => reject(new Error('AI_TIMEOUT')), AI_TIMEOUT_MS))
     ])
     const txt = extractAIText(res)
     const cleaned = sanitize(txt)

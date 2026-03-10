@@ -19,7 +19,7 @@ import db from '../src/database/db.js'
 import { fetchUserData } from '../src/utils/API.js'
 import { sanitizeNickname } from '../src/utils/names.js'
 
-function sleep (ms) { return new Promise(r => setTimeout(r, ms)) }
+function sleep (ms) { return new Promise((resolve) => setTimeout(resolve, ms)) }
 
 const BATCH = 25 // TT handles 25-50 comfortably; keep gentle
 const PAUSE_MS = 400 // small pause between batches

@@ -60,7 +60,7 @@ function minutesSince (ts) {
 
 function tryReadJson (p) { try { return JSON.parse(fs.readFileSync(p, 'utf-8')) } catch { return null } }
 const commands = tryReadJson(process.env.COMMANDS_JSON || 'site/commands.public.json') || []
-const commands_mod = tryReadJson(process.env.COMMANDS_MOD_JSON || 'site/commands.mod.json') || []
+const commandsMod = tryReadJson(process.env.COMMANDS_MOD_JSON || 'site/commands.mod.json') || []
 
 async function postJson (pathname, payload) {
   if (!API_BASE || !PUBLISH_TOKEN) {
@@ -217,7 +217,6 @@ async function publishPga (state) {
     db.close()
   }
 }
-
 
 // ── Publish: Horse Hall of Fame (public) ──────────────────────
 async function publishHorseHallOfFame (state) {
@@ -675,13 +674,17 @@ async function publishCryptoPerformance (state) {
     // Sort by total P/L
     rows.sort((a, b) => Number(b.totalPnl || 0) - Number(a.totalPnl || 0))
 
-    const topWinner = rows.length ? rows.reduce((max, r) =>
-      (max == null || Number(r.totalPnl) > Number(max.totalPnl)) ? r : max
-    , null) : null
+    const topWinner = rows.length
+      ? rows.reduce((max, r) =>
+        (max == null || Number(r.totalPnl) > Number(max.totalPnl)) ? r : max
+      , null)
+      : null
 
-    const topLoser = rows.length ? rows.reduce((min, r) =>
-      (min == null || Number(r.totalPnl) < Number(min.totalPnl)) ? r : min
-    , null) : null
+    const topLoser = rows.length
+      ? rows.reduce((min, r) =>
+        (min == null || Number(r.totalPnl) < Number(min.totalPnl)) ? r : min
+      , null)
+      : null
 
     const updatedAt = new Date().toISOString()
 
@@ -703,7 +706,6 @@ async function publishCryptoPerformance (state) {
     db.close()
   }
 }
-
 
 async function publishAlbumStats (state) {
   // Respect configured cooldowns
@@ -814,20 +816,19 @@ async function publishAlbumQueue (state) {
   }
 }
 
-
 // ── Publish: Commands ────────────────────────────────────────
 async function publishCommands (state) {
-  if (!commands.length && !commands_mod.length) return
+  if (!commands.length && !commandsMod.length) return
   if (minutesSince(state.last?.commands) < COOLDOWN_MINUTES_COMMANDS) {
     console.log('[publish] commands skipped (cooldown)'); return
   }
-  const nextHash = JSON.stringify([commands, commands_mod])
+  const nextHash = JSON.stringify([commands, commandsMod])
   if (state.last?.commandsHash === nextHash) {
     console.log('[publish] commands unchanged; skipped')
     state.last.commands = new Date().toISOString(); saveState(state); return
   }
   console.log('[publish] commands')
-  await postJson('/api/publishCommands', { commands, commands_mod })
+  await postJson('/api/publishCommands', { commands, commands_mod: commandsMod })
   state.last.commands = new Date().toISOString()
   state.last.commandsHash = nextHash; saveState(state)
 }

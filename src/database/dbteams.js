@@ -29,23 +29,23 @@ export function createTeam ({ ownerId, ownerName, name, badge = '' }) {
 
 export function getTeamByOwner (ownerId) {
   ensureTeamsTable()
-  const stmt = db.prepare(`SELECT * FROM teams WHERE ownerId = ?`)
+  const stmt = db.prepare('SELECT * FROM teams WHERE ownerId = ?')
   return stmt.get(String(ownerId))
 }
 
 export function getTeamById (id) {
   ensureTeamsTable()
-  const stmt = db.prepare(`SELECT * FROM teams WHERE id = ?`)
+  const stmt = db.prepare('SELECT * FROM teams WHERE id = ?')
   return stmt.get(Number(id))
 }
 export function updateTeamIdentity (ownerId, name, badge = '') {
   ensureTeamsTable()
-  const stmt = db.prepare(`UPDATE teams SET name = ?, badge = ? WHERE ownerId = ?`)
+  const stmt = db.prepare('UPDATE teams SET name = ?, badge = ? WHERE ownerId = ?')
   return stmt.run(String(name), String(badge || ''), String(ownerId))
 }
 
 export function updateTeamGarageLevel (ownerId, garageLevel) {
   ensureTeamsTable()
-  const stmt = db.prepare(`UPDATE teams SET garageLevel = ? WHERE ownerId = ?`)
+  const stmt = db.prepare('UPDATE teams SET garageLevel = ? WHERE ownerId = ?')
   return stmt.run(Number(garageLevel), String(ownerId))
 }

@@ -56,10 +56,10 @@ export async function startRouletteGame () {
   await postMessage({ room, message: '', images: ['https://imgur.com/IyFZlzj.jpg'] })
   await postMessage({ room, message: 'Place your bets! Betting closes in 45 seconds.' })
 
-  await new Promise(res => setTimeout(res, 30_000))
+  await new Promise((resolve) => setTimeout(resolve, 30_000))
   if (!rouletteGameActive) return
   await postMessage({ room, message: '⌛ 15 seconds left to place bets!' })
-  await new Promise(res => setTimeout(res, 15_000))
+  await new Promise((resolve) => setTimeout(resolve, 15_000))
 
   await postMessage({ room, message: '', images: ['https://i.giphy.com/media/qNCtzhsWCc7q4D2FB5/giphy.gif'] })
   await closeBets()
@@ -72,7 +72,7 @@ async function closeBets () {
   betsOpen = false
 
   await postMessage({ room, message: '🛑 Betting is now closed!' })
-  await new Promise(res => setTimeout(res, 2000))
+  await new Promise((resolve) => setTimeout(resolve, 2000))
 
   if (!Object.keys(bets).length) {
     await postMessage({ room, message: 'No bets were placed. Spinning anyway for fun 🎡' })
@@ -90,7 +90,7 @@ async function closeBets () {
     await postMessage({ room, message: betsMessage })
   }
 
-  await new Promise(res => setTimeout(res, 5000))
+  await new Promise((resolve) => setTimeout(resolve, 5000))
   await drawWinningNumber()
 }
 

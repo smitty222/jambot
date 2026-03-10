@@ -35,7 +35,7 @@ export const buildUrl = (host, paths = [], searchParams, protocol = 'https') => 
   return url
 }
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const jitter = (ms) => Math.floor(ms * (0.75 + Math.random() * 0.5))
 
 const isRetryableStatus = (s) =>
@@ -177,6 +177,6 @@ export const makeRequest = async (url, options = {}, extraHeaders = {}) => {
   }
 
   // Exhausted attempts
-  const msg = lastError && (lastError.message || String(lastError)) || 'Request failed'
+  const msg = (lastError && (lastError.message || String(lastError))) || 'Request failed'
   return { ok: false, status: 0, data: null, error: msg }
 }

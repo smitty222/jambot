@@ -46,7 +46,7 @@ function ensureHorsesTable () {
 
   if (!columnExists('horses', 'imageUrl')) {
     try {
-      db.exec(`ALTER TABLE horses ADD COLUMN imageUrl TEXT;`)
+      db.exec('ALTER TABLE horses ADD COLUMN imageUrl TEXT;')
     } catch (e) {
       console.warn('[dbhorses] imageUrl migration skipped:', e?.message)
     }
@@ -131,7 +131,7 @@ export function updateHorseStats (identifier, stats) {
       wins: horse.wins,
       racesParticipated: horse.racesParticipated,
       // Only include retired if explicitly provided on the object
-      ...(horse.hasOwnProperty('retired') ? { retired: horse.retired } : {})
+      ...(Object.prototype.hasOwnProperty.call(horse, 'retired') ? { retired: horse.retired } : {})
     }
     return updateHorseStats(horse.name, updates)
   }
@@ -147,15 +147,15 @@ export function updateHorseStats (identifier, stats) {
   // Build the SET clause based on provided fields
   const fields = []
   const params = []
-  if (stats.hasOwnProperty('wins')) {
+  if (Object.prototype.hasOwnProperty.call(stats, 'wins')) {
     fields.push('wins = ?')
     params.push(Number(stats.wins))
   }
-  if (stats.hasOwnProperty('racesParticipated')) {
+  if (Object.prototype.hasOwnProperty.call(stats, 'racesParticipated')) {
     fields.push('racesParticipated = ?')
     params.push(Number(stats.racesParticipated))
   }
-  if (stats.hasOwnProperty('retired')) {
+  if (Object.prototype.hasOwnProperty.call(stats, 'retired')) {
     fields.push('retired = ?')
     params.push(stats.retired ? 1 : 0)
   }

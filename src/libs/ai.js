@@ -101,7 +101,7 @@ function setCachedResponse (key, value) {
   aiCache.set(key, { value, exp: Date.now() + AI_CACHE_TTL_MS })
 }
 
-const sleep = (ms) => new Promise(r => setTimeout(r, ms))
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 // Abortable fetch
 async function fetchWithTimeout (url, opts = {}, ms = 30_000) {
@@ -317,10 +317,10 @@ function buildContextPreamble (context = {}) {
 function wrapPromptWithContext (question, context) {
   const pre = buildContextPreamble(context)
   const contract =
-    `Reply in a chat-friendly way:\n` +
-    `- Keep it concise (max ~1200 characters unless asked otherwise)\n` +
-    `- Use 1 short paragraph + up to 3 bullets when helpful\n` +
-    `- If recommending music, give exactly 1 rec and why\n\n`
+    'Reply in a chat-friendly way:\n' +
+    '- Keep it concise (max ~1200 characters unless asked otherwise)\n' +
+    '- Use 1 short paragraph + up to 3 bullets when helpful\n' +
+    '- If recommending music, give exactly 1 rec and why\n\n'
 
   return `${pre}${contract}User asked:\n${String(question || '').trim()}`
 }
@@ -499,7 +499,7 @@ export async function askQuestion (question, opts = {}) {
 
   // Politely refuse image-generation asks to avoid any paid-tier risk.
   if (isImageIntent(question)) {
-    return { text: "I can’t generate images right now (free tier). Ask me for text info instead 🙏" }
+    return { text: 'I can’t generate images right now (free tier). Ask me for text info instead 🙏' }
   }
 
   const prompt = context ? wrapPromptWithContext(question, context) : question

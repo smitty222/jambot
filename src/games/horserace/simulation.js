@@ -180,7 +180,7 @@ export async function runRace ({ horses, horseBets }) {
       finishDistance: FINISH
     })
 
-    await new Promise(r => setTimeout(r, LEG_DELAY_MS))
+    await new Promise((resolve) => setTimeout(resolve, LEG_DELAY_MS))
   }
 
   const maxProg = Math.max(...state.map(h => h.progress))

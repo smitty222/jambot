@@ -20,8 +20,6 @@ export async function logCurrentSong (song, likes = 0, dislikes = 0, stars = 0) 
     }
   }
 
-  const now = new Date().toISOString()
-
   const existingIndex = history.findIndex(s =>
     (song.songId && s.songId === song.songId) ||
     (!song.songId &&

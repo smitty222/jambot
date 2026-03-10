@@ -363,7 +363,6 @@ db.exec(`
   ON pga_event_results(eventId, pos)
 `)
 
-
 // Avatars
 db.exec(`
   CREATE TABLE IF NOT EXISTS avatars (
@@ -592,15 +591,15 @@ try {
 // display. It is idempotent and safe to re-run.
 try {
   if (!hasColumn('lottery_winners', 'nickname')) {
-    db.exec('ALTER TABLE lottery_winners ADD COLUMN nickname TEXT NOT NULL DEFAULT \"\";')
+    db.exec('ALTER TABLE lottery_winners ADD COLUMN nickname TEXT NOT NULL DEFAULT "";')
     console.log('✅ Added lottery_winners.nickname (default empty)')
   }
   if (!hasColumn('lottery_winners', 'displayName')) {
-    db.exec('ALTER TABLE lottery_winners ADD COLUMN displayName TEXT NOT NULL DEFAULT \"\";')
+    db.exec('ALTER TABLE lottery_winners ADD COLUMN displayName TEXT NOT NULL DEFAULT "";')
     // Copy existing nicknames into displayName as a simple backfill. If
     // nickname is empty the displayName remains empty; update_nickname_display
     // can later normalise this.
-    db.exec('UPDATE lottery_winners SET displayName = nickname WHERE displayName = \"\" OR displayName IS NULL;')
+    db.exec('UPDATE lottery_winners SET displayName = nickname WHERE displayName = "" OR displayName IS NULL;')
     console.log('✅ Added lottery_winners.displayName and backfilled from nickname')
   }
 } catch (e) {
@@ -721,8 +720,8 @@ try { db.exec('CREATE INDEX IF NOT EXISTS idx_album_queue_createdAt ON album_que
 // Lightweight migration: add missing columns if older DB already has album_queue
 try {
   if (!hasColumn('album_queue', 'status')) db.exec("ALTER TABLE album_queue ADD COLUMN status TEXT DEFAULT 'queued'")
-  if (!hasColumn('album_queue', 'createdAt')) db.exec("ALTER TABLE album_queue ADD COLUMN createdAt TEXT DEFAULT CURRENT_TIMESTAMP")
-  if (!hasColumn('album_queue', 'updatedAt')) db.exec("ALTER TABLE album_queue ADD COLUMN updatedAt TEXT DEFAULT CURRENT_TIMESTAMP")
+  if (!hasColumn('album_queue', 'createdAt')) db.exec('ALTER TABLE album_queue ADD COLUMN createdAt TEXT DEFAULT CURRENT_TIMESTAMP')
+  if (!hasColumn('album_queue', 'updatedAt')) db.exec('ALTER TABLE album_queue ADD COLUMN updatedAt TEXT DEFAULT CURRENT_TIMESTAMP')
 } catch (e) {
   // non-fatal
 }

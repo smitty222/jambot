@@ -3,9 +3,6 @@ import { makeRequest } from './networking.js'
 
 const WIKI_LANG = process.env.WIKI_LANG || 'en'
 const WIKI_TIMEOUT_MS = Number(process.env.WIKI_TIMEOUT_MS || 2500)
-const LOG_LEVEL = (process.env.LOG_LEVEL || 'error').toLowerCase()
-const isDebug = LOG_LEVEL === 'debug'
-const d = (...a) => { if (isDebug) console.debug('[WIKI]', ...a) }
 
 function host (lang) {
   return `${lang || WIKI_LANG}.wikipedia.org`

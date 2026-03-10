@@ -1,6 +1,7 @@
 // src/utils/API.js
 import { buildUrl, makeRequest } from './networking.js'
 import { addOrUpdateUser } from '../database/dbwalletmanager.js'
+import db from '../database/db.js'
 
 const MENTION_RE = /^<@uid:[^>]+>$/
 
@@ -240,9 +241,18 @@ export async function fetchRecentSongs () {
 }
 
 export async function fetchSongData (spotifyTrackId) {
-  const { ok, data, error } = await ttRequest(`/api/playlist-service/song-data/${spotifyTrackId}/spotify`)
-  if (!ok) throw new Error(`Failed to fetch song data: ${error || 'unknown'}`)
-  return data
+  if (!spotifyTrackId) throw new Error('spotifyTrackId is required')
+  const id = String(spotifyTrackId).trim()
+  const key = `tt-song-data:${id}`
+  const cached = spotifyCache.get(key)
+  if (cached) return cached
+
+  return singleFlight(key, async () => {
+    const { ok, data, error } = await ttRequest(`/api/playlist-service/song-data/${id}/spotify`)
+    if (!ok) throw new Error(`Failed to fetch song data: ${error || 'unknown'}`)
+    spotifyCache.set(key, data)
+    return data
+  })
 }
 
 export async function fetchCurrentUsers () {
@@ -405,7 +415,7 @@ export async function addSongsToCrate (crateId, songs, append = true, token) {
 
   if (added === 0) {
     throw new Error(
-      `Failed to add songs to crate. ` +
+      'Failed to add songs to crate. ' +
       `resolved=${toQueue.length} skipped=${skipped.length}. ` +
       `${failures[0] || skipped[0] || 'unknown error'}`
     )
@@ -469,7 +479,6 @@ export async function fetchSpotifyPlaylistTracks (playlistId) {
   }
   return tracks
 }
-
 
 export async function getSpotifyNewAlbumsViaSearch (year = 2026, country = 'US', limit = 10) {
   const market = String(country || 'US').toUpperCase()
@@ -569,13 +578,6 @@ export async function getSpotifyNewAlbumsViaSearch (year = 2026, country = 'US',
 
   return res
 }
-
-
-
-
-
-
-
 
 export async function spotifyTrackInfo (trackId) {
   if (!trackId) return null
@@ -846,28 +848,38 @@ export async function getUserNicknameByUuid (uuid) {
   if (!uuid) return null
 
   const TTL_MS = Number(process.env.NICKNAME_TTL_MS || 6 * 60 * 60 * 1000) // 6h default
+  const id = String(uuid)
+  const cachedNick = nicknameCache.get(id)
+  if (cachedNick && !MENTION_RE.test(cachedNick)) {
+    return cachedNick
+  }
+
   const now = Date.now()
 
   // 1) DB first if fresh enough
   try {
     const row = db.prepare(
       'SELECT nickname, nicknameUpdatedAt FROM users WHERE uuid = ?'
-    ).get(uuid)
+    ).get(id)
 
     const nick = row?.nickname?.trim()
     const ts = row?.nicknameUpdatedAt ? new Date(row.nicknameUpdatedAt).getTime() : 0
     const fresh = ts && (now - ts) < TTL_MS
 
-    if (fresh && nick && !MENTION_RE.test(nick)) return nick
+    if (fresh && nick && !MENTION_RE.test(nick)) {
+      nicknameCache.set(id, nick)
+      return nick
+    }
   } catch {}
 
   // 2) API lookup (authoritative)
   try {
-    const profile = await fetchUserProfileByUuid(uuid)
+    const profile = await fetchUserProfileByUuid(id)
     const nick = profile?.nickname?.trim()
 
     if (nick && !MENTION_RE.test(nick)) {
-      try { await addOrUpdateUser(uuid, nick) } catch {}
+      nicknameCache.set(id, nick)
+      try { await addOrUpdateUser(id, nick) } catch {}
       return nick
     }
   } catch {}
@@ -876,27 +888,36 @@ export async function getUserNicknameByUuid (uuid) {
   try {
     const row = db.prepare(
       'SELECT nickname FROM users WHERE uuid = ?'
-    ).get(uuid)
+    ).get(id)
 
-    if (row?.nickname && !MENTION_RE.test(row.nickname)) return row.nickname
+    if (row?.nickname && !MENTION_RE.test(row.nickname)) {
+      nicknameCache.set(id, row.nickname)
+      return row.nickname
+    }
   } catch {}
 
-  return uuid
+  return id
 }
 
 const USER_ROLES_URL = `${cfg.ttGateway}/api/room-service/roomUserRoles/${cfg.roomSlug}`
 
 export async function fetchUserRoles (userUuid, token = cfg.userToken) {
+  const id = String(userUuid || '').trim()
+  if (!id) throw new Error('userUuid is required')
   // Check cache first.
-  const cached = userRoleCache.get(userUuid)
+  const cached = userRoleCache.get(id)
   if (cached) return cached
-  const { ok, data, error } = await makeRequest(`${USER_ROLES_URL}/${encodeURIComponent(userUuid)}`, {
-    headers: { Authorization: `Bearer ${token}`, accept: 'application/json' }
+
+  const key = `user-roles:${id}`
+  return singleFlight(key, async () => {
+    const { ok, data, error } = await makeRequest(`${USER_ROLES_URL}/${encodeURIComponent(id)}`, {
+      headers: { Authorization: `Bearer ${token}`, accept: 'application/json' }
+    })
+    if (!ok) throw new Error(`Failed to fetch user roles: ${error || 'unknown'}`)
+    // Cache the result to reduce subsequent fetches.
+    userRoleCache.set(id, data)
+    return data
   })
-  if (!ok) throw new Error(`Failed to fetch user roles: ${error || 'unknown'}`)
-  // Cache the result to reduce subsequent fetches.
-  userRoleCache.set(userUuid, data)
-  return data
 }
 
 export async function isUserAuthorized (userUuid, token = cfg.userToken) {
@@ -1090,8 +1111,6 @@ async function espnGolfLeaderboard (league = 'pga') {
   return out
 }
 
-
-
 // Public export for your bot
 export async function getPGALeaderboard () {
   return espnGolfLeaderboard('pga')
@@ -1175,7 +1194,10 @@ export function normalizeEspnPgaRows (data) {
       movement,
       earnings,
       cupPoints,
-      r1, r2, r3, r4
+      r1,
+      r2,
+      r3,
+      r4
     }
   }).filter(r => r.athleteId)
 
@@ -1187,7 +1209,6 @@ export function normalizeEspnPgaRows (data) {
     rows
   }
 }
-
 
 /* ────────────────────────────────────────────────────────────────
  * Last.fm helpers

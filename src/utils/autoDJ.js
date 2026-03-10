@@ -6,7 +6,7 @@ import { themeSynonyms } from '../libs/themeSynonyms.js'
 import fs from 'fs/promises'
 import * as fsSync from 'fs'
 import path from 'path'
-import { roomBot } from '../index.js'
+import { roomBot } from '../runtime/roomBot.js'
 
 const blacklistPath = path.join(process.cwd(), 'src/data/songBlacklist.json')
 

@@ -19,7 +19,7 @@ export async function safeCall (fn, args = [], retries = 1, delayMs = 120) {
     } catch (err) {
       lastError = err
       if (i < retries) {
-        await new Promise(r => setTimeout(r, delayMs))
+        await new Promise((resolve) => setTimeout(resolve, delayMs))
       }
     }
   }

@@ -31,7 +31,7 @@ function canonicalizeFeat (s) {
 // "(Live)", "(Remastered 2011)", "[Radio Edit]". These often vary
 // across releases but do not materially change the song identity.
 function removeParenMeta (s) {
-  return s.replace(/[\(\[][^)\]]*[\)\]]/g, ' ')
+  return s.replace(/[([][^)\]]*[)\]]/g, ' ')
 }
 
 // Remove trailing metadata after a dash if it looks like a remix or

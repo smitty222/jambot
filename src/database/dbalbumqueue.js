@@ -89,5 +89,5 @@ export function markAlbumPlayed (spotifyAlbumId) {
 }
 
 export function getQueuedAlbum (spotifyAlbumId) {
-  return db.prepare(`SELECT * FROM album_queue WHERE spotifyAlbumId = ?`).get(String(spotifyAlbumId))
+  return db.prepare('SELECT * FROM album_queue WHERE spotifyAlbumId = ?').get(String(spotifyAlbumId))
 }

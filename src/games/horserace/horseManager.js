@@ -22,7 +22,7 @@ const TIER_LABELS = {
   elite: 'Elite',
   champion: 'Champion'
 }
-const TIER_ALIASES = { '1': 'basic', '2': 'elite', '3': 'champion' }
+const TIER_ALIASES = { 1: 'basic', 2: 'elite', 3: 'champion' }
 const TIER_BADGES = { basic: '🐎', elite: '⚡', champion: '🏆' }
 const TIER_PITCH = {
   basic: 'Best value starter horse',

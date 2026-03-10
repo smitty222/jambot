@@ -30,6 +30,12 @@ import { logger } from '../utils/logging.js'
 // wallets are created or updated, the cache is updated immediately
 // and a synchronous DB write is deferred via setImmediate.
 const walletCache = new Map()
+const NET_WORTH_TTL_MS = Number(process.env.NET_WORTH_TTL_MS ?? 30_000)
+const netWorthCache = {
+  ts: 0,
+  rows: null,
+  promise: null
+}
 
 // Serialise wallet transfers to avoid race conditions. Multiple concurrent
 // transferTip() calls could read stale balances from the cache. This
@@ -49,6 +55,12 @@ function ensureWalletCache () {
   for (const { uuid, balance } of rows) {
     walletCache.set(uuid, roundToTenth(balance))
   }
+}
+
+function invalidateNetWorthCache () {
+  netWorthCache.ts = 0
+  netWorthCache.rows = null
+  netWorthCache.promise = null
 }
 
 // Persist a single user balance to the DB. Called asynchronously via
@@ -285,6 +297,11 @@ export function loadWallets () {
   return out
 }
 
+export function hasUserWallet (userUUID) {
+  ensureWalletCache()
+  return walletCache.has(userUUID)
+}
+
 /**
  * Atomically transfer an amount from one wallet to another. This helper wraps
  * the debit and credit operations in a single transaction to avoid
@@ -328,6 +345,7 @@ export function transferTip ({ fromUuid, toUuid, amount }) {
         const recipientBal = roundToTenth(recipientRow.balance ?? 0)
         walletCache.set(fromUuid, senderBal)
         walletCache.set(toUuid, recipientBal)
+        invalidateNetWorthCache()
         recordEconomyEvent(fromUuid, -amount, senderBal, {
           source: 'tip',
           category: 'transfer_out',
@@ -359,6 +377,7 @@ export function getUserWallet (userUUID) {
   // immediately and persist to DB asynchronously.
   const initialBalance = 50
   walletCache.set(userUUID, initialBalance)
+  invalidateNetWorthCache()
   // Persist asynchronously to avoid blocking the event loop.
   setImmediate(() => persistWallet(userUUID, initialBalance))
   return initialBalance
@@ -370,6 +389,7 @@ export function removeFromUserWallet (userUUID, amount, meta = null) {
   if (current < amount) return false
   const newBalance = roundToTenth(current - amount)
   walletCache.set(userUUID, newBalance)
+  invalidateNetWorthCache()
   // Persist asynchronously
   setImmediate(() => persistWallet(userUUID, newBalance))
   if (meta) recordEconomyEvent(userUUID, -Math.abs(amount), newBalance, meta)
@@ -383,6 +403,7 @@ export async function addToUserWallet (userUUID, amount, nickname = null, meta =
   const current = getUserWallet(userUUID)
   const newBalance = roundToTenth(current + amount)
   walletCache.set(userUUID, newBalance)
+  invalidateNetWorthCache()
   // Persist asynchronously
   setImmediate(() => persistWallet(userUUID, newBalance))
   if (meta) recordEconomyEvent(userUUID, Math.abs(amount), newBalance, meta)
@@ -1027,9 +1048,32 @@ async function buildNetWorthRows () {
   })
 }
 
+async function getCachedNetWorthRows () {
+  const now = Date.now()
+  if (netWorthCache.rows && now - netWorthCache.ts < NET_WORTH_TTL_MS) {
+    return netWorthCache.rows
+  }
+
+  if (netWorthCache.promise) return netWorthCache.promise
+
+  netWorthCache.promise = buildNetWorthRows()
+    .then((rows) => {
+      netWorthCache.rows = rows
+      netWorthCache.ts = Date.now()
+      netWorthCache.promise = null
+      return rows
+    })
+    .catch((err) => {
+      netWorthCache.promise = null
+      throw err
+    })
+
+  return netWorthCache.promise
+}
+
 export async function getTopNetWorthLeaderboard (limit = 5) {
   const n = Math.max(1, Math.min(50, Math.floor(Number(limit || 5))))
-  const rows = await buildNetWorthRows()
+  const rows = await getCachedNetWorthRows()
 
   return rows
     .sort((a, b) =>
@@ -1044,7 +1088,7 @@ export async function getNetWorthForUser (userUUID) {
   const id = String(userUUID || '').trim()
   if (!id) return null
 
-  const rows = await buildNetWorthRows()
+  const rows = await getCachedNetWorthRows()
   return rows.find(r => String(r.uuid) === id) || {
     uuid: id,
     nickname: 'Unknown',

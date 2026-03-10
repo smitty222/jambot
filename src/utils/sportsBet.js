@@ -7,6 +7,38 @@ const BETS_FILE = 'src/data/bets.json'
 
 const mlbGamesCache = []
 
+const teamAbbreviations = {
+  'New York Yankees': 'NYY',
+  'Colorado Rockies': 'COL',
+  'New York Mets': 'NYM',
+  'Boston Red Sox': 'BOS',
+  'Los Angeles Dodgers': 'LAD',
+  'Houston Astros': 'HOU',
+  'Chicago Cubs': 'CHC',
+  'Atlanta Braves': 'ATL',
+  'San Francisco Giants': 'SF',
+  'Tampa Bay Rays': 'TB',
+  'Toronto Blue Jays': 'TOR',
+  'Minnesota Twins': 'MIN',
+  'Seattle Mariners': 'SEA',
+  'Detroit Tigers': 'DET',
+  'Cincinnati Reds': 'CIN',
+  'Philadelphia Phillies': 'PHI',
+  'St. Louis Cardinals': 'STL',
+  'Miami Marlins': 'MIA',
+  'Baltimore Orioles': 'BAL',
+  'Oakland Athletics': 'OAK',
+  'Pittsburgh Pirates': 'PIT',
+  'Arizona Dbacks': 'ARI',
+  'Los Angeles Angels': 'LAA',
+  'Kansas City Royals': 'KC',
+  'Washington Nationals': 'WAS',
+  'Milwaukee Brewers': 'MIL',
+  'Cleveland Guardians': 'CLE',
+  'Chicago White Sox': 'CHW',
+  'Texas Rangers': 'TEX'
+}
+
 export async function loadBets () {
   try {
     const data = await fs.readFile(BETS_FILE, 'utf8')
@@ -45,7 +77,7 @@ export async function placeSportsBet (senderUUID, index, team, betTypeInput, amo
   const spreads = bookmaker.markets.find(m => m.key === 'spreads')?.outcomes || []
 
   const teamAbbrUpper = team.toUpperCase()
-  const fullTeamName = [game.away_team, game.home_team].find(name =>
+  const fullTeamName = [game.awayTeam, game.homeTeam].find(name =>
     name.toLowerCase().includes(teamShortNames[teamAbbrUpper]?.toLowerCase() || '')
   )
 
@@ -98,11 +130,11 @@ export async function resolveCompletedBets (sportKey) {
   let updated = false
 
   for (const game of completedGames) {
-    const { id: gameId, home_team, away_team, scores } = game
+    const { id: gameId, homeTeam, awayTeam, scores } = game
     if (!bets[gameId]) continue
 
-    const homeAbbr = teamAbbreviations[home_team] || home_team.slice(0, 3).toUpperCase()
-    const awayAbbr = teamAbbreviations[away_team] || away_team.slice(0, 3).toUpperCase()
+    const homeAbbr = teamAbbreviations[homeTeam] || homeTeam.slice(0, 3).toUpperCase()
+    const awayAbbr = teamAbbreviations[awayTeam] || awayTeam.slice(0, 3).toUpperCase()
 
     const winner = scores.home > scores.away ? homeAbbr : awayAbbr
 

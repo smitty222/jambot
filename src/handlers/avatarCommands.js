@@ -1046,7 +1046,6 @@ export async function handleJesterCommand (senderUuid, room, postMessage) {
   }
 }
 
-
 export async function handleJukeboxCommand (senderUuid, room, postMessage) {
   const userToken = userTokenMap[senderUuid]
   if (!userToken) {
@@ -1885,9 +1884,6 @@ export async function handleRandomPajamaCommand (senderUuid, room, postMessage) 
     return slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
   }
 }
-
-
-
 
 export async function handleRandomLovableCommand (senderUuid, room, postMessage) {
   const userToken = userTokenMap[senderUuid]

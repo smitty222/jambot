@@ -76,9 +76,15 @@ import {
 // query the current list of queued albums so users can see what is in the
 // rotation.  getAlbumList returns an array of album names (lower‑cased) or
 // an empty array if none have been queued yet.
-import { addQueuedAlbum, removeQueuedAlbum,listQueuedAlbums } from '../database/dbalbumqueue.js'
-import { getAllNetTotals, getEconomyOverview, getMonthlyLeaderboard, snapshotMonthlyLeaderboard, getDjStreakStatus, getCurrentMonthKey, getNetWorthForUser, getLifetimeNet, getUserWallet } from '../database/dbwalletmanager.js'
+import { addQueuedAlbum, removeQueuedAlbum, listQueuedAlbums } from '../database/dbalbumqueue.js'
+import { getAllNetTotals, getEconomyOverview, snapshotMonthlyLeaderboard, getDjStreakStatus, getCurrentMonthKey, getNetWorthForUser, getLifetimeNet, getUserWallet, getTopNetWorthLeaderboard } from '../database/dbwalletmanager.js'
 import { getEquippedTitle, getUserBadges, getUserTitles, equipTitle, getCompactEquippedTitleTag } from '../database/dbprestige.js'
+import {
+  handleBalanceCommand,
+  handleCareerCommand,
+  handleGetWalletCommand
+} from './walletCommands.js'
+import { handleSuggestSongsCommand } from './suggestionCommands.js'
 
 function buildSlotsInfoMessage () {
   return [
@@ -92,8 +98,6 @@ function buildSlotsInfoMessage () {
     '- `/jackpot` show the current jackpot'
   ].join('\n')
 }
-
-
 function extractSpotifyAlbumId (input) {
   const s = String(input || '').trim()
 
@@ -231,7 +235,6 @@ async function postMonthlyLeaderboard (room, leaderboardType = 'monthly', args =
   })
 }
 
-
 // ---------------------------------------------------------------------------
 // Command registry
 // ---------------------------------------------------------------------------
@@ -341,11 +344,10 @@ const commandRegistry = {
   dozen: async ({ payload }) => { if (rouletteGameActive) await handleRouletteBet(payload) },
 
   // 🎵 Add an album to the remembered list.
-    // 🎵 Add an album by Spotify album ID.
+  // 🎵 Add an album by Spotify album ID.
   // Usage: `/albumadd <spotifyAlbumId>`
   albumadd: async ({ payload, room, args }) => {
     const albumId = extractSpotifyAlbumId(args)
-
 
     if (!albumId) {
       await postMessage({ room, message: 'Please specify a Spotify album ID. Usage: `/albumadd <spotifyAlbumId>`' })
@@ -368,7 +370,7 @@ const commandRegistry = {
       }
 
       // Persist to DB (idempotent behavior should be handled in dbalbumqueue.js)
-      const result = addQueuedAlbum({
+      addQueuedAlbum({
         spotifyAlbumId: info.spotifyAlbumId,
         spotifyUrl: info.spotifyUrl || '',
         albumName: info.albumName || 'Unknown',
@@ -385,7 +387,7 @@ const commandRegistry = {
       await postMessage({
         room,
         message:
-          `✅ Added to album queue:\n` +
+          '✅ Added to album queue:\n' +
           `📀 *${info.albumName}*\n` +
           `🎤 *${info.artistName}*\n` +
           (info.spotifyUrl ? `🔗 ${info.spotifyUrl}\n` : '') +
@@ -401,7 +403,6 @@ const commandRegistry = {
   // Usage: `/albumremove <spotifyAlbumId>`
   albumremove: async ({ room, args }) => {
     const albumId = extractSpotifyAlbumId(args)
-
 
     if (!albumId) {
       await postMessage({ room, message: 'Please specify a Spotify album ID. Usage: `/albumremove <spotifyAlbumId>`' })
@@ -455,11 +456,10 @@ const commandRegistry = {
       await postMessage({
         room,
         message:
-          `🎧 **Album Queue**\n` +
+          '🎧 **Album Queue**\n' +
           `📦 ${albums.length} queued album${albums.length === 1 ? '' : 's'}\n\n` +
           `${lines}`
       })
-
     } catch (err) {
       logger.error('[albumlist] Error:', err?.message || err)
       await postMessage({ room, message: '❌ Failed to fetch the album queue.' })
@@ -514,7 +514,7 @@ const commandRegistry = {
     await postMessage({
       room,
       message: [
-        `🎧 **DJ Streak**`,
+        '🎧 **DJ Streak**',
         `Current streak: ${streak.streakCount}`,
         `Best streak: ${streak.bestStreak}`,
         `Qualifying song: ${streak.lastQualifiedAt ? new Date(streak.lastQualifiedAt).toISOString().slice(0, 10) : 'None yet'}`,
@@ -598,7 +598,7 @@ const commandRegistry = {
     await postMessage({
       room,
       message: [
-        `🪪 **Profile**`,
+        '🪪 **Profile**',
         title ? `Title: ${title}` : 'Title: none',
         `Cash: ${formatMoneyLine(balance)} · Net Worth: ${formatMoneyLine(netWorth?.totalNetWorth || 0)}`,
         `Lifetime Net: ${formatMoneyLine(lifetimeNet)}`,
@@ -606,6 +606,67 @@ const commandRegistry = {
         `Badges: ${badges.length}`
       ].join('\n')
     })
+  },
+  balance: async ({ payload, room }) => {
+    await handleBalanceCommand({ payload, room })
+  },
+  career: async ({ payload, room }) => {
+    await handleCareerCommand({ payload, room })
+  },
+  getwallet: async ({ payload, room }) => {
+    await handleGetWalletCommand({ payload, room })
+  },
+  networth: async ({ payload, room }) => {
+    const user = await getNetWorthForUser(payload?.sender)
+    const total = Math.round(Number(user?.totalNetWorth) || 0).toLocaleString()
+    const cash = Math.round(Number(user?.cash) || 0).toLocaleString()
+    const cars = Math.round(Number(user?.carValue) || 0).toLocaleString()
+    const horses = Math.round(Number(user?.horseValue) || 0).toLocaleString()
+    const crypto = Math.round(Number(user?.cryptoValue) || 0).toLocaleString()
+
+    await postMessage({
+      room,
+      message:
+        `🏦 <@uid:${payload?.sender}> Net Worth: **$${total}**\n` +
+        `Cash: $${cash} · Cars: $${cars} · Horses: $${horses} · Crypto: $${crypto}`
+    })
+  },
+  topnetworth: async ({ room }) => {
+    const netWorthRows = await getTopNetWorthLeaderboard(5)
+
+    if (!Array.isArray(netWorthRows) || netWorthRows.length === 0) {
+      await postMessage({
+        room,
+        message: 'No net worth data found yet.'
+      })
+      return
+    }
+
+    const formatted = netWorthRows.map((user, index) => {
+      const total = Math.round(Number(user.totalNetWorth) || 0).toLocaleString()
+      const cash = Math.round(Number(user.cash) || 0).toLocaleString()
+      const cars = Math.round(Number(user.carValue) || 0).toLocaleString()
+      const horses = Math.round(Number(user.horseValue) || 0).toLocaleString()
+      const crypto = Math.round(Number(user.cryptoValue) || 0).toLocaleString()
+
+      return [
+        formatCompactLeaderboardLine({
+          rank: index + 1,
+          uuid: user.uuid,
+          name: user.nickname,
+          amount: user.totalNetWorth
+        }),
+        `   cash $${cash} · cars $${cars} · horses $${horses} · crypto $${crypto} · total $${total}`
+      ].join('\n')
+    })
+
+    await postMessage({
+      room,
+      message: `🏆 **Top Net Worth**\n\n${formatted.join('\n')}`
+    })
+  },
+  suggestsongs: async ({ room }) => {
+    await handleSuggestSongsCommand({ room })
   },
 
   economy: async ({ room, args }) => {
@@ -622,20 +683,20 @@ const commandRegistry = {
 
       const walletLines = overview.topWallets.length
         ? overview.topWallets.map((row, idx) => formatCompactLeaderboardLine({
-            rank: idx + 1,
-            uuid: row.uuid,
-            name: row.nickname,
-            amount: row.balance
-          }))
+          rank: idx + 1,
+          uuid: row.uuid,
+          name: row.nickname,
+          amount: row.balance
+        }))
         : ['No wallet data yet.']
 
       const netWorthLines = overview.topNetWorth.length
         ? overview.topNetWorth.map((row, idx) => formatCompactLeaderboardLine({
-            rank: idx + 1,
-            uuid: row.uuid,
-            name: row.nickname,
-            amount: row.totalNetWorth
-          }))
+          rank: idx + 1,
+          uuid: row.uuid,
+          name: row.nickname,
+          amount: row.totalNetWorth
+        }))
         : ['No net worth data yet.']
 
       await postMessage({
@@ -740,7 +801,7 @@ const commandRegistry = {
     if (!playlistId) {
       await postMessage({
         room,
-        message: '⚠️ *Missing Playlist ID*\n\nPlease provide a valid Spotify playlist ID.  \nExample: \`/qplaylist 37i9dQZF1DXcBWIGoYBM5M\`'
+        message: '⚠️ *Missing Playlist ID*\n\nPlease provide a valid Spotify playlist ID.  \nExample: `/qplaylist 37i9dQZF1DXcBWIGoYBM5M`'
       })
       return
     }
@@ -871,16 +932,16 @@ Please contact an admin to link your account to use this command.`
       const formattedTracks = tracks
         .filter(track => track?.id)
         .map(track => ({
-        musicProvider: 'spotify',
-        songId: track.id,
-        artistName: Array.isArray(track.artists) ? track.artists.map(a => a.name).join(', ') : '',
-        trackName: track.name || 'Unknown',
-        duration: Math.floor((track.duration_ms || 0) / 1000),
-        explicit: !!track.explicit,
-        isrc: track.external_ids?.isrc || '',
-        playbackToken: '',
-        genre: ''
-      }))
+          musicProvider: 'spotify',
+          songId: track.id,
+          artistName: Array.isArray(track.artists) ? track.artists.map(a => a.name).join(', ') : '',
+          trackName: track.name || 'Unknown',
+          duration: Math.floor((track.duration_ms || 0) / 1000),
+          explicit: !!track.explicit,
+          isrc: track.external_ids?.isrc || '',
+          playbackToken: '',
+          genre: ''
+        }))
 
       if (!formattedTracks.length) {
         await postMessage({

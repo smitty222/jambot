@@ -13,6 +13,7 @@ import { updateCurrentUsers } from './utils/currentUsers.js'
 import { fetchCurrentUsers } from './utils/API.js'
 import * as themeStorage from './utils/themeManager.js'
 import { setThemes } from './utils/roomThemes.js'
+import { setRoomBot } from './runtime/roomBot.js'
 
 // ──────────────────────────────────────────────
 // Global crash guards
@@ -29,8 +30,6 @@ process.on('unhandledRejection', (reason, p) => {
 process.on('uncaughtException', (err) => {
   logger.error('[fatal] UNCAUGHT_EXCEPTION', err)
 })
-
-const delay = (ms) => new Promise(res => setTimeout(res, ms))
 
 // ──────────────────────────────────────────────
 // Scheduled publisher (same as you had)
@@ -92,6 +91,7 @@ function startSitePublisherCron () {
 // ─────────────────────────────────────────────-
 const app = express()
 const roomBot = new Bot(process.env.JOIN_ROOM)
+setRoomBot(roomBot)
 
 // We maintain our own idea of "connected"
 let botConnected = false
@@ -141,9 +141,9 @@ setThemes(savedThemes)
 // ──────────────────────────────────────────────
 // Adaptive poll loop + self-healing reconnect
 // ─────────────────────────────────────────────-
-const BASE_MS = 900
-const STEP_MS = 300
-const MAX_BACKOFF_STEPS = 4
+const BASE_MS = Number(process.env.POLL_BASE_MS ?? 450)
+const STEP_MS = Number(process.env.POLL_BACKOFF_STEP_MS ?? 250)
+const MAX_BACKOFF_STEPS = Number(process.env.POLL_MAX_BACKOFF_STEPS ?? 8)
 
 function jitter (ms) {
   const delta = Math.floor(ms * 0.15)

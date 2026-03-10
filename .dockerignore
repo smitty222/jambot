@@ -5,3 +5,16 @@ yarn-debug.log*
 .env*
 .DS_Store
 .vscode/
+.git
+.github
+.nyc_output
+coverage
+test
+*.code-workspace
+*.log
+*.sqlite
+*.sqlite3
+*.db
+*.db-*
+.publish-state.json
+.wrangler

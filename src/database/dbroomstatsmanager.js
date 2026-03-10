@@ -2,22 +2,6 @@ import db from './db.js'
 // Import helpers for normalising song information and fuzzy matching.
 import { buildNormKey, isFuzzyMatch } from './normalizesong.js'
 
-// Helper to compute a canonical key for songs. We prefer using the
-// provided songId if present; otherwise fall back to a lowercased
-// combination of trackName and artistName separated by a pipe. This
-// prevents expensive OR conditions in queries and aligns with the
-// database migration introduced in initdb.js.
-function getCanonSongKey (song) {
-  if (!song) return null
-  // Prefer the platform-specific ID when available. This ensures that
-  // plays from different platforms can still link to the same row if
-  // they share an identifier. Otherwise, fall back to a normalised
-  // key derived from track and artist.
-  if (song.songId) return String(song.songId)
-  const { normKey } = buildNormKey(song.trackName, song.artistName)
-  return normKey
-}
-
 // 🔁 Add or update current song stats
 export function logCurrentSong (song, likes = 0, dislikes = 0, stars = 0) {
   if (!song || !song.trackName || !song.artistName) return

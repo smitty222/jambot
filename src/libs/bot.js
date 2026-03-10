@@ -10,7 +10,7 @@ import {
   getConfiguredDMPeers
 } from '../libs/cometchat.js'
 import { logger } from '../utils/logging.js'
-import { handlers } from '../handlers/index.js'
+import messageHandler from '../handlers/message.js'
 import {
   fetchSpotifyPlaylistTracks,
   fetchCurrentUsers,
@@ -29,6 +29,7 @@ import { updateRecentSongs } from '../database/dbrecentsongsmanager.js'
 import { getPopularSpotifyTrackID } from '../utils/autoDJ.js'
 import { getMarkedUser, unmarkUser } from '../utils/removalQueue.js'
 import fs from 'fs'
+import fsPromises from 'fs/promises'
 import path from 'path'
 import http from 'http'
 import { usersToBeRemoved } from '../utils/usersToBeRemoved.js'
@@ -53,7 +54,6 @@ const STARTUP_BACKLOG_GRACE_S = Number(process.env.BOT_STARTUP_GRACE_S ?? 60)
 // Ephemeral baseline & identity
 // ───────────────────────────────────────────────────────────
 const startTimeStamp = Math.floor(Date.now() / 1000)
-const botUUID = process.env.BOT_USER_UUID
 
 // ───────────────────────────────────────────────────────────
 // Theme resolution (DB-first) + album predicate
@@ -122,16 +122,6 @@ Spotify popularity: ${popularity ?? 'Unknown'}
 Optional: BPM ${bpm ?? 'Unknown'}, Key ${key ?? 'Unknown'}, Genres ${genres ?? 'Unknown'}, Notes ${notes ?? ''}`
 }
 
-function extractText (reply) {
-  if (!reply) return null
-  if (typeof reply === 'string') return reply
-  if (reply.text) return reply.text
-  if (reply.candidates?.[0]?.content?.parts?.[0]?.text) {
-    return reply.candidates[0].content.parts[0].text
-  }
-  return null
-}
-
 // ───────────────────────────────────────────────────────────
 // Polling helpers
 // ───────────────────────────────────────────────────────────
@@ -162,7 +152,6 @@ function normalizeMessages (raw) {
 // ───────────────────────────────────────────────────────────
 // Safe normaliser
 // ───────────────────────────────────────────────────────────
-const REQUIRED_FIELDS = ['id', 'sender', 'sentAt']
 function isMsg (m) {
   return !!(m && (m.id || m._id || m.guid || m.messageId))
 }
@@ -274,17 +263,46 @@ function loadLastMessageIDs () {
   }
 }
 
+function createBufferedJsonWriter (filePath, label) {
+  let queuedValue = null
+  let writing = false
+
+  async function flush () {
+    if (writing || queuedValue == null) return
+
+    writing = true
+    const value = queuedValue
+    queuedValue = null
+
+    try {
+      await fsPromises.mkdir(path.dirname(filePath), { recursive: true })
+      await fsPromises.writeFile(filePath, JSON.stringify(value, null, 2))
+    } catch (e) {
+      logger.warn(`[bot] failed to persist ${label}`, { err: e?.message || e })
+    } finally {
+      writing = false
+      if (queuedValue != null) {
+        queueMicrotask(flush)
+      }
+    }
+  }
+
+  return (value) => {
+    queuedValue = value
+    queueMicrotask(flush)
+  }
+}
+
+const persistLastMessageIDs = createBufferedJsonWriter(LAST_MESSAGE_FILE, 'last message IDs')
+const persistDmCursors = createBufferedJsonWriter(DM_CURSOR_FILE, 'DM cursors')
+
 /**
  * Persist lastMessageIDs to disk.
  * Errors are logged but not thrown.
  * @param {Object} ids
  */
 function saveLastMessageIDs (ids) {
-  try {
-    fs.writeFileSync(LAST_MESSAGE_FILE, JSON.stringify(ids, null, 2))
-  } catch (e) {
-    logger.warn('[bot] failed to persist last message IDs', { err: e?.message || e })
-  }
+  persistLastMessageIDs(ids)
 }
 
 /**
@@ -297,7 +315,7 @@ function saveLastMessageIDs (ids) {
 function withTimeout (promise, ms) {
   return Promise.race([
     promise,
-    new Promise((_, reject) =>
+    new Promise((_resolve, reject) =>
       setTimeout(() => reject(new Error('timeout after ' + ms + 'ms')), ms)
     )
   ])
@@ -313,11 +331,7 @@ function loadDmCursors () {
 }
 
 function saveDmCursors (cursors) {
-  try {
-    fs.writeFileSync(DM_CURSOR_FILE, JSON.stringify(cursors, null, 2))
-  } catch (e) {
-    logger.warn('[bot] failed to persist DM cursors', { err: e?.message || e })
-  }
+  persistDmCursors(cursors)
 }
 
 const guessReceiverType = (m) => {
@@ -464,6 +478,7 @@ export class Bot {
     this._maxBackoffMs = 30_000
 
     this._processingMessages = false
+    this._emptyPolls = 0
     this._dmCandidates = new Set()
     this._dmPeers = new Set(getConfiguredDMPeers())
     this._dmSinceByPeer = {}
@@ -644,7 +659,7 @@ export class Bot {
 
   async _cooperativeYieldIfNeeded (count, batchSize = 0) {
     if (count % POLL_YIELD_EVERY === 0 || batchSize > 500) {
-      await new Promise((r) => setImmediate(r))
+      await new Promise((resolve) => setImmediate(resolve))
     }
   }
 
@@ -658,6 +673,7 @@ export class Bot {
     for (const u of getConfiguredDMPeers()) this.addDMPeer(u)
 
     try {
+      let handledCount = 0
       // GROUP
       {
         // Fetch new group messages with a timeout.  If the fetch times out
@@ -690,7 +706,7 @@ export class Bot {
 
             // Schedule message handling asynchronously so that long-running commands
             // do not block the poll loop.
-            handlers.message(
+            messageHandler(
               { message: text, sender, receiverType: 'group' },
               this.roomUUID,
               this.state,
@@ -699,6 +715,7 @@ export class Bot {
               logger.error('processNewMessages[group] handler error', { err })
             })
             processed++
+            handledCount++
             await this._cooperativeYieldIfNeeded(processed, batchSize)
           } catch (err) {
             logger.error('processNewMessages[group] per-message error', { err })
@@ -779,8 +796,7 @@ export class Bot {
               id,
               sentAtSec,
               text,
-              sender,
-              conversationId
+              sender
             } = m
             if (!id || !sentAtSec || !text) continue
             if (this._seen.has(id)) continue
@@ -823,7 +839,7 @@ export class Bot {
 
             const senderName = 'Unknown'
             // Schedule DM handling asynchronously to avoid blocking on slow commands.
-            handlers.message(
+            messageHandler(
               { message: text, sender: peerUid, senderName, receiverType: 'user' },
               peerUid,
               this.state
@@ -832,6 +848,7 @@ export class Bot {
             })
 
             processed++
+            handledCount++
             await this._cooperativeYieldIfNeeded(processed, batchSize)
           } catch (err) {
             logger.error('processNewMessages[user] per-message error', { err })
@@ -846,6 +863,8 @@ export class Bot {
 
         saveDmCursors(this._dmSinceByPeer)
       }
+
+      this._emptyPolls = handledCount > 0 ? 0 : ((this._emptyPolls || 0) + 1)
     } catch (err) {
       logger.error('Error in processNewMessages:', err)
     } finally {
@@ -996,7 +1015,6 @@ export class Bot {
             // Determine the actual DJ UUID for this play.
             // In TT, getCurrentDJ(state) returns the UUID of the "current" DJ.
             const djUuid = getCurrentDJ(this.state) || null
-            const isBotDj = djUuid && djUuid === this.userUUID
             // Resolve a human nickname (best effort). This will also update users table.
             let djNickname = null
             if (djUuid) {
