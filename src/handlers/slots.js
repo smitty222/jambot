@@ -53,6 +53,9 @@ const HOUSE_EDGE = 0.9
 const JACKPOT_SEED = 100
 const JACKPOT_INCREMENT_RATE = 0.12
 const JACKPOT_CONTRIB_BET_CAP = 5000
+const JACKPOT_ASSIST_START = 10000
+const JACKPOT_ASSIST_FULL = 250000
+const JACKPOT_ASSIST_MAX_CHANCE = 0.12
 
 // Jackpot milestones (announce when crossed; persisted)
 const JACKPOT_MILESTONES = [10000, 25000, 50000, 100000, 250000, 500000, 1000000]
@@ -262,6 +265,26 @@ function spinFeatureSlots () {
   return [randFeatureSymbol(), randFeatureSymbol(), randFeatureSymbol()]
 }
 
+function getJackpotAssistChance (jackpotValue) {
+  const jackpot = Number(jackpotValue) || 0
+  if (jackpot <= JACKPOT_ASSIST_START) return 0
+
+  const span = Math.max(1, JACKPOT_ASSIST_FULL - JACKPOT_ASSIST_START)
+  const progress = Math.min(1, (jackpot - JACKPOT_ASSIST_START) / span)
+  return progress * JACKPOT_ASSIST_MAX_CHANCE
+}
+
+function maybeApplyJackpotAssist (symbolsArr, jackpotValue) {
+  const diamondCount = symbolsArr.filter(s => s === '💎').length
+  if (diamondCount !== 2) return symbolsArr
+  if (symbolsArr.includes('🎟️')) return symbolsArr
+
+  const assistChance = getJackpotAssistChance(jackpotValue)
+  if (assistChance <= 0 || Math.random() >= assistChance) return symbolsArr
+
+  return symbolsArr.map(symbol => (symbol === '💎' ? symbol : '💎'))
+}
+
 // ───────────────────────────────────────────────────────────
 async function spinBonusOnce (userUUID) {
   const session = getBonusSession(userUUID)
@@ -431,7 +454,7 @@ async function spinFeatureOnce (userUUID) {
       }
 
       spinNumber = (spinsTotal - spinsLeft) + 1
-      result = spinFeatureSlots()
+      result = maybeApplyJackpotAssist(spinFeatureSlots(), getJackpotValue())
 
       // ✅ NEW: Feature spins can trigger the 💎 BONUS (jackpot slice) once per feature session
       const isTripleDiamonds = result.join('') === '💎💎💎'
@@ -678,7 +701,7 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
 
       const playOneSpin = (prefix) => {
         // ✅ Option A in action: tickets can’t appear if bet < FEATURE_MIN_TRIGGER_BET
-        const result = spinSlots(bet)
+        const result = maybeApplyJackpotAssist(spinSlots(bet), jackpot)
         allSpinResults.push(result)
 
         const outcome = evaluateLine(result)
