@@ -1,4 +1,4 @@
-import { debitGameBet, creditGameWin, getUserWallet, getProgressiveWealthFee } from '../database/dbwalletmanager.js'
+import { debitGameBet, creditGameWin, getUserWallet } from '../database/dbwalletmanager.js'
 import db from '../database/db.js'
 
 // ───────────────────────────────────────────────────────────
@@ -890,9 +890,8 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
 
   try {
     let balance = await getUserWallet(userUUID)
-    const wealthFee = getProgressiveWealthFee({ balance, baseAmount: bet, source: 'slots' })
-    if (wealthFee.total > balance) {
-      return `Invalid bet amount. Total cost is $${formatBalance(wealthFee.total)}${wealthFee.fee > 0 ? ` ($${formatBalance(bet)} bet + $${formatBalance(wealthFee.fee)} wealth fee)` : ''}. Your balance is $${formatBalance(balance)}.`
+    if (bet > balance) {
+      return `Invalid bet amount. Your balance is $${formatBalance(balance)}.`
     }
 
     await debitGameBet(userUUID, bet, {
@@ -900,13 +899,6 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
       category: 'bet',
       note: `Base spin bet ${formatBalance(bet)}`
     })
-    if (wealthFee.fee > 0) {
-      await debitGameBet(userUUID, wealthFee.fee, {
-        source: 'slots',
-        category: 'wealth_fee',
-        note: `${wealthFee.bandLabel} wealth fee on slots bet`
-      })
-    }
 
     let jackpot = getJackpotValue()
     const beforeJackpot = jackpot
@@ -1014,10 +1006,6 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
     const resultLine = didWin
       ? `\n💥 WIN: +$${formatMoney(totalWinnings)}`
       : '\n— NO WIN —'
-    const wealthFeeLine = wealthFee.fee > 0
-      ? `💼 WEALTH FEE: -$${formatBalance(wealthFee.fee)}`
-      : ''
-
     const balanceLine = `🪙 BALANCE: $${formatBalance(balance)}`
     const jackpotLine = `💰 JACKPOT: $${formatMoney(jackpot)}  📈 +$${formatMoney(jackpotIncrement)}`
     const nearMiss = nearMissLines.length ? `\n${nearMissLines[0]}` : ''
@@ -1037,7 +1025,6 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
       resultLine + nearMiss,
       milestone,
       resetLine,
-      wealthFeeLine,
       balanceLine,
       bonusTriggerMessage,
       featureTriggerMessage,

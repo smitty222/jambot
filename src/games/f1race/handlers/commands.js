@@ -1293,9 +1293,8 @@ export async function handleBetCommand (ctx) {
 
   const bal = await safeCall(getUserWallet, [sender]).catch(() => null)
   const nick = await safeCall(getUserNickname, [sender]).catch(() => '@user')
-  const betCost = getProgressiveWealthFee({ balance: bal, baseAmount: amt, source: 'f1' })
-  if (typeof bal !== 'number' || bal < betCost.total) {
-    await postMessage({ room, message: `❗ ${nick}, insufficient funds. Total cost: ${fmtMoney(betCost.total)}${betCost.fee > 0 ? ` (${fmtMoney(amt)} + ${fmtMoney(betCost.fee)} wealth fee)` : ''}. Balance: ${fmtMoney(bal)}.` })
+  if (typeof bal !== 'number' || bal < amt) {
+    await postMessage({ room, message: `❗ ${nick}, insufficient funds. Balance: ${fmtMoney(bal)}.` })
     return
   }
 
@@ -1332,11 +1331,11 @@ export async function handleBetCommand (ctx) {
   }
 
   // Debit stake immediately
-  const chargedBet = await chargeF1Cost(sender, amt, 'bet', `Bet on ${car.label}`, bal)
-  if (!chargedBet.ok) {
-    await postMessage({ room, message: `⚠️ ${nick}, couldn't place that bet. Try again.` })
-    return
-  }
+  await safeCall(debitGameBet, [sender, amt, {
+    source: 'f1',
+    category: 'bet',
+    note: `Bet on ${car.label}`
+  }])
 
   // Store slip (new format)
   slips.push({ betKey, amount: amt })
@@ -1346,7 +1345,7 @@ export async function handleBetCommand (ctx) {
   const oddsLabel = Number.isFinite(dec) ? `${dec.toFixed(2)}x` : '—'
   await postMessage({
     room,
-    message: `🎟️ ${nick} bets ${fmtMoney(amt)} on slot ${idx + 1}: ${car.label} (odds ${oddsLabel})${betCost.fee > 0 ? ` + ${fmtMoney(betCost.fee)} wealth fee` : ''}`
+    message: `🎟️ ${nick} bets ${fmtMoney(amt)} on slot ${idx + 1}: ${car.label} (odds ${oddsLabel})`
   })
 }
 

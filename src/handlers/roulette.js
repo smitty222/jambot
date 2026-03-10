@@ -4,8 +4,7 @@ import { postMessage } from '../libs/cometchat.js'
 import {
   getUserWallet,
   creditGameWin,
-  debitGameBet,
-  getProgressiveWealthFee
+  debitGameBet
 } from '../database/dbwalletmanager.js'
 import { getUserNickname } from '../utils/nickname.js' // <- avoid circular import
 
@@ -250,9 +249,8 @@ export async function handleRouletteBet (payload) {
 
   // Check & debit balance from real wallet
   const balance = await getUserWallet(user)
-  const wealthFee = getProgressiveWealthFee({ balance, baseAmount: amt, source: 'roulette' })
-  if (balance < wealthFee.total) {
-    return postMessage({ room, message: `${nickname}, insufficient funds. Total cost: $${wealthFee.total}${wealthFee.fee > 0 ? ` ($${amt} bet + $${wealthFee.fee} wealth fee)` : ''}. Balance: $${balance}.` })
+  if (balance < amt) {
+    return postMessage({ room, message: `${nickname}, insufficient funds. Balance: $${balance}.` })
   }
 
   const ok = await debitGameBet(user, amt, {
@@ -262,16 +260,6 @@ export async function handleRouletteBet (payload) {
   })
   if (!ok) {
     return postMessage({ room, message: `${nickname}, failed to place bet (wallet issue).` })
-  }
-  if (wealthFee.fee > 0) {
-    const feeOk = await debitGameBet(user, wealthFee.fee, {
-      source: 'roulette',
-      category: 'wealth_fee',
-      note: `${wealthFee.bandLabel} wealth fee on roulette bet`
-    })
-    if (!feeOk) {
-      return postMessage({ room, message: `${nickname}, failed to charge wealth fee.` })
-    }
   }
 
   if (!bets[user]) bets[user] = []
@@ -286,7 +274,7 @@ export async function handleRouletteBet (payload) {
 
   await postMessage({
     room,
-    message: `${nickname} placed $${amt} on ${betLabel}${wealthFee.fee > 0 ? ` (+$${wealthFee.fee} wealth fee)` : ''}.`
+    message: `${nickname} placed $${amt} on ${betLabel}.`
   })
 }
 
