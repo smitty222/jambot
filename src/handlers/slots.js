@@ -1,4 +1,4 @@
-import { debitGameBet, creditGameWin, getUserWallet } from '../database/dbwalletmanager.js'
+import { debitGameBet, creditGameWin, getUserWallet, getProgressiveWealthFee } from '../database/dbwalletmanager.js'
 import db from '../database/db.js'
 
 // ───────────────────────────────────────────────────────────
@@ -41,11 +41,11 @@ const twoMatchPayouts = {
 }
 
 // Economy tuning
-const HOUSE_EDGE = 0.96
+const HOUSE_EDGE = 0.9
 
 // Progressive jackpot tuning
 const JACKPOT_SEED = 100
-const JACKPOT_INCREMENT_RATE = 0.15
+const JACKPOT_INCREMENT_RATE = 0.12
 const JACKPOT_CONTRIB_BET_CAP = 5000
 
 // Jackpot milestones (announce when crossed; persisted)
@@ -58,7 +58,7 @@ const COLLECTION_RESET_KEY = 'slots_collection_reset_yyyymm'
 // BONUS ROUND tuning (triggered by 💎💎💎) — interactive
 const BONUS_SPINS_MIN = 3
 const BONUS_SPINS_MAX = 5
-const BONUS_MAX_TOTAL_PERCENT = 80
+const BONUS_MAX_TOTAL_PERCENT = 60
 const BONUS_PERCENT_WEIGHTS = [
   { pct: 5, w: 26 },
   { pct: 8, w: 22 },
@@ -76,9 +76,9 @@ const BONUS_PERCENT_WEIGHTS = [
 // ✅ CHANGE: allow tickets to land DURING feature spins to award more feature spins
 // ✅ CHANGE: allow 💎💎💎 during feature spins to TRIGGER jackpot bonus session too (once per feature session)
 const FEATURE_MIN_TRIGGER_BET = 250
-const FEATURE_MAX_SPINS_PER_TRIGGER = 3
-const FEATURE_MAX_SPINS_PER_SESSION = 15
-const FEATURE_PAYOUT_MULTIPLIER = 10 // option 1
+const FEATURE_MAX_SPINS_PER_TRIGGER = 2
+const FEATURE_MAX_SPINS_PER_SESSION = 8
+const FEATURE_PAYOUT_MULTIPLIER = 6
 
 // ✅ Feature reel includes tickets so you can extend the round
 const FEATURE_SYMBOLS = ['🍒', '🍋', '🍊', '🍉', '🔔', '⭐', '💎', '🎟️']
@@ -98,30 +98,30 @@ const FEATURE_WEIGHTS = {
 
 // Feature paytable (base values; multiplied by FEATURE_PAYOUT_MULTIPLIER)
 const FEATURE_TRIPLE_PAYOUTS = {
-  '🍒🍒🍒': 350,
-  '🍋🍋🍋': 320,
-  '🍊🍊🍊': 300,
-  '🍉🍉🍉': 450,
-  '🔔🔔🔔': 1400,
-  '⭐⭐⭐': 2200,
-  '💎💎💎': 4000
+  '🍒🍒🍒': 180,
+  '🍋🍋🍋': 160,
+  '🍊🍊🍊': 150,
+  '🍉🍉🍉': 240,
+  '🔔🔔🔔': 700,
+  '⭐⭐⭐': 1100,
+  '💎💎💎': 2200
 }
 
 const FEATURE_PAIR_PAYOUTS = {
-  '🍒🍒': 120,
-  '🍋🍋': 110,
-  '🍊🍊': 100,
-  '🍉🍉': 150,
-  '🔔🔔': 450,
-  '⭐⭐': 650,
-  '💎💎': 1200
+  '🍒🍒': 45,
+  '🍋🍋': 40,
+  '🍊🍊': 35,
+  '🍉🍉': 55,
+  '🔔🔔': 170,
+  '⭐⭐': 240,
+  '💎💎': 450
 }
 
 // Premium “anywhere” mini-pay (only if no pair/triple)
 const FEATURE_ANY_SYMBOL_BONUS = {
-  '💎': 90,
-  '⭐': 70,
-  '🔔': 50
+  '💎': 32,
+  '⭐': 24,
+  '🔔': 18
 }
 
 const COLLECTION_GOALS = {
@@ -136,19 +136,19 @@ const COLLECTION_GOALS = {
 }
 
 const COLLECTION_REWARDS = {
-  '🍒': 500,
-  '🍋': 400,
-  '🍊': 300,
-  '🍉': 600,
-  '🔔': 800,
-  '⭐': 1000,
-  '💎': 1500, // was 25000 (reduced)
-  '🎟️': 750
+  '🍒': 250,
+  '🍋': 200,
+  '🍊': 150,
+  '🍉': 300,
+  '🔔': 425,
+  '⭐': 550,
+  '💎': 800,
+  '🎟️': 350
 }
 
 // Bets
 const MIN_BET = 1
-const MAX_BET = 100000
+const MAX_BET = 25000
 const DEFAULT_BET = 1
 
 // ───────────────────────────────────────────────────────────
@@ -482,7 +482,13 @@ async function spinBonusOnce (userUUID) {
   totalPct = Math.min(totalPct, BONUS_MAX_TOTAL_PERCENT)
   const jackpotWon = lockedJackpot * (totalPct / 100)
 
-  if (jackpotWon > 0) await creditGameWin(userUUID, jackpotWon)
+  if (jackpotWon > 0) {
+    await creditGameWin(userUUID, jackpotWon, null, {
+      source: 'slots',
+      category: 'jackpot_bonus',
+      note: 'Slots bonus round jackpot slice'
+    })
+  }
 
   const currentJackpot = getJackpotValue()
   const newJackpot = Math.max(JACKPOT_SEED, currentJackpot - jackpotWon)
@@ -632,7 +638,7 @@ async function spinFeatureOnce (userUUID) {
       `🎁 BONUS SPINS: ${spinsTotalBonus}`,
       `💰 Locked Jackpot: $${formatMoney(lockedJackpot)}`,
       `👉 Type '/slots bonus' to start (Spin 1/${spinsTotalBonus}).`,
-      `⏸️ Your FREE SPINS session is paused — resume with '/slots free' after the bonus.`
+      '⏸️ Your FREE SPINS session is paused — resume with \'/slots free\' after the bonus.'
     ].join('\n')
   }
 
@@ -654,7 +660,11 @@ async function spinFeatureOnce (userUUID) {
 
   if (win > 0) {
     totalWon += win
-    await creditGameWin(userUUID, win)
+    await creditGameWin(userUUID, win, null, {
+      source: 'slots',
+      category: 'feature_win',
+      note: `Feature spin ${spinNumber}/${spinsTotal}`
+    })
   }
 
   spinsLeft -= 1
@@ -841,7 +851,11 @@ async function applyCollectionProgress (userUUID, spins) {
   saveUserCollection(userUUID, { counts, tiers, halfNotifs })
 
   if (totalReward > 0) {
-    await creditGameWin(userUUID, totalReward)
+    await creditGameWin(userUUID, totalReward, null, {
+      source: 'slots',
+      category: 'collection_reward',
+      note: 'Slots collection tier reward'
+    })
   }
 
   return { unlockedLines: unlocked, progressLines: progress, rewardTotal: totalReward }
@@ -876,11 +890,23 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
 
   try {
     let balance = await getUserWallet(userUUID)
-    if (bet > balance) {
-      return `Invalid bet amount. Your balance is $${formatBalance(balance)}.`
+    const wealthFee = getProgressiveWealthFee({ balance, baseAmount: bet, source: 'slots' })
+    if (wealthFee.total > balance) {
+      return `Invalid bet amount. Total cost is $${formatBalance(wealthFee.total)}${wealthFee.fee > 0 ? ` ($${formatBalance(bet)} bet + $${formatBalance(wealthFee.fee)} wealth fee)` : ''}. Your balance is $${formatBalance(balance)}.`
     }
 
-    await debitGameBet(userUUID, bet)
+    await debitGameBet(userUUID, bet, {
+      source: 'slots',
+      category: 'bet',
+      note: `Base spin bet ${formatBalance(bet)}`
+    })
+    if (wealthFee.fee > 0) {
+      await debitGameBet(userUUID, wealthFee.fee, {
+        source: 'slots',
+        category: 'wealth_fee',
+        note: `${wealthFee.bandLabel} wealth fee on slots bet`
+      })
+    }
 
     let jackpot = getJackpotValue()
     const beforeJackpot = jackpot
@@ -968,7 +994,11 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
     playOneSpin('🎰 SLOTS')
 
     if (totalWinnings > 0) {
-      await creditGameWin(userUUID, totalWinnings)
+      await creditGameWin(userUUID, totalWinnings, null, {
+        source: 'slots',
+        category: 'spin_win',
+        note: `Base spin payout on $${formatBalance(bet)} bet`
+      })
     }
 
     const resetInfo = maybeResetCollectionsMonthly()
@@ -984,6 +1014,9 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
     const resultLine = didWin
       ? `\n💥 WIN: +$${formatMoney(totalWinnings)}`
       : '\n— NO WIN —'
+    const wealthFeeLine = wealthFee.fee > 0
+      ? `💼 WEALTH FEE: -$${formatBalance(wealthFee.fee)}`
+      : ''
 
     const balanceLine = `🪙 BALANCE: $${formatBalance(balance)}`
     const jackpotLine = `💰 JACKPOT: $${formatMoney(jackpot)}  📈 +$${formatMoney(jackpotIncrement)}`
@@ -1004,6 +1037,7 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
       resultLine + nearMiss,
       milestone,
       resetLine,
+      wealthFeeLine,
       balanceLine,
       bonusTriggerMessage,
       featureTriggerMessage,

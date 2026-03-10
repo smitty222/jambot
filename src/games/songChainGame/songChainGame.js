@@ -3,6 +3,7 @@
 import { postMessage } from '../../libs/cometchat.js'
 import { getCurrentDJUUIDs } from '../../libs/bot.js'
 import { getTheme } from '../../utils/themeManager.js'
+import { getCompactEquippedTitleTag } from '../../database/dbprestige.js'
 
 // ───────────────────────────────────────────────────────────
 // In-memory state (swap to DB later if you want persistence)
@@ -12,6 +13,12 @@ let lastSong = null // { title, artist, dj }
 const userScores = {}
 let totalValidLinks = 0
 let totalBrokenChains = 0
+
+function compactLeaderboardName (uuid, maxLen = 10) {
+  const id = String(uuid || '')
+  const label = `user-${id.slice(0, 6)}`
+  return label.length <= maxLen ? label : label.slice(0, maxLen)
+}
 
 // Words to ignore when comparing
 const STOPWORDS = new Set([
@@ -110,9 +117,11 @@ function formatLeaderboard () {
           : index === 1
             ? '🥈'
             : index === 2
-              ? '🥉'
-              : '🎵'
-      return `${medal} <@uid:${uid}> — ${score} point(s)`
+            ? '🥉'
+            : '🎵'
+      const titleTag = getCompactEquippedTitleTag(uid, 7)
+      const name = compactLeaderboardName(uid, titleTag ? 8 : 10)
+      return `${medal} ${titleTag ? `${titleTag} ` : ''}${name} ${score}pt`
     })
 
   return [

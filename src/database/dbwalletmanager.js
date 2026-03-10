@@ -14,6 +14,7 @@ import db from './db.js'
 import { sanitizeNickname } from '../utils/names.js'
 import { fetchRecentSongs } from '../utils/API.js'
 import { getCryptoPrice } from '../utils/cryptoPrice.js'
+import { maybeAwardDjPrestige, syncMonthlyPrestigeAwards } from './dbprestige.js'
 
 // ───────────────────────────────────────────────────────────
 // Structured logging
@@ -71,6 +72,164 @@ function persistWallet (uuid, balance) {
 
 function roundToTenth (amount) {
   return Math.round(amount * 10) / 10
+}
+
+const WEALTH_BANDS = [
+  { min: 100000, label: 'tycoon', rate: 0.15 },
+  { min: 25000, label: 'high_roller', rate: 0.10 },
+  { min: 5000, label: 'comfortable', rate: 0.05 },
+  { min: 0, label: 'standard', rate: 0 }
+]
+
+const WEALTH_RATE_MULT_BY_SOURCE = {
+  slots: 1.00,
+  roulette: 0.85,
+  horse_race: 0.80,
+  horse: 0.90,
+  f1: 1.20,
+  default: 1.00
+}
+
+const WEALTH_MIN_BASE_BY_SOURCE = {
+  slots: 100,
+  roulette: 100,
+  horse_race: 100,
+  horse: 1000,
+  f1: 500,
+  default: 250
+}
+
+const DJ_STREAK_MIN_LIKES = 3
+const DJ_STREAK_REWARDS = [
+  { streak: 12, bonus: 150 },
+  { streak: 8, bonus: 60 },
+  { streak: 5, bonus: 25 },
+  { streak: 3, bonus: 10 }
+]
+
+export function getWealthBand (balance) {
+  const bal = Math.max(0, Number(balance || 0))
+  return WEALTH_BANDS.find(band => bal >= band.min) || WEALTH_BANDS[WEALTH_BANDS.length - 1]
+}
+
+export function getProgressiveWealthFee ({ balance, baseAmount, source = 'default' } = {}) {
+  const base = Math.max(0, Math.floor(Number(baseAmount || 0)))
+  const normalizedSource = String(source || 'default').trim().toLowerCase() || 'default'
+  const minBase = Number(WEALTH_MIN_BASE_BY_SOURCE[normalizedSource] ?? WEALTH_MIN_BASE_BY_SOURCE.default)
+  const band = getWealthBand(balance)
+  const sourceMult = Number(WEALTH_RATE_MULT_BY_SOURCE[normalizedSource] ?? WEALTH_RATE_MULT_BY_SOURCE.default)
+  const effectiveRate = Math.max(0, band.rate * sourceMult)
+
+  if (base <= 0 || base < minBase || effectiveRate <= 0) {
+    return {
+      fee: 0,
+      total: base,
+      bandLabel: band.label,
+      effectiveRate: 0,
+      source: normalizedSource
+    }
+  }
+
+  const fee = Math.max(0, Math.floor(base * effectiveRate))
+  return {
+    fee,
+    total: base + fee,
+    bandLabel: band.label,
+    effectiveRate,
+    source: normalizedSource
+  }
+}
+
+export function getCurrentMonthKey (date = new Date()) {
+  const d = date instanceof Date ? date : new Date(date)
+  const year = d.getUTCFullYear()
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0')
+  return `${year}-${month}`
+}
+
+function getMonthBounds (monthKey = getCurrentMonthKey()) {
+  const [yearRaw, monthRaw] = String(monthKey || '').split('-')
+  const year = Number.parseInt(yearRaw, 10)
+  const monthIndex = Number.parseInt(monthRaw, 10) - 1
+  const start = new Date(Date.UTC(year, monthIndex, 1, 0, 0, 0))
+  const end = new Date(Date.UTC(year, monthIndex + 1, 1, 0, 0, 0))
+  return {
+    monthKey: `${year}-${String(monthIndex + 1).padStart(2, '0')}`,
+    startIso: start.toISOString(),
+    endIso: end.toISOString()
+  }
+}
+
+function getDjStreakRow (userUUID) {
+  return db.prepare(`
+    SELECT userUUID, streakCount, bestStreak, lastPlayedAt, lastQualifiedAt
+    FROM dj_streaks
+    WHERE userUUID = ?
+  `).get(String(userUUID)) || null
+}
+
+function saveDjStreakRow (userUUID, row = {}) {
+  db.prepare(`
+    INSERT INTO dj_streaks (
+      userUUID, streakCount, bestStreak, lastPlayedAt, lastQualifiedAt, updatedAt
+    )
+    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(userUUID) DO UPDATE SET
+      streakCount = excluded.streakCount,
+      bestStreak = excluded.bestStreak,
+      lastPlayedAt = excluded.lastPlayedAt,
+      lastQualifiedAt = excluded.lastQualifiedAt,
+      updatedAt = CURRENT_TIMESTAMP
+  `).run(
+    String(userUUID),
+    Math.max(0, Math.floor(Number(row.streakCount || 0))),
+    Math.max(0, Math.floor(Number(row.bestStreak || 0))),
+    row.lastPlayedAt || null,
+    row.lastQualifiedAt || null
+  )
+}
+
+function normalizeEconomyMeta (meta = null) {
+  const source = String(meta?.source || 'unknown').trim().toLowerCase() || 'unknown'
+  const category = String(meta?.category || 'uncategorized').trim().toLowerCase() || 'uncategorized'
+  const note = meta?.note == null ? null : String(meta.note).trim().slice(0, 200)
+  const extra = meta && typeof meta === 'object'
+    ? Object.fromEntries(Object.entries(meta).filter(([key]) => !['source', 'category', 'note'].includes(key)))
+    : null
+
+  return {
+    source,
+    category,
+    note,
+    metadata: extra && Object.keys(extra).length ? JSON.stringify(extra) : null
+  }
+}
+
+export function recordEconomyEvent (userUUID, amount, balanceAfter = null, meta = null) {
+  if (!userUUID || !Number.isFinite(amount) || amount === 0) return false
+
+  const normalized = normalizeEconomyMeta(meta)
+
+  try {
+    db.prepare(`
+      INSERT INTO economy_events (
+        userUUID, amount, balanceAfter, source, category, note, metadata
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      String(userUUID),
+      Number(amount),
+      Number.isFinite(balanceAfter) ? Number(balanceAfter) : null,
+      normalized.source,
+      normalized.category,
+      normalized.note,
+      normalized.metadata
+    )
+    return true
+  } catch (err) {
+    logger.error('[recordEconomyEvent] failed', { err: err?.message || err, userUUID, amount })
+    return false
+  }
 }
 
 /**
@@ -169,6 +328,18 @@ export function transferTip ({ fromUuid, toUuid, amount }) {
         const recipientBal = roundToTenth(recipientRow.balance ?? 0)
         walletCache.set(fromUuid, senderBal)
         walletCache.set(toUuid, recipientBal)
+        recordEconomyEvent(fromUuid, -amount, senderBal, {
+          source: 'tip',
+          category: 'transfer_out',
+          note: `Tip to ${toUuid}`,
+          counterparty: toUuid
+        })
+        recordEconomyEvent(toUuid, amount, recipientBal, {
+          source: 'tip',
+          category: 'transfer_in',
+          note: `Tip from ${fromUuid}`,
+          counterparty: fromUuid
+        })
       })
       .then(resolve)
       .catch((err) => {
@@ -193,7 +364,7 @@ export function getUserWallet (userUUID) {
   return initialBalance
 }
 
-export function removeFromUserWallet (userUUID, amount) {
+export function removeFromUserWallet (userUUID, amount, meta = null) {
   ensureWalletCache()
   const current = getUserWallet(userUUID)
   if (current < amount) return false
@@ -201,10 +372,11 @@ export function removeFromUserWallet (userUUID, amount) {
   walletCache.set(userUUID, newBalance)
   // Persist asynchronously
   setImmediate(() => persistWallet(userUUID, newBalance))
+  if (meta) recordEconomyEvent(userUUID, -Math.abs(amount), newBalance, meta)
   return true
 }
 
-export async function addToUserWallet (userUUID, amount, nickname = null) {
+export async function addToUserWallet (userUUID, amount, nickname = null, meta = null) {
   // Ensure the user exists and update their nickname if provided
   addOrUpdateUser(userUUID, nickname)
   ensureWalletCache()
@@ -213,6 +385,7 @@ export async function addToUserWallet (userUUID, amount, nickname = null) {
   walletCache.set(userUUID, newBalance)
   // Persist asynchronously
   setImmediate(() => persistWallet(userUUID, newBalance))
+  if (meta) recordEconomyEvent(userUUID, Math.abs(amount), newBalance, meta)
   return true
 }
 
@@ -247,9 +420,78 @@ export async function addDollarsByUUID (userUuid, amount) {
 
   const nickname = row?.nickname || 'Unknown'
 
-  await addToUserWallet(userUuid, amount, nickname)
+  await addToUserWallet(userUuid, amount, nickname, {
+    source: 'admin',
+    category: 'grant',
+    note: 'Manual /addmoney grant'
+  })
 
   logger.info(`Added $${amount} to ${nickname}'s wallet (${userUuid}).`)
+}
+
+export function getDjStreakStatus (userUUID) {
+  const row = getDjStreakRow(userUUID)
+  return {
+    userUUID: String(userUUID || ''),
+    streakCount: Number(row?.streakCount || 0),
+    bestStreak: Number(row?.bestStreak || 0),
+    lastPlayedAt: row?.lastPlayedAt || null,
+    lastQualifiedAt: row?.lastQualifiedAt || null
+  }
+}
+
+async function applyDjStreakReward ({ userUUID, likes = 0, playedAt = null } = {}) {
+  if (!userUUID || !playedAt) return null
+
+  const playedAtIso = new Date(playedAt).toISOString()
+  const prior = getDjStreakRow(userUUID) || {
+    streakCount: 0,
+    bestStreak: 0,
+    lastPlayedAt: null,
+    lastQualifiedAt: null
+  }
+
+  if (prior.lastPlayedAt && String(prior.lastPlayedAt) === playedAtIso) {
+    return {
+      streakCount: Number(prior.streakCount || 0),
+      bestStreak: Number(prior.bestStreak || 0),
+      bonusAwarded: 0,
+      streakQualified: Number(likes || 0) >= DJ_STREAK_MIN_LIKES
+    }
+  }
+
+  const qualified = Number(likes || 0) >= DJ_STREAK_MIN_LIKES
+  const streakCount = qualified ? Number(prior.streakCount || 0) + 1 : 0
+  const bestStreak = Math.max(Number(prior.bestStreak || 0), streakCount)
+  const milestone = qualified ? DJ_STREAK_REWARDS.find((entry) => streakCount === entry.streak) : null
+  const bonusAwarded = Number(milestone?.bonus || 0)
+
+  saveDjStreakRow(userUUID, {
+    streakCount,
+    bestStreak,
+    lastPlayedAt: playedAtIso,
+    lastQualifiedAt: qualified ? playedAtIso : prior.lastQualifiedAt || null
+  })
+
+  if (bonusAwarded > 0) {
+    await addToUserWallet(userUUID, bonusAwarded, null, {
+      source: 'dj',
+      category: 'streak_bonus',
+      note: `DJ streak ${streakCount}`,
+      streak: streakCount,
+      likes: Number(likes || 0)
+    })
+  }
+
+  if (qualified) maybeAwardDjPrestige(userUUID, streakCount)
+
+  return {
+    streakCount,
+    bestStreak,
+    bonusAwarded,
+    streakQualified: qualified,
+    milestone: milestone?.streak || null
+  }
 }
 
 export function getBalanceByNickname (nickname) {
@@ -265,25 +507,50 @@ export async function songPayment () {
     const songPlays = await fetchRecentSongs()
     if (!Array.isArray(songPlays) || songPlays.length === 0) {
       logger.info('No recent songs found.')
-      return
+      return null
     }
 
-    const { djUuid: userUUID, voteCounts } = songPlays[0]
+    const latestPlay = songPlays[0] || {}
+    const { djUuid: userUUID, voteCounts } = latestPlay
     const voteCount = voteCounts.likes
 
     if (userUUID && typeof voteCount === 'number' && voteCount > 0) {
-      const success = await addToUserWallet(userUUID, voteCount * 2)
+      const success = await addToUserWallet(userUUID, voteCount * 2, null, {
+        source: 'dj',
+        category: 'like_reward',
+        note: `${voteCount} likes on recent song`,
+        likes: voteCount
+      })
       if (success) {
         logger.info(`Added $${voteCount * 2} to user ${userUUID}'s wallet for ${voteCount} likes.`)
+        const streakOutcome = await applyDjStreakReward({
+          userUUID,
+          likes: voteCount,
+          playedAt: latestPlay?.playedAt || null
+        })
+        return {
+          userUUID,
+          likes: voteCount,
+          likeReward: voteCount * 2,
+          ...streakOutcome
+        }
       } else {
         logger.error(`Failed to add to wallet for user ${userUUID}`)
       }
     } else {
+      if (userUUID && latestPlay?.playedAt) {
+        return await applyDjStreakReward({
+          userUUID,
+          likes: Number(voteCount || 0),
+          playedAt: latestPlay.playedAt
+        })
+      }
       logger.error('Invalid userUUID or voteCount for songPlay')
     }
   } catch (error) {
     logger.error('Error in songPayment', { err: error?.message || error })
   }
+  return null
 }
 
 // ---------------------------------------------------------------------------
@@ -323,9 +590,14 @@ function updateLifetimeNet (userUUID, amount) {
  * @param {string} userUUID
  * @param {number} amount A positive number representing the bet
  */
-export function debitGameBet (userUUID, amount) {
+export function debitGameBet (userUUID, amount, meta = null) {
   if (!Number.isFinite(amount) || amount <= 0) return false
-  const success = removeFromUserWallet(userUUID, amount)
+  const success = removeFromUserWallet(userUUID, amount, {
+    source: meta?.source || 'game',
+    category: meta?.category || 'bet',
+    note: meta?.note || null,
+    ...(meta && typeof meta === 'object' ? meta : {})
+  })
   if (success) updateLifetimeNet(userUUID, -amount)
   return success
 }
@@ -338,9 +610,14 @@ export function debitGameBet (userUUID, amount) {
  * @param {number} amount A positive number representing the winnings
  * @param {string|null} nickname Optional nickname to update in users table
  */
-export async function creditGameWin (userUUID, amount, nickname = null) {
+export async function creditGameWin (userUUID, amount, nickname = null, meta = null) {
   if (!Number.isFinite(amount) || amount <= 0) return false
-  const success = await addToUserWallet(userUUID, amount, nickname)
+  const success = await addToUserWallet(userUUID, amount, nickname, {
+    source: meta?.source || 'game',
+    category: meta?.category || 'win',
+    note: meta?.note || null,
+    ...(meta && typeof meta === 'object' ? meta : {})
+  })
   if (success) updateLifetimeNet(userUUID, amount)
   return success
 }
@@ -363,7 +640,176 @@ export function getLifetimeNet (userUUID) {
  */
 export function getAllNetTotals () {
   const rows = db.prepare('SELECT uuid, lifetime_net FROM users').all()
-  return rows.map(({ uuid, lifetime_net }) => ({ uuid, lifetime_net }))
+  return rows.map((row) => ({ uuid: row.uuid, lifetime_net: row.lifetime_net }))
+}
+
+export function getEconomySourceTotals (days = 7, limit = 10) {
+  const nDays = Math.max(1, Math.min(3650, Math.floor(Number(days || 7))))
+  const nLimit = Math.max(1, Math.min(50, Math.floor(Number(limit || 10))))
+  const rows = db.prepare(`
+    SELECT
+      source,
+      COUNT(*) AS eventCount,
+      SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) AS created,
+      SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END) AS sunk,
+      SUM(amount) AS net
+    FROM economy_events
+    WHERE createdAt >= datetime('now', ?)
+    GROUP BY source
+    ORDER BY net DESC, created DESC, source ASC
+    LIMIT ?
+  `).all(`-${nDays} days`, nLimit)
+
+  return rows.map((row) => ({
+    source: String(row.source || 'unknown'),
+    eventCount: Number(row.eventCount || 0),
+    created: Number(row.created || 0),
+    sunk: Number(row.sunk || 0),
+    net: Number(row.net || 0)
+  }))
+}
+
+export async function getEconomyOverview (days = 7) {
+  const nDays = Math.max(1, Math.min(3650, Math.floor(Number(days || 7))))
+  const rows = await buildNetWorthRows()
+  const topWallets = db.prepare(`
+    SELECT uuid, nickname, COALESCE(balance, 0) AS balance
+    FROM users
+    ORDER BY balance DESC, uuid ASC
+    LIMIT 5
+  `).all().map((row) => ({
+    uuid: String(row.uuid),
+    nickname: row.nickname || 'Unknown',
+    balance: Number(row.balance) || 0
+  }))
+
+  const totals = rows.reduce((acc, row) => {
+    acc.cash += Number(row.cash) || 0
+    acc.carValue += Number(row.carValue) || 0
+    acc.horseValue += Number(row.horseValue) || 0
+    acc.cryptoValue += Number(row.cryptoValue) || 0
+    acc.netWorth += Number(row.totalNetWorth) || 0
+    return acc
+  }, { cash: 0, carValue: 0, horseValue: 0, cryptoValue: 0, netWorth: 0 })
+
+  const eventTotals = db.prepare(`
+    SELECT
+      COUNT(*) AS eventCount,
+      SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) AS created,
+      SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END) AS sunk,
+      SUM(amount) AS net
+    FROM economy_events
+    WHERE createdAt >= datetime('now', ?)
+  `).get(`-${nDays} days`) || {}
+
+  return {
+    days: nDays,
+    walletCount: rows.length,
+    currentCash: Number(totals.cash || 0),
+    currentCarValue: Number(totals.carValue || 0),
+    currentHorseValue: Number(totals.horseValue || 0),
+    currentCryptoValue: Number(totals.cryptoValue || 0),
+    currentNetWorth: Number(totals.netWorth || 0),
+    recentEvents: {
+      eventCount: Number(eventTotals.eventCount || 0),
+      created: Number(eventTotals.created || 0),
+      sunk: Number(eventTotals.sunk || 0),
+      net: Number(eventTotals.net || 0)
+    },
+    topSources: getEconomySourceTotals(nDays, 8),
+    topWallets,
+    topNetWorth: rows
+      .sort((a, b) => (Number(b.totalNetWorth) - Number(a.totalNetWorth)) || String(a.uuid).localeCompare(String(b.uuid)))
+      .slice(0, 5)
+  }
+}
+
+const MONTHLY_FILTERS = {
+  monthly: {
+    where: "source != 'admin' AND category NOT IN ('transfer_in', 'transfer_out', 'refund')",
+    order: 'total DESC, eventCount DESC, userUUID ASC',
+    label: 'Monthly Net Gain'
+  },
+  monthlydj: {
+    where: "source = 'dj'",
+    order: 'total DESC, eventCount DESC, userUUID ASC',
+    label: 'Monthly DJ Earnings'
+  },
+  monthlyf1: {
+    where: "source = 'f1'",
+    order: 'total DESC, eventCount DESC, userUUID ASC',
+    label: 'Monthly F1 Net'
+  },
+  monthlygamblers: {
+    where: "source IN ('slots', 'roulette', 'horse_race', 'f1')",
+    order: 'total DESC, eventCount DESC, userUUID ASC',
+    label: 'Monthly Gambling Net'
+  }
+}
+
+export function getMonthlyLeaderboard (leaderboardType = 'monthly', limit = 10, monthKey = getCurrentMonthKey()) {
+  const type = String(leaderboardType || 'monthly').toLowerCase()
+  const config = MONTHLY_FILTERS[type] || MONTHLY_FILTERS.monthly
+  const nLimit = Math.max(1, Math.min(50, Math.floor(Number(limit || 10))))
+  const bounds = getMonthBounds(monthKey)
+  const rows = db.prepare(`
+    SELECT
+      userUUID,
+      SUM(amount) AS total,
+      COUNT(*) AS eventCount
+    FROM economy_events
+    WHERE createdAt >= ?
+      AND createdAt < ?
+      AND ${config.where}
+    GROUP BY userUUID
+    HAVING ABS(total) > 0
+    ORDER BY ${config.order}
+    LIMIT ?
+  `).all(bounds.startIso, bounds.endIso, nLimit)
+
+  return rows.map((row, index) => ({
+    rank: index + 1,
+    uuid: String(row.userUUID),
+    amount: Number(row.total || 0),
+    eventCount: Number(row.eventCount || 0),
+    monthKey: bounds.monthKey,
+    leaderboardType: type,
+    label: config.label
+  }))
+}
+
+export function snapshotMonthlyLeaderboard (leaderboardType = 'monthly', limit = 10, monthKey = getCurrentMonthKey()) {
+  const rows = getMonthlyLeaderboard(leaderboardType, limit, monthKey)
+  const type = String(leaderboardType || 'monthly').toLowerCase()
+  const bounds = getMonthBounds(monthKey)
+  const tx = db.transaction((entries) => {
+    db.prepare(`
+      DELETE FROM monthly_leaderboard_snapshots
+      WHERE monthKey = ? AND leaderboardType = ?
+    `).run(bounds.monthKey, type)
+
+    const insert = db.prepare(`
+      INSERT INTO monthly_leaderboard_snapshots (
+        monthKey, leaderboardType, rank, userUUID, amount, meta, capturedAt
+      )
+      VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `)
+
+    for (const row of entries) {
+      insert.run(
+        bounds.monthKey,
+        type,
+        row.rank,
+        row.uuid,
+        row.amount,
+        JSON.stringify({ eventCount: row.eventCount })
+      )
+    }
+  })
+
+  tx(rows)
+  syncMonthlyPrestigeAwards(type, rows, bounds.monthKey)
+  return rows
 }
 
 function tableExists (tableName) {
@@ -395,20 +841,47 @@ function estimateCarSaleValue (car) {
   const earnings = Math.max(0, toInt(car?.careerEarnings))
 
   const basePctByTier = {
-    starter: 0.68,
-    pro: 0.64,
-    hyper: 0.60,
-    legendary: 0.56
+    starter: 0.64,
+    pro: 0.58,
+    hyper: 0.52,
+    legendary: 0.46
   }
   const basePct = basePctByTier[tier] ?? 0.62
   const baseValue = price * basePct
 
-  const wearFactor = Math.max(0.45, 1 - (wear * 0.005))
-  const perfBonus = Math.min(price * 0.20, (wins * 800) + (podiums * 350) + (earnings * 0.03))
+  const wearFloorByTier = {
+    starter: 0.35,
+    pro: 0.32,
+    hyper: 0.28,
+    legendary: 0.24
+  }
+  const wearFactor = Math.max(wearFloorByTier[tier] ?? 0.24, 1 - (wear * 0.0068))
+
+  const perfMultByTier = {
+    starter: 0.85,
+    pro: 0.92,
+    hyper: 1.00,
+    legendary: 1.06
+  }
+  const perfMult = perfMultByTier[tier] ?? 1
+  const perfBonusRaw = ((wins * 600) + (podiums * 240) + (earnings * 0.02)) * perfMult
+  const perfBonus = Math.min(price * 0.12, perfBonusRaw)
 
   const raw = Math.floor(baseValue * wearFactor + perfBonus)
-  const minFloor = Math.floor(price * 0.20)
-  const maxCap = Math.floor(price * 0.95)
+  const minFloorByTier = {
+    starter: 0.22,
+    pro: 0.20,
+    hyper: 0.18,
+    legendary: 0.15
+  }
+  const maxCapByTier = {
+    starter: 0.72,
+    pro: 0.68,
+    hyper: 0.62,
+    legendary: 0.58
+  }
+  const minFloor = Math.floor(price * (minFloorByTier[tier] ?? 0.15))
+  const maxCap = Math.floor(price * (maxCapByTier[tier] ?? 0.58))
   return Math.max(minFloor, Math.min(maxCap, raw))
 }
 
@@ -424,9 +897,9 @@ function estimateHorseSaleValue (horse) {
   const retired = !!horse?.retired || Number(horse?.retired) === 1
 
   const basePctByTier = {
-    basic: 0.70,
-    elite: 0.66,
-    champion: 0.62
+    basic: 0.58,
+    elite: 0.50,
+    champion: 0.42
   }
   const basePct = basePctByTier[tier] ?? 0.64
   const baseValue = price * basePct
@@ -436,13 +909,13 @@ function estimateHorseSaleValue (horse) {
   const lifeFactor = retired ? 0.10 : (0.10 + (0.90 * Math.pow(leftPct, 1.85)))
 
   const winRate = wins / Math.max(1, races)
-  const perfRaw = (wins * 300) + Math.floor(winRate * price * 0.08)
+  const perfRaw = (wins * 180) + Math.floor(winRate * price * 0.04)
   const perfBonus = Math.floor(perfRaw * Math.pow(leftPct, 2.4))
-  const performanceBonus = Math.min(Math.floor(price * 0.10), perfBonus)
+  const performanceBonus = Math.min(Math.floor(price * 0.05), perfBonus)
 
   const raw = Math.floor((baseValue * lifeFactor) + performanceBonus)
-  const minFloor = Math.floor(price * (retired ? 0.05 : 0.10))
-  const maxCapByLife = Math.floor(price * (retired ? 0.18 : (0.20 + (0.65 * Math.pow(leftPct, 1.4)))))
+  const minFloor = Math.floor(price * (retired ? 0.03 : 0.08))
+  const maxCapByLife = Math.floor(price * (retired ? 0.12 : (0.14 + (0.46 * Math.pow(leftPct, 1.4)))))
   const maxCap = Math.max(minFloor, maxCapByLife)
   return Math.max(minFloor, Math.min(maxCap, raw))
 }

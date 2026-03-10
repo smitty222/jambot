@@ -1,5 +1,6 @@
 import { postMessage } from '../libs/cometchat.js'
 import { getTriviaQuestions, decodeHtml } from '../utils/API.js'
+import { getCompactEquippedTitleTag } from '../database/dbprestige.js'
 
 let currentQuestion = null
 let userScores = {}
@@ -15,6 +16,12 @@ let pendingAnswers = {}
 let answerTimer = null
 
 const categoryPool = [9, 11, 12, 15, 17, 18, 21, 22, 23, 27]
+
+function compactLeaderboardName (uuid, maxLen = 10) {
+  const id = String(uuid || '')
+  const label = `user-${id.slice(0, 6)}`
+  return label.length <= maxLen ? label : label.slice(0, maxLen)
+}
 
 function resetGameState () {
   console.log('🧹 Resetting game state...')
@@ -257,7 +264,9 @@ function formatLeaderboard () {
   return sorted.map(([uuid, score], i) => {
     const medals = ['🥇', '🥈', '🥉']
     const prefix = medals[i] || `${i + 1}.`
-    return `${prefix} <@uid:${uuid}> — ${score} point${score !== 1 ? 's' : ''}`
+    const titleTag = getCompactEquippedTitleTag(uuid, 7)
+    const name = compactLeaderboardName(uuid, titleTag ? 8 : 10)
+    return `${prefix} ${titleTag ? `${titleTag} ` : ''}${name} ${score}pt`
   }).join('\n')
 }
 

@@ -189,6 +189,87 @@ db.exec(`
   VALUES (1, 100)
 `)
 
+// Economy event ledger
+//
+// Track money movement by source so balancing decisions can be based on
+// observed creation/sink patterns instead of wallet totals alone.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS economy_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    userUUID TEXT NOT NULL,
+    amount REAL NOT NULL,
+    balanceAfter REAL,
+    source TEXT NOT NULL,
+    category TEXT NOT NULL,
+    note TEXT,
+    metadata TEXT,
+    createdAt TEXT DEFAULT CURRENT_TIMESTAMP
+  )
+`)
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_economy_events_createdAt ON economy_events(createdAt)') } catch (e) { console.warn('⚠️ Could not create idx_economy_events_createdAt:', e.message) }
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_economy_events_source_createdAt ON economy_events(source, createdAt)') } catch (e) { console.warn('⚠️ Could not create idx_economy_events_source_createdAt:', e.message) }
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_economy_events_user_createdAt ON economy_events(userUUID, createdAt)') } catch (e) { console.warn('⚠️ Could not create idx_economy_events_user_createdAt:', e.message) }
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS monthly_leaderboard_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    monthKey TEXT NOT NULL,
+    leaderboardType TEXT NOT NULL,
+    rank INTEGER NOT NULL,
+    userUUID TEXT NOT NULL,
+    amount REAL NOT NULL,
+    meta TEXT,
+    capturedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(monthKey, leaderboardType, rank)
+  )
+`)
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_monthly_leaderboard_type_month ON monthly_leaderboard_snapshots(leaderboardType, monthKey)') } catch (e) { console.warn('⚠️ Could not create idx_monthly_leaderboard_type_month:', e.message) }
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS dj_streaks (
+    userUUID TEXT PRIMARY KEY,
+    streakCount INTEGER NOT NULL DEFAULT 0,
+    bestStreak INTEGER NOT NULL DEFAULT 0,
+    lastPlayedAt TEXT,
+    lastQualifiedAt TEXT,
+    updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+  )
+`)
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS prestige_badges (
+    userUUID TEXT NOT NULL,
+    badgeKey TEXT NOT NULL,
+    awardedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+    source TEXT,
+    meta TEXT,
+    expiresAt TEXT,
+    PRIMARY KEY (userUUID, badgeKey)
+  )
+`)
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS prestige_titles (
+    userUUID TEXT NOT NULL,
+    titleKey TEXT NOT NULL,
+    awardedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+    source TEXT,
+    meta TEXT,
+    expiresAt TEXT,
+    PRIMARY KEY (userUUID, titleKey)
+  )
+`)
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS prestige_profiles (
+    userUUID TEXT PRIMARY KEY,
+    equippedTitleKey TEXT,
+    updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+  )
+`)
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_prestige_badges_user ON prestige_badges(userUUID)') } catch (e) { console.warn('⚠️ Could not create idx_prestige_badges_user:', e.message) }
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_prestige_titles_user ON prestige_titles(userUUID)') } catch (e) { console.warn('⚠️ Could not create idx_prestige_titles_user:', e.message) }
+
 // Horses
 db.exec(`
   CREATE TABLE IF NOT EXISTS horses (

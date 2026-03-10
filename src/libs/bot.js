@@ -1061,7 +1061,13 @@ export class Bot {
           unmarkUser()
         }
 
-        await songPayment()
+        const songReward = await songPayment()
+        if (songReward?.bonusAwarded > 0 && this.roomUUID) {
+          await postMessage({
+            room: this.roomUUID,
+            message: `🎧 <@uid:${songReward.userUUID}> hit a DJ streak of ${songReward.streakCount} and earned **$${songReward.bonusAwarded}**.`
+          })
+        }
         sendHeartbeat().catch(() => {})
 
         // 🔡 Song Chain game (auto-runs only when theme includes "song chain")

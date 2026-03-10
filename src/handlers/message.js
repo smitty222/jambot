@@ -32,6 +32,7 @@ import {
   addOrUpdateUser,
   getLifetimeNet
 } from '../database/dbwalletmanager.js'
+import { getCompactEquippedTitleTag } from '../database/dbprestige.js'
 import { getJackpotValue, handleSlotsCommand, formatBalance } from './slots.js'
 import {
   openBetting, joinTable, leaveTable,
@@ -80,6 +81,21 @@ const queueManager = new QueueManager(getUserNickname)
 
 export async function getUserNickname (userId) {
   return `<@uid:${userId}>`
+}
+
+function compactLeaderboardName (name, uuid, maxLen = 14) {
+  const raw = String(name || '').trim()
+  if (!raw || /^<@uid:[^>]+>$/.test(raw)) return `user-${String(uuid || '').slice(0, 6)}`
+  const clean = raw.replace(/^@/, '').trim()
+  return clean.length <= maxLen ? clean : `${clean.slice(0, maxLen - 1)}.`
+}
+
+function formatCompactMoneyLine ({ rank, uuid, name, amount }) {
+  const titleTag = getCompactEquippedTitleTag(uuid, 7)
+  const compactName = compactLeaderboardName(name, uuid, titleTag ? 10 : 14)
+  const numeric = Number(amount || 0)
+  const money = `${numeric < 0 ? '-' : ''}$${Math.round(Math.abs(numeric)).toLocaleString()}`
+  return `${rank}. ${titleTag ? `${titleTag} ` : ''}${compactName} ${money}`
 }
 
 function buildModSheet () {
@@ -230,6 +246,17 @@ const COMMAND_GUIDES = {
     '- `/career`',
     '- `/careerlosses [count]`',
     '- `/biggestlosers [count]`',
+    '- `/economy [days]`',
+    '- `/monthly [count]`',
+    '- `/monthlydj [count]`',
+    '- `/monthlyf1 [count]`',
+    '- `/monthlygamblers [count]`',
+    '- `/djstreak`',
+    '- `/badges`',
+    '- `/titles`',
+    '- `/title equip <key>`',
+    '- `/title clear`',
+    '- `/profile`',
     '- `/getwallet`',
     '- `/checkbalance <@user>`',
     '- `/tip <@user> <amount>`',
@@ -1925,7 +1952,12 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
         .sort((a, b) => b.balance - a.balance)
         .slice(0, 5)
         .map((user, index) =>
-        `${index + 1}. <@uid:${user.uuid}>: $${Math.round(user.balance).toLocaleString()}`
+          formatCompactMoneyLine({
+            rank: index + 1,
+            uuid: user.uuid,
+            name: user.nickname,
+            amount: user.balance
+          })
         )
 
       console.log('[BANKROLL] Top 5 formatted:', sortedBankroll)
@@ -1987,7 +2019,15 @@ await handleBetCommand(payload) // ✅ safe to call always (no-op unless betting
         const horses = Math.round(Number(user.horseValue) || 0).toLocaleString()
         const crypto = Math.round(Number(user.cryptoValue) || 0).toLocaleString()
 
-        return `${index + 1}. <@uid:${user.uuid}>: $${total} (Cash: $${cash} · Cars: $${cars} · Horses: $${horses} · Crypto: $${crypto})`
+        return [
+          formatCompactMoneyLine({
+            rank: index + 1,
+            uuid: user.uuid,
+            name: user.nickname,
+            amount: user.totalNetWorth
+          }),
+          `   C${cash} Ca${cars} H${horses} X${crypto}`
+        ].join('\n')
       })
 
       await postMessage({

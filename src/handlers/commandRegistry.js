@@ -77,7 +77,8 @@ import {
 // rotation.  getAlbumList returns an array of album names (lower‑cased) or
 // an empty array if none have been queued yet.
 import { addQueuedAlbum, removeQueuedAlbum,listQueuedAlbums } from '../database/dbalbumqueue.js'
-import { getAllNetTotals } from '../database/dbwalletmanager.js'
+import { getAllNetTotals, getEconomyOverview, getMonthlyLeaderboard, snapshotMonthlyLeaderboard, getDjStreakStatus, getCurrentMonthKey, getNetWorthForUser, getLifetimeNet, getUserWallet } from '../database/dbwalletmanager.js'
+import { getEquippedTitle, getUserBadges, getUserTitles, equipTitle, getCompactEquippedTitleTag } from '../database/dbprestige.js'
 
 function buildSlotsInfoMessage () {
   return [
@@ -118,6 +119,30 @@ function formatWholeDollars (value) {
   return Math.round(Number(value) || 0).toLocaleString('en-US')
 }
 
+function formatMoneyLine (value) {
+  return `$${formatWholeDollars(value)}`
+}
+
+function titlePrefixForUser (userUUID) {
+  const equipped = getEquippedTitle(userUUID)
+  return equipped ? `${equipped.emoji || ''} ${equipped.label}`.trim() : null
+}
+
+function compactLeaderboardName (name, uuid, maxLen = 14) {
+  const raw = String(name || '').trim()
+  if (!raw || /^<@uid:[^>]+>$/.test(raw)) return `user-${String(uuid || '').slice(0, 6)}`
+  const clean = raw.replace(/^@/, '').trim()
+  return clean.length <= maxLen ? clean : `${clean.slice(0, maxLen - 1)}.`
+}
+
+function formatCompactLeaderboardLine ({ rank, uuid, name, amount }) {
+  const titleTag = getCompactEquippedTitleTag(uuid, 7)
+  const compactName = compactLeaderboardName(name, uuid, titleTag ? 10 : 14)
+  const numeric = Number(amount || 0)
+  const money = `${numeric < 0 ? '-' : ''}$${formatWholeDollars(Math.abs(numeric))}`
+  return `${rank}. ${titleTag ? `${titleTag} ` : ''}${compactName} ${money}`
+}
+
 async function postCareerLossesLeaderboard (room, args = '') {
   const requested = Number.parseInt(String(args || '').trim(), 10)
   const limit = Number.isFinite(requested) && requested > 0
@@ -145,8 +170,12 @@ async function postCareerLossesLeaderboard (room, args = '') {
   )
 
   const lines = losses.map((row, i) => {
-    const lossAmount = formatWholeDollars(Math.abs(Number(row.lifetime_net)))
-    return `${i + 1}. ${names[i]} - -$${lossAmount}`
+    return formatCompactLeaderboardLine({
+      rank: i + 1,
+      uuid: row.uuid,
+      name: names[i],
+      amount: -Math.abs(Number(row.lifetime_net))
+    })
   })
 
   await postMessage({
@@ -154,6 +183,48 @@ async function postCareerLossesLeaderboard (room, args = '') {
     message: [
       `📉 **Career Gambling Losses** (Top ${losses.length})`,
       '_Biggest loser → least_',
+      '',
+      ...lines
+    ].join('\n')
+  })
+}
+
+async function postMonthlyLeaderboard (room, leaderboardType = 'monthly', args = '') {
+  const requested = Number.parseInt(String(args || '').trim(), 10)
+  const limit = Number.isFinite(requested) && requested > 0
+    ? Math.min(requested, 25)
+    : 10
+
+  const rows = snapshotMonthlyLeaderboard(leaderboardType, limit, getCurrentMonthKey())
+  if (!rows.length) {
+    await postMessage({ room, message: 'No monthly economy results are recorded yet.' })
+    return
+  }
+
+  const names = await Promise.all(
+    rows.map(async ({ uuid }) => {
+      try {
+        return await getUserNicknameByUuid(uuid)
+      } catch {
+        return `<@uid:${uuid}>`
+      }
+    })
+  )
+
+  const title = rows[0]?.label || 'Monthly Leaderboard'
+  const lines = rows.map((row, i) => {
+    return formatCompactLeaderboardLine({
+      rank: i + 1,
+      uuid: row.uuid,
+      name: names[i],
+      amount: row.amount
+    })
+  })
+
+  await postMessage({
+    room,
+    message: [
+      `📅 **${title}** (${rows[0].monthKey})`,
       '',
       ...lines
     ].join('\n')
@@ -423,6 +494,175 @@ const commandRegistry = {
   },
   biggestlosers: async ({ room, args }) => {
     await postCareerLossesLeaderboard(room, args)
+  },
+
+  monthly: async ({ room, args }) => {
+    await postMonthlyLeaderboard(room, 'monthly', args)
+  },
+  monthlydj: async ({ room, args }) => {
+    await postMonthlyLeaderboard(room, 'monthlydj', args)
+  },
+  monthlyf1: async ({ room, args }) => {
+    await postMonthlyLeaderboard(room, 'monthlyf1', args)
+  },
+  monthlygamblers: async ({ room, args }) => {
+    await postMonthlyLeaderboard(room, 'monthlygamblers', args)
+  },
+  djstreak: async ({ payload, room }) => {
+    const userUUID = payload?.sender
+    const streak = getDjStreakStatus(userUUID)
+    await postMessage({
+      room,
+      message: [
+        `🎧 **DJ Streak**`,
+        `Current streak: ${streak.streakCount}`,
+        `Best streak: ${streak.bestStreak}`,
+        `Qualifying song: ${streak.lastQualifiedAt ? new Date(streak.lastQualifiedAt).toISOString().slice(0, 10) : 'None yet'}`,
+        `Rule: songs with ${3}+ likes extend your streak.`
+      ].join('\n')
+    })
+  },
+  badges: async ({ payload, room }) => {
+    const userUUID = payload?.sender
+    const badges = getUserBadges(userUUID)
+    if (!badges.length) {
+      await postMessage({ room, message: 'No badges yet. Earn DJ streaks or monthly wins to start your collection.' })
+      return
+    }
+    await postMessage({
+      room,
+      message: [
+        '🏅 **Your Badges**',
+        '',
+        ...badges.map((badge) => `${badge.emoji || '•'} ${badge.label} \`${badge.key}\``)
+      ].join('\n')
+    })
+  },
+  titles: async ({ payload, room }) => {
+    const userUUID = payload?.sender
+    const titles = getUserTitles(userUUID)
+    const equipped = getEquippedTitle(userUUID)
+    if (!titles.length) {
+      await postMessage({ room, message: 'No titles yet. Win a monthly board or hit the biggest DJ streak milestone.' })
+      return
+    }
+    await postMessage({
+      room,
+      message: [
+        '🎖️ **Your Titles**',
+        equipped ? `Equipped: ${equipped.emoji || ''} ${equipped.label}`.trim() : 'Equipped: none',
+        '',
+        ...titles.map((title) => `${title.emoji || '•'} ${title.label} \`${title.key}\`${equipped?.key === title.key ? ' [equipped]' : ''}`)
+      ].join('\n')
+    })
+  },
+  title: async ({ payload, room, args }) => {
+    const userUUID = payload?.sender
+    const trimmed = String(args || '').trim()
+    if (!trimmed) {
+      await postMessage({ room, message: 'Usage: `/title equip <key>` or `/title clear`' })
+      return
+    }
+
+    if (/^clear$/i.test(trimmed)) {
+      equipTitle(userUUID, null)
+      await postMessage({ room, message: 'Title cleared.' })
+      return
+    }
+
+    const match = trimmed.match(/^equip\s+([a-z0-9_]+)$/i)
+    if (!match) {
+      await postMessage({ room, message: 'Usage: `/title equip <key>` or `/title clear`' })
+      return
+    }
+
+    const key = match[1]
+    const ok = equipTitle(userUUID, key)
+    if (!ok) {
+      await postMessage({ room, message: `You do not own the title \`${key}\` or it has expired.` })
+      return
+    }
+
+    const equipped = getEquippedTitle(userUUID)
+    await postMessage({ room, message: `Equipped title: ${equipped?.emoji || ''} ${equipped?.label || key}`.trim() })
+  },
+  profile: async ({ payload, room }) => {
+    const userUUID = payload?.sender
+    const title = titlePrefixForUser(userUUID)
+    const badges = getUserBadges(userUUID)
+    const netWorth = await getNetWorthForUser(userUUID)
+    const streak = getDjStreakStatus(userUUID)
+    const balance = getUserWallet(userUUID)
+    const lifetimeNet = getLifetimeNet(userUUID)
+
+    await postMessage({
+      room,
+      message: [
+        `🪪 **Profile**`,
+        title ? `Title: ${title}` : 'Title: none',
+        `Cash: ${formatMoneyLine(balance)} · Net Worth: ${formatMoneyLine(netWorth?.totalNetWorth || 0)}`,
+        `Lifetime Net: ${formatMoneyLine(lifetimeNet)}`,
+        `DJ Streak: ${streak.streakCount} current / ${streak.bestStreak} best`,
+        `Badges: ${badges.length}`
+      ].join('\n')
+    })
+  },
+
+  economy: async ({ room, args }) => {
+    const requested = Number.parseInt(String(args || '').trim(), 10)
+    const days = Number.isFinite(requested) && requested > 0
+      ? Math.min(requested, 365)
+      : 7
+
+    try {
+      const overview = await getEconomyOverview(days)
+      const sourceLines = overview.topSources.length
+        ? overview.topSources.map((row) => `• ${row.source}: +${formatMoneyLine(row.created)} / -${formatMoneyLine(row.sunk)} / net ${formatMoneyLine(row.net)} (${row.eventCount} evt)`)
+        : ['• No tracked economy events yet.']
+
+      const walletLines = overview.topWallets.length
+        ? overview.topWallets.map((row, idx) => formatCompactLeaderboardLine({
+            rank: idx + 1,
+            uuid: row.uuid,
+            name: row.nickname,
+            amount: row.balance
+          }))
+        : ['No wallet data yet.']
+
+      const netWorthLines = overview.topNetWorth.length
+        ? overview.topNetWorth.map((row, idx) => formatCompactLeaderboardLine({
+            rank: idx + 1,
+            uuid: row.uuid,
+            name: row.nickname,
+            amount: row.totalNetWorth
+          }))
+        : ['No net worth data yet.']
+
+      await postMessage({
+        room,
+        message: [
+          `📊 **Economy Snapshot** (${overview.days}d lookback)`,
+          '',
+          `Cash in wallets: ${formatMoneyLine(overview.currentCash)}`,
+          `Cars: ${formatMoneyLine(overview.currentCarValue)} · Horses: ${formatMoneyLine(overview.currentHorseValue)} · Crypto: ${formatMoneyLine(overview.currentCryptoValue)}`,
+          `Total net worth: ${formatMoneyLine(overview.currentNetWorth)} across ${overview.walletCount} wallet(s)`,
+          '',
+          `Recent flow: +${formatMoneyLine(overview.recentEvents.created)} / -${formatMoneyLine(overview.recentEvents.sunk)} / net ${formatMoneyLine(overview.recentEvents.net)} (${overview.recentEvents.eventCount} event(s))`,
+          '',
+          '**Top Sources**',
+          ...sourceLines,
+          '',
+          '**Top Wallets**',
+          ...walletLines,
+          '',
+          '**Top Net Worth**',
+          ...netWorthLines
+        ].join('\n')
+      })
+    } catch (err) {
+      logger.error('[economy] Error:', err?.message || err)
+      await postMessage({ room, message: '❌ Failed to build the economy snapshot.' })
+    }
   },
 
   // 🏅 Lotto single number query: `/lotto #<number>`

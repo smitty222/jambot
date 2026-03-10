@@ -1,7 +1,7 @@
 // src/games/horserace/handlers/commands.js
 
 import { postMessage } from '../../../libs/cometchat.js'
-import { getUserWallet, debitGameBet } from '../../../database/dbwalletmanager.js'
+import { getUserWallet, debitGameBet, getProgressiveWealthFee } from '../../../database/dbwalletmanager.js'
 import { getUserNickname } from '../../../utils/nickname.js'
 import { getAllHorses, getUserHorses, setHorseImageUrl } from '../../../database/dbhorses.js'
 import { fetchCurrentUsers } from '../../../utils/API.js'
@@ -21,6 +21,11 @@ const BAR_CELLS = 12 // width of the progress bar
 const NAME_WIDTH = 24
 const TV_MODE = true
 const PHOTO_SUSPENSE_MS = 2500
+const HORSE_ENTRY_FEE_BY_TIER = {
+  basic: Number(process.env.HORSE_ENTRY_FEE_BASIC ?? 150),
+  elite: Number(process.env.HORSE_ENTRY_FEE_ELITE ?? 350),
+  champion: Number(process.env.HORSE_ENTRY_FEE_CHAMPION ?? 700)
+}
 
 // Ticks inside the solid rail
 const TICKS_EVERY = 3
@@ -59,6 +64,12 @@ async function ensurePersistentHorseImages (horsesList = []) {
   }
 
   return horsesList
+}
+
+function getHorseEntryFee (tierKey) {
+  const key = String(tierKey || '').toLowerCase()
+  const raw = Number(HORSE_ENTRY_FEE_BY_TIER[key] ?? HORSE_ENTRY_FEE_BY_TIER.basic)
+  return Math.max(0, Math.floor(raw))
 }
 
 function shuffleArray (arr) {
@@ -167,7 +178,9 @@ export async function startHorseRace () {
 
   await safeCall(postMessage, [{
     room: ROOM,
-    message: `🏇 HORSE RACE STARTING! Owners: type your horse’s exact name in the next ${ENTRY_MS / 1000}s to enter.`
+    message:
+      `🏇 HORSE RACE STARTING! Owners: type your horse’s exact name in the next ${ENTRY_MS / 1000}s to enter.\n` +
+      `Entry fees: BASIC ${'$'}${getHorseEntryFee('basic')} · ELITE ${'$'}${getHorseEntryFee('elite')} · CHAMPION ${'$'}${getHorseEntryFee('champion')}`
   }])
 
   const all = await safeCall(getAllHorses)
@@ -258,11 +271,38 @@ export async function handleHorseEntryAttempt (ctx) {
 
   if (entered.has(match.name)) return
 
+  const entryFee = getHorseEntryFee(match.tier)
+  const balance = await safeCall(getUserWallet, [sender]).catch(() => null)
+  const wealthFee = getProgressiveWealthFee({ balance, baseAmount: entryFee, source: 'horse_race' })
+  if (typeof balance !== 'number' || balance < wealthFee.total) {
+    const nick = await safeCall(getUserNickname, [sender]).catch(() => '@user')
+    await safeCall(postMessage, [{
+      room: ROOM,
+      message: `❗ ${nick?.replace(/^@/, '')} needs $${wealthFee.total} to enter ${match.name}${wealthFee.fee > 0 ? ` ($${entryFee} + $${wealthFee.fee} wealth fee)` : ''}.`
+    }])
+    return
+  }
+
+  const paid = await safeCall(debitGameBet, [sender, entryFee, {
+    source: 'horse_race',
+    category: 'entry_fee',
+    note: `${String(match.tier || 'basic').toUpperCase()} entry for ${match.name}`
+  }]).catch(() => false)
+  if (!paid) return
+  if (wealthFee.fee > 0) {
+    const feePaid = await safeCall(debitGameBet, [sender, wealthFee.fee, {
+      source: 'horse_race',
+      category: 'wealth_fee',
+      note: `${wealthFee.bandLabel} wealth fee on horse entry`
+    }]).catch(() => false)
+    if (!feePaid) return
+  }
+
   entered.add(match.name)
   const nick = await safeCall(getUserNickname, [sender]).catch(() => '@user')
   await safeCall(postMessage, [{
     room: ROOM,
-    message: `✅ ${nick?.replace(/^@/, '')} entered **${match.name}**!`
+    message: `✅ ${nick?.replace(/^@/, '')} entered **${match.name}** for $${entryFee}${wealthFee.fee > 0 ? ` (+$${wealthFee.fee} wealth fee)` : ''}!`
   }])
 }
 
@@ -343,18 +383,29 @@ export async function handleHorseBet (ctx) {
 
   const amt = Number(slip.amount || 0)
   const balance = await safeCall(getUserWallet, [sender])
-  if (balance < amt) {
-    await safeCall(postMessage, [{ room: ROOM, message: `${nick}, insufficient funds: $${balance}.` }])
+  const wealthFee = getProgressiveWealthFee({ balance, baseAmount: amt, source: 'horse_race' })
+  if (balance < wealthFee.total) {
+    await safeCall(postMessage, [{ room: ROOM, message: `${nick}, insufficient funds. Total cost: $${wealthFee.total}${wealthFee.fee > 0 ? ` ($${amt} bet + $${wealthFee.fee} wealth fee)` : ''}.` }])
     return
   }
 
-  // NOTE: If debitGameBet returns a boolean in your DB layer, prefer checking it.
-  await safeCall(debitGameBet, [sender, amt])
+  await safeCall(debitGameBet, [sender, amt, {
+    source: 'horse_race',
+    category: 'bet',
+    note: betLabel
+  }])
+  if (wealthFee.fee > 0) {
+    await safeCall(debitGameBet, [sender, wealthFee.fee, {
+      source: 'horse_race',
+      category: 'wealth_fee',
+      note: `${wealthFee.bandLabel} wealth fee on horse bet`
+    }])
+  }
   ;(horseBets[sender] ||= []).push(slip)
 
   await safeCall(postMessage, [{
     room: ROOM,
-    message: `${nick} bets $${amt} on **${betLabel}**!`
+    message: `${nick} bets $${amt} on **${betLabel}**${wealthFee.fee > 0 ? ` (+$${wealthFee.fee} wealth fee)` : ''}!`
   }])
 }
 

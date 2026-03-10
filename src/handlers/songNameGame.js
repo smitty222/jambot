@@ -1,6 +1,7 @@
 import { postMessage } from '../libs/cometchat.js'
 import { getCurrentDJUUIDs } from '../libs/bot.js'
 import { getTheme } from '../utils/themeManager.js'
+import { getCompactEquippedTitleTag } from '../database/dbprestige.js'
 
 // Memory-based point tracking (replace with DB later)
 const userPoints = {}
@@ -9,6 +10,12 @@ let currentChallengeLetter = null
 let currentDJ = null
 let totalRounds = 0
 const currentRoundPlays = new Set()
+
+function compactLeaderboardName (uuid, maxLen = 10) {
+  const id = String(uuid || '')
+  const label = `user-${id.slice(0, 6)}`
+  return label.length <= maxLen ? label : label.slice(0, maxLen)
+}
 
 // Convert duration formats to milliseconds
 export function parseDurationToMs (duration) {
@@ -38,7 +45,9 @@ function getLeaderboard () {
     .sort((a, b) => b[1] - a[1])
     .map(([uid, points], idx) => {
       const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '🎵'
-      return `${medal} <@uid:${uid}>: ${points} point(s)`
+      const titleTag = getCompactEquippedTitleTag(uid, 7)
+      const name = compactLeaderboardName(uid, titleTag ? 8 : 10)
+      return `${medal} ${titleTag ? `${titleTag} ` : ''}${name} ${points}pt`
     })
 
   return `📊 **Leaderboard**\n${sorted.join('\n')}`

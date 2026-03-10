@@ -230,7 +230,11 @@ export async function runRace ({ horses, horseBets }) {
     if (sum > 0) {
       payouts[userId] = (payouts[userId] || 0) + sum
       payoutDetails[userId] = details
-      await safeCall(creditGameWin, [userId, sum])
+      await safeCall(creditGameWin, [userId, sum, null, {
+        source: 'horse_race',
+        category: 'bet_win',
+        note: 'Horse race betting payout'
+      }])
     }
   }
 
@@ -298,10 +302,10 @@ export async function runRace ({ horses, horseBets }) {
   let ownerBonus = null
   const winner = horses[winnerIdx]
   if (winner?.ownerId && Number(winner?.price) > 0) {
-    const pctRaw = Number(process.env.HORSE_OWNER_BONUS_PCT ?? 0.20)
+    const pctRaw = Number(process.env.HORSE_OWNER_BONUS_PCT ?? 0.10)
     const minRaw = Number(process.env.HORSE_OWNER_BONUS_MIN ?? 0)
 
-    const pct = Number.isFinite(pctRaw) ? Math.max(0, Math.min(1, pctRaw)) : 0.20
+    const pct = Number.isFinite(pctRaw) ? Math.max(0, Math.min(1, pctRaw)) : 0.10
     const minBonus = Number.isFinite(minRaw) ? Math.max(0, Math.floor(minRaw)) : 0
 
     const price = Number(winner.price)
@@ -309,7 +313,11 @@ export async function runRace ({ horses, horseBets }) {
     const bonus = Math.max(minBonus, pctBonus)
 
     if (bonus > 0) {
-      await safeCall(creditGameWin, [winner.ownerId, bonus])
+      await safeCall(creditGameWin, [winner.ownerId, bonus, null, {
+        source: 'horse_race',
+        category: 'owner_bonus',
+        note: `Owner bonus for ${winner.name || 'winning horse'}`
+      }])
       ownerBonus = { ownerId: winner.ownerId, amount: bonus }
     }
   }

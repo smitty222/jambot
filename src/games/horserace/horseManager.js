@@ -1,7 +1,7 @@
 // src/handlers/horse/horsemanager.js
 import { postMessage } from '../../libs/cometchat.js'
 import { getUserNickname } from '../../utils/nickname.js'
-import { getUserWallet, removeFromUserWallet, addToUserWallet } from '../../database/dbwalletmanager.js'
+import { getUserWallet, debitGameBet, creditGameWin, getProgressiveWealthFee } from '../../database/dbwalletmanager.js'
 import { getAllHorses, getUserHorses, insertHorse, deleteHorseOwnedByUser } from '../../database/dbhorses.js'
 import { formatOdds } from './utils/odds.js'
 import { listHorseTierImageFiles, buildHorseImageUrl, pickHorseImageUrl } from './utils/images.js'
@@ -60,9 +60,9 @@ function estimateHorseResaleValue (horse) {
   const retired = !!horse?.retired || Number(horse?.retired) === 1
 
   const basePctByTier = {
-    basic: 0.70,
-    elite: 0.66,
-    champion: 0.62
+    basic: 0.58,
+    elite: 0.50,
+    champion: 0.42
   }
   const basePct = basePctByTier[tier] ?? 0.64
   const baseValue = price * basePct
@@ -74,14 +74,14 @@ function estimateHorseResaleValue (horse) {
   const lifeFactor = retired ? 0.10 : (0.10 + (0.90 * Math.pow(leftPct, 1.85)))
 
   const winRate = wins / Math.max(1, races)
-  const perfRaw = (wins * 300) + Math.floor(winRate * price * 0.08)
+  const perfRaw = (wins * 180) + Math.floor(winRate * price * 0.04)
   // Performance bonus also shrinks sharply as career runs out.
   const perfBonus = Math.floor(perfRaw * Math.pow(leftPct, 2.4))
-  const performanceBonus = Math.min(Math.floor(price * 0.10), perfBonus)
+  const performanceBonus = Math.min(Math.floor(price * 0.05), perfBonus)
 
   const raw = Math.floor((baseValue * lifeFactor) + performanceBonus)
-  const minFloor = Math.floor(price * (retired ? 0.05 : 0.10))
-  const maxCapByLife = Math.floor(price * (retired ? 0.18 : (0.20 + (0.65 * Math.pow(leftPct, 1.4)))))
+  const minFloor = Math.floor(price * (retired ? 0.03 : 0.08))
+  const maxCapByLife = Math.floor(price * (retired ? 0.12 : (0.14 + (0.46 * Math.pow(leftPct, 1.4)))))
   const maxCap = Math.max(minFloor, maxCapByLife)
   return Math.max(minFloor, Math.min(maxCap, raw))
 }
@@ -290,18 +290,30 @@ export async function handleBuyHorse (payload) {
     return postMessage({ room, message: `⚠️ ${nick}, I couldn’t read your wallet. Try again shortly.` })
   }
 
-  if (balance < tier.price) {
+  const wealthFee = getProgressiveWealthFee({ balance, baseAmount: tier.price, source: 'horse' })
+  if (balance < wealthFee.total) {
     return postMessage({
       room,
-      message: `❗ ${nick}, you need **${fmt$(tier.price)}** but you only have **${fmt$(balance)}**.`
+      message: `❗ ${nick}, total cost is **${fmt$(wealthFee.total)}**${wealthFee.fee > 0 ? ` (${fmt$(tier.price)} + ${fmt$(wealthFee.fee)} wealth fee)` : ''}, but you only have **${fmt$(balance)}**.`
     })
   }
 
-  const paid = await removeFromUserWallet(userId, tier.price)
+  const paid = await debitGameBet(userId, tier.price, {
+    source: 'horse',
+    category: 'asset_buy',
+    note: `Bought ${tierKey} horse`
+  })
   if (!paid) {
     return postMessage({
       room,
       message: `❗ ${nick}, payment failed. Your balance remains **${fmt$(balance)}**.`
+    })
+  }
+  if (wealthFee.fee > 0) {
+    await debitGameBet(userId, wealthFee.fee, {
+      source: 'horse',
+      category: 'wealth_fee',
+      note: `${wealthFee.bandLabel} wealth fee on horse purchase`
     })
   }
 
@@ -339,6 +351,7 @@ export async function handleBuyHorse (payload) {
       `${tier.emoji} ${nick} bought a **${tierKey.toUpperCase()}** horse: **${name}**!\n` +
       `${selectedFile ? `🖼️ Chosen option: **#${selectedOption}**\n` : ''}` +
       `Base odds: ${formatOdds(baseOdds)} (volatility ~ ${volatility}x)\n` +
+      `${wealthFee.fee > 0 ? `💼 Wealth fee: **${fmt$(wealthFee.fee)}**\n` : ''}` +
       `💰 Balance: **${fmt$(updatedBalance)}**`,
     images: imageUrl ? [imageUrl] : undefined
   })
@@ -410,7 +423,11 @@ export async function handleSellHorse (payload) {
     return
   }
 
-  await addToUserWallet(userId, resale, nick)
+  await creditGameWin(userId, resale, nick, {
+    source: 'horse',
+    category: 'asset_sale',
+    note: `Sold horse ${horse.name || ''}`.trim()
+  })
   const updated = await getUserWallet(userId)
   const original = toInt(horse.price)
   const delta = resale - original

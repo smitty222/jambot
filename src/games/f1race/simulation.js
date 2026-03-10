@@ -452,7 +452,11 @@ export async function runRace ({
         ownerId: e.ownerId,
         amount: amt
       })
-      await safeCall(creditGameWin, [e.ownerId, amt])
+      await safeCall(creditGameWin, [e.ownerId, amt, null, {
+        source: 'f1',
+        category: 'race_prize',
+        note: `F1 place payout P${e.place + 1}`
+      }])
       const paidCarId = cars?.[e.idx]?.id
       if (paidCarId != null) {
         await safeCall(addCarEarnings, [paidCarId, amt]).catch(() => null)
@@ -464,7 +468,11 @@ export async function runRace ({
   if (fastestLapBonus > 0 && fastestLap?.ownerId) {
     const fastestCar = cars?.[fastestLap.index]
     const paidFastestLapBonus = tierScaledBonus(fastestCar, fastestLapBonus)
-    await safeCall(creditGameWin, [fastestLap.ownerId, paidFastestLapBonus]).catch(() => null)
+    await safeCall(creditGameWin, [fastestLap.ownerId, paidFastestLapBonus, null, {
+      source: 'f1',
+      category: 'fastest_lap_bonus',
+      note: 'F1 fastest lap bonus'
+    }]).catch(() => null)
     const fastestCarId = cars?.[fastestLap.index]?.id
     if (fastestCarId != null) {
       await safeCall(addCarEarnings, [fastestCarId, paidFastestLapBonus, { fastestLap: true }]).catch(() => null)
@@ -510,7 +518,11 @@ export async function runRace ({
 
     if (totalWin > 0) {
       betPayouts[userId] = (betPayouts[userId] || 0) + totalWin
-      await safeCall(creditGameWin, [userId, totalWin])
+      await safeCall(creditGameWin, [userId, totalWin, null, {
+        source: 'f1',
+        category: 'bet_win',
+        note: 'F1 betting payout'
+      }])
     }
 
     if (totalStaked > 0 || totalWin > 0) {

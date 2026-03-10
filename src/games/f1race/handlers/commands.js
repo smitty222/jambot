@@ -3,11 +3,12 @@
 import { postMessage } from '../../../libs/cometchat.js'
 import { readdirSync } from 'fs'
 import path from 'path'
-import { getUserWallet, debitGameBet, addToUserWallet } from '../../../database/dbwalletmanager.js'
+import { getUserWallet, debitGameBet, addToUserWallet, creditGameWin, getProgressiveWealthFee } from '../../../database/dbwalletmanager.js'
 import { getUserNickname } from '../../../utils/nickname.js'
 import { fetchCurrentUsers } from '../../../utils/API.js'
 
 import { createTeam, getTeamByOwner, updateTeamIdentity } from '../../../database/dbteams.js'
+import { getCompactEquippedTitleTag } from '../../../database/dbprestige.js'
 import {
   insertCar,
   getAllCars,
@@ -40,39 +41,45 @@ const DRAG_FIELD_SIZE = 2
 const DRAG_PAYOUT_SPLIT = [100]
 
 const ENTRY_FEE_BY_TIER = {
-  starter: Number(process.env.F1_ENTRY_FEE_STARTER ?? 1200),
-  pro: Number(process.env.F1_ENTRY_FEE_PRO ?? 1500),
-  hyper: Number(process.env.F1_ENTRY_FEE_HYPER ?? 2200),
-  legendary: Number(process.env.F1_ENTRY_FEE_LEGENDARY ?? 5500)
+  starter: Number(process.env.F1_ENTRY_FEE_STARTER ?? 1500),
+  pro: Number(process.env.F1_ENTRY_FEE_PRO ?? 2100),
+  hyper: Number(process.env.F1_ENTRY_FEE_HYPER ?? 3400),
+  legendary: Number(process.env.F1_ENTRY_FEE_LEGENDARY ?? 7200)
 }
-const HOUSE_RAKE_PCT = Number(process.env.F1_HOUSE_RAKE_PCT ?? 5) // percent
+const HOUSE_RAKE_PCT = Number(process.env.F1_HOUSE_RAKE_PCT ?? 10) // percent
 const PRIZE_SPLIT_BY_MODE = {
   rookie: [60, 30, 10], // top 3 paid
   open: [45, 25, 15, 10, 5],
   elite: [50, 23, 13, 9, 5]
 }
 const GUARANTEED_PURSE_BY_MODE = {
-  rookie: Number(process.env.F1_PURSE_FLOOR_ROOKIE ?? 8000),
-  open: Number(process.env.F1_PURSE_FLOOR_OPEN ?? 20000),
-  elite: Number(process.env.F1_PURSE_FLOOR_ELITE ?? 55000)
+  rookie: Number(process.env.F1_PURSE_FLOOR_ROOKIE ?? 5000),
+  open: Number(process.env.F1_PURSE_FLOOR_OPEN ?? 12000),
+  elite: Number(process.env.F1_PURSE_FLOOR_ELITE ?? 30000)
 }
 const DRAG_GUARANTEED_PURSE_BY_TIER = {
-  starter: Number(process.env.F1_DRAG_PURSE_FLOOR_STARTER ?? 500),
-  pro: Number(process.env.F1_DRAG_PURSE_FLOOR_PRO ?? 900),
-  hyper: Number(process.env.F1_DRAG_PURSE_FLOOR_HYPER ?? 1400),
-  legendary: Number(process.env.F1_DRAG_PURSE_FLOOR_LEGENDARY ?? 2000)
+  starter: Number(process.env.F1_DRAG_PURSE_FLOOR_STARTER ?? 250),
+  pro: Number(process.env.F1_DRAG_PURSE_FLOOR_PRO ?? 500),
+  hyper: Number(process.env.F1_DRAG_PURSE_FLOOR_HYPER ?? 900),
+  legendary: Number(process.env.F1_DRAG_PURSE_FLOOR_LEGENDARY ?? 1400)
 }
-const POLE_BONUS = Number(process.env.F1_POLE_BONUS ?? 500)
-const FASTEST_LAP_BONUS = Number(process.env.F1_FASTEST_LAP_BONUS ?? 750)
+const POLE_BONUS = Number(process.env.F1_POLE_BONUS ?? 250)
+const FASTEST_LAP_BONUS = Number(process.env.F1_FASTEST_LAP_BONUS ?? 400)
 
-const TEAM_CREATE_FEE = Number(process.env.F1_TEAM_CREATE_FEE ?? 10000)
-const TEAM_REROLL_FEE = Number(process.env.F1_TEAM_REROLL_FEE ?? 5000)
-const CAR_RENAME_FEE = Number(process.env.F1_CAR_RENAME_FEE ?? 5000)
+const TEAM_CREATE_FEE = Number(process.env.F1_TEAM_CREATE_FEE ?? 12500)
+const TEAM_REROLL_FEE = Number(process.env.F1_TEAM_REROLL_FEE ?? 6500)
+const CAR_RENAME_FEE = Number(process.env.F1_CAR_RENAME_FEE ?? 6500)
 const REPAIR_COST_PER_WEAR_BY_TIER = {
-  starter: Number(process.env.F1_REPAIR_COST_PER_POINT_STARTER ?? 24),
-  pro: Number(process.env.F1_REPAIR_COST_PER_POINT_PRO ?? 32),
-  hyper: Number(process.env.F1_REPAIR_COST_PER_POINT_HYPER ?? 45),
-  legendary: Number(process.env.F1_REPAIR_COST_PER_POINT_LEGENDARY ?? 58)
+  starter: Number(process.env.F1_REPAIR_COST_PER_POINT_STARTER ?? 30),
+  pro: Number(process.env.F1_REPAIR_COST_PER_POINT_PRO ?? 44),
+  hyper: Number(process.env.F1_REPAIR_COST_PER_POINT_HYPER ?? 68),
+  legendary: Number(process.env.F1_REPAIR_COST_PER_POINT_LEGENDARY ?? 95)
+}
+const GARAGE_UPKEEP_PER_EXTRA_CAR_BY_TIER = {
+  starter: Number(process.env.F1_GARAGE_UPKEEP_PER_EXTRA_STARTER ?? 200),
+  pro: Number(process.env.F1_GARAGE_UPKEEP_PER_EXTRA_PRO ?? 400),
+  hyper: Number(process.env.F1_GARAGE_UPKEEP_PER_EXTRA_HYPER ?? 750),
+  legendary: Number(process.env.F1_GARAGE_UPKEEP_PER_EXTRA_LEGENDARY ?? 1250)
 }
 
 // Betting
@@ -234,6 +241,13 @@ function teamLabel (team) {
   return (badge ? `${badge} ${short}` : short).trim()
 }
 
+function compactLeaderboardName (name, uuid, maxLen = 14) {
+  const raw = String(name || '').trim()
+  if (!raw || /^<@uid:[^>]+>$/.test(raw)) return `user-${String(uuid || '').slice(0, 6)}`
+  const clean = raw.replace(/^@/, '').trim()
+  return clean.length <= maxLen ? clean : `${clean.slice(0, maxLen - 1)}.`
+}
+
 function normalizeTierKey (tierKey) {
   const tier = String(tierKey || '').toLowerCase()
   return Object.prototype.hasOwnProperty.call(ENTRY_FEE_BY_TIER, tier) ? tier : 'starter'
@@ -261,6 +275,41 @@ function getTierRepairCostPerPoint (tierKey) {
   const normalized = normalizeTierKey(tierKey)
   const raw = Number(REPAIR_COST_PER_WEAR_BY_TIER[normalized] ?? REPAIR_COST_PER_WEAR_BY_TIER.starter)
   return Math.max(0, Math.floor(raw))
+}
+
+function getGarageUpkeepPerExtraCar (tierKey) {
+  const normalized = normalizeTierKey(tierKey)
+  const raw = Number(GARAGE_UPKEEP_PER_EXTRA_CAR_BY_TIER[normalized] ?? GARAGE_UPKEEP_PER_EXTRA_CAR_BY_TIER.starter)
+  return Math.max(0, Math.floor(raw))
+}
+
+async function chargeF1Cost (userId, amount, category, note, balance = null) {
+  const currentBalance = typeof balance === 'number'
+    ? balance
+    : await safeCall(getUserWallet, [userId]).catch(() => null)
+  const wealthFee = getProgressiveWealthFee({ balance: currentBalance, baseAmount: amount, source: 'f1' })
+
+  if (typeof currentBalance !== 'number' || currentBalance < wealthFee.total) {
+    return { ok: false, balance: currentBalance, wealthFee }
+  }
+
+  const baseOk = await safeCall(debitGameBet, [userId, amount, {
+    source: 'f1',
+    category,
+    note
+  }]).catch(() => false)
+  if (!baseOk) return { ok: false, balance: currentBalance, wealthFee }
+
+  if (wealthFee.fee > 0) {
+    const feeOk = await safeCall(debitGameBet, [userId, wealthFee.fee, {
+      source: 'f1',
+      category: 'wealth_fee',
+      note: `${wealthFee.bandLabel} wealth fee on ${category}`
+    }]).catch(() => false)
+    if (!feeOk) return { ok: false, balance: currentBalance, wealthFee }
+  }
+
+  return { ok: true, balance: currentBalance, wealthFee }
 }
 
 function getTierPayoutMultiplier (tierKey) {
@@ -434,47 +483,47 @@ function estimateResaleValue (car) {
   const earnings = Math.max(0, toInt(car?.careerEarnings))
 
   const basePctByTier = {
-    starter: 0.80,
-    pro: 0.79,
-    hyper: 0.80,
-    legendary: 0.82
+    starter: 0.64,
+    pro: 0.58,
+    hyper: 0.52,
+    legendary: 0.46
   }
   const basePct = basePctByTier[tier] ?? 0.62
   const baseValue = price * basePct
 
   const wearFloorByTier = {
-    starter: 0.48,
-    pro: 0.52,
-    hyper: 0.58,
-    legendary: 0.64
+    starter: 0.35,
+    pro: 0.32,
+    hyper: 0.28,
+    legendary: 0.24
   }
-  const wearFactor = Math.max(wearFloorByTier[tier] ?? 0.45, 1 - (wear * 0.0046))
+  const wearFactor = Math.max(wearFloorByTier[tier] ?? 0.24, 1 - (wear * 0.0068))
 
   const perfMultByTier = {
-    starter: 1.00,
-    pro: 1.08,
-    hyper: 1.20,
-    legendary: 1.35
+    starter: 0.85,
+    pro: 0.92,
+    hyper: 1.00,
+    legendary: 1.06
   }
   const perfMult = perfMultByTier[tier] ?? 1
-  const perfBonusRaw = ((wins * 900) + (podiums * 420) + (earnings * 0.035)) * perfMult
-  const perfBonus = Math.min(price * 0.30, perfBonusRaw)
+  const perfBonusRaw = ((wins * 600) + (podiums * 240) + (earnings * 0.02)) * perfMult
+  const perfBonus = Math.min(price * 0.12, perfBonusRaw)
 
   const raw = Math.floor(baseValue * wearFactor + perfBonus)
   const minFloorByTier = {
-    starter: 0.50,
-    pro: 0.56,
-    hyper: 0.63,
-    legendary: 0.70
+    starter: 0.22,
+    pro: 0.20,
+    hyper: 0.18,
+    legendary: 0.15
   }
   const maxCapByTier = {
-    starter: 0.95,
-    pro: 0.96,
-    hyper: 0.975,
-    legendary: 0.985
+    starter: 0.72,
+    pro: 0.68,
+    hyper: 0.62,
+    legendary: 0.58
   }
-  const minFloor = Math.floor(price * (minFloorByTier[tier] ?? 0.50))
-  const maxCap = Math.floor(price * (maxCapByTier[tier] ?? 0.95))
+  const minFloor = Math.floor(price * (minFloorByTier[tier] ?? 0.15))
+  const maxCap = Math.floor(price * (maxCapByTier[tier] ?? 0.58))
   return Math.max(minFloor, Math.min(maxCap, raw))
 }
 
@@ -615,15 +664,22 @@ export async function handleTeamCommand (ctx) {
     }
 
     const bal = await safeCall(getUserWallet, [userId]).catch(() => null)
-    if (typeof bal === 'number' && bal < TEAM_CREATE_FEE) {
-      await postMessage({ room, message: `❗ ${nick}, creating a team costs **${fmtMoney(TEAM_CREATE_FEE)}**. Balance: **${fmtMoney(bal)}**.` })
+    const createCost = getProgressiveWealthFee({ balance: bal, baseAmount: TEAM_CREATE_FEE, source: 'f1' })
+    if (typeof bal === 'number' && bal < createCost.total) {
+      await postMessage({ room, message: `❗ ${nick}, creating a team costs **${fmtMoney(createCost.total)}**${createCost.fee > 0 ? ` (${fmtMoney(TEAM_CREATE_FEE)} + ${fmtMoney(createCost.fee)} wealth fee)` : ''}. Balance: **${fmtMoney(bal)}**.` })
       return
     }
-    if (TEAM_CREATE_FEE > 0) await safeCall(debitGameBet, [userId, TEAM_CREATE_FEE])
+    if (TEAM_CREATE_FEE > 0) {
+      const charged = await chargeF1Cost(userId, TEAM_CREATE_FEE, 'team_create', 'Create team', bal)
+      if (!charged.ok) {
+        await postMessage({ room, message: `⚠️ ${nick}, couldn't process team creation payment.` })
+        return
+      }
+    }
 
     const { name, badge } = generateTeamIdentity()
     createTeam({ ownerId: userId, ownerName: nick, name, badge })
-    await postMessage({ room, message: `🏁 ${nick} founded a new team: **${name}** ${badge}\nGarage Level: **1**` })
+    await postMessage({ room, message: `🏁 ${nick} founded a new team: **${name}** ${badge}\nGarage Level: **1**${createCost.fee > 0 ? `\n💼 Wealth fee: **${fmtMoney(createCost.fee)}**` : ''}` })
     return
   }
 
@@ -633,15 +689,22 @@ export async function handleTeamCommand (ctx) {
       return
     }
     const bal = await safeCall(getUserWallet, [userId]).catch(() => null)
-    if (typeof bal === 'number' && bal < TEAM_REROLL_FEE) {
-      await postMessage({ room, message: `❗ ${nick}, reroll costs **${fmtMoney(TEAM_REROLL_FEE)}**. Balance: **${fmtMoney(bal)}**.` })
+    const rerollCost = getProgressiveWealthFee({ balance: bal, baseAmount: TEAM_REROLL_FEE, source: 'f1' })
+    if (typeof bal === 'number' && bal < rerollCost.total) {
+      await postMessage({ room, message: `❗ ${nick}, reroll costs **${fmtMoney(rerollCost.total)}**${rerollCost.fee > 0 ? ` (${fmtMoney(TEAM_REROLL_FEE)} + ${fmtMoney(rerollCost.fee)} wealth fee)` : ''}. Balance: **${fmtMoney(bal)}**.` })
       return
     }
-    if (TEAM_REROLL_FEE > 0) await safeCall(debitGameBet, [userId, TEAM_REROLL_FEE])
+    if (TEAM_REROLL_FEE > 0) {
+      const charged = await chargeF1Cost(userId, TEAM_REROLL_FEE, 'team_reroll', 'Reroll team identity', bal)
+      if (!charged.ok) {
+        await postMessage({ room, message: `⚠️ ${nick}, couldn't process reroll payment.` })
+        return
+      }
+    }
 
     const { name, badge } = generateTeamIdentity()
     await safeCall(updateTeamIdentity, [userId, name, badge])
-    await postMessage({ room, message: `🎲 ${nick} rebranded to **${name}** ${badge}` })
+    await postMessage({ room, message: `🎲 ${nick} rebranded to **${name}** ${badge}${rerollCost.fee > 0 ? `\n💼 Wealth fee: **${fmtMoney(rerollCost.fee)}**` : ''}` })
     return
   }
 
@@ -769,19 +832,24 @@ export async function handleBuyCar (ctx) {
     await postMessage({ room, message: `⚠️ ${nick}, couldn’t read your wallet. Try again.` })
     return
   }
-  if (bal < tier.price) {
-    const shortBy = tier.price - bal
+  const buyCost = getProgressiveWealthFee({ balance: bal, baseAmount: tier.price, source: 'f1' })
+  if (bal < buyCost.total) {
+    const shortBy = buyCost.total - bal
     await postMessage({
       room,
       message:
-        `❗ ${nick}, you need **${fmtMoney(tier.price)}** for **${tierKey.toUpperCase()}**.\n` +
+        `❗ ${nick}, you need **${fmtMoney(buyCost.total)}** for **${tierKey.toUpperCase()}**${buyCost.fee > 0 ? ` (${fmtMoney(tier.price)} + ${fmtMoney(buyCost.fee)} wealth fee)` : ''}.\n` +
         `Balance: **${fmtMoney(bal)}** · Short by: **${fmtMoney(shortBy)}**.\n` +
         'Run `/buycar` to view all tiers.'
     })
     return
   }
 
-  await safeCall(debitGameBet, [userId, tier.price])
+  const chargedBuy = await chargeF1Cost(userId, tier.price, 'asset_buy', `Bought ${tierKey} car`, bal)
+  if (!chargedBuy.ok) {
+    await postMessage({ room, message: `⚠️ ${nick}, couldn't process car purchase payment.` })
+    return
+  }
 
   const all = await safeCall(getAllCars).catch(() => [])
   const used = new Set((all || []).map(c => String(c.name || '').toLowerCase()))
@@ -820,6 +888,7 @@ export async function handleBuyCar (ctx) {
     message:
       `✅ ${nick} bought a **${tierKey.toUpperCase()}** car: **${tier.livery} ${name}**\n` +
       `${selectedFile ? `🖼️ Chosen option: **#${selectedOption}**\n` : ''}` +
+      `${buyCost.fee > 0 ? `💼 Wealth fee: **${fmtMoney(buyCost.fee)}**\n` : ''}` +
       `💰 Balance: **${fmtMoney(updated)}**\n` +
       'Next: `/mycars`, `/carstats`, `/gp start open`',
     images: imageUrl ? [imageUrl] : undefined
@@ -1000,22 +1069,27 @@ export async function handleRepairCar (ctx) {
   const cost = wearToRemove * costPerPoint
 
   const bal = await safeCall(getUserWallet, [userId]).catch(() => null)
-  if (typeof bal !== 'number' || bal < cost) {
+  const repairCost = getProgressiveWealthFee({ balance: bal, baseAmount: cost, source: 'f1' })
+  if (typeof bal !== 'number' || bal < repairCost.total) {
     await postMessage({
       room,
-      message: `❗ ${nick}, full repair for ${carLabel(car)} costs **${fmtMoney(cost)}** (${wearToRemove} wear × ${fmtMoney(costPerPoint)}). Balance: **${fmtMoney(bal)}**.`
+      message: `❗ ${nick}, full repair for ${carLabel(car)} costs **${fmtMoney(repairCost.total)}**${repairCost.fee > 0 ? ` (${fmtMoney(cost)} + ${fmtMoney(repairCost.fee)} wealth fee)` : ''} (${wearToRemove} wear × ${fmtMoney(costPerPoint)}). Balance: **${fmtMoney(bal)}**.`
     })
     return
   }
 
-  await safeCall(debitGameBet, [userId, cost])
+  const chargedRepair = await chargeF1Cost(userId, cost, 'repair', `Repair ${car.name || ''}`.trim(), bal)
+  if (!chargedRepair.ok) {
+    await postMessage({ room, message: `⚠️ ${nick}, couldn't process repair payment.` })
+    return
+  }
   await safeCall(setCarWear, [car.id, Math.max(0, currentWear - wearToRemove)])
   await safeCall(recordCarRepairSpend, [car.id, cost]).catch(() => null)
   const updated = await safeCall(getUserWallet, [userId]).catch(() => null)
 
   await postMessage({
     room,
-    message: `🔧 ${nick} repaired ${carLabel(car)}: **-${wearToRemove}% wear** for **${fmtMoney(cost)}**. Wear is now **0%**.\n💰 Balance: **${fmtMoney(updated)}**`
+    message: `🔧 ${nick} repaired ${carLabel(car)}: **-${wearToRemove}% wear** for **${fmtMoney(cost)}**${repairCost.fee > 0 ? ` + ${fmtMoney(repairCost.fee)} wealth fee` : ''}. Wear is now **0%**.\n💰 Balance: **${fmtMoney(updated)}**`
   })
 }
 
@@ -1068,7 +1142,11 @@ export async function handleSellCar (ctx) {
     return
   }
 
-  await safeCall(addToUserWallet, [userId, resale, nick]).catch(() => null)
+  await safeCall(creditGameWin, [userId, resale, nick, {
+    source: 'f1',
+    category: 'asset_sale',
+    note: `Sold car ${car.name || ''}`.trim()
+  }]).catch(() => null)
   const updated = await safeCall(getUserWallet, [userId]).catch(() => null)
   const original = toInt(car.price)
   const delta = resale - original
@@ -1127,24 +1205,29 @@ export async function handleRenameCar (ctx) {
   const newName = generateCarName(used)
 
   const bal = await safeCall(getUserWallet, [userId]).catch(() => null)
-  if (typeof bal !== 'number' || bal < CAR_RENAME_FEE) {
+  const renameCost = getProgressiveWealthFee({ balance: bal, baseAmount: CAR_RENAME_FEE, source: 'f1' })
+  if (typeof bal !== 'number' || bal < renameCost.total) {
     await postMessage({
       room,
-      message: `❗ ${nick}, renaming a car costs **${fmtMoney(CAR_RENAME_FEE)}**. Balance: **${fmtMoney(bal)}**.`
+      message: `❗ ${nick}, renaming a car costs **${fmtMoney(renameCost.total)}**${renameCost.fee > 0 ? ` (${fmtMoney(CAR_RENAME_FEE)} + ${fmtMoney(renameCost.fee)} wealth fee)` : ''}. Balance: **${fmtMoney(bal)}**.`
     })
     return
   }
 
-  const debited = await safeCall(debitGameBet, [userId, CAR_RENAME_FEE]).catch(() => false)
-  if (!debited) {
+  const chargedRename = await chargeF1Cost(userId, CAR_RENAME_FEE, 'rename_fee', `Rename fee for ${car.name || ''}`.trim(), bal)
+  if (!chargedRename.ok) {
     await postMessage({ room, message: `⚠️ ${nick}, couldn't process rename payment. Try again.` })
     return
   }
 
   const renamed = await safeCall(renameCarOwnedByUser, [car.id, userId, newName]).catch(() => false)
   if (!renamed) {
-    await safeCall(addToUserWallet, [userId, CAR_RENAME_FEE, nick]).catch(() => null)
-    await postMessage({ room, message: `⚠️ ${nick}, couldn't rename that car right now. Your ${fmtMoney(CAR_RENAME_FEE)} was refunded.` })
+    await safeCall(addToUserWallet, [userId, CAR_RENAME_FEE + renameCost.fee, nick, {
+      source: 'f1',
+      category: 'refund',
+      note: `Rename refund for ${car.name || ''}`.trim()
+    }]).catch(() => null)
+    await postMessage({ room, message: `⚠️ ${nick}, couldn't rename that car right now. Your ${fmtMoney(CAR_RENAME_FEE + renameCost.fee)} was refunded.` })
     return
   }
 
@@ -1152,7 +1235,7 @@ export async function handleRenameCar (ctx) {
   await postMessage({
     room,
     message:
-      `🎲 ${nick} rerolled **${carLabel(car)}** to **${car.livery || '⬛'} ${newName}** for **${fmtMoney(CAR_RENAME_FEE)}**.\n` +
+      `🎲 ${nick} rerolled **${carLabel(car)}** to **${car.livery || '⬛'} ${newName}** for **${fmtMoney(CAR_RENAME_FEE)}**${renameCost.fee > 0 ? ` + ${fmtMoney(renameCost.fee)} wealth fee` : ''}.\n` +
       `💰 Balance: **${fmtMoney(updated)}**`
   })
 }
@@ -1210,8 +1293,9 @@ export async function handleBetCommand (ctx) {
 
   const bal = await safeCall(getUserWallet, [sender]).catch(() => null)
   const nick = await safeCall(getUserNickname, [sender]).catch(() => '@user')
-  if (typeof bal !== 'number' || bal < amt) {
-    await postMessage({ room, message: `❗ ${nick}, insufficient funds. Balance: ${fmtMoney(bal)}.` })
+  const betCost = getProgressiveWealthFee({ balance: bal, baseAmount: amt, source: 'f1' })
+  if (typeof bal !== 'number' || bal < betCost.total) {
+    await postMessage({ room, message: `❗ ${nick}, insufficient funds. Total cost: ${fmtMoney(betCost.total)}${betCost.fee > 0 ? ` (${fmtMoney(amt)} + ${fmtMoney(betCost.fee)} wealth fee)` : ''}. Balance: ${fmtMoney(bal)}.` })
     return
   }
 
@@ -1248,7 +1332,11 @@ export async function handleBetCommand (ctx) {
   }
 
   // Debit stake immediately
-  await safeCall(debitGameBet, [sender, amt])
+  const chargedBet = await chargeF1Cost(sender, amt, 'bet', `Bet on ${car.label}`, bal)
+  if (!chargedBet.ok) {
+    await postMessage({ room, message: `⚠️ ${nick}, couldn't place that bet. Try again.` })
+    return
+  }
 
   // Store slip (new format)
   slips.push({ betKey, amount: amt })
@@ -1258,7 +1346,7 @@ export async function handleBetCommand (ctx) {
   const oddsLabel = Number.isFinite(dec) ? `${dec.toFixed(2)}x` : '—'
   await postMessage({
     room,
-    message: `🎟️ ${nick} bets ${fmtMoney(amt)} on slot ${idx + 1}: ${car.label} (odds ${oddsLabel})`
+    message: `🎟️ ${nick} bets ${fmtMoney(amt)} on slot ${idx + 1}: ${car.label} (odds ${oddsLabel})${betCost.fee > 0 ? ` + ${fmtMoney(betCost.fee)} wealth fee` : ''}`
   })
 }
 
@@ -1404,9 +1492,13 @@ export async function handleF1Leaderboard (ctx) {
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i]
-    const tag = row?.ownerId ? `<@uid:${row.ownerId}>` : (row?.ownerName || 'Unknown')
+    const titleTag = row?.ownerId ? getCompactEquippedTitleTag(row.ownerId, 7) : ''
+    const ownerName = compactLeaderboardName(row?.ownerName || row?.ownerId || 'Unknown', row?.ownerId, titleTag ? 10 : 14)
     lines.push(
-      `${i + 1}. ${tag} · Return ${fmtMoney(toInt(row.totalCarReturn))} · Cars ${toInt(row.carsOwned)} · W ${toInt(row.totalWins)} / R ${toInt(row.totalRaces)}`
+      `${i + 1}. ${titleTag ? `${titleTag} ` : ''}${ownerName} ${fmtMoney(toInt(row.totalCarReturn))}`
+    )
+    lines.push(
+      `   Cars ${toInt(row.carsOwned)} · W ${toInt(row.totalWins)} / R ${toInt(row.totalRaces)}`
     )
   }
 
@@ -1471,7 +1563,12 @@ export async function startF1Race (modeArg = 'open') {
       `• STARTER: ${fmtMoney(getTierEntryFee('starter'))}\n` +
       `• PRO: ${fmtMoney(getTierEntryFee('pro'))}\n` +
       `• HYPER: ${fmtMoney(getTierEntryFee('hyper'))}\n` +
-      `• LEGENDARY: ${fmtMoney(getTierEntryFee('legendary'))}`
+      `• LEGENDARY: ${fmtMoney(getTierEntryFee('legendary'))}\n` +
+      'Garage upkeep per extra active car (charged on entry):\n' +
+      `• STARTER: ${fmtMoney(getGarageUpkeepPerExtraCar('starter'))}\n` +
+      `• PRO: ${fmtMoney(getGarageUpkeepPerExtraCar('pro'))}\n` +
+      `• HYPER: ${fmtMoney(getGarageUpkeepPerExtraCar('hyper'))}\n` +
+      `• LEGENDARY: ${fmtMoney(getGarageUpkeepPerExtraCar('legendary'))}`
   }])
 
   if (avail.length) {
@@ -1637,17 +1734,44 @@ async function lockEntriesAndOpenStrategy () {
       const ownerId = c.ownerId
       const tierKey = normalizeTierKey(c.tier)
       const entryFee = lockedRaceType === 'drag' ? 0 : getTierEntryFee(tierKey)
+      const ownerCars = await safeCall(getUserCars, [ownerId]).catch(() => [])
+      const activeOwnedCars = Array.isArray(ownerCars)
+        ? ownerCars.filter(car => !car?.retired).length
+        : 1
+      const upkeepFee = lockedRaceType === 'drag'
+        ? 0
+        : Math.max(0, activeOwnedCars - 1) * getGarageUpkeepPerExtraCar(tierKey)
       const bal = await safeCall(getUserWallet, [ownerId]).catch(() => null)
+      const wealthFee = getProgressiveWealthFee({ balance: bal, baseAmount: entryFee + upkeepFee, source: 'f1' })
+      const totalCharge = entryFee + upkeepFee + wealthFee.fee
       const nick = await safeCall(getUserNickname, [ownerId]).catch(() => '@user')
-      if (typeof bal !== 'number' || bal < entryFee) {
+      if (typeof bal !== 'number' || bal < totalCharge) {
         await safeCall(postMessage, [{
           room: ROOM,
-          message: `❗ ${nick} could not pay ${tierKey.toUpperCase()} entry fee (${fmtMoney(entryFee)}). ${carLabel(c)} removed from grid.`
+          message: `❗ ${nick} could not pay ${tierKey.toUpperCase()} race costs (${fmtMoney(totalCharge)} = entry ${fmtMoney(entryFee)} + upkeep ${fmtMoney(upkeepFee)}${wealthFee.fee > 0 ? ` + wealth fee ${fmtMoney(wealthFee.fee)}` : ''}). ${carLabel(c)} removed from grid.`
         }])
         continue
       }
       if (entryFee > 0) {
-        await safeCall(debitGameBet, [ownerId, entryFee])
+        await safeCall(debitGameBet, [ownerId, entryFee, {
+          source: 'f1',
+          category: 'entry_fee',
+          note: `${lockedRaceMode} ${tierKey} race entry`
+        }])
+      }
+      if (upkeepFee > 0) {
+        await safeCall(debitGameBet, [ownerId, upkeepFee, {
+          source: 'f1',
+          category: 'garage_upkeep',
+          note: `${Math.max(0, activeOwnedCars - 1)} extra active car(s)`
+        }])
+      }
+      if (wealthFee.fee > 0) {
+        await safeCall(debitGameBet, [ownerId, wealthFee.fee, {
+          source: 'f1',
+          category: 'wealth_fee',
+          note: `${wealthFee.bandLabel} wealth fee on race entry`
+        }])
       }
       if (entryFee > 0 && c?.id != null) {
         await safeCall(recordCarEntryFee, [c.id, entryFee]).catch(() => null)
