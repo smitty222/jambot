@@ -6,7 +6,6 @@ import { addCarEarnings, updateCarAfterRaceResult } from '../../database/dbcars.
 import { postMessage } from '../../libs/cometchat.js'
 import { getUserNickname } from '../../utils/nickname.js'
 import { stat01 } from './utils/track.js'
-import { env } from '../../config.js'
 
 const ROOM = process.env.ROOM_UUID
 
@@ -28,7 +27,6 @@ const TIRE_START = { soft: 1.035, med: 1.020, hard: 1.008 }
 const MODE_MULT = { push: 1.020, norm: 1.000, save: 0.988 }
 const MODE_WEAR = { push: 8, norm: 5, save: 3 }
 const MODE_DNF = { push: 0.010, norm: 0.005, save: 0.0025 }
-const TIER_PAYOUT_MULT = { starter: 1.00, pro: 1.08, hyper: 1.22, legendary: 1.40 }
 const TIER_WEAR_MULT = { starter: 1.00, pro: 0.94, hyper: 0.82, legendary: 0.70 }
 const ENTRY_FEE_BY_TIER = {
   starter: env.f1EntryFeeStarter,
@@ -36,8 +34,8 @@ const ENTRY_FEE_BY_TIER = {
   hyper: env.f1EntryFeeHyper,
   legendary: env.f1EntryFeeLegendary
 }
-const ELITE_PAID_PLACE_FLOOR_COUNT = 4
-const ELITE_MIN_PROFIT_OVER_ENTRY = 500
+const ELITE_FOURTH_PLACE_BONUS_OVER_ENTRY = 750
+const ELITE_FIFTH_PLACE_BUFFER_UNDER_ENTRY = 750
 
 const DELAY = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -65,35 +63,45 @@ function carBetKey (car) {
 
 function normalizeTierKey (tierKey) {
   const key = String(tierKey || '').toLowerCase()
-  return Object.prototype.hasOwnProperty.call(TIER_PAYOUT_MULT, key) ? key : 'starter'
+  return Object.prototype.hasOwnProperty.call(TIER_WEAR_MULT, key) ? key : 'starter'
 }
 
-function payoutMultiplierForCar (car, raceMode = 'open', raceType = 'gp') {
-  if (String(raceType || 'gp').toLowerCase() !== 'drag' && String(raceMode || 'open').toLowerCase() !== 'elite') {
-    return 1
+function getEntryFeeForCar (car) {
+  const tier = normalizeTierKey(car?.tier)
+  return Math.max(0, Math.floor(Number(ENTRY_FEE_BY_TIER[tier] ?? 0)))
+}
+
+function adjustPlacePayout (car, place, baseAmt, raceMode = 'open', raceType = 'gp') {
+  const amt = Math.max(0, Math.floor(Number(baseAmt || 0)))
+  if (amt <= 0) return 0
+  if (String(raceType || 'gp').toLowerCase() !== 'gp') return amt
+  if (String(raceMode || 'open').toLowerCase() !== 'elite') return amt
+  if (!car?.ownerId) return amt
+
+  const entryFee = getEntryFeeForCar(car)
+  if (entryFee <= 0) return amt
+
+  if (Number(place) === 3) {
+    return Math.min(amt, entryFee + ELITE_FOURTH_PLACE_BONUS_OVER_ENTRY)
   }
 
-  const tier = normalizeTierKey(car?.tier)
-  return Number(TIER_PAYOUT_MULT[tier] ?? 1)
+  if (Number(place) === 4) {
+    return Math.min(amt, Math.max(0, entryFee - ELITE_FIFTH_PLACE_BUFFER_UNDER_ENTRY))
+  }
+
+  return amt
 }
 
 function tierScaledBonus (car, baseBonus, raceMode = 'open', raceType = 'gp') {
   const base = Math.max(0, Math.floor(Number(baseBonus || 0)))
   if (base <= 0) return 0
-  return Math.floor(base * payoutMultiplierForCar(car, raceMode, raceType))
-}
-
-function minimumPlacePayoutForCar (car, place, raceMode = 'open', raceType = 'gp') {
-  if (String(raceType || 'gp').toLowerCase() !== 'gp') return 0
-  if (String(raceMode || 'open').toLowerCase() !== 'elite') return 0
-  if (!car?.ownerId) return 0
-  if (Number(place) >= ELITE_PAID_PLACE_FLOOR_COUNT) return 0
+  if (String(raceType || 'gp').toLowerCase() !== 'drag' && String(raceMode || 'open').toLowerCase() !== 'elite') {
+    return base
+  }
 
   const tier = normalizeTierKey(car?.tier)
-  const entryFee = Math.max(0, Math.floor(Number(ENTRY_FEE_BY_TIER[tier] ?? 0)))
-  if (entryFee <= 0) return 0
-
-  return entryFee + ELITE_MIN_PROFIT_OVER_ENTRY
+  const payoutMultByTier = { starter: 1.00, pro: 1.08, hyper: 1.22, legendary: 1.40 }
+  return Math.floor(base * Number(payoutMultByTier[tier] ?? 1))
 }
 
 function wearMultiplierForCar (car) {
@@ -445,51 +453,34 @@ export async function runRace ({
     : null
 
   // Prize payouts:
-  // - Only owner cars participate in the paid-place split.
-  // - In elite GP, P1-P4 are guaranteed to clear their own entry fee.
+  // - Each finishing place keeps its configured share of the purse.
+  // - Bots can consume a paid place; their share is not redistributed.
   const payouts = {}
   const payoutDetails = []
   const paidPlaces = Math.min(5, finishOrder.length)
-  const paidEntries = []
   for (let place = 0; place < paidPlaces; place++) {
     const idx = finishOrder[place]
     const car = cars[idx]
-    if (!car?.ownerId) continue
     const baseWeight = Number(payoutPlan?.[place] ?? 0)
-    const payoutMult = payoutMultiplierForCar(car, raceMode, raceKind)
-    paidEntries.push({
-      place,
+    const baseAmt = Math.floor(Number(prizePool || 0) * (baseWeight / 100))
+    const amt = adjustPlacePayout(car, place, baseAmt, raceMode, raceKind)
+    if (amt <= 0 || !car?.ownerId) continue
+
+    payouts[car.ownerId] = (payouts[car.ownerId] || 0) + amt
+    payoutDetails.push({
+      place: place + 1,
       idx,
       ownerId: car.ownerId,
-      weight: baseWeight * payoutMult
+      amount: amt
     })
-  }
-
-  const weightSum = paidEntries.reduce((sum, e) => sum + e.weight, 0)
-  if (weightSum > 0) {
-    for (const e of paidEntries) {
-      const car = cars?.[e.idx]
-      const baseAmt = Math.floor((Number(prizePool || 0) * (e.weight / weightSum)))
-      const floorAmt = minimumPlacePayoutForCar(car, e.place, raceMode, raceKind)
-      const amt = Math.max(baseAmt, floorAmt)
-      if (amt <= 0) continue
-
-      payouts[e.ownerId] = (payouts[e.ownerId] || 0) + amt
-      payoutDetails.push({
-        place: e.place + 1,
-        idx: e.idx,
-        ownerId: e.ownerId,
-        amount: amt
-      })
-      await safeCall(creditGameWin, [e.ownerId, amt, null, {
-        source: 'f1',
-        category: 'race_prize',
-        note: `F1 place payout P${e.place + 1}`
-      }])
-      const paidCarId = cars?.[e.idx]?.id
-      if (paidCarId != null) {
-        await safeCall(addCarEarnings, [paidCarId, amt]).catch(() => null)
-      }
+    await safeCall(creditGameWin, [car.ownerId, amt, null, {
+      source: 'f1',
+      category: 'race_prize',
+      note: `F1 place payout P${place + 1}`
+    }])
+    const paidCarId = cars?.[idx]?.id
+    if (paidCarId != null) {
+      await safeCall(addCarEarnings, [paidCarId, amt]).catch(() => null)
     }
   }
 

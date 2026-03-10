@@ -83,7 +83,7 @@ export function buildSportsInfoMessage (topic = '') {
   }
 
   return [
-    '🏈 Sports',
+    '🏈 Sports Commands',
     '',
     'Most common:',
     '- `/sports scores nba`',
@@ -91,6 +91,7 @@ export function buildSportsInfoMessage (topic = '') {
     '- `/sports bet nba 1 lakers ml 25`',
     '- `/sports bets`',
     '- `/sports resolve`',
+    '- `/sportsbet SPORT INDEX TEAM TYPE AMOUNT`',
     '',
     'More help:',
     '- `/sportsinfo scores`',
