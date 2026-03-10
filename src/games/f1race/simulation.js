@@ -6,6 +6,7 @@ import { addCarEarnings, updateCarAfterRaceResult } from '../../database/dbcars.
 import { postMessage } from '../../libs/cometchat.js'
 import { getUserNickname } from '../../utils/nickname.js'
 import { stat01 } from './utils/track.js'
+import { env } from '../../config.js'
 
 const ROOM = process.env.ROOM_UUID
 
