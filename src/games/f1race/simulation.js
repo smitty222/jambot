@@ -59,15 +59,19 @@ function normalizeTierKey (tierKey) {
   return Object.prototype.hasOwnProperty.call(TIER_PAYOUT_MULT, key) ? key : 'starter'
 }
 
-function payoutMultiplierForCar (car) {
+function payoutMultiplierForCar (car, raceMode = 'open', raceType = 'gp') {
+  if (String(raceType || 'gp').toLowerCase() !== 'drag' && String(raceMode || 'open').toLowerCase() !== 'elite') {
+    return 1
+  }
+
   const tier = normalizeTierKey(car?.tier)
   return Number(TIER_PAYOUT_MULT[tier] ?? 1)
 }
 
-function tierScaledBonus (car, baseBonus) {
+function tierScaledBonus (car, baseBonus, raceMode = 'open', raceType = 'gp') {
   const base = Math.max(0, Math.floor(Number(baseBonus || 0)))
   if (base <= 0) return 0
-  return Math.floor(base * payoutMultiplierForCar(car))
+  return Math.floor(base * payoutMultiplierForCar(car, raceMode, raceType))
 }
 
 function wearMultiplierForCar (car) {
@@ -215,6 +219,7 @@ export async function runRace ({
   cars,
   track,
   raceType = 'gp',
+  raceMode = 'open',
   prizePool,
   payoutPlan,
   poleBonus = 0,
@@ -246,7 +251,7 @@ export async function runRace ({
   }))
 
   const poleCar = (poleWinnerCarId != null) ? cars.find(c => c?.id === poleWinnerCarId) : null
-  const paidPoleBonus = tierScaledBonus(poleCar, poleBonus)
+  const paidPoleBonus = tierScaledBonus(poleCar, poleBonus, raceMode, raceKind)
 
   if (paidPoleBonus > 0 && poleWinnerOwnerId) {
     await safeCall(creditGameWin, [poleWinnerOwnerId, paidPoleBonus]).catch(() => null)
@@ -427,7 +432,7 @@ export async function runRace ({
     const idx = finishOrder[place]
     const car = cars[idx]
     const baseWeight = Number(payoutPlan?.[place] ?? 0)
-    const payoutMult = payoutMultiplierForCar(car)
+    const payoutMult = payoutMultiplierForCar(car, raceMode, raceKind)
     paidEntries.push({
       place,
       idx,
@@ -467,7 +472,7 @@ export async function runRace ({
   let fastestLapAwarded = null
   if (fastestLapBonus > 0 && fastestLap?.ownerId) {
     const fastestCar = cars?.[fastestLap.index]
-    const paidFastestLapBonus = tierScaledBonus(fastestCar, fastestLapBonus)
+    const paidFastestLapBonus = tierScaledBonus(fastestCar, fastestLapBonus, raceMode, raceKind)
     await safeCall(creditGameWin, [fastestLap.ownerId, paidFastestLapBonus, null, {
       source: 'f1',
       category: 'fastest_lap_bonus',

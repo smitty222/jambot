@@ -115,9 +115,13 @@ import {
   handleMlbScoresCommand,
   handleNhlScoresCommand,
   handleNbaScoresCommand,
+  handleNcaabScoresCommand,
+  handleNflScoresCommand,
+  handleOddsCommand,
   handleMlbOddsCommand,
   handleSportsBetCommand,
-  handleResolveBetsCommand
+  handleResolveBetsCommand,
+  handleSportsInfoCommand
 } from './sportsCommands.js'
 import {
   handleCheckBalanceCommand,
@@ -764,14 +768,26 @@ const commandRegistry = {
   nba: async ({ payload, room }) => {
     await handleNbaScoresCommand({ payload, room })
   },
+  ncaab: async ({ payload, room }) => {
+    await handleNcaabScoresCommand({ payload, room })
+  },
+  nfl: async ({ payload, room }) => {
+    await handleNflScoresCommand({ payload, room })
+  },
+  odds: async ({ payload, room }) => {
+    await handleOddsCommand({ payload, room })
+  },
   mlbodds: async ({ room }) => {
     await handleMlbOddsCommand({ room })
   },
   sportsbet: async ({ payload, room }) => {
     await handleSportsBetCommand({ payload, room })
   },
-  resolvebets: async ({ room }) => {
-    await handleResolveBetsCommand({ room })
+  resolvebets: async ({ payload, room }) => {
+    await handleResolveBetsCommand({ payload, room })
+  },
+  sportsinfo: async ({ room }) => {
+    await handleSportsInfoCommand({ room })
   },
   reviewhelp: async ({ room }) => {
     await handleReviewHelpCommand({ room })

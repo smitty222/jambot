@@ -1,6 +1,7 @@
 import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
 import { isUserAuthorized, updateRoomInfo } from '../utils/API.js'
 import { env } from '../config.js'
+import { buildSportsInfoMessage } from './sportsCommands.js'
 
 export function buildModSheet () {
   return [
@@ -73,6 +74,56 @@ export const COMMAND_GUIDES = {
     '- F1 help: `/f1help`',
     '- Trivia: `/triviastart` (or `/trivia`)'
   ].join('\n'),
+  queue: [
+    '🎚️ Queue & Playlist Commands',
+    '',
+    'Queue',
+    '- `/q`',
+    '- `/q+`',
+    '- `/q-`',
+    '',
+    'Playlist tools',
+    '- `/searchplaylist`',
+    '- `/qplaylist <spotifyPlaylistId>`',
+    '- `/qalbum <spotifyAlbumId|url|uri>`',
+    '- `/searchalbum <artist>`',
+    '- `/newalbums [countryCode]`',
+    '- `/albumlist`',
+    '- `/albumadd <spotifyAlbumId>`',
+    '- `/albumremove <spotifyAlbumId>`',
+    '- `/addsong [beach]`',
+    '- `/removesong [beach]`'
+  ].join('\n'),
+  trivia: [
+    '🧠 Trivia Commands',
+    '',
+    '- `/trivia`',
+    '- `/triviastart [rounds]`',
+    '- `/triviaend`',
+    '- Answer with `/a`, `/b`, `/c`, or `/d` once a question is live'
+  ].join('\n'),
+  fun: [
+    '🎉 Fun & Room Commands',
+    '',
+    'Reactions',
+    '- `/gifs`',
+    '- `/burp` `/dance` `/party` `/beer` `/fart` `/cheers` `/tomatoes`',
+    '- `/trash` `/bonk` `/rigged` `/banger` `/peace`',
+    '- `/dog [breed] [sub-breed]`',
+    '',
+    'Room actions',
+    '- `/jump`',
+    '- `/like`',
+    '- `/dive`',
+    '- `/escortme`',
+    '- `/djbeer` `/djbeers` `/getdjdrunk`',
+    '- `/spotlight`',
+    '',
+    'Extras',
+    '- `/8ball <question>`',
+    '- `/store`',
+    '- `/site`'
+  ].join('\n'),
   music: [
     '🎵 Music, Queue & Reviews',
     '',
@@ -116,6 +167,7 @@ export const COMMAND_GUIDES = {
     '- `/settheme <name>` (mods)',
     '- `/removetheme` (mods)'
   ].join('\n'),
+  sports: buildSportsInfoMessage(),
   wallet: [
     '💰 Wallet, Betting & Scores',
     '',
@@ -143,6 +195,13 @@ export const COMMAND_GUIDES = {
     '- `/tip <@user> <amount>`',
     '',
     'Sports',
+    '- `/sportsinfo`',
+    '- `/mlb [YYYY-MM-DD]`',
+    '- `/nba [YYYY-MM-DD]`',
+    '- `/ncaab [YYYY-MM-DD]`',
+    '- `/nhl [YYYY-MM-DD]`',
+    '- `/nfl [YYYY-MM-DD]`',
+    '- `/odds <mlb|nba|ncaab|nhl|nfl>`',
     '- `/mlbodds`'
   ].join('\n'),
   avatars: [
@@ -203,6 +262,25 @@ export function createRoomUtilityHandlers (deps = {}) {
       const isMod = await isAuthorized(payload.sender, ttlUserToken)
       const arg = payload.message.trim().split(/\s+/)[1]?.toLowerCase()
       const askedForMod = /^(mod|mods|moderator|admin)$/.test(arg || '')
+      const guideMap = {
+        avatar: COMMAND_GUIDES.avatars,
+        avatars: COMMAND_GUIDES.avatars,
+        fun: COMMAND_GUIDES.fun,
+        game: COMMAND_GUIDES.games,
+        games: COMMAND_GUIDES.games,
+        gif: COMMAND_GUIDES.fun,
+        gifs: COMMAND_GUIDES.fun,
+        music: COMMAND_GUIDES.music,
+        playlist: COMMAND_GUIDES.queue,
+        playlists: COMMAND_GUIDES.queue,
+        q: COMMAND_GUIDES.queue,
+        queue: COMMAND_GUIDES.queue,
+        sports: COMMAND_GUIDES.sports,
+        sport: COMMAND_GUIDES.sports,
+        store: COMMAND_GUIDES.fun,
+        trivia: COMMAND_GUIDES.trivia,
+        wallet: COMMAND_GUIDES.wallet
+      }
 
       if (askedForMod) {
         if (!isMod) {
@@ -218,6 +296,11 @@ export function createRoomUtilityHandlers (deps = {}) {
         return
       }
 
+      if (arg && guideMap[arg]) {
+        await post({ room, message: guideMap[arg] })
+        return
+      }
+
       const sections = []
       sections.push([
         '— Essentials —',
@@ -225,6 +308,7 @@ export function createRoomUtilityHandlers (deps = {}) {
         '- `/games` — List game commands',
         '- `/music` — Music, queue, and review commands',
         '- `/wallet` — Wallet and betting commands',
+        '- `/commands sports` — Sports scores, odds, and betting',
         '- `/gifs` — GIF and fun commands',
         '- `/avatars` — Avatar commands'
       ].join('\n'))
@@ -235,16 +319,29 @@ export function createRoomUtilityHandlers (deps = {}) {
         '- `/score` — Spotify popularity score',
         '- `/reviewhelp` — How to review songs',
         '- `/bankroll` — Wallet leaderboard',
-        '- `/suggestsongs` — Song suggestions'
+        '- `/suggestsongs` — Song suggestions',
+        '- `/store` — Buyable novelty commands'
       ].join('\n'))
 
       sections.push([
-        '— Category Shortcuts —',
-        '- `/games`',
-        '- `/gifs`',
-        '- `/music`',
-        '- `/wallet`',
-        '- `/avatars`'
+        '— Command Hubs —',
+        '- `/commands games` or `/games`',
+        '- `/commands music` or `/music`',
+        '- `/commands queue`',
+        '- `/commands wallet` or `/wallet`',
+        '- `/commands sports`',
+        '- `/commands fun` or `/gifs`',
+        '- `/commands trivia`',
+        '- `/commands avatars` or `/avatars`'
+      ].join('\n'))
+
+      sections.push([
+        '— Standalone Helpers —',
+        '- `/theme` — Current room theme',
+        '- `/reviewhelp` — Review instructions',
+        '- `/sportsinfo` — Sports commands',
+        '- `/store` — Shop items and priced novelty commands',
+        '- `/site` — Bot hub link'
       ].join('\n'))
 
       if (isMod) {

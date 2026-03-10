@@ -2,42 +2,14 @@ import { getUserWallet, removeFromUserWallet, addToUserWallet } from '../databas
 import { getOddsForSport } from './bettingOdds.js'
 import { promises as fs } from 'fs'
 import { getLatestScoresForSport } from './sportsBetAPI.js'
+import {
+  getMlbTeamAbbreviation,
+  resolveTeamNameFromInput
+} from './sportsTeams.js'
 
 const BETS_FILE = 'src/data/bets.json'
 
 const mlbGamesCache = []
-
-const teamAbbreviations = {
-  'New York Yankees': 'NYY',
-  'Colorado Rockies': 'COL',
-  'New York Mets': 'NYM',
-  'Boston Red Sox': 'BOS',
-  'Los Angeles Dodgers': 'LAD',
-  'Houston Astros': 'HOU',
-  'Chicago Cubs': 'CHC',
-  'Atlanta Braves': 'ATL',
-  'San Francisco Giants': 'SF',
-  'Tampa Bay Rays': 'TB',
-  'Toronto Blue Jays': 'TOR',
-  'Minnesota Twins': 'MIN',
-  'Seattle Mariners': 'SEA',
-  'Detroit Tigers': 'DET',
-  'Cincinnati Reds': 'CIN',
-  'Philadelphia Phillies': 'PHI',
-  'St. Louis Cardinals': 'STL',
-  'Miami Marlins': 'MIA',
-  'Baltimore Orioles': 'BAL',
-  'Oakland Athletics': 'OAK',
-  'Pittsburgh Pirates': 'PIT',
-  'Arizona Dbacks': 'ARI',
-  'Los Angeles Angels': 'LAA',
-  'Kansas City Royals': 'KC',
-  'Washington Nationals': 'WAS',
-  'Milwaukee Brewers': 'MIL',
-  'Cleveland Guardians': 'CLE',
-  'Chicago White Sox': 'CHW',
-  'Texas Rangers': 'TEX'
-}
 
 export async function loadBets () {
   try {
@@ -77,9 +49,7 @@ export async function placeSportsBet (senderUUID, index, team, betTypeInput, amo
   const spreads = bookmaker.markets.find(m => m.key === 'spreads')?.outcomes || []
 
   const teamAbbrUpper = team.toUpperCase()
-  const fullTeamName = [game.awayTeam, game.homeTeam].find(name =>
-    name.toLowerCase().includes(teamShortNames[teamAbbrUpper]?.toLowerCase() || '')
-  )
+  const fullTeamName = resolveTeamNameFromInput(teamAbbrUpper, [game.awayTeam, game.homeTeam])
 
   if (!fullTeamName) return `Invalid team abbreviation for game ${index + 1}.`
 
@@ -133,8 +103,8 @@ export async function resolveCompletedBets (sportKey) {
     const { id: gameId, homeTeam, awayTeam, scores } = game
     if (!bets[gameId]) continue
 
-    const homeAbbr = teamAbbreviations[homeTeam] || homeTeam.slice(0, 3).toUpperCase()
-    const awayAbbr = teamAbbreviations[awayTeam] || awayTeam.slice(0, 3).toUpperCase()
+    const homeAbbr = getMlbTeamAbbreviation(homeTeam)
+    const awayAbbr = getMlbTeamAbbreviation(awayTeam)
 
     const winner = scores.home > scores.away ? homeAbbr : awayAbbr
 
@@ -162,38 +132,6 @@ function calculateWinnings (amount, odds) {
   return odds > 0
     ? Math.round((amount * odds) / 100) // +138 -> win $138 on $100
     : Math.round((amount * 100) / Math.abs(odds)) // -150 -> win $66.67 on $100
-}
-
-const teamShortNames = {
-  ATL: 'Braves',
-  BAL: 'Orioles',
-  BOS: 'Red Sox',
-  CHC: 'Cubs',
-  CIN: 'Reds',
-  CLE: 'Guardians',
-  COL: 'Rockies',
-  CWS: 'White Sox',
-  DET: 'Tigers',
-  HOU: 'Astros',
-  KC: 'Royals',
-  LAA: 'Angels',
-  LAD: 'Dodgers',
-  MIA: 'Marlins',
-  MIL: 'Brewers',
-  MIN: 'Twins',
-  NYM: 'Mets',
-  NYY: 'Yankees',
-  OAK: 'Athletics',
-  PHI: 'Phillies',
-  PIT: 'Pirates',
-  SD: 'Padres',
-  SEA: 'Mariners',
-  SF: 'Giants',
-  STL: 'Cardinals',
-  TB: 'Rays',
-  TEX: 'Rangers',
-  TOR: 'Blue Jays',
-  WSH: 'Nationals'
 }
 
 export { mlbGamesCache }

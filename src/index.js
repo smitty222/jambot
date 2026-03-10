@@ -15,6 +15,7 @@ import * as themeStorage from './utils/themeManager.js'
 import { setThemes } from './utils/roomThemes.js'
 import { setRoomBot } from './runtime/roomBot.js'
 import { getHealthStatus } from './runtime/health.js'
+import { startSportsSettlementCron } from './scheduler/sportsSettlement.js'
 
 // ──────────────────────────────────────────────
 // Global crash guards
@@ -241,6 +242,12 @@ const server = app.listen(port, '0.0.0.0', () => {
 })()
 
 startSitePublisherCron()
+startSportsSettlementCron({
+  logger,
+  sportsSettlementCron: env.sportsSettlementCron,
+  sportsSettlementTz: env.sportsSettlementTz,
+  sportsSettlementRunOnBoot: env.sportsSettlementRunOnBoot === '1'
+})
 
 // ──────────────────────────────────────────────
 // Graceful shutdown

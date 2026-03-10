@@ -1,6 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert'
 import { parseTipAmount, naturalJoin, splitEvenly } from '../src/utils/helpers.js'
+import {
+  resolveTeamNameFromInput,
+  getGenericDisplayTeamCode
+} from '../src/utils/sportsTeams.js'
 
 test('parseTipAmount returns NaN for empty input', () => {
   assert.ok(Number.isNaN(parseTipAmount('')))
@@ -40,4 +44,17 @@ test('naturalJoin joins many elements with commas and and', () => {
 test('splitEvenly splits amounts evenly into n parts', () => {
   assert.deepStrictEqual(splitEvenly(10, 2), [5, 5])
   assert.deepStrictEqual(splitEvenly(10, 3), [3.34, 3.33, 3.33])
+})
+
+test('resolveTeamNameFromInput matches generic multi-sport aliases', () => {
+  const teams = ['Los Angeles Lakers', 'Boston Celtics']
+
+  assert.strictEqual(resolveTeamNameFromInput('lakers', teams), 'Los Angeles Lakers')
+  assert.strictEqual(resolveTeamNameFromInput('lal', teams), 'Los Angeles Lakers')
+  assert.strictEqual(resolveTeamNameFromInput('celtics', teams), 'Boston Celtics')
+})
+
+test('getGenericDisplayTeamCode derives readable short labels', () => {
+  assert.strictEqual(getGenericDisplayTeamCode('Los Angeles Lakers'), 'LAL')
+  assert.strictEqual(getGenericDisplayTeamCode('Boston Celtics'), 'BC')
 })

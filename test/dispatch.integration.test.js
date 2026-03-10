@@ -6,9 +6,18 @@ import { resolveDispatchCommand } from '../src/handlers/commandRouting.js'
 import {
   createSlotsRegistryHandler,
   createMlbScoresCommandHandler,
+  createSportsScoresCommandHandler,
   createTipCommandHandler,
   createSongReviewCommandHandler
 } from '../src/handlers/handlerFactories.js'
+import {
+  createNflScoresCommandHandler,
+  createNcaabScoresCommandHandler,
+  createOddsCommandHandler,
+  createResolveBetsCommandHandler,
+  createSportsBetCommandHandler,
+  buildSportsInfoMessage
+} from '../src/handlers/sportsCommands.js'
 
 function createRecorder () {
   const calls = []
@@ -70,6 +79,152 @@ test('dispatchWithRegistry routes /mlb to the MLB handler with parsed date', asy
   assert.equal(handled, true)
   assert.deepEqual(seenDates, ['2026-03-10'])
   assert.deepEqual(posted, [{ room: 'room-1', message: 'scores:2026-03-10' }])
+})
+
+test('createSportsScoresCommandHandler parses and forwards dates for other leagues', async () => {
+  const posted = []
+  const seenDates = []
+  const handler = createSportsScoresCommandHandler({
+    postMessage: async (msg) => posted.push(msg),
+    getScores: async (date) => {
+      seenDates.push(date)
+      return `nba:${date}`
+    },
+    commandName: 'NBA',
+    errorTag: 'nba'
+  })
+
+  await handler({
+    payload: { sender: 'user-1', message: '/nba 2026-03-11' },
+    room: 'room-1'
+  })
+
+  assert.deepEqual(seenDates, ['2026-03-11'])
+  assert.deepEqual(posted, [{ room: 'room-1', message: 'nba:2026-03-11' }])
+})
+
+test('createNflScoresCommandHandler parses and forwards dates for nfl', async () => {
+  const posted = []
+  const seenDates = []
+  const handler = createNflScoresCommandHandler({
+    postMessage: async (msg) => posted.push(msg),
+    getScores: async (date) => {
+      seenDates.push(date)
+      return `nfl:${date}`
+    }
+  })
+
+  await handler({
+    payload: { sender: 'user-1', message: '/nfl 2026-09-13' },
+    room: 'room-1'
+  })
+
+  assert.deepEqual(seenDates, ['2026-09-13'])
+  assert.deepEqual(posted, [{ room: 'room-1', message: 'nfl:2026-09-13' }])
+})
+
+test('createNcaabScoresCommandHandler parses and forwards dates for ncaab', async () => {
+  const posted = []
+  const seenDates = []
+  const handler = createNcaabScoresCommandHandler({
+    postMessage: async (msg) => posted.push(msg),
+    getScores: async (date) => {
+      seenDates.push(date)
+      return `ncaab:${date}`
+    }
+  })
+
+  await handler({
+    payload: { sender: 'user-1', message: '/ncaab 2026-03-18' },
+    room: 'room-1'
+  })
+
+  assert.deepEqual(seenDates, ['2026-03-18'])
+  assert.deepEqual(posted, [{ room: 'room-1', message: 'ncaab:2026-03-18' }])
+})
+
+test('createSportsBetCommandHandler posts the bet result without extra wallet debit', async () => {
+  const posted = []
+  const betCalls = []
+  const handler = createSportsBetCommandHandler({
+    postMessage: async (msg) => posted.push(msg),
+    getSenderNickname: async () => '@bettor',
+    getOddsForSport: async () => [{ id: 'game-1' }],
+    getUserWallet: async () => 100,
+    placeSportsBet: async (...args) => {
+      betCalls.push(args)
+      return '✅ Bet placed!'
+    }
+  })
+
+  await handler({
+    payload: { sender: 'user-1', message: '/sportsbet mlb 1 NYY ml 50' },
+    room: 'room-1'
+  })
+
+  assert.equal(betCalls.length, 1)
+  assert.deepEqual(betCalls[0], ['user-1', 0, 'NYY', 'ml', 50, 'baseball_mlb'])
+  assert.deepEqual(posted, [{ room: 'room-1', message: '✅ Bet placed!' }])
+})
+
+test('createOddsCommandHandler fetches and stores odds for the selected sport', async () => {
+  const posted = []
+  const fetched = []
+  const saved = []
+  const handler = createOddsCommandHandler({
+    postMessage: async (msg) => posted.push(msg),
+    fetchOddsForSport: async (sport) => {
+      fetched.push(sport)
+      return [{ id: 'game-1' }]
+    },
+    saveOddsForSport: async (sport, data) => saved.push([sport, data]),
+    formatOddsMessage: (_games, sport) => `odds:${sport}`
+  })
+
+  await handler({
+    payload: { sender: 'user-1', message: '/odds ncaab' },
+    room: 'room-1'
+  })
+
+  assert.deepEqual(fetched, ['basketball_ncaab'])
+  assert.deepEqual(saved, [['basketball_ncaab', [{ id: 'game-1' }]]])
+  assert.deepEqual(posted, [{ room: 'room-1', message: 'odds:basketball_ncaab' }])
+})
+
+test('createResolveBetsCommandHandler resolves all sports by default', async () => {
+  const posted = []
+  const resolved = []
+  const handler = createResolveBetsCommandHandler({
+    postMessage: async (msg) => posted.push(msg),
+    resolveCompletedBets: async (sport) => resolved.push(sport)
+  })
+
+  await handler({
+    payload: { sender: 'user-1', message: '/resolvebets' },
+    room: 'room-1'
+  })
+
+  assert.deepEqual(resolved, [
+    'baseball_mlb',
+    'basketball_nba',
+    'basketball_ncaab',
+    'americanfootball_nfl',
+    'icehockey_nhl'
+  ])
+  assert.deepEqual(posted, [{
+    room: 'room-1',
+    message: 'Open bets have been resolved for MLB, NBA, NCAAB, NFL, NHL.'
+  }])
+})
+
+test('buildSportsInfoMessage documents the multi-sport flow', () => {
+  const message = buildSportsInfoMessage()
+
+  assert.match(message, /\/sportsinfo/)
+  assert.match(message, /\/ncaab \[YYYY-MM-DD]/)
+  assert.match(message, /\/odds <mlb\|nba\|ncaab\|nhl\|nfl>/)
+  assert.match(message, /\/sportsbet SPORT INDEX TEAM TYPE AMOUNT/)
+  assert.match(message, /\/resolvebets \[sport]/)
 })
 
 test('dispatchWithRegistry routes /tip through the real tip handler logic', async () => {

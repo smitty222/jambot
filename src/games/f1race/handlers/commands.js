@@ -94,6 +94,11 @@ const BET_MARKET_MULT_BY_TIER = {
   hyper: env.f1BetMarketMultHyper,
   legendary: env.f1BetMarketMultLegendary
 }
+const BET_MAX_BY_MODE = {
+  rookie: Math.min(BET_MAX, 2500),
+  open: Math.min(BET_MAX, 4000),
+  elite: BET_MAX
+}
 
 // Car tiers: higher ceiling, not guaranteed wins.
 const CAR_TIERS = {
@@ -344,15 +349,31 @@ async function chargeF1Cost (userId, amount, category, note, balance = null) {
   return { ok: true, balance: debitResult.balance, wealthFee }
 }
 
-function getTierPayoutMultiplier (tierKey) {
+function getTierPayoutMultiplier (tierKey, modeKey = lockedRaceMode, raceType = lockedRaceType) {
+  if (String(raceType || 'gp').toLowerCase() === 'drag') {
+    const normalized = normalizeTierKey(tierKey)
+    return Number(TIER_PAYOUT_MULT[normalized] ?? 1)
+  }
+
+  const mode = normalizeRaceMode(modeKey) || 'open'
+  if (mode !== 'elite') return 1
+
   const normalized = normalizeTierKey(tierKey)
   return Number(TIER_PAYOUT_MULT[normalized] ?? 1)
 }
 
-function getBetMarketMultiplier (tierKey) {
+function getBetMarketMultiplier (tierKey, modeKey = lockedRaceMode, raceType = lockedRaceType) {
+  if (String(raceType || 'gp').toLowerCase() !== 'drag') return 1
+
   const normalized = normalizeTierKey(tierKey)
   const raw = Number(BET_MARKET_MULT_BY_TIER[normalized] ?? BET_MARKET_MULT_BY_TIER.starter)
   return Math.max(0.9, Math.min(1.5, raw))
+}
+
+function getBetMaxForRaceContext (modeKey = lockedRaceMode, raceType = lockedRaceType) {
+  if (String(raceType || 'gp').toLowerCase() === 'drag') return BET_MAX
+  const mode = normalizeRaceMode(modeKey) || 'open'
+  return Number(BET_MAX_BY_MODE[mode] ?? BET_MAX)
 }
 
 function applyRaceModeBalanceToCar (car, modeKey) {
@@ -473,7 +494,7 @@ function estimateTierValueMetrics (tierKey) {
   }
 
   const strengths = TIER_ORDER.map((t) => tierBaseStrength(t))
-  const adjusted = TIER_ORDER.map((t, i) => strengths[i] * getTierPayoutMultiplier(t))
+  const adjusted = TIER_ORDER.map((t, i) => strengths[i] * getTierPayoutMultiplier(t, 'open', 'gp'))
   const idx = TIER_ORDER.indexOf(key)
   const myStrength = Math.max(1, adjusted[idx] || adjusted[0] || 1)
   const totalStrength = Math.max(1, adjusted.reduce((sum, n) => sum + n, 0))
@@ -585,7 +606,7 @@ function computeStrength (car, track) {
 function oddsFromStrengths (strengths, cars = []) {
   let marketStrengths = strengths.map((s, i) => {
     const tierKey = normalizeTierKey(cars?.[i]?.tier)
-    return Math.max(0.0001, Number(s || 0) * getBetMarketMultiplier(tierKey))
+    return Math.max(0.0001, Number(s || 0) * getBetMarketMultiplier(tierKey, lockedRaceMode, lockedRaceType))
   })
 
   // In ELITE mode, slightly compress strengths toward the mean so odds board
@@ -1318,8 +1339,9 @@ export async function handleBetCommand (ctx) {
   const amt = parseInt(m[2], 10)
 
   if (Number.isNaN(idx) || idx < 0 || idx >= field.length) return
-  if (Number.isNaN(amt) || amt < BET_MIN || amt > BET_MAX) {
-    await postMessage({ room, message: `❗ Min bet ${fmtMoney(BET_MIN)} · Max bet ${fmtMoney(BET_MAX)}.` })
+  const maxBet = getBetMaxForRaceContext()
+  if (Number.isNaN(amt) || amt < BET_MIN || amt > maxBet) {
+    await postMessage({ room, message: `❗ Min bet ${fmtMoney(BET_MIN)} · Max bet ${fmtMoney(maxBet)}.` })
     return
   }
 
@@ -1898,7 +1920,7 @@ async function lockEntriesAndOpenStrategy () {
     await safeCall(postMessage, [{
       room: ROOM,
       message: `${lockedRaceType === 'drag' ? 'Drag odds are live!' : 'Place your bets!'}\n` +
-        `• /bet <slot> <amount>  (min ${fmtMoney(BET_MIN)})\n` +
+        `• /bet <slot> <amount>  (min ${fmtMoney(BET_MIN)} · max ${fmtMoney(getBetMaxForRaceContext(lockedRaceMode, lockedRaceType))})\n` +
         `• Slot = betting board row number (1-${field.length})\n`
     }])
 
@@ -1989,7 +2011,7 @@ async function startRaceRun () {
     if (lockedRaceType !== 'drag' && poleWinnerOwnerId && POLE_BONUS > 0) {
       const nick = await safeCall(getUserNickname, [poleWinnerOwnerId]).catch(() => null)
       const tag = nick?.replace(/^@/, '') || `<@uid:${poleWinnerOwnerId}>`
-      const poleDisplayBonus = Math.floor(POLE_BONUS * getTierPayoutMultiplier(field[0]?.tier))
+      const poleDisplayBonus = Math.floor(POLE_BONUS * getTierPayoutMultiplier(field[0]?.tier, lockedRaceMode, lockedRaceType))
       await safeCall(postMessage, [{
         room: ROOM,
         message: `🎯 Pole Position Bonus goes to ${tag} (${fmtMoney(poleDisplayBonus)})`
@@ -2008,6 +2030,7 @@ async function startRaceRun () {
       cars: field,
       track,
       raceType: lockedRaceType,
+      raceMode: lockedRaceMode,
       prizePool: net,
       payoutPlan: lockedPayoutPlan,
       poleBonus: lockedRaceType === 'drag' ? 0 : POLE_BONUS,
@@ -2152,7 +2175,7 @@ export async function handleF1Help (ctx) {
     '/gp start <mode>       - start a Grand Prix (rookie/open/elite)',
     '/drag start <tier>     - start a 1v1 drag race (same tier only)',
     '(during entry) type your exact car name to enter',
-    `(during betting) /bet <slot> <amount> - bet by board row number shown on board (min ${fmtMoney(BET_MIN)})`
+    `(during betting) /bet <slot> <amount> - bet by board row number shown on board (min ${fmtMoney(BET_MIN)}; max depends on race mode)`
   ].join('\n')
 
   await postMessage({ room, message: '```\n' + msg + '\n```' })

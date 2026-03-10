@@ -965,9 +965,16 @@ export async function isUserOwner (userUuid, token = cfg.userToken) {
 /* ────────────────────────────────────────────────────────────────
  * ESPN Scores (MLB / NHL / NBA)
  * ──────────────────────────────────────────────────────────────── */
-async function espnScoreboard (sportPath) {
-  return getCachedScoreboard(sportPath, async () => {
-    const url = `https://site.api.espn.com/apis/site/v2/sports/${sportPath}/scoreboard`
+async function espnScoreboard (sportPath, requestedDate) {
+  const normalizedDate = typeof requestedDate === 'string' && /^\d{8}$/.test(requestedDate)
+    ? requestedDate
+    : typeof requestedDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)
+      ? requestedDate.replaceAll('-', '')
+      : null
+  const cacheKey = normalizedDate ? `${sportPath}:${normalizedDate}` : sportPath
+
+  return getCachedScoreboard(cacheKey, async () => {
+    const url = withQuery(`https://site.api.espn.com/apis/site/v2/sports/${sportPath}/scoreboard`, normalizedDate ? { dates: normalizedDate } : undefined)
     const { ok, data } = await makeRequest(url)
     if (!ok) return 'No scores available.\n'
 
@@ -1008,9 +1015,11 @@ async function espnScoreboard (sportPath) {
   })
 }
 
-export async function getMLBScores () { return espnScoreboard('baseball/mlb') }
-export async function getNHLScores () { return espnScoreboard('hockey/nhl') }
-export async function getNBAScores () { return espnScoreboard('basketball/nba') }
+export async function getMLBScores (requestedDate) { return espnScoreboard('baseball/mlb', requestedDate) }
+export async function getNHLScores (requestedDate) { return espnScoreboard('hockey/nhl', requestedDate) }
+export async function getNBAScores (requestedDate) { return espnScoreboard('basketball/nba', requestedDate) }
+export async function getNFLScores (requestedDate) { return espnScoreboard('football/nfl', requestedDate) }
+export async function getNCAABScores (requestedDate) { return espnScoreboard('basketball/mens-college-basketball', requestedDate) }
 
 /* ────────────────────────────────────────────────────────────────
  * Last.fm helpers

@@ -52,23 +52,35 @@ export function createSlotsRegistryHandler (deps = {}) {
 }
 
 export function createMlbScoresCommandHandler (deps = {}) {
+  return createSportsScoresCommandHandler({
+    commandName: 'MLB',
+    errorTag: 'mlb',
+    ...deps
+  })
+}
+
+export function createSportsScoresCommandHandler (deps = {}) {
   const {
     postMessage,
-    getMLBScores
+    getScores,
+    getMLBScores,
+    commandName = 'Sports',
+    errorTag = 'sports'
   } = deps
+  const fetchScores = getScores || getMLBScores
 
-  return async function handleMlbScoresCommand ({ payload, room }) {
+  return async function handleSportsScoresCommand ({ payload, room }) {
     const parts = String(payload?.message || '').trim().split(/\s+/)
     const requestedDate = parts[1]
 
     try {
-      const response = await getMLBScores(requestedDate)
+      const response = await fetchScores(requestedDate)
       await postMessage({ room, message: response })
     } catch (err) {
-      logger.error('[mlb] Error fetching scores', { err: err?.message || err, requestedDate })
+      logger.error(`[${errorTag}] Error fetching scores`, { err: err?.message || err, requestedDate })
       await postMessage({
         room,
-        message: 'There was an error fetching MLB scores. Please try again later.'
+        message: `There was an error fetching ${commandName} scores. Please try again later.`
       })
     }
   }

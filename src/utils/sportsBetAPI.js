@@ -1,5 +1,6 @@
 import fetch from 'node-fetch'
 import { formatOdds } from './sportsBet.js'
+import { getGenericDisplayTeamCode } from './sportsTeams.js'
 
 /// /////////////////////////////// Odds API ////////////////////////////////////////////
 export async function fetchOddsForSport (sportKey) {
@@ -47,7 +48,9 @@ function filterFanDuelOnly (games) {
 }
 
 export function formatOddsMessage (games, sportKey) {
-  return '🎲 Today\'s MLB Odds:\n\n' + games.slice(0, 5).map((game, i) => {
+  const title = formatSportTitle(sportKey)
+
+  return `🎲 Today's ${title} Odds:\n\n` + games.slice(0, 5).map((game, i) => {
     const { bookmaker, homeTeam, awayTeam, commenceTime } = game
     const h2h = bookmaker?.markets?.find(m => m.key === 'h2h')?.outcomes || []
     const spreads = bookmaker?.markets?.find(m => m.key === 'spreads')?.outcomes || []
@@ -60,8 +63,8 @@ export function formatOddsMessage (games, sportKey) {
     })
 
     // Abbreviations
-    const awayAbbr = teamAbbreviations[awayTeam] || awayTeam.slice(0, 3).toUpperCase()
-    const homeAbbr = teamAbbreviations[homeTeam] || homeTeam.slice(0, 3).toUpperCase()
+    const awayAbbr = getGenericDisplayTeamCode(awayTeam)
+    const homeAbbr = getGenericDisplayTeamCode(homeTeam)
 
     // Moneyline
     const oddsMap = Object.fromEntries(h2h.map(o => [o.name, formatOdds(o.price)]))
@@ -78,6 +81,18 @@ export function formatOddsMessage (games, sportKey) {
              `🧢 ML — ${awayAbbr}: ${awayML} | ${homeAbbr}: ${homeML}\n` +
              `📏 Spread — ${awayAbbr}: ${awaySpread} | ${homeAbbr}: ${homeSpread}`
   }).join('\n\n')
+}
+
+function formatSportTitle (sportKey) {
+  const map = {
+    baseball_mlb: 'MLB',
+    basketball_nba: 'NBA',
+    basketball_ncaab: 'NCAAB',
+    americanfootball_nfl: 'NFL',
+    icehockey_nhl: 'NHL'
+  }
+
+  return map[sportKey] || sportKey
 }
 
 // Helper to add sign for positive spreads
@@ -130,36 +145,4 @@ export async function getLatestScoresForSport (sportKey, daysFrom = 1) {
     console.error('Error fetching or parsing scores:', err)
     return []
   }
-}
-
-const teamAbbreviations = {
-  'New York Yankees': 'NYY',
-  'Colorado Rockies': 'COL',
-  'New York Mets': 'NYM',
-  'Boston Red Sox': 'BOS',
-  'Los Angeles Dodgers': 'LAD',
-  'Houston Astros': 'HOU',
-  'Chicago Cubs': 'CHC',
-  'Atlanta Braves': 'ATL',
-  'San Francisco Giants': 'SF',
-  'Tampa Bay Rays': 'TB',
-  'Toronto Blue Jays': 'TOR',
-  'Minnesota Twins': 'MIN',
-  'Seattle Mariners': 'SEA',
-  'Detroit Tigers': 'DET',
-  'Cincinnati Reds': 'CIN',
-  'Philadelphia Phillies': 'PHI',
-  'St. Louis Cardinals': 'STL',
-  'Miami Marlins': 'MIA',
-  'Baltimore Orioles': 'BAL',
-  'Oakland Athletics': 'OAK',
-  'Pittsburgh Pirates': 'PIT',
-  'Arizona Dbacks': 'ARI',
-  'Los Angeles Angels': 'LAA',
-  'Kansas City Royals': 'KC',
-  'Washington Nationals': 'WAS',
-  'Milwaukee Brewers': 'MIL',
-  'Cleveland Guardians': 'CLE',
-  'Chicago White Sox': 'CHW',
-  'Texas Rangers': 'TEX'
 }

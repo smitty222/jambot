@@ -78,6 +78,20 @@ test('parseSportsBetArgs parses a valid sports bet command', () => {
   })
 })
 
+test('parseSportsBetArgs parses a valid ncaab sports bet command', () => {
+  const parsed = parseSportsBetArgs('/sportsbet ncaab 3 duke ml 20')
+
+  assert.deepEqual(parsed, {
+    ok: true,
+    sportAlias: 'ncaab',
+    sport: 'basketball_ncaab',
+    index: 2,
+    team: 'duke',
+    betType: 'ml',
+    amount: 20
+  })
+})
+
 test('parseSportsBetArgs rejects unsupported sports and invalid amounts', () => {
   assert.deepEqual(parseSportsBetArgs('/sportsbet soccer 2 MIA ml 50'), {
     ok: false,
