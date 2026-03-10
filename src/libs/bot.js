@@ -40,15 +40,16 @@ import { scheduleLetterChallenge, scoreLetterChallenge, parseDurationToMs } from
 import { saveCurrentState } from '../database/dbcurrent.js'
 import { handleSongChainPlay } from '../games/songChainGame/songChainGame.js'
 import db from '../database/db.js'
+import { env } from '../config.js'
 
 // ───────────────────────────────────────────────────────────
 // Tunables (env overrides)
 // ───────────────────────────────────────────────────────────
-const SEEN_TTL_MS = Number(process.env.BOT_SEEN_TTL_MS ?? 10 * 60 * 1000)
-const SEEN_MAX = Number(process.env.BOT_SEEN_MAX ?? 5000)
-const DM_MAX_MERGED = Number(process.env.BOT_DM_MAX_MERGED ?? 400)
-const POLL_YIELD_EVERY = Number(process.env.BOT_POLL_YIELD_EVERY ?? 50)
-const STARTUP_BACKLOG_GRACE_S = Number(process.env.BOT_STARTUP_GRACE_S ?? 60)
+const SEEN_TTL_MS = env.botSeenTtlMs
+const SEEN_MAX = env.botSeenMax
+const DM_MAX_MERGED = env.botDmMaxMerged
+const POLL_YIELD_EVERY = env.botPollYieldEvery
+const STARTUP_BACKLOG_GRACE_S = env.botStartupGraceS
 
 // ───────────────────────────────────────────────────────────
 // Ephemeral baseline & identity
@@ -84,7 +85,7 @@ function resolveRoomTheme (roomUUID) {
 }
 
 export function isAlbumThemeActive (roomUUID) {
-  if (['1', 'true', 'yes', 'on'].includes(String(process.env.FORCE_ALBUM_THEME || '').toLowerCase())) {
+  if (['1', 'true', 'yes', 'on'].includes(String(env.themeForce || '').toLowerCase())) {
     return true
   }
   const raw = resolveRoomTheme(roomUUID)
@@ -239,15 +240,15 @@ class TTLSeenSet {
 // ───────────────────────────────────────────────────────────
 // DM/group helpers
 // ───────────────────────────────────────────────────────────
-const COMETCHAT_BOT_UID = process.env.BOT_USER_UUID || process.env.CHAT_USER_ID
+const COMETCHAT_BOT_UID = env.botUserUuid || env.chatUserId
 
 // DM cursor persistence
 const DM_CURSOR_FILE =
-  process.env.DM_CURSOR_FILE || path.join(process.cwd(), 'src/data/dm_since.json')
+  env.dmCursorFile || path.join(process.cwd(), 'src/data/dm_since.json')
 
 // Persisted last message IDs
 const LAST_MESSAGE_FILE =
-  process.env.LAST_MESSAGE_FILE || path.join(process.cwd(), 'src/data/lastMessageIDs.json')
+  env.lastMessageFile || path.join(process.cwd(), 'src/data/lastMessageIDs.json')
 
 /**
  * Load persisted lastMessageIDs from disk.
@@ -366,7 +367,7 @@ const deriveDmPeer = (m, hintedPeer) => {
   return fromCid || receiver || sender || null
 }
 
-function sendHeartbeat (port = process.env.PORT || 8080) {
+function sendHeartbeat (port = env.port) {
   return new Promise((resolve) => {
     const req = http.request(
       {
@@ -399,9 +400,9 @@ export class Bot {
     this.accessToken = null
     this.refreshToken = null
 
-    this.roomUUID = process.env.ROOM_UUID
-    this.tokenRole = process.env.TOKEN_ROLE
-    this.userUUID = process.env.BOT_USER_UUID
+    this.roomUUID = env.roomUuid
+    this.tokenRole = env.tokenRole
+    this.userUUID = env.botUserUuid
 
     // Initialize lastMessageIDs.  If a persisted state exists on disk, load it.
     {
@@ -416,8 +417,8 @@ export class Bot {
     this.socket = null
     this._listenersConfigured = false
 
-    this.playlistId = process.env.DEFAULT_PLAYLIST_ID
-    this.spotifyCredentials = process.env.SPOTIFY_CREDENTIALS
+    this.playlistId = env.defaultPlaylistId
+    this.spotifyCredentials = env.spotifyCredentials
 
     this.recentSpotifyTrackIds = []
     this.autobop = true
@@ -524,8 +525,16 @@ export class Bot {
       await joinChat(this.roomUUID)
 
       // Clean up previous socket (if any)
-      try { this.socket?.removeAllListeners?.() } catch {}
-      try { this.socket?.close?.() } catch {}
+      try {
+        this.socket?.removeAllListeners?.()
+      } catch (err) {
+        logger.debug('[bot] socket listener cleanup failed', { err: err?.message || err })
+      }
+      try {
+        this.socket?.close?.()
+      } catch (err) {
+        logger.debug('[bot] socket close during reconnect failed', { err: err?.message || err })
+      }
 
       // 🔑 Allow listeners to be rebound for the new socket
       this._listenersConfigured = false
@@ -539,7 +548,7 @@ export class Bot {
       })
 
       const connection = await this.socket.joinRoom(
-        process.env.TTL_USER_TOKEN,
+        env.ttlUserToken,
         { roomUuid: this.roomUUID }
       )
       this.state = connection.state
@@ -587,7 +596,7 @@ export class Bot {
 
   async getRandomSong () {
     try {
-      const playlistId = process.env.DEFAULT_PLAYLIST_ID
+      const playlistId = env.defaultPlaylistId
       const tracks = await fetchSpotifyPlaylistTracks(playlistId)
       if (!tracks || tracks.length === 0) {
         throw new Error('No tracks found in the selected source.')
@@ -1021,7 +1030,14 @@ export class Bot {
               try {
                 djNickname = await getUserNicknameByUuid(djUuid)
                 // Keep users table fresh for site display / joins
-                try { addOrUpdateUser(djUuid, djNickname) } catch {}
+                try {
+                  addOrUpdateUser(djUuid, djNickname)
+                } catch (err) {
+                  logger.debug('[bot] addOrUpdateUser failed for DJ metadata', {
+                    err: err?.message || err,
+                    djUuid
+                  })
+                }
               } catch (e) {
                 // non-fatal
                 djNickname = null
@@ -1133,7 +1149,7 @@ export class Bot {
           : this.userUUID
 
       await this.socket.action('updateNextSong', {
-        roomUuid: process.env.ROOM_UUID,
+        roomUuid: env.roomUuid,
         userUuid: targetUuid,
         song: songPayload
       })
@@ -1184,7 +1200,7 @@ export class Bot {
 
       if (!this.socket) throw new Error('SocketClient not initialized.')
       await this.socket.action('addDj', {
-        roomUuid: process.env.ROOM_UUID,
+        roomUuid: env.roomUuid,
         userUuid,
         song: songPayload,
         tokenRole
@@ -1218,7 +1234,7 @@ export class Bot {
       const currentDJs = getCurrentDJUUIDs(this.state)
       if (currentDJs.includes(userUuid)) return false
 
-      const playlistId = process.env.DEFAULT_PLAYLIST_ID
+      const playlistId = env.defaultPlaylistId
       if (!playlistId) {
         throw new Error('DEFAULT_PLAYLIST_ID is not set.')
       }
@@ -1259,7 +1275,7 @@ export class Bot {
         throw new Error('SocketClient not initialized.')
       }
       await this.socket.action('addDj', {
-        roomUuid: process.env.ROOM_UUID,
+        roomUuid: env.roomUuid,
         userUuid,
         song: songPayload,
         tokenRole
@@ -1288,8 +1304,8 @@ export class Bot {
       ids = playlists
     } else if (typeof playlists === 'string' && playlists.trim()) {
       ids = playlists.split(',')
-    } else if (process.env.DISCOVER_PLAYLIST_IDS) {
-      ids = String(process.env.DISCOVER_PLAYLIST_IDS).split(',')
+    } else if (env.discoverPlaylistIds) {
+      ids = String(env.discoverPlaylistIds).split(',')
     }
     this.discoverPlaylists = ids.map((id) => String(id).trim()).filter(Boolean)
     this.discoverMode = this.discoverPlaylists.length > 0
@@ -1301,7 +1317,7 @@ export class Bot {
     for (const pid of this.discoverPlaylists) {
       try {
         const tracks = await fetchSpotifyPlaylistTracks(pid)
-        console.log(`Loaded ${tracks.length} items from playlist ${pid}`)
+        logger.info('[bot] Loaded discover playlist tracks', { playlistId: pid, count: tracks.length })
         if (Array.isArray(tracks)) {
           for (const item of tracks) {
             const tid = item?.track?.id || item?.id
@@ -1313,7 +1329,7 @@ export class Bot {
       }
     }
     this.discoverSongQueue = Array.from(trackIds)
-    console.log(`Discover queue now contains ${this.discoverSongQueue.length} unique track IDs`)
+    logger.info('[bot] Discover queue refreshed', { count: this.discoverSongQueue.length })
   }
 
   /**
@@ -1346,17 +1362,17 @@ export class Bot {
 
   async removeDJ (userUuid) {
     try {
-      const djUuid = (userUuid === process.env.BOT_USER_UUID) ? null : userUuid
+      const djUuid = (userUuid === env.botUserUuid) ? null : userUuid
       if (
         djUuid === null &&
-        !this.state?.djs?.some(dj => dj.uuid === process.env.BOT_USER_UUID)
+        !this.state?.djs?.some(dj => dj.uuid === env.botUserUuid)
       ) return
       if (!this.socket) {
         throw new Error('SocketClient not initialized. Please call connect() first.')
       }
       await this.socket.action('removeDj', {
-        roomUuid: process.env.ROOM_UUID,
-        userUuid: process.env.BOT_USER_UUID,
+        roomUuid: env.roomUuid,
+        userUuid: env.botUserUuid,
         djUuid
       })
     } catch (error) {
@@ -1400,9 +1416,9 @@ export class Bot {
       setTimeout(async () => {
         try {
           await this.voteOnSong(
-            process.env.ROOM_UUID,
+            env.roomUuid,
             { like: true },
-            process.env.BOT_USER_UUID
+            env.botUserUuid
           )
         } catch (error) {
           logger.error('Error voting on song', error)
@@ -1434,5 +1450,5 @@ export function isUserDJ (senderUuid, state) {
 
 export function whoIsCurrentDJ (state) {
   const currentDJUuid = getCurrentDJ(state)
-  return currentDJUuid === process.env.BOT_USER_UUID ? 'bot' : 'user'
+  return currentDJUuid === env.botUserUuid ? 'bot' : 'user'
 }

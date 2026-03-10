@@ -13,6 +13,8 @@ process.env.DB_PATH = tmpDbPath
 
 const { default: db } = await import('../src/database/db.js')
 
+const dbUnavailableReason = 'better-sqlite3 is unavailable in this environment'
+
 function bootstrapSlotsModulePrereqs () {
   db.prepare('DROP TABLE IF EXISTS jackpot').run()
   db.prepare(`
@@ -175,7 +177,9 @@ test.after(() => {
   }
 })
 
-test('feature payout spin commits wallet + ledger + session completion atomically', async () => {
+test('feature payout spin commits wallet + ledger + session completion atomically', {
+  skip: !db.available && dbUnavailableReason
+}, async () => {
   const userUUID = 'user-feature-payout'
   assert.equal(syncWalletBalanceFromDb(userUUID), 50)
 
@@ -205,7 +209,9 @@ test('feature payout spin commits wallet + ledger + session completion atomicall
   assert.equal(Number(events.net), 6600)
 })
 
-test('feature triple-diamond bonus trigger commits paused feature + bonus session atomically', async () => {
+test('feature triple-diamond bonus trigger commits paused feature + bonus session atomically', {
+  skip: !db.available && dbUnavailableReason
+}, async () => {
   const userUUID = 'user-feature-bonus'
   assert.equal(syncWalletBalanceFromDb(userUUID), 50)
   db.prepare('UPDATE jackpot SET progressiveJackpot = ? WHERE id = 1').run(12345)
@@ -243,7 +249,9 @@ test('feature triple-diamond bonus trigger commits paused feature + bonus sessio
   assert.equal(Number(events.net), 0)
 })
 
-test('feature settlement rollback leaves wallet and sessions unchanged on forced write failure', async () => {
+test('feature settlement rollback leaves wallet and sessions unchanged on forced write failure', {
+  skip: !db.available && dbUnavailableReason
+}, async () => {
   const userUUID = 'user-feature-rollback'
   assert.equal(syncWalletBalanceFromDb(userUUID), 50)
 

@@ -20,6 +20,8 @@ const {
   syncWalletBalanceFromDb
 } = await import('../src/database/dbwalletmanager.js')
 
+const dbUnavailableReason = 'better-sqlite3 is unavailable in this environment'
+
 function resetEconomyTables () {
   db.prepare('DROP TABLE IF EXISTS economy_events').run()
   db.prepare('DROP TABLE IF EXISTS users').run()
@@ -70,7 +72,9 @@ test.after(() => {
   }
 })
 
-test('debit + credit keep balance, lifetime net, and economy events aligned', async () => {
+test('debit + credit keep balance, lifetime net, and economy events aligned', {
+  skip: !db.available && dbUnavailableReason
+}, async () => {
   const userUUID = 'user-econ-1'
   assert.equal(syncWalletBalanceFromDb(userUUID), 50)
 
@@ -87,7 +91,9 @@ test('debit + credit keep balance, lifetime net, and economy events aligned', as
   assert.equal(Number(events.net), 15)
 })
 
-test('insufficient debit does not mutate wallet or event ledger', () => {
+test('insufficient debit does not mutate wallet or event ledger', {
+  skip: !db.available && dbUnavailableReason
+}, () => {
   const userUUID = 'user-econ-2'
   assert.equal(syncWalletBalanceFromDb(userUUID), 50)
 
@@ -103,7 +109,9 @@ test('insufficient debit does not mutate wallet or event ledger', () => {
   assert.equal(Number(events.net), 0)
 })
 
-test('transaction rollback preserves wallet and ledger invariants', () => {
+test('transaction rollback preserves wallet and ledger invariants', {
+  skip: !db.available && dbUnavailableReason
+}, () => {
   const userUUID = 'user-econ-3'
   assert.equal(syncWalletBalanceFromDb(userUUID), 50)
 

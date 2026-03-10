@@ -1,7 +1,7 @@
 // src/games/blackjack/blackJack.js
 import { getUserWallet, debitGameBet, creditGameWin } from '../../database/dbwalletmanager.js'
 import { postMessage } from '../../libs/cometchat.js'
-import { getUserNickname } from '../../handlers/message.js' // ⚠️ NOTE: circular-dep risk; ideally move to a utils module
+import { getUserNickname } from '../../utils/nickname.js'
 
 // ─────────────────────────────────────────────────────────────
 // Config

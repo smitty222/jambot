@@ -7,12 +7,13 @@ import {
   debitGameBet
 } from '../database/dbwalletmanager.js'
 import { getUserNickname } from '../utils/nickname.js' // <- avoid circular import
+import { env } from '../config.js'
 
 // Game state
 let rouletteGameActive = false
 let betsOpen = false
 const bets = {}
-const room = process.env.ROOM_UUID
+const room = env.roomUuid
 
 // ──────────────────────────────────────────────
 // Helpers

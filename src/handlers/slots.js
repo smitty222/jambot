@@ -4,6 +4,8 @@ import {
   syncWalletBalanceFromDb
 } from '../database/dbwalletmanager.js'
 import db from '../database/db.js'
+import { createSlotsPersistence } from './slotsPersistence.js'
+import { createSlotsStateHelpers } from './slotsState.js'
 
 // ───────────────────────────────────────────────────────────
 // Slot machine symbols and payouts (ONE LINE)
@@ -155,107 +157,31 @@ const MIN_BET = 1
 const MAX_BET = 25000
 const DEFAULT_BET = 1
 
-// ───────────────────────────────────────────────────────────
-// Ensure persistence tables
-// ───────────────────────────────────────────────────────────
-
-try {
-  db.prepare(`
-    CREATE TABLE IF NOT EXISTS app_settings (
-      key   TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    )
-  `).run()
-
-  db.prepare(`
-    CREATE TABLE IF NOT EXISTS slot_collections (
-      userUUID  TEXT PRIMARY KEY,
-      data      TEXT NOT NULL,
-      updatedAt TEXT NOT NULL
-    )
-  `).run()
-
-  db.prepare(`
-    CREATE TABLE IF NOT EXISTS slot_bonus_sessions (
-      userUUID  TEXT PRIMARY KEY,
-      data      TEXT NOT NULL,
-      updatedAt TEXT NOT NULL
-    )
-  `).run()
-
-  db.prepare(`
-    CREATE TABLE IF NOT EXISTS slot_feature_sessions (
-      userUUID  TEXT PRIMARY KEY,
-      data      TEXT NOT NULL,
-      updatedAt TEXT NOT NULL
-    )
-  `).run()
-
-  db.prepare(`
-    CREATE TABLE IF NOT EXISTS slot_jackpot_contributions (
-      userUUID               TEXT PRIMARY KEY,
-      lifetimeContributed    REAL NOT NULL DEFAULT 0,
-      effectiveContributed   REAL NOT NULL DEFAULT 0,
-      updatedAt              TEXT NOT NULL
-    )
-  `).run()
-} catch (e) {
-  console.error('[Slots] Failed ensuring tables:', e)
-}
-
-const slotStmts = {
-  readSetting: db.prepare('SELECT value FROM app_settings WHERE key = ?'),
-  writeSetting: db.prepare(`
-    INSERT INTO app_settings(key, value)
-    VALUES(?, ?)
-    ON CONFLICT(key) DO UPDATE SET value=excluded.value
-  `),
-  clearCollections: db.prepare('DELETE FROM slot_collections'),
-  recordJackpotContribution: db.prepare(`
-    INSERT INTO slot_jackpot_contributions (userUUID, lifetimeContributed, effectiveContributed, updatedAt)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(userUUID) DO UPDATE SET
-      lifetimeContributed = lifetimeContributed + excluded.lifetimeContributed,
-      effectiveContributed = effectiveContributed + excluded.effectiveContributed,
-      updatedAt = excluded.updatedAt
-  `),
-  scaleEffectiveContributions: db.prepare(`
-    UPDATE slot_jackpot_contributions
-    SET effectiveContributed = effectiveContributed * ?,
-        updatedAt = ?
-  `),
-  getUserJackpotContribution: db.prepare(`
-    SELECT lifetimeContributed, effectiveContributed
-    FROM slot_jackpot_contributions
-    WHERE userUUID = ?
-  `),
-  getJackpotContributionTotals: db.prepare(`
-    SELECT COALESCE(SUM(effectiveContributed), 0) AS totalEffective
-    FROM slot_jackpot_contributions
-  `),
-  getJackpotValue: db.prepare('SELECT progressiveJackpot FROM jackpot WHERE id = 1'),
-  updateJackpotValue: db.prepare('UPDATE jackpot SET progressiveJackpot = ? WHERE id = 1'),
-  getBonusSession: db.prepare('SELECT data FROM slot_bonus_sessions WHERE userUUID = ?'),
-  saveBonusSession: db.prepare(`
-    INSERT INTO slot_bonus_sessions(userUUID, data, updatedAt)
-    VALUES(?, ?, ?)
-    ON CONFLICT(userUUID) DO UPDATE SET data=excluded.data, updatedAt=excluded.updatedAt
-  `),
-  clearBonusSession: db.prepare('DELETE FROM slot_bonus_sessions WHERE userUUID = ?'),
-  getFeatureSession: db.prepare('SELECT data FROM slot_feature_sessions WHERE userUUID = ?'),
-  saveFeatureSession: db.prepare(`
-    INSERT INTO slot_feature_sessions(userUUID, data, updatedAt)
-    VALUES(?, ?, ?)
-    ON CONFLICT(userUUID) DO UPDATE SET data=excluded.data, updatedAt=excluded.updatedAt
-  `),
-  clearFeatureSession: db.prepare('DELETE FROM slot_feature_sessions WHERE userUUID = ?'),
-  getUserCollection: db.prepare('SELECT data FROM slot_collections WHERE userUUID = ?'),
-  saveUserCollection: db.prepare(`
-    INSERT INTO slot_collections(userUUID, data, updatedAt)
-    VALUES(?, ?, ?)
-    ON CONFLICT(userUUID) DO UPDATE SET data=excluded.data, updatedAt=excluded.updatedAt
-  `)
-}
+const slotStmts = createSlotsPersistence(db, JACKPOT_SEED)
+const {
+  readSetting,
+  writeSetting,
+  maybeResetCollectionsMonthly,
+  recordJackpotContribution,
+  scaleEffectiveJackpotContributions,
+  getUserJackpotContributionStats,
+  getJackpotValue,
+  updateJackpotValue,
+  getBonusSession,
+  saveBonusSession,
+  clearBonusSession,
+  getFeatureSession,
+  saveFeatureSession,
+  clearFeatureSession,
+  applyCollectionProgress
+} = createSlotsStateHelpers({
+  slotStmts,
+  jackpotSeed: JACKPOT_SEED,
+  collectionResetKey: COLLECTION_RESET_KEY,
+  collectionGoals: COLLECTION_GOALS,
+  collectionRewards: COLLECTION_REWARDS,
+  formatBalance
+})
 
 // ───────────────────────────────────────────────────────────
 // Helpers
@@ -285,117 +211,10 @@ function formatMoney (amount) {
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-function readSetting (key) {
-  try {
-    const row = slotStmts.readSetting.get(key)
-    return row?.value ?? null
-  } catch (e) {
-    console.error('[Slots] readSetting error:', e)
-    return null
-  }
-}
-
-function writeSetting (key, value) {
-  try {
-    slotStmts.writeSetting.run(key, String(value))
-  } catch (e) {
-    console.error('[Slots] writeSetting error:', e)
-  }
-}
-
 function getYearMonthKey (d = new Date()) {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
   return `${y}${m}`
-}
-
-function maybeResetCollectionsMonthly () {
-  const current = getYearMonthKey()
-  const last = readSetting(COLLECTION_RESET_KEY)
-
-  if (!last) {
-    writeSetting(COLLECTION_RESET_KEY, current)
-    return { didReset: false, current }
-  }
-
-  if (last !== current) {
-    try {
-      slotStmts.clearCollections.run()
-      writeSetting(COLLECTION_RESET_KEY, current)
-      console.log(`[Slots] Collections reset for new month: ${current}`)
-      return { didReset: true, current }
-    } catch (e) {
-      console.error('[Slots] Failed to reset collections:', e)
-      return { didReset: false, current }
-    }
-  }
-
-  return { didReset: false, current }
-}
-
-function recordJackpotContribution (userUUID, amount) {
-  const inc = Math.max(0, Number(amount) || 0)
-  if (!userUUID || inc <= 0) return
-
-  try {
-    const now = new Date().toISOString()
-    slotStmts.recordJackpotContribution.run(userUUID, inc, inc, now)
-  } catch (e) {
-    console.error('[Slots] recordJackpotContribution error:', e)
-  }
-}
-
-function scaleEffectiveJackpotContributions (retainedRatio) {
-  const ratio = Number(retainedRatio)
-  if (!Number.isFinite(ratio)) return
-
-  const clamped = Math.max(0, Math.min(1, ratio))
-  const now = new Date().toISOString()
-
-  try {
-    slotStmts.scaleEffectiveContributions.run(clamped, now)
-  } catch (e) {
-    console.error('[Slots] scaleEffectiveJackpotContributions error:', e)
-  }
-}
-
-function getUserJackpotContributionStats (userUUID) {
-  try {
-    const row = slotStmts.getUserJackpotContribution.get(userUUID)
-    const totals = slotStmts.getJackpotContributionTotals.get()
-
-    const lifetimeContributed = Number(row?.lifetimeContributed || 0)
-    const effectiveContributed = Number(row?.effectiveContributed || 0)
-    const totalEffective = Number(totals?.totalEffective || 0)
-    const effectiveSharePct = totalEffective > 0
-      ? (effectiveContributed / totalEffective) * 100
-      : 0
-
-    return {
-      lifetimeContributed,
-      effectiveContributed,
-      totalEffective,
-      effectiveSharePct
-    }
-  } catch (e) {
-    console.error('[Slots] getUserJackpotContributionStats error:', e)
-    return {
-      lifetimeContributed: 0,
-      effectiveContributed: 0,
-      totalEffective: 0,
-      effectiveSharePct: 0
-    }
-  }
-}
-
-function getJackpotValue () {
-  const row = slotStmts.getJackpotValue.get()
-  return Number(row?.progressiveJackpot || JACKPOT_SEED)
-}
-
-function updateJackpotValue (newValue) {
-  slotStmts.updateJackpotValue.run(Number(newValue))
-  console.log(`🎰 Jackpot updated: $${newValue}`)
 }
 
 // ───────────────────────────────────────────────────────────
@@ -444,45 +263,6 @@ function spinFeatureSlots () {
 }
 
 // ───────────────────────────────────────────────────────────
-// Bonus session helpers (interactive 💎💎💎)
-// ───────────────────────────────────────────────────────────
-
-function getBonusSession (userUUID) {
-  try {
-    const row = slotStmts.getBonusSession.get(userUUID)
-    if (!row?.data) return null
-    return JSON.parse(row.data)
-  } catch (e) {
-    console.error('[Slots] getBonusSession error:', e)
-    return null
-  }
-}
-
-function saveBonusSession (userUUID, session, options = {}) {
-  const throwOnError = Boolean(options?.throwOnError)
-  try {
-    const now = new Date().toISOString()
-    slotStmts.saveBonusSession.run(userUUID, JSON.stringify(session), now)
-    return true
-  } catch (e) {
-    console.error('[Slots] saveBonusSession error:', e)
-    if (throwOnError) throw e
-    return false
-  }
-}
-
-function clearBonusSession (userUUID, options = {}) {
-  const throwOnError = Boolean(options?.throwOnError)
-  try {
-    slotStmts.clearBonusSession.run(userUUID)
-    return true
-  } catch (e) {
-    console.error('[Slots] clearBonusSession error:', e)
-    if (throwOnError) throw e
-    return false
-  }
-}
-
 async function spinBonusOnce (userUUID) {
   const session = getBonusSession(userUUID)
   if (!session) return 'No active bonus round. Hit 💎💎💎 to trigger one!'
@@ -565,45 +345,6 @@ async function spinBonusOnce (userUUID) {
 }
 
 // ───────────────────────────────────────────────────────────
-// Feature session helpers (interactive 🎟️ free spins)
-// ───────────────────────────────────────────────────────────
-
-function getFeatureSession (userUUID) {
-  try {
-    const row = slotStmts.getFeatureSession.get(userUUID)
-    if (!row?.data) return null
-    return JSON.parse(row.data)
-  } catch (e) {
-    console.error('[Slots] getFeatureSession error:', e)
-    return null
-  }
-}
-
-function saveFeatureSession (userUUID, session, options = {}) {
-  const throwOnError = Boolean(options?.throwOnError)
-  try {
-    const now = new Date().toISOString()
-    slotStmts.saveFeatureSession.run(userUUID, JSON.stringify(session), now)
-    return true
-  } catch (e) {
-    console.error('[Slots] saveFeatureSession error:', e)
-    if (throwOnError) throw e
-    return false
-  }
-}
-
-function clearFeatureSession (userUUID, options = {}) {
-  const throwOnError = Boolean(options?.throwOnError)
-  try {
-    slotStmts.clearFeatureSession.run(userUUID)
-    return true
-  } catch (e) {
-    console.error('[Slots] clearFeatureSession error:', e)
-    if (throwOnError) throw e
-    return false
-  }
-}
-
 function evaluateFeatureLine (symbolsArr) {
   const str = symbolsArr.join('')
 
@@ -803,34 +544,6 @@ async function spinFeatureOnce (userUUID) {
 }
 
 // ───────────────────────────────────────────────────────────
-// Collection helpers
-// ───────────────────────────────────────────────────────────
-
-function getUserCollection (userUUID) {
-  try {
-    const row = slotStmts.getUserCollection.get(userUUID)
-    if (!row?.data) return { counts: {}, tiers: {}, halfNotifs: {} }
-    const parsed = JSON.parse(row.data)
-    return {
-      counts: parsed.counts || {},
-      tiers: parsed.tiers || {},
-      halfNotifs: parsed.halfNotifs || {}
-    }
-  } catch (e) {
-    console.error('[Slots] getUserCollection error:', e)
-    return { counts: {}, tiers: {}, halfNotifs: {} }
-  }
-}
-
-function saveUserCollection (userUUID, collection) {
-  try {
-    const now = new Date().toISOString()
-    slotStmts.saveUserCollection.run(userUUID, JSON.stringify(collection), now)
-  } catch (e) {
-    console.error('[Slots] saveUserCollection error:', e)
-  }
-}
-
 // ───────────────────────────────────────────────────────────
 // Line evaluation (normal mode)
 // ───────────────────────────────────────────────────────────
@@ -888,68 +601,6 @@ function maybeMilestoneAnnouncement (before, after) {
 }
 
 // ───────────────────────────────────────────────────────────
-// Symbol collection progression
-// ───────────────────────────────────────────────────────────
-
-function applyCollectionProgress (userUUID, spins) {
-  const col = getUserCollection(userUUID)
-  const counts = col.counts || {}
-  const tiers = col.tiers || {}
-  const halfNotifs = col.halfNotifs || {}
-
-  const beforeCounts = { ...counts }
-
-  for (const s of spins.flat()) {
-    counts[s] = (counts[s] || 0) + 1
-  }
-
-  const unlocked = []
-  const progress = []
-  let totalReward = 0
-
-  for (const sym of Object.keys(COLLECTION_GOALS)) {
-    const goal = COLLECTION_GOALS[sym]
-    const reward = COLLECTION_REWARDS[sym] || 0
-
-    const before = Number(beforeCounts[sym] || 0)
-    const after = Number(counts[sym] || 0)
-
-    const prevTier = Number(tiers[sym] || 0)
-    const newTier = Math.floor(after / goal)
-
-    const nextTier = prevTier + 1
-    const halfThreshold = (prevTier * goal) + Math.ceil(goal / 2)
-    const lastHalfTierNotified = Number(halfNotifs[sym] || 0)
-
-    if (
-      nextTier > prevTier &&
-      lastHalfTierNotified < nextTier &&
-      before < halfThreshold &&
-      after >= halfThreshold &&
-      newTier === prevTier
-    ) {
-      halfNotifs[sym] = nextTier
-      const currentInTier = after - (prevTier * goal)
-      progress.push(`⏳ COLLECTION: ${sym} halfway to Tier ${nextTier} (${currentInTier}/${goal})`)
-    }
-
-    if (newTier > prevTier) {
-      const tiersGained = newTier - prevTier
-      tiers[sym] = newTier
-
-      const payout = reward * tiersGained
-      totalReward += payout
-
-      unlocked.push(`🏅 COLLECTION: ${sym} Tier ${newTier} (+$${formatBalance(payout)})`)
-      halfNotifs[sym] = Math.max(Number(halfNotifs[sym] || 0), newTier)
-    }
-  }
-
-  saveUserCollection(userUUID, { counts, tiers, halfNotifs })
-
-  return { unlockedLines: unlocked, progressLines: progress, rewardTotal: totalReward }
-}
-
 // ───────────────────────────────────────────────────────────
 // Main game
 // ───────────────────────────────────────────────────────────

@@ -16,6 +16,8 @@ import { PHASES } from './crapsState.js'
 import db from '../../database/db.js'
 import { sanitizeNickname } from '../../utils/names.js'
 import { getUserNicknameByUuid } from '../../utils/API.js'
+import { env } from '../../config.js'
+import { logger } from '../../utils/logging.js'
 
 /* ───────────────────────── Records (DB) ───────────────────────── */
 
@@ -23,10 +25,22 @@ async function persistRecord (room, rolls, shooterId) {
   let shooterNickname = shooterId
   try {
     shooterNickname = await getUserNicknameByUuid(shooterId)
-  } catch {}
+  } catch (err) {
+    logger.debug('[craps] nickname lookup failed while persisting record', {
+      err: err?.message || err,
+      shooterId
+    })
+  }
   const cleanNick = sanitizeNickname(shooterNickname || shooterId) || shooterId
 
-  try { await addOrUpdateUser(shooterId, cleanNick) } catch {}
+  try {
+    await addOrUpdateUser(shooterId, cleanNick)
+  } catch (err) {
+    logger.debug('[craps] addOrUpdateUser failed while persisting record', {
+      err: err?.message || err,
+      shooterId
+    })
+  }
 
   try {
     db.prepare(`
@@ -38,7 +52,12 @@ async function persistRecord (room, rolls, shooterId) {
         shooterNickname = excluded.shooterNickname,
         achievedAt = excluded.achievedAt
     `).run(room, rolls, shooterId, shooterNickname || shooterId)
-  } catch {
+  } catch (err) {
+    logger.debug('[craps] persistRecord primary insert failed; retrying fallback nickname', {
+      err: err?.message || err,
+      room,
+      shooterId
+    })
     db.prepare(`
       INSERT INTO craps_records (roomId, maxRolls, shooterId, shooterNickname, achievedAt)
       VALUES (?, ?, ?, ?, datetime('now'))
@@ -61,22 +80,24 @@ function loadRoomRecordIntoState (room, st) {
     if (row && Number(row.maxRolls) > 0) {
       st.record = { rolls: Number(row.maxRolls), shooter: row.shooterId || null }
     }
-  } catch {}
+  } catch (err) {
+    logger.debug('[craps] loadRoomRecordIntoState failed', { err: err?.message || err, room })
+  }
 }
 
 /* ───────────────────────── Constants ───────────────────────── */
 
-const ROOM_DEFAULT = process.env.ROOM_UUID || ''
-if (!ROOM_DEFAULT) console.warn('[craps] ROOM_UUID not set — room state may reset unexpectedly.')
+const ROOM_DEFAULT = env.roomUuid || ''
+if (!ROOM_DEFAULT) logger.warn('[craps] ROOM_UUID not set; room state may reset unexpectedly.')
 
 const mention = (uuid) => `<@uid:${uuid}>`
 
-const MIN_BET = Number(process.env.CRAPS_MIN_BET ?? 5)
-const MAX_BET = Number(process.env.CRAPS_MAX_BET ?? 10000)
-const JOIN_SECS = Number(process.env.CRAPS_JOIN_SECS ?? 30)
-const BET_SECS = Number(process.env.CRAPS_BET_SECS ?? 30)
-const ROLL_SECS = Number(process.env.CRAPS_ROLL_SECS ?? 45)
-const POINT_BET_SECS = Number(process.env.CRAPS_POINT_BET_SECS ?? 45)
+const MIN_BET = env.crapsMinBet
+const MAX_BET = env.crapsMaxBet
+const JOIN_SECS = env.crapsJoinSecs
+const BET_SECS = env.crapsBetSecs
+const ROLL_SECS = env.crapsRollSecs
+const POINT_BET_SECS = env.crapsPointBetSecs
 
 const PLACES = [4, 5, 6, 8, 9, 10]
 

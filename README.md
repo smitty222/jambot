@@ -29,6 +29,15 @@ cd jambot
 npm install
 ```
 
+Jambot uses [`better-sqlite3`](https://www.npmjs.com/package/better-sqlite3) for its runtime database, so local installs need a working native Node module build for your current Node 20 runtime. On this machine, for example, `node -p "process.versions.modules"` reports ABI `115`. If the native binding is missing or built for a different ABI, the app will fall back to a no-op DB stub so non-DB code can still boot, but wallet and persistence features will not function.
+
+If you hit `Could not locate the bindings file` or ABI mismatch errors:
+
+- Rebuild from a real path without spaces if possible.
+- Make sure you are using Node 20.x, matching `package.json`.
+- Reinstall or rebuild `better-sqlite3` after changing Node versions.
+- Run `npm run sqlite:doctor` for a local environment check and rebuild guidance.
+
 To run the bot locally in development mode, create a `.env` file with your secrets and execute:
 
 ```sh
@@ -74,7 +83,8 @@ When deploying to Docker or Fly.io you should mount a persistent volume at `/dat
 ## Contributing & maintenance
 
 - **Code style:** This project uses [JavaScript Standard Style](https://standardjs.com/). Run `npm run lint` to check for issues and `npm run lint:fix` to automatically format your changes. A CI job will enforce linting on pull requests.
-- **Testing:** Mocha and Chai are configured with [`nyc`](https://istanbul.js.org/) for coverage. To run tests execute `npm test`. At present the test suite is small; contributions are welcome! See `test/` for examples.
+- **Testing:** Run `npm test` for the full suite. If native SQLite bindings are unavailable, the DB-backed tests will skip automatically. Use `npm run test:portable` for the non-DB suite only, and `npm run test:db` when you specifically want to validate wallet and slot atomicity behavior against a real `better-sqlite3` build.
+- **Native SQLite setup:** On macOS, `npm run sqlite:doctor` prints the current Node ABI, checks whether the `better-sqlite3` binding is present, and suggests a rebuild path. This is the quickest way to diagnose the common “bindings file” and ABI mismatch failures.
 - **Architecture:** Core logic lives in `src/handlers/message.js`, which routes incoming chat messages to individual command handlers. Over time we recommend refactoring toward a plugin‑style architecture where each command is its own module under `src/commands/` or `src/games/` to reduce complexity and avoid circular dependencies.
 
 ## License

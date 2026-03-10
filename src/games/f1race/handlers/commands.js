@@ -4,7 +4,7 @@ import { postMessage } from '../../../libs/cometchat.js'
 import { readdirSync } from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { getUserWallet, debitGameBet, addToUserWallet, creditGameWin, getProgressiveWealthFee } from '../../../database/dbwalletmanager.js'
+import { getUserWallet, debitGameBet, addToUserWallet, creditGameWin, getProgressiveWealthFee, applyGameDeltaInTransaction } from '../../../database/dbwalletmanager.js'
 import { getUserNickname } from '../../../utils/nickname.js'
 import { fetchCurrentUsers } from '../../../utils/API.js'
 
@@ -29,8 +29,9 @@ import { bus, safeCall } from '../service.js'
 import { runRace } from '../simulation.js'
 import { pickTrack, pickDragTrack } from '../utils/track.js'
 import { renderGrid, renderRaceProgress, renderDragProgress, fmtMoney } from '../utils/render.js'
+import { env } from '../../../config.js'
 
-const ROOM = process.env.ROOM_UUID
+const ROOM = env.roomUuid
 
 // ── Economy tuning ─────────────────────────────────────────────────────
 const ENTRY_MS = 30_000
@@ -42,56 +43,56 @@ const DRAG_FIELD_SIZE = 2
 const DRAG_PAYOUT_SPLIT = [100]
 
 const ENTRY_FEE_BY_TIER = {
-  starter: Number(process.env.F1_ENTRY_FEE_STARTER ?? 1500),
-  pro: Number(process.env.F1_ENTRY_FEE_PRO ?? 2100),
-  hyper: Number(process.env.F1_ENTRY_FEE_HYPER ?? 3400),
-  legendary: Number(process.env.F1_ENTRY_FEE_LEGENDARY ?? 7200)
+  starter: env.f1EntryFeeStarter,
+  pro: env.f1EntryFeePro,
+  hyper: env.f1EntryFeeHyper,
+  legendary: env.f1EntryFeeLegendary
 }
-const HOUSE_RAKE_PCT = Number(process.env.F1_HOUSE_RAKE_PCT ?? 10) // percent
+const HOUSE_RAKE_PCT = env.f1HouseRakePct // percent
 const PRIZE_SPLIT_BY_MODE = {
   rookie: [60, 30, 10], // top 3 paid
   open: [45, 25, 15, 10, 5],
   elite: [50, 23, 13, 9, 5]
 }
 const GUARANTEED_PURSE_BY_MODE = {
-  rookie: Number(process.env.F1_PURSE_FLOOR_ROOKIE ?? 5000),
-  open: Number(process.env.F1_PURSE_FLOOR_OPEN ?? 12000),
-  elite: Number(process.env.F1_PURSE_FLOOR_ELITE ?? 30000)
+  rookie: env.f1PurseFloorRookie,
+  open: env.f1PurseFloorOpen,
+  elite: env.f1PurseFloorElite
 }
 const DRAG_GUARANTEED_PURSE_BY_TIER = {
-  starter: Number(process.env.F1_DRAG_PURSE_FLOOR_STARTER ?? 250),
-  pro: Number(process.env.F1_DRAG_PURSE_FLOOR_PRO ?? 500),
-  hyper: Number(process.env.F1_DRAG_PURSE_FLOOR_HYPER ?? 900),
-  legendary: Number(process.env.F1_DRAG_PURSE_FLOOR_LEGENDARY ?? 1400)
+  starter: env.f1DragPurseFloorStarter,
+  pro: env.f1DragPurseFloorPro,
+  hyper: env.f1DragPurseFloorHyper,
+  legendary: env.f1DragPurseFloorLegendary
 }
-const POLE_BONUS = Number(process.env.F1_POLE_BONUS ?? 250)
-const FASTEST_LAP_BONUS = Number(process.env.F1_FASTEST_LAP_BONUS ?? 400)
+const POLE_BONUS = env.f1PoleBonus
+const FASTEST_LAP_BONUS = env.f1FastestLapBonus
 
-const TEAM_CREATE_FEE = Number(process.env.F1_TEAM_CREATE_FEE ?? 12500)
-const TEAM_REROLL_FEE = Number(process.env.F1_TEAM_REROLL_FEE ?? 6500)
-const CAR_RENAME_FEE = Number(process.env.F1_CAR_RENAME_FEE ?? 6500)
+const TEAM_CREATE_FEE = env.f1TeamCreateFee
+const TEAM_REROLL_FEE = env.f1TeamRerollFee
+const CAR_RENAME_FEE = env.f1CarRenameFee
 const REPAIR_COST_PER_WEAR_BY_TIER = {
-  starter: Number(process.env.F1_REPAIR_COST_PER_POINT_STARTER ?? 30),
-  pro: Number(process.env.F1_REPAIR_COST_PER_POINT_PRO ?? 44),
-  hyper: Number(process.env.F1_REPAIR_COST_PER_POINT_HYPER ?? 68),
-  legendary: Number(process.env.F1_REPAIR_COST_PER_POINT_LEGENDARY ?? 95)
+  starter: env.f1RepairCostPerPointStarter,
+  pro: env.f1RepairCostPerPointPro,
+  hyper: env.f1RepairCostPerPointHyper,
+  legendary: env.f1RepairCostPerPointLegendary
 }
 const GARAGE_UPKEEP_PER_EXTRA_CAR_BY_TIER = {
-  starter: Number(process.env.F1_GARAGE_UPKEEP_PER_EXTRA_STARTER ?? 200),
-  pro: Number(process.env.F1_GARAGE_UPKEEP_PER_EXTRA_PRO ?? 400),
-  hyper: Number(process.env.F1_GARAGE_UPKEEP_PER_EXTRA_HYPER ?? 750),
-  legendary: Number(process.env.F1_GARAGE_UPKEEP_PER_EXTRA_LEGENDARY ?? 1250)
+  starter: env.f1GarageUpkeepPerExtraStarter,
+  pro: env.f1GarageUpkeepPerExtraPro,
+  hyper: env.f1GarageUpkeepPerExtraHyper,
+  legendary: env.f1GarageUpkeepPerExtraLegendary
 }
 
 // Betting
-const BET_MIN = Number(process.env.F1_BET_MIN ?? 25)
-const BET_MAX = Number(process.env.F1_BET_MAX ?? 10000)
-const ODDS_EDGE_PCT = Number(process.env.F1_ODDS_EDGE_PCT ?? 15) // house edge in odds calc
+const BET_MIN = env.f1BetMin
+const BET_MAX = env.f1BetMax
+const ODDS_EDGE_PCT = env.f1OddsEdgePct // house edge in odds calc
 const BET_MARKET_MULT_BY_TIER = {
-  starter: Number(process.env.F1_BET_MARKET_MULT_STARTER ?? 1.00),
-  pro: Number(process.env.F1_BET_MARKET_MULT_PRO ?? 1.03),
-  hyper: Number(process.env.F1_BET_MARKET_MULT_HYPER ?? 1.12),
-  legendary: Number(process.env.F1_BET_MARKET_MULT_LEGENDARY ?? 1.30)
+  starter: env.f1BetMarketMultStarter,
+  pro: env.f1BetMarketMultPro,
+  hyper: env.f1BetMarketMultHyper,
+  legendary: env.f1BetMarketMultLegendary
 }
 
 // Car tiers: higher ceiling, not guaranteed wins.
@@ -115,8 +116,8 @@ const RACE_MODES = {
 }
 const TIER_PAYOUT_MULT = { starter: 1.00, pro: 1.08, hyper: 1.22, legendary: 1.40 }
 const ELITE_MODE_STAT_DELTA_BY_TIER = {
-  hyper: Number(process.env.F1_ELITE_STAT_DELTA_HYPER ?? 1),
-  legendary: Number(process.env.F1_ELITE_STAT_DELTA_LEGENDARY ?? -2)
+  hyper: env.f1EliteStatDeltaHyper,
+  legendary: env.f1EliteStatDeltaLegendary
 }
 
 // ── Visuals: car images (local tier folders) ───────────────────────────────
@@ -128,8 +129,7 @@ const ELITE_MODE_STAT_DELTA_BY_TIER = {
 //
 // Then expose that folder through a public base URL (raw GitHub, CDN, etc.)
 // so chat clients can load the image. By default we point to this repo's raw URL.
-const CAR_IMAGE_BASE_URL = (process.env.F1_CAR_IMAGE_BASE_URL ||
-  'https://raw.githubusercontent.com/smitty222/jambot/main/src/games/f1race/assets/cars').replace(/\/$/, '')
+const CAR_IMAGE_BASE_URL = env.f1CarImageBaseUrl.replace(/\/$/, '')
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -324,23 +324,24 @@ async function chargeF1Cost (userId, amount, category, note, balance = null) {
     return { ok: false, balance: currentBalance, wealthFee }
   }
 
-  const baseOk = await safeCall(debitGameBet, [userId, amount, {
-    source: 'f1',
-    category,
-    note
-  }]).catch(() => false)
-  if (!baseOk) return { ok: false, balance: currentBalance, wealthFee }
-
-  if (wealthFee.fee > 0) {
-    const feeOk = await safeCall(debitGameBet, [userId, wealthFee.fee, {
+  const debitResult = await safeCall(applyGameDeltaInTransaction, [userId, -Math.abs(wealthFee.total), {
+    requireSufficientFunds: true,
+    meta: {
       source: 'f1',
-      category: 'wealth_fee',
-      note: `${wealthFee.bandLabel} wealth fee on ${category}`
-    }]).catch(() => false)
-    if (!feeOk) return { ok: false, balance: currentBalance, wealthFee }
+      category,
+      note,
+      baseAmount: Math.max(0, Math.floor(Number(amount || 0))),
+      wealthFee: wealthFee.fee,
+      wealthBand: wealthFee.bandLabel,
+      chargedTotal: wealthFee.total
+    }
+  }]).catch(() => ({ ok: false, reason: 'TX_FAILED' }))
+
+  if (!debitResult?.ok) {
+    return { ok: false, balance: currentBalance, wealthFee, reason: debitResult?.reason || 'TX_FAILED' }
   }
 
-  return { ok: true, balance: currentBalance, wealthFee }
+  return { ok: true, balance: debitResult.balance, wealthFee }
 }
 
 function getTierPayoutMultiplier (tierKey) {
@@ -1782,26 +1783,19 @@ async function lockEntriesAndOpenStrategy () {
         }])
         continue
       }
-      if (entryFee > 0) {
-        await safeCall(debitGameBet, [ownerId, entryFee, {
-          source: 'f1',
-          category: 'entry_fee',
-          note: `${lockedRaceMode} ${tierKey} race entry`
+      const chargeResult = await safeCall(chargeF1Cost, [
+        ownerId,
+        entryFee + upkeepFee,
+        'race_entry',
+        `${lockedRaceMode} ${tierKey} race entry`,
+        bal
+      ]).catch(() => ({ ok: false }))
+      if (!chargeResult?.ok) {
+        await safeCall(postMessage, [{
+          room: ROOM,
+          message: `❗ ${nick} could not pay ${tierKey.toUpperCase()} race costs (${fmtMoney(totalCharge)} = entry ${fmtMoney(entryFee)} + upkeep ${fmtMoney(upkeepFee)}${wealthFee.fee > 0 ? ` + wealth fee ${fmtMoney(wealthFee.fee)}` : ''}). ${carLabel(c)} removed from grid.`
         }])
-      }
-      if (upkeepFee > 0) {
-        await safeCall(debitGameBet, [ownerId, upkeepFee, {
-          source: 'f1',
-          category: 'garage_upkeep',
-          note: `${Math.max(0, activeOwnedCars - 1)} extra active car(s)`
-        }])
-      }
-      if (wealthFee.fee > 0) {
-        await safeCall(debitGameBet, [ownerId, wealthFee.fee, {
-          source: 'f1',
-          category: 'wealth_fee',
-          note: `${wealthFee.bandLabel} wealth fee on race entry`
-        }])
+        continue
       }
       if (entryFee > 0 && c?.id != null) {
         await safeCall(recordCarEntryFee, [c.id, entryFee]).catch(() => null)

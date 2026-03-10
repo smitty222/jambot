@@ -12,7 +12,10 @@
     "start": "node src/index.js",
     "lint": "standard",
     "lint:fix": "standard --fix",
-    "test": "node --test"
+    "sqlite:doctor": "node tools/setup-better-sqlite3.mjs",
+    "test": "node --test",
+    "test:portable": "node --test test/command-routing.test.js test/dispatch.integration.test.js test/helpers.test.js",
+    "test:db": "node --test test/economy.invariants.test.js test/slots.feature.atomicity.test.js"
   },
   "repository": {
     "type": "git",

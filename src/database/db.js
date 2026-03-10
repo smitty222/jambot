@@ -36,6 +36,7 @@ console.log(`[db] Using ${DB_PATH} (${source})`)
 let db
 try {
   db = new Database(DB_PATH)
+  db.available = true
   db.pragma('journal_mode = WAL')
   db.pragma('synchronous = NORMAL')
   db.pragma('busy_timeout = 5000')
@@ -44,18 +45,29 @@ try {
 } catch (e) {
   console.error('[db] FAILED to open database:', e?.message || e)
 
-  // Fallback stub so the rest of the app can still boot.
-  // Any code that tries to actually query will throw,
-  // but Express can still start and /health can handle it.
+  // Fallback stub so the rest of the app and non-DB tests can still boot.
+  // The goal is graceful degradation for module initialization paths
+  // (schema setup, config reads, empty lookups), not fake persistence.
+  const noopStatement = {
+    get () { return undefined },
+    all () { return [] },
+    run () { return { changes: 0, lastInsertRowid: 0 } },
+    iterate () { return [][Symbol.iterator]() },
+    pluck () { return this },
+    raw () { return this },
+    bind () { return this }
+  }
+
   db = {
+    available: false,
     prepare () {
-      return {
-        get () { throw new Error('DB unavailable') },
-        all () { throw new Error('DB unavailable') },
-        run () { throw new Error('DB unavailable') }
-      }
+      return noopStatement
     },
+    exec () { /* no-op on stub */ },
     pragma () { /* no-op on stub */ },
+    transaction (fn) {
+      return (...args) => fn(...args)
+    },
     close () { /* no-op on stub */ }
   }
 }

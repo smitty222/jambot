@@ -1,9 +1,8 @@
 // src/utils/logging.js
 import winston from 'winston'
+import { env } from '../config.js'
 
-const level =
-  process.env.LOG_LEVEL ||
-  (process.env.NODE_ENV === 'production' ? 'info' : 'debug')
+const level = env.logLevel
 
 // Safely stringify meta, including nested Error objects
 function jsonReplacer (_key, value) {
@@ -32,7 +31,7 @@ export const logger = winston.createLogger({
     // Capture error objects and attach .stack to info
     winston.format.errors({ stack: true }),
     winston.format.timestamp(),
-    process.env.NODE_ENV === 'production'
+    env.nodeEnv === 'production'
       ? winston.format.json() // includes "stack" thanks to errors()
       : devFmt
   ),
@@ -41,8 +40,8 @@ export const logger = winston.createLogger({
 })
 
 // Optional file logging
-if (process.env.LOG_TO_FILE) {
+if (env.logToFile) {
   logger.add(new winston.transports.File({
-    filename: process.env.LOG_FILE || 'app.log'
+    filename: env.logFile || 'app.log'
   }))
 }

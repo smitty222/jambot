@@ -2,6 +2,8 @@
 import { buildUrl, makeRequest } from './networking.js'
 import { addOrUpdateUser } from '../database/dbwalletmanager.js'
 import db from '../database/db.js'
+import { env } from '../config.js'
+import { logger } from './logging.js'
 
 const MENTION_RE = /^<@uid:[^>]+>$/
 
@@ -9,25 +11,25 @@ const MENTION_RE = /^<@uid:[^>]+>$/
  * Config & Constants
  * ──────────────────────────────────────────────────────────────── */
 const cfg = {
-  spotifyClientId: process.env.SPOTIFY_CLIENT_ID,
-  spotifyClientSecret: process.env.SPOTIFY_CLIENT_SECRET,
-  defaultPlaylistId: process.env.DEFAULT_PLAYLIST_ID,
-  redirectUri: process.env.REDIRECT_URI,
+  spotifyClientId: env.spotifyClientId,
+  spotifyClientSecret: env.spotifyClientSecret,
+  defaultPlaylistId: env.defaultPlaylistId,
+  redirectUri: env.redirectUri,
 
   // TT
   ttGateway: 'https://gateway.prod.tt.fm',
-  roomSlug: process.env.ROOM_SLUG || 'just-jams',
-  roomUUID: process.env.ROOM_UUID,
-  userToken: process.env.TTL_USER_TOKEN,
+  roomSlug: env.roomSlug,
+  roomUUID: env.roomUuid,
+  userToken: env.ttlUserToken,
 
   // Third-party
-  lastfmKey: process.env.LASTFM_API_KEY,
-  geniusToken: process.env.GENIUS_TOKEN,
+  lastfmKey: env.lastfmApiKey,
+  geniusToken: env.geniusToken,
 
   // CometChat
   comet: {
-    appId: process.env.CHAT_TT_APP_ID,
-    authKey: process.env.CHAT_AUTH_KEY
+    appId: env.chatTtAppId,
+    authKey: env.chatAuthKey
   }
 }
 
@@ -159,7 +161,14 @@ async function spotifyRequest (url, opts = {}, retryOn401 = true) {
 
   let res = await makeRequest(url, { ...opts, headers })
   if (res.status === 401 && retryOn401) {
-    try { await fetchSpotifyAccessToken() } catch {}
+    try {
+      await fetchSpotifyAccessToken()
+    } catch (err) {
+      logger.warn('[spotify] token refresh failed after 401', {
+        err: err?.message || err,
+        url
+      })
+    }
     const headers2 = { Authorization: `Bearer ${spotifyToken.token}`, ...(opts.headers || {}) }
     res = await makeRequest(url, { ...opts, headers: headers2 })
   }
@@ -355,7 +364,7 @@ export async function addSongsToCrate (crateId, songs, append = true, token) {
 
   const candidateHosts = Array.from(new Set([
     cfg.ttGateway,
-    process.env.TT_PUBLIC_API_BASE || 'https://api.prod.tt.fm'
+    env.ttPublicApiBase
   ].filter(Boolean)))
   const attempts = []
   for (const host of candidateHosts) {
@@ -847,7 +856,7 @@ export async function fetchUserProfileByUuid (uuid) {
 export async function getUserNicknameByUuid (uuid) {
   if (!uuid) return null
 
-  const TTL_MS = Number(process.env.NICKNAME_TTL_MS || 6 * 60 * 60 * 1000) // 6h default
+  const TTL_MS = env.nicknameTtlMs
   const id = String(uuid)
   const cachedNick = nicknameCache.get(id)
   if (cachedNick && !MENTION_RE.test(cachedNick)) {
@@ -870,7 +879,9 @@ export async function getUserNicknameByUuid (uuid) {
       nicknameCache.set(id, nick)
       return nick
     }
-  } catch {}
+  } catch (err) {
+    logger.debug('[nickname] DB fresh lookup failed', { err: err?.message || err, uuid: id })
+  }
 
   // 2) API lookup (authoritative)
   try {
@@ -879,10 +890,19 @@ export async function getUserNicknameByUuid (uuid) {
 
     if (nick && !MENTION_RE.test(nick)) {
       nicknameCache.set(id, nick)
-      try { await addOrUpdateUser(id, nick) } catch {}
+      try {
+        await addOrUpdateUser(id, nick)
+      } catch (err) {
+        logger.debug('[nickname] addOrUpdateUser failed after API lookup', {
+          err: err?.message || err,
+          uuid: id
+        })
+      }
       return nick
     }
-  } catch {}
+  } catch (err) {
+    logger.debug('[nickname] API lookup failed', { err: err?.message || err, uuid: id })
+  }
 
   // 3) DB fallback
   try {
@@ -894,7 +914,9 @@ export async function getUserNicknameByUuid (uuid) {
       nicknameCache.set(id, row.nickname)
       return row.nickname
     }
-  } catch {}
+  } catch (err) {
+    logger.debug('[nickname] DB fallback lookup failed', { err: err?.message || err, uuid: id })
+  }
 
   return id
 }
@@ -989,226 +1011,6 @@ async function espnScoreboard (sportPath) {
 export async function getMLBScores () { return espnScoreboard('baseball/mlb') }
 export async function getNHLScores () { return espnScoreboard('hockey/nhl') }
 export async function getNBAScores () { return espnScoreboard('basketball/nba') }
-/* ────────────────────────────────────────────────────────────────
- * ESPN Golf (PGA) Leaderboard
- * ──────────────────────────────────────────────────────────────── */
-// ESPN endpoint (unofficial but commonly used):
-// https://site.web.api.espn.com/apis/site/v2/sports/golf/leaderboard?league=pga
-async function espnGolfLeaderboard (league = 'pga') {
-  const cacheKey = `golf/${league}/leaderboard`
-  const cached = scoreboardCache.get(cacheKey)
-  if (cached) return cached
-
-  const url = `https://site.web.api.espn.com/apis/site/v2/sports/golf/leaderboard?league=${encodeURIComponent(league)}`
-  const { ok, data } = await makeRequest(url)
-  if (!ok || !data) {
-    console.error('[pga][espn] fetch failed', { ok })
-    return 'No PGA leaderboard available.\n'
-  }
-
-  // 🔍 DEBUG snapshot (keep)
-  try {
-    console.log(
-      '[pga][espn] RAW JSON snapshot:',
-      JSON.stringify(
-        {
-          league,
-          url,
-          event: data?.events?.[0]?.name,
-          eventId: data?.events?.[0]?.id,
-          eventStatus: data?.events?.[0]?.status,
-          competitionId: data?.events?.[0]?.competitions?.[0]?.id,
-          competitorsCount: data?.events?.[0]?.competitions?.[0]?.competitors?.length ?? 0,
-          competitorSample: (data?.events?.[0]?.competitions?.[0]?.competitors || []).slice(0, 2)
-        },
-        null,
-        2
-      )
-    )
-  } catch {
-    console.warn('[pga][espn] failed to stringify debug snapshot')
-  }
-
-  const event = data?.events?.[0]
-  const comp = event?.competitions?.[0]
-  const competitors = comp?.competitors || []
-
-  const eventName = event?.name || 'PGA Leaderboard'
-
-  const getStat = (c, key) => {
-    const stats = Array.isArray(c?.statistics) ? c.statistics : []
-    const s = stats.find(x => String(x?.name || '').toLowerCase() === String(key).toLowerCase())
-    return s?.displayValue ?? s?.value ?? ''
-  }
-
-  const normalizeThru = (c) => {
-    const st = c?.status || {}
-    // If ESPN provides a special detail like "CUT", "WD", etc., prefer it
-    const detail = (st?.type?.shortDetail || st?.type?.detail || st?.detail || '').toUpperCase()
-
-    // Common golf non-progress statuses you may see
-    if (detail.includes('CUT')) return 'CUT'
-    if (detail.includes('WD')) return 'WD'
-    if (detail.includes('DQ')) return 'DQ'
-    if (detail.includes('DNS')) return 'DNS'
-    if (detail.includes('DNF')) return 'DNF'
-
-    // Completed round/tournament
-    if (st?.type?.completed === true) return 'F'
-
-    // In progress: show "Thru X"
-    if (typeof st?.displayValue === 'string' && st.displayValue.trim()) {
-      // Often already "Thru 6"
-      return st.displayValue.replace(/^Thru\s+/i, 'Thru ')
-    }
-    if (st?.displayThru != null) return `Thru ${st.displayThru}`
-    if (st?.thru != null) return `Thru ${st.thru}`
-
-    return ''
-  }
-
-  // Normalize rows (based on your actual JSON)
-  const rows = competitors.map(c => {
-    const athlete = c?.athlete || {}
-    const pos = c?.status?.position?.displayName || ''
-    const name = athlete?.displayName || athlete?.fullName || athlete?.shortName || 'Unknown'
-
-    // Best to-par source in your sample:
-    // score.displayValue = "-7", statistics(scoreToPar) = "-8" (note: those can differ depending on round vs overall)
-    // We'll prefer score.displayValue as "overall score to par" in ESPN leaderboard.
-    const toPar =
-      c?.score?.displayValue ??
-      getStat(c, 'scoreToPar') ??
-      ''
-
-    const thru = normalizeThru(c)
-
-    // Sorting: use ESPN sortOrder if present (it is)
-    const sortOrder = Number.isFinite(Number(c?.sortOrder)) ? Number(c.sortOrder) : 9999
-
-    return { pos, name, toPar, thru, sortOrder }
-  })
-
-  // ESPN already provides a good ordering via sortOrder
-  rows.sort((a, b) => a.sortOrder - b.sortOrder)
-
-  // Format CometChat-safe fixed columns
-  const pad = (v, n) => {
-    const s = String(v ?? '')
-    return s.length >= n ? s.slice(0, n) : s + ' '.repeat(n - s.length)
-  }
-
-  const lines = []
-  lines.push(`${eventName}`)
-  lines.push('Pos  Player                     ToPar  Status')
-  lines.push('----------------------------------------------')
-  for (const r of rows.slice(0, 20)) {
-    lines.push(`${pad(r.pos, 4)} ${pad(r.name, 25)} ${pad(r.toPar, 5)}  ${r.thru}`)
-  }
-
-  const out = `\`\`\`\n${lines.join('\n')}\n\`\`\`\n`
-  scoreboardCache.set(cacheKey, out)
-  return out
-}
-
-// Public export for your bot
-export async function getPGALeaderboard () {
-  return espnGolfLeaderboard('pga')
-}
-
-// Raw ESPN PGA leaderboard JSON (for DB snapshots)
-export async function fetchEspnPgaLeaderboardRaw () {
-  const url = 'https://site.web.api.espn.com/apis/site/v2/sports/golf/leaderboard?league=pga'
-  const { ok, data } = await makeRequest(url)
-  if (!ok || !data) throw new Error('Failed to fetch ESPN PGA leaderboard')
-  return data
-}
-
-// Normalize ESPN competitor objects into DB-ready rows
-export function normalizeEspnPgaRows (data) {
-  const event = data?.events?.[0]
-  const comp = event?.competitions?.[0]
-  const competitors = comp?.competitors || []
-
-  const getStat = (c, key) => {
-    const stats = Array.isArray(c?.statistics) ? c.statistics : []
-    const s = stats.find(x => String(x?.name || '').toLowerCase() === String(key).toLowerCase())
-    return s?.displayValue ?? s?.value ?? null
-  }
-
-  const normStatus = (c) => {
-    const st = c?.status || {}
-    const detail = String(st?.type?.shortDetail || st?.type?.detail || st?.detail || '').toUpperCase()
-    if (detail.includes('CUT')) return 'CUT'
-    if (detail.includes('WD')) return 'WD'
-    if (detail.includes('DQ')) return 'DQ'
-    if (detail.includes('DNS')) return 'DNS'
-    if (detail.includes('DNF')) return 'DNF'
-    if (st?.type?.completed === true) return 'F'
-    return st?.type?.description || 'In Progress'
-  }
-
-  const normThru = (c) => {
-    const st = c?.status || {}
-    if (st?.type?.completed === true) return 'F'
-    if (typeof st?.displayValue === 'string' && st.displayValue.trim()) return st.displayValue
-    if (st?.displayThru != null) return `Thru ${st.displayThru}`
-    if (st?.thru != null) return `Thru ${st.thru}`
-    return null
-  }
-
-  const rows = competitors.map(c => {
-    const athlete = c?.athlete || {}
-    const athleteId = athlete?.id || c?.id
-    const playerName = athlete?.displayName || athlete?.fullName || athlete?.shortName || null
-
-    const pos = c?.status?.position?.displayName || null
-    const toPar = c?.score?.displayValue ?? getStat(c, 'scoreToPar') ?? null
-
-    const movement = (typeof c?.movement === 'number') ? c.movement : null
-    const sortOrder = (typeof c?.sortOrder === 'number') ? c.sortOrder : null
-
-    const earnings = (typeof c?.earnings === 'number') ? c.earnings : null
-    const cupPoints = (() => {
-      const v = getStat(c, 'cupPoints')
-      const n = Number(v)
-      return Number.isFinite(n) ? n : null
-    })()
-
-    // linescores: period 1..4 values
-    const ls = Array.isArray(c?.linescores) ? c.linescores : []
-    const byPeriod = new Map(ls.map(x => [x?.period, x]))
-    const r1 = byPeriod.get(1)?.value ?? null
-    const r2 = byPeriod.get(2)?.value ?? null
-    const r3 = byPeriod.get(3)?.value ?? null
-    const r4 = byPeriod.get(4)?.value ?? null
-
-    return {
-      athleteId: athleteId ? String(athleteId) : null,
-      playerName,
-      pos,
-      toPar,
-      status: normStatus(c),
-      thru: normThru(c),
-      sortOrder,
-      movement,
-      earnings,
-      cupPoints,
-      r1,
-      r2,
-      r3,
-      r4
-    }
-  }).filter(r => r.athleteId)
-
-  return {
-    eventId: event?.id ? String(event.id) : null,
-    eventName: event?.name || null,
-    eventStatus: event?.status?.type?.description || null,
-    eventCompleted: !!event?.status?.type?.completed,
-    rows
-  }
-}
 
 /* ────────────────────────────────────────────────────────────────
  * Last.fm helpers

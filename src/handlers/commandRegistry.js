@@ -6,10 +6,14 @@
 // easier to add or remove commands without touching the monolithic file.
 
 import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
+import { env } from '../config.js'
 import { logger } from '../utils/logging.js'
+import { resolveDispatchCommand as resolveDispatchCommandBase } from './commandRouting.js'
+import { dispatchWithRegistry } from './dispatchCore.js'
+import { createSlotsRegistryHandler, buildSlotsInfoMessage } from './slotsRegistryHandler.js'
+import { createAvatarCommandRegistry } from './avatarCommandRegistry.js'
 
 // Game and feature handlers
-import { handleSlotsCommand } from './slots.js'
 import { handleCryptoCommand } from './crypto.js'
 import {
   startRouletteGame,
@@ -23,7 +27,6 @@ import {
   handleTopLotteryStatsCommand,
   handleSingleNumberQuery
 } from '../database/dblotterymanager.js'
-import handleDogCommand from './commandDog.js'
 
 // Avatar command handlers
 import {
@@ -37,8 +40,20 @@ import {
   handleBot1Command,
   handleBot2Command,
   handleBot3Command,
+  handleBotSpookyCommand,
+  handleBotStaffCommand,
+  handleBotWinterCommand,
   handleDinoCommand,
+  handleTeacupCommand,
+  handleAlienCommand,
+  handleAlien2Command,
+  handleRoyCommand,
+  handleSpookyCommand,
+  handleBouncerCommand,
   handleDuckCommand,
+  handleRecordGuyCommand,
+  handleJukeboxCommand,
+  handleJesterCommand,
   handleSpaceBearCommand,
   handleWalrusCommand,
   handleVibesGuyCommand,
@@ -46,6 +61,17 @@ import {
   handleDoDoCommand,
   handleDumDumCommand,
   handleFlowerPowerCommand,
+  handleAnonCommand,
+  handleGhostCommand,
+  handleGrimehouseCommand,
+  handleBearPartyCommand,
+  handleWinterCommand,
+  handleTVguyCommand,
+  handlePinkBlanketCommand,
+  handleGayCamCommand,
+  handleGayIanCommand,
+  handleGayAlexCommand,
+  handleRandomPajamaCommand,
   handleRandomAvatarCommand,
   handleRandomCyberCommand,
   handleRandomCosmicCommand,
@@ -85,19 +111,49 @@ import {
   handleGetWalletCommand
 } from './walletCommands.js'
 import { handleSuggestSongsCommand } from './suggestionCommands.js'
+import {
+  handleMlbScoresCommand,
+  handleNhlScoresCommand,
+  handleNbaScoresCommand,
+  handleMlbOddsCommand,
+  handleSportsBetCommand,
+  handleResolveBetsCommand
+} from './sportsCommands.js'
+import {
+  handleCheckBalanceCommand,
+  handleBankrollCommand,
+  handleTipCommand
+} from './walletCommandExtras.js'
+import {
+  handleReviewHelpCommand,
+  handleSongReviewCommand,
+  handleTopSongsCommand,
+  handleMyTopSongsCommand,
+  handleTopAlbumsCommand,
+  handleMyTopAlbumsCommand,
+  handleRatingCommand,
+  handleAlbumReviewCommand,
+  handleSongCommand,
+  handleSongStatsCommand,
+  handleMostPlayedCommand,
+  handleTopLikedCommand,
+  handleAlbumCommand,
+  handleArtCommand,
+  handleScoreCommand
+} from './musicReviewCommands.js'
+import { createModControlHandlers } from './modControlCommands.js'
+import { createRoomUtilityHandlers } from './roomUtilityCommands.js'
+import { createRoomFunHandlers } from './roomFunCommands.js'
+import { createSecretFunHandlers } from './secretFunCommands.js'
+import { createQueuePlaylistHandlers } from './queuePlaylistCommands.js'
+import { createReactionHandlers } from './reactionCommands.js'
+import { createMiscCommandHandlers } from './miscCommandHandlers.js'
+import { createBlackjackHandlers } from './blackjackCommands.js'
+import { handleAddAvatarCommand } from './addAvatar.js'
+import { handleRemoveAvatarCommand } from './removeAvatar.js'
+import { getSenderNickname } from '../utils/helpers.js'
+import { usersToBeRemoved } from '../utils/usersToBeRemoved.js'
 
-function buildSlotsInfoMessage () {
-  return [
-    '🎰 Slots Commands',
-    '- `/slots <bet>` play a spin (default bet is 1)',
-    '- `/slots bonus` spin bonus mode (when active)',
-    '- `/slots free` spin free mode (when active)',
-    '- `/slots stats` show jackpot contribution stats',
-    '- `/slots effective` (or `/slots eff`) show active contribution/share',
-    '- `/slots lifetime` (or `/slots life`) show lifetime contribution',
-    '- `/jackpot` show the current jackpot'
-  ].join('\n')
-}
 function extractSpotifyAlbumId (input) {
   const s = String(input || '').trim()
 
@@ -244,50 +300,9 @@ async function postMonthlyLeaderboard (room, leaderboardType = 'monthly', args =
 const commandRegistry = {
   // 🎰 Slots: `/slots [betAmount]`
   // Supports text subcommands and numeric bets.
-  slots: async ({ payload, room }) => {
-    const parts = (payload?.message || '').trim().split(/\s+/)
-    const userUUID = payload?.sender
-
-    // Determine the argument (if any) after the command name.
-    let arg = ''
-    if (parts.length > 1) {
-      arg = String(parts[1] || '').trim().toLowerCase()
-    }
-
-    // Handle text subcommands directly.
-    if (
-      arg === 'info' ||
-      arg === 'help' ||
-      arg === 'bonus' ||
-      arg === 'free' ||
-      arg === 'stats' ||
-      arg === 'effective' ||
-      arg === 'eff' ||
-      arg === 'lifetime' ||
-      arg === 'life'
-    ) {
-      if (arg === 'info' || arg === 'help') {
-        await postMessage({ room, message: buildSlotsInfoMessage() })
-        return
-      }
-      const response = await handleSlotsCommand(userUUID, arg)
-      await postMessage({ room, message: response })
-      return
-    }
-
-    // Parse a numeric bet amount; default to 1 when none provided.
-    let betAmount = 1
-    if (arg) {
-      const amt = parseFloat(arg)
-      if (!Number.isFinite(amt) || amt <= 0) {
-        await postMessage({ room, message: 'Please provide a valid bet amount.' })
-        return
-      }
-      betAmount = amt
-    }
-
-    const response = await handleSlotsCommand(userUUID, betAmount)
-    await postMessage({ room, message: response })
+  slots: createSlotsRegistryHandler(),
+  slotinfo: async ({ room }) => {
+    await postMessage({ room, message: buildSlotsInfoMessage() })
   },
 
   // 🎲 Roulette help + start:
@@ -610,8 +625,14 @@ const commandRegistry = {
   balance: async ({ payload, room }) => {
     await handleBalanceCommand({ payload, room })
   },
+  bankroll: async ({ room }) => {
+    await handleBankrollCommand({ room })
+  },
   career: async ({ payload, room }) => {
     await handleCareerCommand({ payload, room })
+  },
+  checkbalance: async ({ payload, room }) => {
+    await handleCheckBalanceCommand({ payload, room })
   },
   getwallet: async ({ payload, room }) => {
     await handleGetWalletCommand({ payload, room })
@@ -664,6 +685,9 @@ const commandRegistry = {
       room,
       message: `🏆 **Top Net Worth**\n\n${formatted.join('\n')}`
     })
+  },
+  tip: async ({ payload, room, state }) => {
+    await handleTipCommand({ payload, room, state })
   },
   suggestsongs: async ({ room }) => {
     await handleSuggestSongsCommand({ room })
@@ -730,6 +754,72 @@ const commandRegistry = {
   lotto: async ({ payload, room }) => {
     // Pass the entire message to the helper which extracts and validates the number
     await handleSingleNumberQuery(room, payload.message)
+  },
+  mlb: async ({ payload, room }) => {
+    await handleMlbScoresCommand({ payload, room })
+  },
+  nhl: async ({ payload, room }) => {
+    await handleNhlScoresCommand({ payload, room })
+  },
+  nba: async ({ payload, room }) => {
+    await handleNbaScoresCommand({ payload, room })
+  },
+  mlbodds: async ({ room }) => {
+    await handleMlbOddsCommand({ room })
+  },
+  sportsbet: async ({ payload, room }) => {
+    await handleSportsBetCommand({ payload, room })
+  },
+  resolvebets: async ({ room }) => {
+    await handleResolveBetsCommand({ room })
+  },
+  reviewhelp: async ({ room }) => {
+    await handleReviewHelpCommand({ room })
+  },
+  review: async ({ payload, room, roomBot }) => {
+    await handleSongReviewCommand({ payload, room, roomBot, commandName: 'review' })
+  },
+  songreview: async ({ payload, room, roomBot }) => {
+    await handleSongReviewCommand({ payload, room, roomBot, commandName: 'songreview' })
+  },
+  topsongs: async ({ room }) => {
+    await handleTopSongsCommand({ room })
+  },
+  mytopsongs: async ({ payload, room }) => {
+    await handleMyTopSongsCommand({ payload, room })
+  },
+  topalbums: async ({ room }) => {
+    await handleTopAlbumsCommand({ room })
+  },
+  mytopalbums: async ({ payload, room }) => {
+    await handleMyTopAlbumsCommand({ payload, room })
+  },
+  rating: async ({ room, roomBot }) => {
+    await handleRatingCommand({ room, roomBot })
+  },
+  albumreview: async ({ payload, room, roomBot }) => {
+    await handleAlbumReviewCommand({ payload, room, roomBot })
+  },
+  song: async ({ room, roomBot }) => {
+    await handleSongCommand({ room, roomBot })
+  },
+  stats: async ({ room, roomBot }) => {
+    await handleSongStatsCommand({ room, roomBot })
+  },
+  mostplayed: async ({ room }) => {
+    await handleMostPlayedCommand({ room })
+  },
+  topliked: async ({ room }) => {
+    await handleTopLikedCommand({ room })
+  },
+  album: async ({ room, roomBot }) => {
+    await handleAlbumCommand({ room, roomBot })
+  },
+  art: async ({ room, roomBot }) => {
+    await handleArtCommand({ room, roomBot })
+  },
+  score: async ({ room, roomBot }) => {
+    await handleScoreCommand({ room, roomBot })
   },
 
   // 🔎 Album search by artist name: `/searchalbum artist name`
@@ -1029,246 +1119,388 @@ ${blocks}
     })
   },
 
-  // 🎬 Show GIF list: `/gifs`
-  gifs: async ({ room }) => {
-    await postMessage({
-      room,
-      message: [
-        '🎞️ GIF & Fun Commands',
-        '- `/burp` `/dance` `/party` `/beer` `/fart` `/cheers` `/tomatoes`',
-        '- `/trash` `/bonk` `/rigged` `/banger` `/peace`',
-        '- `/props` `/ass` `/titties` `/azz` `/shred`',
-        '- `/dog [breed] [sub-breed]`',
-        '',
-        'More grouped help:',
-        '- `/gifs`',
-        '- `/commands`'
-      ].join('\n')
-    })
-  },
-
-  // 🤢 Burp: `/burp`
-  burp: async ({ room }) => {
-    try {
-      const gifUrl =
-        'https://media.giphy.com/media/3orieOieQrTkLXl2SY/giphy.gif?cid=790b7611gofgmq0d396jww26sbt1bhc9ljg9am4nb8m6f6lo&ep=v1_gifs_search&rid=giphy.gif&ct=g'
-      await postMessage({ room, message: '', images: [gifUrl] })
-    } catch (err) {
-      logger.error('Error sending burp GIF:', err?.message || err)
-    }
-  },
-
-  // 💃 Dance: `/dance`
-  dance: async ({ room }) => {
-    try {
-      const options = [
-        'https://media.giphy.com/media/IwAZ6dvvvaTtdI8SD5/giphy.gif',
-        'https://media.giphy.com/media/3o7qDQ4kcSD1PLM3BK/giphy.gif',
-        'https://media.giphy.com/media/oP997KOtJd5ja/giphy.gif',
-        'https://media.giphy.com/media/wAxlCmeX1ri1y/giphy.gif'
-      ]
-      const choice = options[Math.floor(Math.random() * options.length)]
-      await postMessage({ room, message: '', images: [choice] })
-    } catch (err) {
-      logger.error('Error sending dance GIF:', err?.message || err)
-      await postMessage({ room, message: 'An error occurred while processing the dance command. Please try again.' })
-    }
-  },
-
-  // 🎉 Party: `/party`
-  party: async ({ room }) => {
-    try {
-      const options = [
-        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExZHF6aTAzeXNubW84aHJrZzd1OGM1ZjM0MGp5aTZrYTRrZmdscnYwbyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/IwAZ6dvvvaTtdI8SD5/giphy.gif',
-        'https://media.giphy.com/media/xUA7aT1vNqVWHPY1cA/giphy.gif?cid=790b7611ov12e8uoq7xedaifcwz9gj28xb43wtxtnuj0rnod&ep=v1_gifs_search&rid=giphy.gif&ct=g',
-        'https://media.giphy.com/media/iJ2cZjydqg9wFkzbGD/giphy.gif?cid=790b7611ov12e8uoq7xedaifcwz9gj28xb43wtxtnuj0rnod&ep=v1_gifs_search&rid=giphy.gif&ct=g'
-      ]
-      const choice = options[Math.floor(Math.random() * options.length)]
-      await postMessage({ room, message: '', images: [choice] })
-    } catch (err) {
-      logger.error('Error sending party GIF:', err?.message || err)
-    }
-  },
-
-  // 🍺 Beer: `/beer`
-  beer: async ({ room }) => {
-    try {
-      const options = [
-        'https://media.giphy.com/media/l2Je5C6DLUvYVj37a/giphy.gif?cid=ecf05e475as76fua0g8zvld9lzbm85sb3ojqyt95jrxrnlqz&ep=v1_gifs_search&rid=giphy.gif&ct=g',
-        'https://media.giphy.com/media/9GJ2w4GMngHCh2W4uk/giphy.gif?cid=ecf05e47vxjww4oli5eck8v6nd6jcmfl9e6awd3a9ok2wa7w&ep=v1_gifs_search&rid=giphy.gif&ct=g',
-        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExaG5yc2UzZXh5dDdzbTh4YnE4dzc5MjMweGc5YXowZjViYWthYXczZiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/DmzUp9lX7lHlm/giphy.gif',
-        'https://media.giphy.com/media/70lIzbasCI6vOuE2zG/giphy.gif?cid=ecf05e4758ayajrk9c6dnrcblptih04zceztlwndn0vwxmgd&ep=v1_gifs_search&rid=giphy.gif&ct=g'
-      ]
-      const choice = options[Math.floor(Math.random() * options.length)]
-      await postMessage({ room, message: '', images: [choice] })
-    } catch (err) {
-      logger.error('Error sending beer GIF:', err?.message || err)
-    }
-  },
-
-  // 💨 Fart: `/fart`
-  fart: async ({ room }) => {
-    try {
-      const options = [
-        'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ21qYmtndjNqYWRqaTFrd2NqaDNkejRqY3RrMTV5Mzlvb3gydDk0ZyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/dWxYMTXIJtT9wGLkOw/giphy.gif',
-        'https://media.giphy.com/media/LFvQBWwKk7Qc0/giphy.gif?cid=790b7611gmjbkgv3jadji1kwcjh3dz4jctk15y39oox2t94g&ep=v1_gifs_search&rid=giphy.gif&ct=g'
-      ]
-      const choice = options[Math.floor(Math.random() * options.length)]
-      await postMessage({ room, message: '', images: [choice] })
-    } catch (err) {
-      logger.error('Error sending fart GIF:', err?.message || err)
-      await postMessage({ room, message: 'An error occurred while processing the fart command. Please try again.' })
-    }
-  },
-
-  // 🥂 Cheers: `/cheers`
-  cheers: async ({ room }) => {
-    try {
-      const options = [
-        { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExc3dpem43dXNuNnkzb3A3NmY0ZjBxdTZxazR5aXh1dDl1N3R5OHRyaSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/BPJmthQ3YRwD6QqcVD/giphy.gif' },
-        { type: 'gif', value: 'https://media.giphy.com/media/3oeSB36G9Au4V0xUhG/giphy.gif?cid=790b7611swizn7usn6y3op76f4f0qu6qk4yixut9u7ty8tri&ep=v1_gifs_search&rid=giphy.gif&ct=g' },
-        { type: 'gif', value: 'https://media.giphy.com/media/l7jc8M23lg9e3l9SDn/giphy.gif?cid=790b7611swizn7usn6y3op76f4f0qu6qk4yixut9u7ty8tri&ep=v1_gifs_search&rid=giphy.gif&ct=g' },
-        { type: 'emoji', value: '' }
-      ]
-      const selection = options[Math.floor(Math.random() * options.length)]
-      if (selection.type === 'gif') {
-        await postMessage({ room, message: '', images: [selection.value] })
-      } else {
-        await postMessage({ room, message: selection.value })
-      }
-    } catch (err) {
-      logger.error('Error sending cheers:', err?.message || err)
-    }
-  },
-
-  // 🍅 Tomatoes: `/tomatoes`
-  tomatoes: async ({ room }) => {
-    try {
-      const options = [
-        { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExb296MmJyeHBpYm9yMGQwbG81cnhlcGd4MWF4N3A1dWhhN3FxNmJvdCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/Her9TInMPQYrS/giphy.gif' },
-        { type: 'gif', value: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExbGY4YmQwZTA5aHk3ejhrbTI1Mmk1NDl6ZTkzM2h6cm53djZsYnB5diZlcD12MV9naWZzX3NlYXJjaCZjdD1n/26nfoIrm8lHXqmm7C/giphy.gif' },
-        { type: 'emoji', value: '' }
-      ]
-      const selection = options[Math.floor(Math.random() * options.length)]
-      if (selection.type === 'gif') {
-        await postMessage({ room, message: '', images: [selection.value] })
-      } else {
-        await postMessage({ room, message: selection.value })
-      }
-    } catch (err) {
-      logger.error('Error sending tomatoes:', err?.message || err)
-    }
-  },
-
-  // 🐕 Dog: `/dog [breed] [sub-breed]`
-  dog: async ({ room, args }) => {
-    try {
-      // Parse arguments into an array for breed and sub-breed
-      const breedArgs = args ? args.trim().split(/\s+/).filter(Boolean) : []
-      await handleDogCommand({ room, args: breedArgs })
-    } catch (err) {
-      logger.error('Error processing dog command:', err?.message || err)
-      try {
-        await postMessage({ room, message: ' Something went wrong fetching a pup.' })
-      } catch {
-        /* ignore */
-      }
-    }
-  },
-
   // 💰 Crypto commands: `/crypto ...`
   crypto: async ({ payload, room, args }) => {
     await handleCryptoCommand({ payload, room, args })
-  },
-
-  // -----------------------------------------------------------------------
-  // Avatar commands
-  // These handlers update the bot's appearance or change a user's avatar.
-  // Placing them in the registry avoids scanning the long conditional chain
-  // in message.js and provides faster routing for commonly used avatar
-  // commands. Moderator checks are enforced for bot commands via isUserAuthorized.
-  botrandom: async ({ payload, room }) => {
-    const ttlToken = process.env.TTL_USER_TOKEN
-    await handleBotRandomAvatarCommand(room, postMessage, ttlToken)
-  },
-  botdino: async ({ payload, room }) => {
-    const ttlToken = process.env.TTL_USER_TOKEN
-    await handleBotDinoCommand(room, postMessage, isUserAuthorized, payload?.sender, ttlToken)
-  },
-  botduck: async ({ payload, room }) => {
-    const ttlToken = process.env.TTL_USER_TOKEN
-    await handleBotDuckCommand(room, postMessage, isUserAuthorized, payload?.sender, ttlToken)
-  },
-  botalien: async ({ payload, room }) => {
-    const ttlToken = process.env.TTL_USER_TOKEN
-    await handleBotAlienCommand(room, postMessage, isUserAuthorized, payload?.sender, ttlToken)
-  },
-  botalien2: async ({ payload, room }) => {
-    const ttlToken = process.env.TTL_USER_TOKEN
-    await handleBotAlien2Command(room, postMessage, isUserAuthorized, payload?.sender, ttlToken)
-  },
-  botwalrus: async ({ payload, room }) => {
-    const ttlToken = process.env.TTL_USER_TOKEN
-    await handleBotWalrusCommand(room, postMessage, isUserAuthorized, payload?.sender, ttlToken)
-  },
-  botpenguin: async ({ payload, room }) => {
-    const ttlToken = process.env.TTL_USER_TOKEN
-    await handleBotPenguinCommand(room, postMessage, isUserAuthorized, payload?.sender, ttlToken)
-  },
-  bot1: async ({ payload, room }) => {
-    const ttlToken = process.env.TTL_USER_TOKEN
-    await handleBot1Command(room, postMessage, isUserAuthorized, payload?.sender, ttlToken)
-  },
-  bot2: async ({ payload, room }) => {
-    const ttlToken = process.env.TTL_USER_TOKEN
-    await handleBot2Command(room, postMessage, isUserAuthorized, payload?.sender, ttlToken)
-  },
-  bot3: async ({ payload, room }) => {
-    const ttlToken = process.env.TTL_USER_TOKEN
-    await handleBot3Command(room, postMessage, isUserAuthorized, payload?.sender, ttlToken)
-  },
-
-  // User avatar commands
-  dino: async ({ payload, room }) => {
-    await handleDinoCommand(payload?.sender, room, postMessage)
-  },
-  duck: async ({ payload, room }) => {
-    await handleDuckCommand(payload?.sender, room, postMessage)
-  },
-  spacebear: async ({ payload, room }) => {
-    await handleSpaceBearCommand(payload?.sender, room, postMessage)
-  },
-  walrus: async ({ payload, room }) => {
-    await handleWalrusCommand(payload?.sender, room, postMessage)
-  },
-  vibesguy: async ({ payload, room }) => {
-    await handleVibesGuyCommand(payload?.sender, room, postMessage)
-  },
-  faces: async ({ payload, room }) => {
-    await handleFacesCommand(payload?.sender, room, postMessage)
-  },
-  dodo: async ({ payload, room }) => {
-    await handleDoDoCommand(payload?.sender, room, postMessage)
-  },
-  dumdum: async ({ payload, room }) => {
-    await handleDumDumCommand(payload?.sender, room, postMessage)
-  },
-  flowerpower: async ({ payload, room }) => {
-    await handleFlowerPowerCommand(payload?.sender, room, postMessage)
-  },
-  randomavatar: async ({ payload, room }) => {
-    await handleRandomAvatarCommand(payload?.sender, room, postMessage)
-  },
-  randomcyber: async ({ payload, room }) => {
-    await handleRandomCyberCommand(payload?.sender, room, postMessage)
-  },
-  randomcosmic: async ({ payload, room }) => {
-    await handleRandomCosmicCommand(payload?.sender, room, postMessage)
-  },
-  randomlovable: async ({ payload, room }) => {
-    await handleRandomLovableCommand(payload?.sender, room, postMessage)
   }
 }
+
+const modControlHandlers = createModControlHandlers()
+const roomUtilityHandlers = createRoomUtilityHandlers()
+const roomFunHandlers = createRoomFunHandlers()
+const secretFunHandlers = createSecretFunHandlers()
+const reactionHandlers = createReactionHandlers()
+const miscCommandHandlers = createMiscCommandHandlers()
+const blackjackHandlers = createBlackjackHandlers()
+const avatarCommandHandlers = createAvatarCommandRegistry({
+  postMessage,
+  isUserAuthorized,
+  handleBotRandomAvatarCommand,
+  handleBotDinoCommand,
+  handleBotDuckCommand,
+  handleBotAlienCommand,
+  handleBotAlien2Command,
+  handleBotWalrusCommand,
+  handleBotPenguinCommand,
+  handleBot1Command,
+  handleBot2Command,
+  handleBot3Command,
+  handleBotSpookyCommand,
+  handleBotStaffCommand,
+  handleBotWinterCommand,
+  handleDinoCommand,
+  handleTeacupCommand,
+  handleAlienCommand,
+  handleAlien2Command,
+  handleRoyCommand,
+  handleSpookyCommand,
+  handleBouncerCommand,
+  handleDuckCommand,
+  handleRecordGuyCommand,
+  handleJukeboxCommand,
+  handleJesterCommand,
+  handleSpaceBearCommand,
+  handleWalrusCommand,
+  handleVibesGuyCommand,
+  handleFacesCommand,
+  handleDoDoCommand,
+  handleDumDumCommand,
+  handleFlowerPowerCommand,
+  handleAnonCommand,
+  handleGhostCommand,
+  handleGrimehouseCommand,
+  handleBearPartyCommand,
+  handleWinterCommand,
+  handleTVguyCommand,
+  handlePinkBlanketCommand,
+  handleGayCamCommand,
+  handleGayIanCommand,
+  handleGayAlexCommand,
+  handleRandomPajamaCommand,
+  handleRandomAvatarCommand,
+  handleRandomCyberCommand,
+  handleRandomCosmicCommand,
+  handleRandomLovableCommand,
+  handleAddAvatarCommand,
+  handleRemoveAvatarCommand,
+  logger
+})
+const queuePlaylistHandlers = createQueuePlaylistHandlers({
+  addDollarsByUUID: async (...args) => {
+    const { addDollarsByUUID } = await import('../database/dbwalletmanager.js')
+    return addDollarsByUUID(...args)
+  },
+  readBlacklistFile: async () => {
+    const fs = await import('fs')
+    const path = await import('path')
+    const blacklistPath = path.join(process.cwd(), 'src/data/songBlacklist.json')
+    try {
+      const raw = await fs.promises.readFile(blacklistPath, 'utf8')
+      return JSON.parse(raw)
+    } catch {
+      return []
+    }
+  },
+  writeBlacklistFile: async (items) => {
+    const fs = await import('fs')
+    const path = await import('path')
+    const blacklistPath = path.join(process.cwd(), 'src/data/songBlacklist.json')
+    await fs.promises.writeFile(blacklistPath, JSON.stringify(items, null, 2))
+  }
+})
+
+Object.assign(commandRegistry, {
+  ...avatarCommandHandlers,
+  begonebitch: async ({ payload, room, state, roomBot }) => {
+    await reactionHandlers.begonebitch({ payload, room, state, roomBot })
+  },
+  blackjack: async ({ payload, room, args }) => {
+    await blackjackHandlers.blackjack({ payload, room, args })
+  },
+  bj: async ({ payload, room, args }) => {
+    await blackjackHandlers.bj({ payload, room, args })
+  },
+  join: async ({ payload, room }) => {
+    await blackjackHandlers.join({ payload, room })
+  },
+  bet: async ({ payload, room, args }) => {
+    await blackjackHandlers.bet({ payload, room, args })
+  },
+  hit: async ({ payload, room }) => {
+    await blackjackHandlers.hit({ payload, room })
+  },
+  stand: async ({ payload, room }) => {
+    await blackjackHandlers.stand({ payload, room })
+  },
+  double: async ({ payload, room }) => {
+    await blackjackHandlers.double({ payload, room })
+  },
+  surrender: async ({ payload, room }) => {
+    await blackjackHandlers.surrender({ payload, room })
+  },
+  split: async ({ payload, room }) => {
+    await blackjackHandlers.split({ payload, room })
+  },
+  theme: async ({ payload, room }) => {
+    await miscCommandHandlers.theme({ payload, room })
+  },
+  settheme: async ({ payload, room }) => {
+    await miscCommandHandlers.settheme({ payload, room })
+  },
+  removetheme: async ({ payload, room }) => {
+    await miscCommandHandlers.removetheme({ payload, room })
+  },
+  lottowinners: async ({ room }) => {
+    await miscCommandHandlers.lottowinners({ room })
+  },
+  jackpot: async ({ room }) => {
+    await miscCommandHandlers.jackpot({ room })
+  },
+  triviastart: async ({ room, args }) => {
+    await miscCommandHandlers.triviastart({ room, args })
+  },
+  triviaend: async ({ room }) => {
+    await miscCommandHandlers.triviaend({ room })
+  },
+  trivia: async ({ room }) => {
+    await miscCommandHandlers.trivia({ room })
+  },
+  a: async ({ payload, room }) => {
+    await miscCommandHandlers.a({ payload, room })
+  },
+  b: async ({ payload, room }) => {
+    await miscCommandHandlers.b({ payload, room })
+  },
+  c: async ({ payload, room }) => {
+    await miscCommandHandlers.c({ payload, room })
+  },
+  d: async ({ payload, room }) => {
+    await miscCommandHandlers.d({ payload, room })
+  },
+  store: async ({ payload, room }) => {
+    await miscCommandHandlers.store({ payload, room })
+  },
+  '8ball': async ({ payload, room }) => {
+    await miscCommandHandlers['8ball']({ payload, room })
+  },
+  gifs: async ({ room }) => {
+    await reactionHandlers.gifs({ room })
+  },
+  burp: async ({ room }) => {
+    await reactionHandlers.burp({ room })
+  },
+  dog: async ({ room, args }) => {
+    await reactionHandlers.dog({ room, args })
+  },
+  dance: async ({ room }) => {
+    await reactionHandlers.dance({ room })
+  },
+  fart: async ({ room }) => {
+    await reactionHandlers.fart({ room })
+  },
+  party: async ({ room }) => {
+    await reactionHandlers.party({ room })
+  },
+  beer: async ({ room }) => {
+    await reactionHandlers.beer({ room })
+  },
+  cheers: async ({ room }) => {
+    await reactionHandlers.cheers({ room })
+  },
+  tomatoes: async ({ room }) => {
+    await reactionHandlers.tomatoes({ room })
+  },
+  trash: async ({ room }) => {
+    await reactionHandlers.trash({ room })
+  },
+  bonk: async ({ room }) => {
+    await reactionHandlers.bonk({ room })
+  },
+  rigged: async ({ room }) => {
+    await reactionHandlers.rigged({ room })
+  },
+  banger: async ({ room }) => {
+    await reactionHandlers.banger({ room })
+  },
+  peace: async ({ room }) => {
+    await reactionHandlers.peace({ room })
+  },
+  commands: async ({ payload, room, ttlUserToken }) => {
+    await roomUtilityHandlers.commands({ payload, room, ttlUserToken })
+  },
+  mod: async ({ payload, room, ttlUserToken }) => {
+    await roomUtilityHandlers.mod({ payload, room, ttlUserToken })
+  },
+  games: async ({ room }) => {
+    await roomUtilityHandlers.games({ room })
+  },
+  music: async ({ room }) => {
+    await roomUtilityHandlers.music({ room })
+  },
+  wallet: async ({ room }) => {
+    await roomUtilityHandlers.wallet({ room })
+  },
+  avatars: async ({ room }) => {
+    await roomUtilityHandlers.avatars({ room })
+  },
+  room: async ({ payload, room, ttlUserToken }) => {
+    await roomUtilityHandlers.room({ payload, room, ttlUserToken })
+  },
+  site: async ({ room }) => {
+    await queuePlaylistHandlers.site({ room })
+  },
+  test: async ({ room }) => {
+    await queuePlaylistHandlers.test({ room })
+  },
+  crapsrecord: async ({ room }) => {
+    await queuePlaylistHandlers.crapsrecord({ room })
+  },
+  addmoney: async ({ payload, room }) => {
+    await queuePlaylistHandlers.addmoney({ payload, room })
+  },
+  'q+': async ({ payload, room, queueManager }) => {
+    await queuePlaylistHandlers['q+']({ payload, room, queueManager })
+  },
+  'q-': async ({ payload, room, queueManager }) => {
+    await queuePlaylistHandlers['q-']({ payload, room, queueManager })
+  },
+  q: async ({ room, queueManager }) => {
+    await queuePlaylistHandlers.q({ room, queueManager })
+  },
+  adddj: async ({ payload, roomBot }) => {
+    roomBot.lastCommandText = payload?.message || ''
+    await roomUtilityHandlers.adddj({ roomBot })
+  },
+  removedj: async ({ roomBot }) => {
+    await roomUtilityHandlers.removedj({ roomBot })
+  },
+  djbeer: async ({ payload, room, state }) => {
+    await roomFunHandlers.djbeer({ payload, room, state })
+  },
+  djbeers: async ({ payload, room, state }) => {
+    await roomFunHandlers.djbeers({ payload, room, state })
+  },
+  getdjdrunk: async ({ payload, room, state }) => {
+    await roomFunHandlers.getdjdrunk({ payload, room, state })
+  },
+  jump: async ({ roomBot }) => {
+    await roomFunHandlers.jump({ roomBot })
+  },
+  like: async ({ roomBot }) => {
+    await roomFunHandlers.like({ roomBot })
+  },
+  dislike: async ({ payload, room, roomBot, ttlUserToken }) => {
+    await roomFunHandlers.dislike({
+      payload,
+      room,
+      roomBot,
+      ttlUserToken,
+      getUserNickname: getSenderNickname
+    })
+  },
+  dive: async ({ payload, room, state, roomBot }) => {
+    await roomFunHandlers.dive({ payload, room, state, roomBot, getSenderNickname })
+  },
+  escortme: async ({ payload, room }) => {
+    await roomFunHandlers.escortme({ payload, room, getSenderNickname, usersToBeRemoved })
+  },
+  spotlight: async ({ payload, room, state, roomBot }) => {
+    await roomFunHandlers.spotlight({ payload, room, state, roomBot, getSenderNickname })
+  },
+  secret: async ({ payload, room, ttlUserToken }) => {
+    await secretFunHandlers.secret({ payload, room, ttlUserToken })
+  },
+  bark: async ({ room }) => {
+    await secretFunHandlers.bark({ room })
+  },
+  barkbark: async ({ room }) => {
+    await secretFunHandlers.barkbark({ room })
+  },
+  star: async ({ roomBot }) => {
+    await secretFunHandlers.star({ roomBot })
+  },
+  unstar: async ({ roomBot }) => {
+    await secretFunHandlers.unstar({ roomBot })
+  },
+  jam: async ({ roomBot }) => {
+    await secretFunHandlers.jam({ roomBot })
+  },
+  berad: async ({ room }) => {
+    await secretFunHandlers.berad({ room })
+  },
+  cam: async ({ room }) => {
+    await secretFunHandlers.cam({ room })
+  },
+  drink: async ({ room }) => {
+    await secretFunHandlers.drink({ room })
+  },
+  shirley: async ({ room }) => {
+    await secretFunHandlers.shirley({ room })
+  },
+  ello: async ({ room }) => {
+    await secretFunHandlers.ello({ room })
+  },
+  allen: async ({ room }) => {
+    await secretFunHandlers.allen({ room })
+  },
+  props: async ({ room }) => {
+    await secretFunHandlers.props({ room })
+  },
+  ass: async ({ room }) => {
+    await secretFunHandlers.ass({ room })
+  },
+  titties: async ({ room }) => {
+    await secretFunHandlers.titties({ room })
+  },
+  azz: async ({ room }) => {
+    await secretFunHandlers.azz({ room })
+  },
+  shred: async ({ room }) => {
+    await secretFunHandlers.shred({ room })
+  },
+  addsong: async ({ payload, room, roomBot }) => {
+    await queuePlaylistHandlers.addsong({ payload, room, roomBot })
+  },
+  removesong: async ({ payload, room, roomBot, ttlUserToken }) => {
+    await queuePlaylistHandlers.removesong({ payload, room, roomBot, ttlUserToken, isUserAuthorized })
+  },
+  'blacklist+': async ({ room, roomBot }) => {
+    await queuePlaylistHandlers['blacklist+']({ room, roomBot })
+  },
+  status: async ({ room, roomBot }) => {
+    await modControlHandlers.status({ room, roomBot })
+  },
+  bopon: async ({ payload, room, roomBot, ttlUserToken }) => {
+    await modControlHandlers.bopon({ payload, room, roomBot, ttlUserToken })
+  },
+  bopoff: async ({ payload, room, roomBot, ttlUserToken }) => {
+    await modControlHandlers.bopoff({ payload, room, roomBot, ttlUserToken })
+  },
+  songstatson: async ({ payload, room, ttlUserToken }) => {
+    await modControlHandlers.songstatson({ payload, room, ttlUserToken })
+  },
+  songstatsoff: async ({ payload, room, ttlUserToken }) => {
+    await modControlHandlers.songstatsoff({ payload, room, ttlUserToken })
+  },
+  greet: async ({ payload, room }) => {
+    await modControlHandlers.greet({ payload, room })
+  },
+  greetoff: async ({ payload, room }) => {
+    await modControlHandlers.greet({ payload, room })
+  },
+  infoon: async ({ payload, room, ttlUserToken }) => {
+    await modControlHandlers.infoon({ payload, room, ttlUserToken })
+  },
+  infooff: async ({ payload, room, ttlUserToken }) => {
+    await modControlHandlers.infooff({ payload, room, ttlUserToken })
+  },
+  infotoggle: async ({ payload, room, ttlUserToken }) => {
+    await modControlHandlers.infotoggle({ payload, room, ttlUserToken })
+  },
+  infotone: async ({ payload, room, ttlUserToken }) => {
+    await modControlHandlers.infotone({ payload, room, ttlUserToken })
+  }
+})
 
 /**
  * Attempt to dispatch the provided message to a command handler. Returns
@@ -1280,39 +1512,24 @@ ${blocks}
  * @param {string} room The UUID of the current room.
  * @returns {Promise<boolean>}
  */
-export async function dispatchCommand (txt, payload, room) {
-  if (!txt || txt[0] !== '/') return false
+export function resolveDispatchCommand (txt) {
+  return resolveDispatchCommandBase(txt, new Set(Object.keys(commandRegistry)))
+}
 
-  const parts = txt.trim().substring(1).split(/\s+/)
-  const cmd = (parts[0] || '').toLowerCase()
-
-  //  Special case: direct number bets like `/17 25` when roulette is active
-  if (/^\d+$/.test(cmd) && rouletteGameActive) {
-    try {
-      await handleRouletteBet(payload)
-    } catch (err) {
-      logger.error('[Dispatcher] Error executing numeric roulette bet:', err?.message || err)
-      try {
-        await postMessage({ room, message: '⚠️ Error processing roulette bet.' })
-      } catch {
-        /* ignore */
-      }
-    }
-    return true
-  }
-
-  const handler = commandRegistry[cmd]
-  if (!handler) return false
-
-  try {
-    await handler({ payload, room, args: parts.slice(1).join(' ') })
-  } catch (err) {
-    logger.error(`[Dispatcher] Error executing /${cmd}:`, err?.message || err)
-    try {
-      await postMessage({ room, message: `⚠️ Error processing /${cmd}.` })
-    } catch {
-      /* swallow */
-    }
-  }
-  return true
+export async function dispatchCommand (txt, payload, room, context = {}) {
+  return dispatchWithRegistry({
+    txt,
+    payload,
+    room,
+    context: {
+      ...context,
+      ttlUserToken: env.ttlUserToken
+    },
+    registry: commandRegistry,
+    resolveDispatchCommand,
+    rouletteGameActive,
+    handleRouletteBet,
+    postMessage,
+    logger
+  })
 }

@@ -3,6 +3,7 @@ import { postMessage } from '../libs/cometchat.js'
 import { logger } from '../utils/logging.js'
 import * as themeManager from '../utils/themeManager.js'
 import { askQuestion } from '../libs/ai.js'
+import { env } from '../config.js'
 
 // Persist or update user information when they join. This avoids
 // storing mention tokens as nicknames and ensures the users table
@@ -20,7 +21,7 @@ let greetingMessagesEnabled = true
 let aiGreetingEnabled = false
 
 const AI_TIMEOUT_MS = 12000
-const ROOM = process.env.ROOM_UUID
+const ROOM = env.roomUuid
 
 // When AI is ON but fails/times out, we fall back to STANDARD greet.
 // For these specific nicknames, DO NOT @-mention on that fallback.
@@ -144,7 +145,7 @@ async function generateWelcomeMessage (uuid, nickname, room) {
 
   // 1) Custom
   if (customWelcomeMessages[uuid]) {
-    console.log('[greet] using CUSTOM for', nickname)
+    logger.info('[greet] using CUSTOM', { nickname, uuid })
     return customWelcomeMessages[uuid].replace('{nickname}', mentionOrName(uuid, nickname))
   }
 
@@ -154,7 +155,7 @@ async function generateWelcomeMessage (uuid, nickname, room) {
     if (aiRaw) {
       const aiLine = finalizeAiLine(aiRaw, nickname || 'friend', uuid) // pass uuid for proper mention
       if (aiLine) {
-        console.log('[greet] using AI for', nickname)
+        logger.info('[greet] using AI', { nickname, uuid })
         const theme = themeManager.getTheme(room) || 'Just Jam'
         // Append the requested hyphenated lines to the AI greeting
         return `${aiLine}
@@ -167,12 +168,12 @@ async function generateWelcomeMessage (uuid, nickname, room) {
     const suppress = SUPPRESS_MENTION_ON_AI_FALLBACK_FOR_NAMES
       .map(n => n.toLowerCase())
       .includes(nickLower)
-    console.log('[greet] AI failed → STANDARD for', nickname, '(suppress mention =', suppress, ')')
+    logger.info('[greet] AI failed, falling back to STANDARD', { nickname, uuid, suppressMention: suppress })
     return buildStandardGreeting(uuid, nickname || 'friend', room, { suppressMention: suppress })
   }
 
   // 3) STANDARD
-  console.log('[greet] using STANDARD for', nickname)
+  logger.info('[greet] using STANDARD', { nickname, uuid })
   return buildStandardGreeting(uuid, nickname || 'friend', room)
 }
 
@@ -196,7 +197,7 @@ const handleUserJoinedWithStatePatch = async (payload) => {
     }
 
     if (!newUserProfile) {
-      console.log('No new user identified in statePatch.')
+      logger.debug('No new user identified in statePatch.')
       return
     }
 
@@ -213,7 +214,7 @@ const handleUserJoinedWithStatePatch = async (payload) => {
       uuidFromPath ||
       null
 
-    console.log('[greet] resolved UUID:', uuid, 'nickname:', nickname)
+    logger.info('[greet] resolved user', { uuid, nickname })
 
     // Persist the user's nickname in the database. If the nickname
     // looks like a mention (e.g. <@uid:…>) the helper will ignore it
@@ -223,7 +224,7 @@ const handleUserJoinedWithStatePatch = async (payload) => {
     try {
       addOrUpdateUser(uuid, nickname)
     } catch (e) {
-      console.error('[userJoined] Failed to add/update user:', e?.message || e)
+      logger.error('[userJoined] Failed to add/update user', { err: e?.message || e, uuid, nickname })
     }
 
     const welcomeMessage = await generateWelcomeMessage(uuid, nickname, ROOM)
@@ -231,12 +232,12 @@ const handleUserJoinedWithStatePatch = async (payload) => {
     const messagePayload = {
       room: ROOM,
       message: welcomeMessage,
-      sender: process.env.BOT_USER_UUID
+      sender: env.botUserUuid
     }
 
-    console.log('Sending message payload:', messagePayload)
+    logger.debug('Sending welcome message payload', { room: messagePayload.room, sender: messagePayload.sender, hasMessage: Boolean(messagePayload.message) })
     const response = await postMessage(messagePayload)
-    console.log('Message sent response:', response)
+    logger.debug('Welcome message sent', { response })
   } catch (error) {
     logger.error('Error handling userJoined event with statePatch:', error?.message || error)
   }

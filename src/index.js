@@ -1,7 +1,7 @@
 // src/index.js
 // Load environment variables from .env and validate required configuration
 import 'dotenv/config'
-import { validateConfig } from './config.js'
+import { env, validateConfig } from './config.js'
 import { logger } from './utils/logging.js'
 import express from 'express'
 import cron from 'node-cron'
@@ -14,6 +14,7 @@ import { fetchCurrentUsers } from './utils/API.js'
 import * as themeStorage from './utils/themeManager.js'
 import { setThemes } from './utils/roomThemes.js'
 import { setRoomBot } from './runtime/roomBot.js'
+import { getHealthStatus } from './runtime/health.js'
 
 // ──────────────────────────────────────────────
 // Global crash guards
@@ -35,22 +36,22 @@ process.on('uncaughtException', (err) => {
 // Scheduled publisher (same as you had)
 // ─────────────────────────────────────────────-
 function startSitePublisherCron () {
-  if (process.env.ENABLE_SITE_PUBLISH_CRON !== '1') {
+  if (env.enableSitePublishCron !== '1') {
     logger.info('[publish-cron] disabled (set ENABLE_SITE_PUBLISH_CRON=1 to enable)')
     return
   }
 
-  const TZ = process.env.PUBLISH_TZ || 'America/New_York'
-  const CRON = process.env.PUBLISH_CRON || '0 9,13,17 * * *'
-  const SCRIPT = process.env.PUBLISH_SCRIPT || 'tools/publish-site-data.mjs'
-  const RUN_ON_BOOT = process.env.PUBLISH_RUN_ON_BOOT === '1'
+  const TZ = env.publishTz || 'America/New_York'
+  const CRON = env.publishCron || '0 9,13,17 * * *'
+  const SCRIPT = env.publishScript || 'tools/publish-site-data.mjs'
+  const RUN_ON_BOOT = env.publishRunOnBoot === '1'
 
   const PUB_ENV = {
-    API_BASE: process.env.API_BASE,
-    PUBLISH_TOKEN: process.env.PUBLISH_TOKEN,
-    DB_PATH: process.env.DB_PATH || '/data/app.db',
-    PUBLISH_STATE_FILE: process.env.PUBLISH_STATE_FILE || '/data/.publish-state.json',
-    LOG_LEVEL: process.env.LOG_LEVEL || 'info'
+    API_BASE: env.apiBase,
+    PUBLISH_TOKEN: env.publishToken,
+    DB_PATH: env.dbPath || '/data/app.db',
+    PUBLISH_STATE_FILE: env.publishStateFile || '/data/.publish-state.json',
+    LOG_LEVEL: env.logLevel || 'info'
   }
 
   let running = false
@@ -90,7 +91,7 @@ function startSitePublisherCron () {
 // App / Bot bootstrap
 // ─────────────────────────────────────────────-
 const app = express()
-const roomBot = new Bot(process.env.JOIN_ROOM)
+const roomBot = new Bot(env.joinRoom)
 setRoomBot(roomBot)
 
 // We maintain our own idea of "connected"
@@ -141,9 +142,9 @@ setThemes(savedThemes)
 // ──────────────────────────────────────────────
 // Adaptive poll loop + self-healing reconnect
 // ─────────────────────────────────────────────-
-const BASE_MS = Number(process.env.POLL_BASE_MS ?? 450)
-const STEP_MS = Number(process.env.POLL_BACKOFF_STEP_MS ?? 250)
-const MAX_BACKOFF_STEPS = Number(process.env.POLL_MAX_BACKOFF_STEPS ?? 8)
+const BASE_MS = env.pollBaseMs
+const STEP_MS = env.pollBackoffStepMs
+const MAX_BACKOFF_STEPS = env.pollMaxBackoffSteps
 
 function jitter (ms) {
   const delta = Math.floor(ms * 0.15)
@@ -196,20 +197,13 @@ app.get('/', (req, res) => {
 
 app.get('/health', (req, res) => {
   try {
-    let okDb = true
-    try {
-      db.prepare('SELECT 1').get()
-    } catch (e) {
-      okDb = false
-    }
-
-    const status = {
-      ok: okDb,
+    const status = getHealthStatus({
+      db,
       connected: botConnected,
       uptime: process.uptime()
-    }
+    })
 
-    if (!okDb) {
+    if (!status.ok) {
       res.status(503).json(status)
       return
     }
@@ -231,7 +225,7 @@ app.get('/heartbeat', (req, res) => {
 // ──────────────────────────────────────────────
 // HTTP + DB init + cron
 // ─────────────────────────────────────────────-
-const port = Number(process.env.PORT || 8080)
+const port = env.port
 const server = app.listen(port, '0.0.0.0', () => {
   logger.info(`Listening on ${port}`)
 })
@@ -254,15 +248,25 @@ startSitePublisherCron()
 function shutdown () {
   try {
     roomBot?.socket?.close?.()
-  } catch {}
+  } catch (err) {
+    logger.debug('[shutdown] roomBot socket close failed', { err: err?.message || err })
+  }
   try {
     import('./database/db.js').then(({ default: database }) => {
-      try { database?.close?.() } catch {}
+      try {
+        database?.close?.()
+      } catch (err) {
+        logger.debug('[shutdown] database close failed', { err: err?.message || err })
+      }
     })
-  } catch {}
+  } catch (err) {
+    logger.debug('[shutdown] dynamic db import failed', { err: err?.message || err })
+  }
   try {
     server?.close?.()
-  } catch {}
+  } catch (err) {
+    logger.debug('[shutdown] server close failed', { err: err?.message || err })
+  }
   process.exit(0)
 }
 for (const sig of ['SIGINT', 'SIGTERM']) {

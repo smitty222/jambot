@@ -577,27 +577,6 @@ export async function songPayment () {
 // as before.  Only game modules should call these helpers when money
 // changes hands for bets and payouts.
 
-/**
- * Adjust a user’s lifetime net total by a positive or negative amount.
- * If the user does not exist, insert a new row with the given amount.
- *
- * @param {string} userUUID
- * @param {number} amount A positive or negative number representing the change in net
- */
-function updateLifetimeNet (userUUID, amount) {
-  if (!Number.isFinite(amount) || amount === 0) return
-  try {
-    db.prepare(`
-      INSERT INTO users (uuid, nickname, balance, lifetime_net)
-      VALUES (?, ?, 0, ?)
-      ON CONFLICT(uuid) DO UPDATE SET
-        lifetime_net = COALESCE(lifetime_net, 0) + excluded.lifetime_net
-    `).run(userUUID, userUUID, amount)
-  } catch (err) {
-    logger.error('[updateLifetimeNet] failed', { err: err?.message || err })
-  }
-}
-
 function ensureWalletRowForAtomicUpdate (userUUID, nickname = null) {
   if (!userUUID) return
 
@@ -634,30 +613,65 @@ export function applyGameDeltaInTransaction (userUUID, delta, options = {}) {
   const requireSufficientFunds = Boolean(options?.requireSufficientFunds)
   const updateCache = options?.updateCache !== false
 
-  ensureWalletRowForAtomicUpdate(userUUID, nickname)
+  const normalizedMeta = meta ? normalizeEconomyMeta(meta) : null
 
-  const row = db.prepare('SELECT balance FROM users WHERE uuid = ?').get(userUUID)
-  const currentBalance = roundToTenth(Number(row?.balance || 0))
+  try {
+    const txResult = db.transaction(() => {
+      ensureWalletRowForAtomicUpdate(userUUID, nickname)
 
-  if (requireSufficientFunds && amount < 0 && currentBalance < Math.abs(amount)) {
-    return { ok: false, balance: currentBalance, reason: 'INSUFFICIENT_FUNDS' }
+      const row = db.prepare('SELECT balance FROM users WHERE uuid = ?').get(userUUID)
+      const currentBalance = roundToTenth(Number(row?.balance || 0))
+
+      if (requireSufficientFunds && amount < 0 && currentBalance < Math.abs(amount)) {
+        return { ok: false, balance: currentBalance, reason: 'INSUFFICIENT_FUNDS' }
+      }
+
+      const newBalance = roundToTenth(currentBalance + amount)
+      if (requireSufficientFunds && newBalance < 0) {
+        return { ok: false, balance: currentBalance, reason: 'INSUFFICIENT_FUNDS' }
+      }
+
+      db.prepare('UPDATE users SET balance = ? WHERE uuid = ?').run(newBalance, userUUID)
+      db.prepare(`
+        UPDATE users
+        SET lifetime_net = COALESCE(lifetime_net, 0) + ?
+        WHERE uuid = ?
+      `).run(amount, userUUID)
+
+      if (normalizedMeta) {
+        db.prepare(`
+          INSERT INTO economy_events (
+            userUUID, amount, balanceAfter, source, category, note, metadata
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          String(userUUID),
+          amount,
+          newBalance,
+          normalizedMeta.source,
+          normalizedMeta.category,
+          normalizedMeta.note,
+          normalizedMeta.metadata
+        )
+      }
+
+      return { ok: true, balance: newBalance }
+    })()
+
+    if (txResult.ok && updateCache) {
+      walletCache.set(userUUID, txResult.balance)
+      invalidateNetWorthCache()
+    }
+
+    return txResult
+  } catch (err) {
+    logger.error('[applyGameDeltaInTransaction] failed', {
+      err: err?.message || err,
+      userUUID,
+      amount
+    })
+    return { ok: false, balance: 0, reason: 'TX_FAILED' }
   }
-
-  const newBalance = roundToTenth(currentBalance + amount)
-  if (requireSufficientFunds && newBalance < 0) {
-    return { ok: false, balance: currentBalance, reason: 'INSUFFICIENT_FUNDS' }
-  }
-
-  db.prepare('UPDATE users SET balance = ? WHERE uuid = ?').run(newBalance, userUUID)
-  updateLifetimeNet(userUUID, amount)
-  if (meta) recordEconomyEvent(userUUID, amount, newBalance, meta)
-
-  if (updateCache) {
-    walletCache.set(userUUID, newBalance)
-    invalidateNetWorthCache()
-  }
-
-  return { ok: true, balance: newBalance }
 }
 
 /**

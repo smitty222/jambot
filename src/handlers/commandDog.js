@@ -1,11 +1,13 @@
 // src/handlers/commandDog.js
 import { postMessage } from '../libs/cometchat.js'
 import { getRandomDogImage } from '../utils/API.js'
+import { env } from '../config.js'
+import { logger } from '../utils/logging.js'
 
 // LOG_LEVEL=debug to see debug logs; defaults to errors-only
-const LOG_LEVEL = (process.env.LOG_LEVEL || 'error').toLowerCase()
+const LOG_LEVEL = (env.logLevel || 'error').toLowerCase()
 const isDebug = LOG_LEVEL === 'debug'
-const d = (...a) => { if (isDebug) console.debug('[DOG]', ...a) }
+const d = (...a) => { if (isDebug) logger.debug('[DOG]', ...a) }
 
 function parseBreed (args = []) {
   // Supports: "/dog", "/dog shiba", "/dog hound afghan"
@@ -89,7 +91,7 @@ export async function handleDogCommand ({ room, args = [] }) {
       message: `${prefix} ${url}`
     })
   } catch (e) {
-    console.error('[DOG] command error:', e?.message || e)
+    logger.error('[DOG] command error', { err: e?.message || e })
     await postMessage({
       room,
       message: '🐶 Something went wrong fetching a pup.'
