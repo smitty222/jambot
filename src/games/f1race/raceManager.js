@@ -85,8 +85,8 @@ function createBotCar (tierKey, usedNames = new Set()) {
     tire: statJitter(tier.base.tire),
     wear: 0,
     imageUrl: null,
-    teamLabel: 'BOT',
-    label: carLabel({ livery: tier.livery, name })
+    teamLabel: '—',
+    label: `◻️ ${name}`
   }
 }
 

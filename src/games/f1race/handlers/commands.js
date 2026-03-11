@@ -38,14 +38,13 @@ import {
   getF1EntryFee,
   getF1RaceLabel,
   getF1TierLabel,
-  getF1TierConfig,
   normalizeF1Tier
 } from '../config.js'
 import {
   calculateRacePayouts,
   calculateRacePurse
 } from '../payouts.js'
-import { pickTrack, pickDragTrack } from '../utils/track.js'
+import { pickTrack, pickDragTrack, getTrackPreferenceSummary } from '../utils/track.js'
 import { renderGrid, renderRaceProgress, renderDragProgress, fmtMoney } from '../utils/render.js'
 import { env } from '../../../config.js'
 
@@ -380,9 +379,11 @@ function buildBuyCarShopCard (balance) {
     const entry = getTierEntryFee(key)
     const repair = getTierRepairCostPerPoint(key)
     const value = estimateTierValueMetrics(key)
+    const bestTrack = getTrackPreferenceSummary(tier.base)
 
     lines.push(`${tier.livery} ${key.toUpperCase()} — ${fmtMoney(tier.price)}`)
     lines.push(`${TIER_PITCH[key]}`)
+    lines.push(bestTrack)
     lines.push(`Race costs: ${fmtMoney(entry)} entry · repair ${fmtMoney(repair)}/1% wear`)
     lines.push(`Projected net/race (${value.assumedEntrants} entrants): ${fmtMoney(value.expectedNetPerRace)}`)
     lines.push(`Approx break-even (${value.assumedEntrants} entrants): ${value.breakEvenLabel}`)
@@ -840,7 +841,7 @@ export async function handleBuyCar (ctx) {
   const selectedFile = tierImageFiles.length ? tierImageFiles[selectedOption - 1] : null
   const imageUrl = selectedFile ? buildCarImageUrl(tierKey, selectedFile) : pickCarImageUrl(tierKey)
 
-  const id = insertCar({
+  const carRecord = {
     ownerId: userId,
     ownerName: nick,
     teamId: team?.id ?? null,
@@ -855,17 +856,23 @@ export async function handleBuyCar (ctx) {
     tire: jitter(tier.base.tire),
     wear: 0,
     imageUrl
-  })
+  }
+  const id = insertCar(carRecord)
 
   if (imageUrl) {
     await safeCall(setCarImageUrl, [id, imageUrl]).catch(() => null)
   }
+
+  const purchasedCar = { ...carRecord, id }
+  const purchasedTrackSummary = getTrackPreferenceSummary(purchasedCar)
 
   const updated = await safeCall(getUserWallet, [userId]).catch(() => null)
   await postMessage({
     room,
     message:
       `✅ ${nick} bought a **${tierKey.toUpperCase()}** car: **${tier.livery} ${name}**\n` +
+      `📊 Stats: PWR ${carRecord.power} · HDL ${carRecord.handling} · AERO ${carRecord.aero} · REL ${carRecord.reliability} · TIRE ${carRecord.tire}\n` +
+      `🗺️ ${purchasedTrackSummary}\n` +
       `${selectedFile ? `🖼️ Chosen option: **#${selectedOption}**\n` : ''}` +
       `${buyCost.fee > 0 ? `💼 Wealth fee: **${fmtMoney(buyCost.fee)}**\n` : ''}` +
       `💰 Balance: **${fmtMoney(updated)}**\n` +
@@ -900,7 +907,7 @@ export async function handleMyCars (ctx) {
     const wear = Number(c.wear || 0)
     const wearTag = wear >= 80 ? '⚠️' : (wear >= 60 ? '🟡' : '🟢')
     const earnings = toInt(c.careerEarnings)
-    lines.push(`• ${carLabel(c)} — Tier ${String(c.tier || '—').toUpperCase()} · Wear ${wear}% ${wearTag} · W ${c.wins || 0} / R ${c.races || 0} · Return ${fmtMoney(earnings)}`)
+    lines.push(`• ${carLabel(c)} — Tier ${String(c.tier || '—').toUpperCase()} · ${getTrackPreferenceSummary(c)} · Wear ${wear}% ${wearTag} · W ${c.wins || 0} / R ${c.races || 0} · Return ${fmtMoney(earnings)}`)
   }
 
   lines.push('')
@@ -908,6 +915,53 @@ export async function handleMyCars (ctx) {
   lines.push('Repair: `/repair <car name>`')
   lines.push('Sell: `/sellcar <car name>`')
   await postMessage({ room, message: '```\n' + lines.join('\n') + '\n```' })
+}
+
+export async function handleGarageCommand (ctx) {
+  const room = ctx?.room || ROOM
+  const userId = ctx?.sender
+  const nick = await safeCall(getUserNickname, [userId]).catch(() => '@user')
+  const team = await safeCall(getTeamByOwner, [userId]).catch(() => null)
+  const cars = await safeCall(getUserCars, [userId]).catch(() => [])
+  await ensurePersistentCarImages(cars)
+
+  if (!cars?.length) {
+    await postMessage({ room, message: `${nick}, you don’t own any cars yet. Try **/buycar**.` })
+    return
+  }
+
+  const teamBadge = String(team?.badge || '').trim()
+  const teamName = String(team?.name || '').trim()
+  const garageOwnerLabel = teamName
+    ? `${teamBadge ? `${teamBadge} ` : ''}${teamName}`
+    : nick
+
+  const headerLines = [
+    `🏎️ **${garageOwnerLabel}'s Garage** (${cars.length})`,
+    `Team: ${teamName ? `**${teamBadge ? `${teamBadge} ` : ''}${teamName}**` : '**No team set**'}`,
+    'Useful commands: `/car <name>` · `/carstats <name>` · `/wear <name>` · `/repair <name>` · `/sellcar <name>`'
+  ]
+  await postMessage({ room, message: headerLines.join('\n') })
+
+  for (const car of cars.slice(0, 12)) {
+    const wear = Number(car.wear || 0)
+    const wearTag = wear >= 80 ? '⚠️' : (wear >= 60 ? '🟡' : '🟢')
+    const lines = [
+      `**${carLabel(car)}**`,
+      `Tier: ${String(car.tier || '—').toUpperCase()} · ${getTrackPreferenceSummary(car)} · Wear ${wear}% ${wearTag}`,
+      `Stats: PWR ${toInt(car.power)} · HDL ${toInt(car.handling)} · AERO ${toInt(car.aero)} · REL ${toInt(car.reliability)} · TIRE ${toInt(car.tire)}`
+    ]
+
+    await postMessage({
+      room,
+      message: lines.join('\n'),
+      images: car.imageUrl ? [car.imageUrl] : undefined
+    })
+  }
+
+  if (cars.length > 12) {
+    await postMessage({ room, message: `…and ${cars.length - 12} more cars. Use \`/car <name>\` for a specific car.` })
+  }
 }
 
 export async function handleWearCommand (ctx) {
@@ -1004,6 +1058,8 @@ export async function handleCarShow (ctx) {
     message:
       `🏎️ **${carLabel(car)}**\n` +
       `Team: **${car.teamId ? 'Assigned' : '—'}** · Tier: **${tierKey.toUpperCase()}** · Wear: **${wear}%** · W ${car.wins || 0} / R ${car.races || 0}\n` +
+      `Stats: **PWR ${toInt(car.power)} · HDL ${toInt(car.handling)} · AERO ${toInt(car.aero)} · REL ${toInt(car.reliability)} · TIRE ${toInt(car.tire)}**\n` +
+      `${getTrackPreferenceSummary(car)}\n` +
       `Return (earnings only): **${fmtMoney(earnings)}** · Net career: **${fmtMoney(net)}**\n` +
       `Spent: buy ${fmtMoney(car.price || 0)} · entry ${fmtMoney(entryFees)} · repair ${fmtMoney(repairSpend)}\n` +
       `Best finish: **${bestFinish}** · Avg finish: **${avgFinish}** · Podiums: **${toInt(car.podiums)}** · DNFs: **${toInt(car.dnfs)}**\n` +
@@ -1360,6 +1416,8 @@ export async function handleCarStats (ctx) {
     const lines = []
     lines.push(`CAR STATS — ${carLabel(car)}`)
     lines.push('')
+    lines.push(`Stats: PWR ${toInt(car.power)} · HDL ${toInt(car.handling)} · AERO ${toInt(car.aero)} · REL ${toInt(car.reliability)} · TIRE ${toInt(car.tire)}`)
+    lines.push(getTrackPreferenceSummary(car))
     lines.push(`Return (earnings only): ${fmtMoney(toInt(car.careerEarnings))}`)
     lines.push(`Net career: ${fmtMoney(carCareerNet(car))}`)
     lines.push(`Buy-in: ${fmtMoney(toInt(car.price))} · Entry Fees: ${fmtMoney(toInt(car.entryFeesPaid))} · Repairs: ${fmtMoney(toInt(car.repairSpend))}`)
@@ -1587,7 +1645,7 @@ export async function startF1Race (tierArg = 'starter') {
   lockedOddsDec = []
   bets = {}
   _lastProgress = null
-  lockedTrack = null
+  lockedTrack = pickTrack()
   lockedEntryGross = 0
   lockedEntryCharges = []
   lockedRaceTier = raceTier
@@ -1606,13 +1664,12 @@ export async function startF1Race (tierArg = 'starter') {
   )
   for (const c of avail) eligibleByName.set(String(c.name || '').toLowerCase(), c)
 
-  const tierConfig = getF1TierConfig(raceTier)
   await safeCall(postMessage, [{
     room: ROOM,
     message:
       `🏎️ **${getF1RaceLabel(raceTier).toUpperCase()} STARTING!** Owners: type your car’s exact name in the next ${ENTRY_MS / 1000}s to enter.\n` +
+      `Track: **${lockedTrack?.emoji || '🏁'} ${lockedTrack?.name || 'Balanced GP'}**\n` +
       `${raceTierSummary(raceTier)}\n` +
-      `Purchase price: ${fmtMoney(tierConfig?.price || 0)}\n` +
       `Field size: ${GP_STANDARD_FIELD_SIZE} cars\n` +
       'Empty grid spots are filled by house bots. If no owners enter, the house still runs the race.'
   }])
@@ -1791,7 +1848,6 @@ async function lockEntriesAndOpenStrategy () {
 
       const dragTier = normalizeTierKey(lockedDragTier || 'starter')
       const base = F1_CAR_TIERS[dragTier]?.base || F1_CAR_TIERS.starter.base
-      const dragLivery = F1_CAR_TIERS[dragTier]?.livery || '⬛'
       const dragBotBiasByTier = { starter: 0, pro: 1, hyper: 2, legendary: 3 }
       const botBias = Number(dragBotBiasByTier[dragTier] ?? 0)
       const jitterDrag = (x) => clamp(Number(x || 50) + botBias + rint(-2, 4), 35, 96)
@@ -1803,7 +1859,7 @@ async function lockEntriesAndOpenStrategy () {
           id: null,
           ownerId: null,
           name,
-          livery: dragLivery,
+          livery: '◻️',
           tier: dragTier,
           price: 0,
           power: jitterDrag(base.power),
@@ -1812,7 +1868,7 @@ async function lockEntriesAndOpenStrategy () {
           reliability: jitterDrag(base.reliability),
           tire: jitterDrag(base.tire),
           wear: 0,
-          teamLabel: 'BOT',
+          teamLabel: '—',
           imageUrl: null
         })
       }
@@ -2041,6 +2097,7 @@ export async function handleF1Help (ctx) {
     `/team reroll           - randomize team name/badge (costs ${fmtMoney(TEAM_REROLL_FEE)})`,
     '/buycar <tier>         - browse a tier showroom with image options',
     '/buycar <tier> <#>     - buy selected option # from that tier',
+    '/garage                - image-first garage view with car names and quick commands',
     '/mycars                - list your cars',
     '/carstats [name]       - return/profit stats for your garage or one car',
     '/f1stats               - quick garage summary stats',

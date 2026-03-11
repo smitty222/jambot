@@ -1,6 +1,6 @@
 // src/games/f1race/utils/track.js
 
-const TRACKS = [
+export const TRACKS = [
   {
     key: 'street',
     name: 'Street Circuit',
@@ -67,4 +67,32 @@ export function clamp01 (x) {
 export function stat01 (v) {
   const n = Number(v || 0)
   return clamp01(n / 100)
+}
+
+export function scoreCarForTrack (car = {}, track = {}) {
+  const weights = track?.weights || {}
+  return (
+    Number(weights.power || 0) * stat01(car.power) +
+    Number(weights.handling || 0) * stat01(car.handling) +
+    Number(weights.aero || 0) * stat01(car.aero) +
+    Number(weights.tire || 0) * stat01(car.tire) +
+    Number(weights.reliability || 0) * stat01(car.reliability)
+  )
+}
+
+export function getBestTrackForCar (car = {}) {
+  const ranked = TRACKS
+    .map((track) => ({
+      track,
+      score: scoreCarForTrack(car, track)
+    }))
+    .sort((a, b) => b.score - a.score)
+
+  return ranked[0]?.track || null
+}
+
+export function getTrackPreferenceSummary (car = {}) {
+  const bestTrack = getBestTrackForCar(car)
+  if (!bestTrack) return 'Best track: —'
+  return `Best track: ${bestTrack.name}`
 }

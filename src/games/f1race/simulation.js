@@ -14,14 +14,11 @@ const FINISH = 1.0
 const NOISE_SD = 0.028
 const MOMENTUM_BLEND = 0.25
 
-// Tire model
-const TIRE_DEG = { soft: 0.030, med: 0.020, hard: 0.014 }
-const TIRE_START = { soft: 1.035, med: 1.020, hard: 1.008 }
-
-// Modes
-const MODE_MULT = { push: 1.020, norm: 1.000, save: 0.988 }
-const MODE_WEAR = { push: 8, norm: 5, save: 3 }
-const MODE_DNF = { push: 0.010, norm: 0.005, save: 0.0025 }
+const STANDARD_TIRE_DEG = 0.020
+const STANDARD_TIRE_START = 1.020
+const STANDARD_MODE_MULT = 1.000
+const STANDARD_MODE_WEAR = 5
+const STANDARD_MODE_DNF = 0.005
 const TIER_WEAR_MULT = { starter: 1.00, pro: 0.94, hyper: 0.82, legendary: 0.70 }
 const DELAY = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -75,18 +72,10 @@ function computePaceScalar (car, track, legIndex) {
   const wear = Math.max(0, Math.min(100, Number(car.wear || 0)))
   const wearPenalty = (wear / 100) * 0.10
 
-  const tireKey = String(car.tireChoice || 'med').toLowerCase()
-  const deg = TIRE_DEG[tireKey] ?? TIRE_DEG.med
-  const startBoost = TIRE_START[tireKey] ?? TIRE_START.med
-
-  let tireDrop = deg * legIndex
-  if (tireKey === 'soft' && legIndex >= 3) tireDrop += 0.015
-
-  const modeKey = String(car.modeChoice || 'norm').toLowerCase()
-  const modeMult = MODE_MULT[modeKey] ?? MODE_MULT.norm
+  const tireDrop = STANDARD_TIRE_DEG * legIndex
 
   const mapped = 0.97 + base * 0.095
-  return Math.max(0.90, Math.min(1.12, (mapped * (startBoost - tireDrop) * (1 - wearPenalty) * modeMult)))
+  return Math.max(0.90, Math.min(1.12, (mapped * (STANDARD_TIRE_START - tireDrop) * (1 - wearPenalty) * STANDARD_MODE_MULT)))
 }
 
 function dnfChanceRace (car, track) {
@@ -94,16 +83,10 @@ function dnfChanceRace (car, track) {
   const wear = Math.max(0, Math.min(100, Number(car.wear || 0)))
   const wearRisk = (wear / 100) * 0.02
 
-  const tireKey = String(car.tireChoice || 'med').toLowerCase()
-  const tireRisk = (tireKey === 'soft') ? 0.010 : (tireKey === 'hard' ? 0.0035 : 0.0065)
-
-  const modeKey = String(car.modeChoice || 'norm').toLowerCase()
-  const modeRisk = MODE_DNF[modeKey] ?? MODE_DNF.norm
-
   const relReduce = (1 - reliability) * 0.015
 
   const base = Number(track.dnfBase || 0.01)
-  const pRace = base + wearRisk + tireRisk + modeRisk + relReduce
+  const pRace = base + wearRisk + 0.0065 + STANDARD_MODE_DNF + relReduce
   return Math.max(0.02, Math.min(0.18, pRace))
 }
 
@@ -165,13 +148,6 @@ function tryOvertakes ({ state, cars, order, events, leg, track }) {
     p += (stat01(carB.handling) - stat01(carF.handling)) * 0.22
     p += (stat01(carB.aero) - stat01(carF.aero)) * 0.18
     p += (stat01(carB.power) - stat01(carF.power)) * 0.12
-
-    const bMode = String(carB.modeChoice || 'norm').toLowerCase()
-    const bTire = String(carB.tireChoice || 'med').toLowerCase()
-    if (bMode === 'push') p += 0.05
-    if (bMode === 'save') p -= 0.02
-    if (bTire === 'soft') p += 0.03
-    if (bTire === 'hard') p -= 0.01
 
     if (track?._rc === 'yellow') p *= 0.75
     if (track?._rc === 'safety_car') p *= 0.55
@@ -342,9 +318,9 @@ export async function runRace ({
     if (!events.length && rand() < 0.60) {
       events.push(pick([
         '🟢 DRS battle into Turn 1!',
-        '🛞 Tires starting to fall off…',
-        '🧠 Strategy paying off — clean air!',
-        '📻 “Push push!”',
+        '🛞 Pace is holding steady through the stint.',
+        '🧠 Clean air making a difference.',
+        '📻 Team radio is calm but urgent.',
         '⚡ Late braking move up the inside!'
       ]))
     }
@@ -394,9 +370,7 @@ export async function runRace ({
     for (let i = 0; i < cars.length; i++) {
       const c = cars[i]
       if (!c?.id) continue
-      const modeKey = String(c.modeChoice || 'norm').toLowerCase()
-      const baseWear = MODE_WEAR[modeKey] ?? 5
-      const wearDelta = Math.max(1, Math.round(baseWear * wearMultiplierForCar(c)))
+      const wearDelta = Math.max(1, Math.round(STANDARD_MODE_WEAR * wearMultiplierForCar(c)))
       await safeCall(updateCarAfterRaceResult, [c.id, {
         win: i === winnerIdx,
         wearDelta,
