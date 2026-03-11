@@ -16,7 +16,7 @@ import {
   getUserCars,
   setCarWear,
   setCarImageUrl,
-  recordCarEntryFee,
+  recordCarRaceFinancials,
   recordCarRepairSpend,
   getUserCarStatsSummary,
   getTopCarsByEarnings,
@@ -24,9 +24,25 @@ import {
   renameCarOwnedByUser,
   deleteCarOwnedByUser
 } from '../../../database/dbcars.js'
+import { logF1RaceResults } from '../../../database/dbf1results.js'
 
 import { bus, safeCall } from '../service.js'
 import { runRace } from '../simulation.js'
+import {
+  F1_CAR_TIERS,
+  F1_RACE_SETTINGS,
+  F1_TIER_ORDER,
+  getF1EntryFee,
+  getF1RaceLabel,
+  getF1TierLabel,
+  getF1TierConfig,
+  normalizeF1Tier
+} from '../config.js'
+import {
+  calculatePrizePool,
+  calculateRacePayouts,
+  getPayoutDistribution
+} from '../payouts.js'
 import { pickTrack, pickDragTrack } from '../utils/track.js'
 import { renderGrid, renderRaceProgress, renderDragProgress, fmtMoney } from '../utils/render.js'
 import { env } from '../../../config.js'
@@ -36,42 +52,17 @@ const ROOM = env.roomUuid
 // ── Economy tuning ─────────────────────────────────────────────────────
 const ENTRY_MS = 30_000
 const STRAT_MS = 45_000
-const MIN_FIELD = 6
 const DRAG_ENTRY_MS = 30_000
 const DRAG_STRAT_MS = 20_000
 const DRAG_FIELD_SIZE = 2
 const DRAG_PAYOUT_SPLIT = [100]
 
-const ENTRY_FEE_BY_TIER = {
-  starter: env.f1EntryFeeStarter,
-  pro: env.f1EntryFeePro,
-  hyper: env.f1EntryFeeHyper,
-  legendary: env.f1EntryFeeLegendary
-}
-const ENTRY_FEE_BY_MODE = {
-  rookie: env.f1RaceEntryFeeRookie,
-  open: env.f1RaceEntryFeeOpen,
-  elite: env.f1RaceEntryFeeElite
-}
-const HOUSE_RAKE_PCT = env.f1HouseRakePct // percent
-const PRIZE_SPLIT_BY_MODE = {
-  rookie: [40, 24, 16, 12, 8],
-  open: [40, 24, 16, 12, 8],
-  elite: [40, 24, 16, 12, 8]
-}
-const GUARANTEED_PURSE_BY_MODE = {
-  rookie: env.f1PurseFloorRookie,
-  open: env.f1PurseFloorOpen,
-  elite: env.f1PurseFloorElite
-}
 const DRAG_GUARANTEED_PURSE_BY_TIER = {
   starter: env.f1DragPurseFloorStarter,
   pro: env.f1DragPurseFloorPro,
   hyper: env.f1DragPurseFloorHyper,
   legendary: env.f1DragPurseFloorLegendary
 }
-const POLE_BONUS = env.f1PoleBonus
-const FASTEST_LAP_BONUS = env.f1FastestLapBonus
 
 const TEAM_CREATE_FEE = env.f1TeamCreateFee
 const TEAM_REROLL_FEE = env.f1TeamRerollFee
@@ -102,34 +93,17 @@ const BET_MARKET_MULT_BY_TIER = {
   legendary: env.f1BetMarketMultLegendary
 }
 const BET_MAX_BY_MODE = {
-  rookie: Math.min(BET_MAX, 2500),
-  open: Math.min(BET_MAX, 4000),
-  elite: BET_MAX
+  starter: Math.min(BET_MAX, 2500),
+  pro: Math.min(BET_MAX, 4000),
+  hyper: Math.min(BET_MAX, 7000),
+  legendary: BET_MAX
 }
 
-// Car tiers: higher ceiling, not guaranteed wins.
-const CAR_TIERS = {
-  starter: { price: 30000, base: { power: 56, handling: 55, aero: 54, reliability: 57, tire: 55 }, livery: '🟥' },
-  pro: { price: 90000, base: { power: 63, handling: 62, aero: 61, reliability: 64, tire: 62 }, livery: '🟦' },
-  hyper: { price: 200000, base: { power: 70, handling: 69, aero: 68, reliability: 71, tire: 69 }, livery: '🟩' },
-  legendary: { price: 400000, base: { power: 76, handling: 75, aero: 74, reliability: 77, tire: 75 }, livery: '🟪' }
-}
-const TIER_ORDER = ['starter', 'pro', 'hyper', 'legendary']
 const TIER_PITCH = {
   starter: 'Great first car. Cheap entry and repair costs.',
   pro: 'Reliable all-rounder with stronger race pace.',
   hyper: 'High-end speed package for serious contenders.',
   legendary: 'Top-tier machine built to fight for wins.'
-}
-const RACE_MODES = {
-  rookie: { label: 'ROOKIE', allowedTiers: new Set(['starter', 'pro']), payoutPlan: PRIZE_SPLIT_BY_MODE.rookie },
-  open: { label: 'OPEN', allowedTiers: new Set(['starter', 'pro', 'hyper', 'legendary']), payoutPlan: PRIZE_SPLIT_BY_MODE.open },
-  elite: { label: 'ELITE', allowedTiers: new Set(['hyper', 'legendary']), payoutPlan: PRIZE_SPLIT_BY_MODE.elite }
-}
-const TIER_PAYOUT_MULT = { starter: 1.00, pro: 1.08, hyper: 1.22, legendary: 1.40 }
-const ELITE_MODE_STAT_DELTA_BY_TIER = {
-  hyper: env.f1EliteStatDeltaHyper,
-  legendary: env.f1EliteStatDeltaLegendary
 }
 // ── Visuals: car images (local tier folders) ───────────────────────────────
 // Place your images in:
@@ -291,32 +265,25 @@ function compactLeaderboardName (name, uuid, maxLen = 14) {
 }
 
 function normalizeTierKey (tierKey) {
-  const tier = String(tierKey || '').toLowerCase()
-  return Object.prototype.hasOwnProperty.call(ENTRY_FEE_BY_TIER, tier) ? tier : 'starter'
+  return normalizeF1Tier(tierKey) || 'starter'
 }
 
-function normalizeRaceMode (mode) {
-  const key = String(mode || 'open').toLowerCase()
-  return Object.prototype.hasOwnProperty.call(RACE_MODES, key) ? key : null
-}
-
-function raceModeSummary (modeKey) {
-  const mode = RACE_MODES[modeKey] || RACE_MODES.open
-  const tiers = [...mode.allowedTiers].map(t => t.toUpperCase()).join(', ')
-  const split = (mode.payoutPlan || []).join('/')
-  return `${mode.label} · Tiers: ${tiers} · Split: ${split}`
-}
-
-function getModeEntryFee (modeKey) {
-  const normalized = normalizeRaceMode(modeKey) || 'open'
-  const raw = Number(ENTRY_FEE_BY_MODE[normalized] ?? ENTRY_FEE_BY_MODE.open)
-  return Math.max(0, Math.floor(raw))
+function raceTierSummary (tierKey) {
+  const normalized = normalizeTierKey(tierKey)
+  const distributionLines = F1_RACE_SETTINGS.payoutDistributions
+    .slice()
+    .reverse()
+    .map((rule) => {
+      const range = Number.isFinite(Number(rule.maxEntrants))
+        ? `${rule.minEntrants}-${rule.maxEntrants}`
+        : `${rule.minEntrants}+`
+      return `${range} entrants: ${rule.percentages.join('/')}`
+    })
+  return `${getF1TierLabel(normalized).toUpperCase()} ONLY · Entry ${fmtMoney(getTierEntryFee(normalized))} · Payouts ${distributionLines.join(' · ')}`
 }
 
 function getTierEntryFee (tierKey) {
-  const normalized = normalizeTierKey(tierKey)
-  const raw = Number(ENTRY_FEE_BY_TIER[normalized] ?? ENTRY_FEE_BY_TIER.starter)
-  return Math.max(0, Math.floor(raw))
+  return getF1EntryFee(tierKey)
 }
 
 function getTierRepairCostPerPoint (tierKey) {
@@ -361,20 +328,7 @@ async function chargeF1Cost (userId, amount, category, note, balance = null) {
   return { ok: true, balance: debitResult.balance, wealthFee }
 }
 
-function getTierPayoutMultiplier (tierKey, modeKey = lockedRaceMode, raceType = lockedRaceType) {
-  if (String(raceType || 'gp').toLowerCase() === 'drag') {
-    const normalized = normalizeTierKey(tierKey)
-    return Number(TIER_PAYOUT_MULT[normalized] ?? 1)
-  }
-
-  const mode = normalizeRaceMode(modeKey) || 'open'
-  if (mode !== 'elite') return 1
-
-  const normalized = normalizeTierKey(tierKey)
-  return Number(TIER_PAYOUT_MULT[normalized] ?? 1)
-}
-
-function getBetMarketMultiplier (tierKey, modeKey = lockedRaceMode, raceType = lockedRaceType) {
+function getBetMarketMultiplier (tierKey, raceTier = lockedRaceTier, raceType = lockedRaceType) {
   if (String(raceType || 'gp').toLowerCase() !== 'drag') return 1
 
   const normalized = normalizeTierKey(tierKey)
@@ -382,34 +336,10 @@ function getBetMarketMultiplier (tierKey, modeKey = lockedRaceMode, raceType = l
   return Math.max(0.9, Math.min(1.5, raw))
 }
 
-function getBetMaxForRaceContext (modeKey = lockedRaceMode, raceType = lockedRaceType) {
+function getBetMaxForRaceContext (raceTier = lockedRaceTier, raceType = lockedRaceType) {
   if (String(raceType || 'gp').toLowerCase() === 'drag') return BET_MAX
-  const mode = normalizeRaceMode(modeKey) || 'open'
-  return Number(BET_MAX_BY_MODE[mode] ?? BET_MAX)
-}
-
-function applyRaceModeBalanceToCar (car, modeKey) {
-  if (!car || modeKey !== 'elite') return car
-
-  const tierKey = normalizeTierKey(car?.tier)
-  const statDelta = Number(ELITE_MODE_STAT_DELTA_BY_TIER[tierKey] ?? 0)
-  if (!Number.isFinite(statDelta) || statDelta === 0) return car
-
-  const tune = (v) => clamp(Math.round(Number(v || 0) + statDelta), 35, 95)
-  return {
-    ...car,
-    power: tune(car.power),
-    handling: tune(car.handling),
-    aero: tune(car.aero),
-    reliability: tune(car.reliability),
-    tire: tune(car.tire)
-  }
-}
-
-function getModeGuaranteedPurse (modeKey) {
-  const key = String(modeKey || 'open').toLowerCase()
-  const raw = Number(GUARANTEED_PURSE_BY_MODE[key] ?? GUARANTEED_PURSE_BY_MODE.open)
-  return Math.max(0, Math.floor(raw))
+  const normalized = normalizeTierKey(raceTier)
+  return Number(BET_MAX_BY_MODE[normalized] ?? BET_MAX)
 }
 
 function getDragGuaranteedPurse (tierKey) {
@@ -432,15 +362,6 @@ function getEntryWearWarning (car) {
   return `${severity} ${carLabel(car)} is entering at **${wear}% wear**. Full repair: **${fmtMoney(estimateFullRepairCost(car))}**. Use \`/repair ${car.name}\` if you want to clean it up before race lock.`
 }
 
-function prizePoolFromGrossFees (grossFees, modeKey = 'open') {
-  const gross = Math.max(0, Math.floor(Number(grossFees || 0)))
-  const rake = Math.floor(gross * (HOUSE_RAKE_PCT / 100))
-  const fromFees = Math.max(0, gross - rake)
-  const guaranteed = getModeGuaranteedPurse(modeKey)
-  const net = fromFees + guaranteed
-  return { gross, rake, fromFees, guaranteed, net }
-}
-
 function parseArg (txt, re) {
   return (String(txt || '').match(re) || [])[1]
 }
@@ -456,17 +377,17 @@ function buildBuyCarShopCard (balance) {
   lines.push('Choose your tier:')
   lines.push('')
 
-  for (const key of TIER_ORDER) {
-    const tier = CAR_TIERS[key]
-    const entry = getModeEntryFee('open')
+  for (const key of F1_TIER_ORDER) {
+    const tier = F1_CAR_TIERS[key]
+    const entry = getTierEntryFee(key)
     const repair = getTierRepairCostPerPoint(key)
     const value = estimateTierValueMetrics(key)
 
     lines.push(`${tier.livery} ${key.toUpperCase()} — ${fmtMoney(tier.price)}`)
     lines.push(`${TIER_PITCH[key]}`)
-    lines.push(`Race costs: OPEN entry ${fmtMoney(entry)} · repair ${fmtMoney(repair)}/1% wear`)
-    lines.push(`Projected return/race (OPEN): ${fmtMoney(value.expectedNetPerRace)}`)
-    lines.push(`Approx break-even (OPEN): ${value.breakEvenLabel}`)
+    lines.push(`Race costs: ${fmtMoney(entry)} entry · repair ${fmtMoney(repair)}/1% wear`)
+    lines.push(`Projected net/race (${value.assumedEntrants} entrants): ${fmtMoney(value.expectedNetPerRace)}`)
+    lines.push(`Approx break-even (${value.assumedEntrants} entrants): ${value.breakEvenLabel}`)
     lines.push('')
   }
 
@@ -490,7 +411,7 @@ function carCareerNet (car) {
 }
 
 function tierBaseStrength (tierKey) {
-  const tier = CAR_TIERS[tierKey]
+  const tier = F1_CAR_TIERS[tierKey]
   if (!tier?.base) return 0
   const b = tier.base
   const weighted =
@@ -504,7 +425,7 @@ function tierBaseStrength (tierKey) {
 
 function estimateTierValueMetrics (tierKey) {
   const key = normalizeTierKey(tierKey)
-  const entry = getModeEntryFee('open')
+  const entry = getTierEntryFee(key)
   const repairPerPoint = getTierRepairCostPerPoint(key)
   const wearMultByTier = {
     starter: 1.00,
@@ -513,36 +434,33 @@ function estimateTierValueMetrics (tierKey) {
     legendary: 0.70
   }
 
-  const strengths = TIER_ORDER.map((t) => tierBaseStrength(t))
-  const adjusted = TIER_ORDER.map((t, i) => strengths[i] * getTierPayoutMultiplier(t, 'open', 'gp'))
-  const idx = TIER_ORDER.indexOf(key)
-  const myStrength = Math.max(1, adjusted[idx] || adjusted[0] || 1)
-  const totalStrength = Math.max(1, adjusted.reduce((sum, n) => sum + n, 0))
-
-  // OPEN-mode baseline for shop guidance.
-  const fieldSize = Math.max(6, MIN_FIELD)
-  const pool = getModeGuaranteedPurse('open')
-  const payoutWeights = PRIZE_SPLIT_BY_MODE.open
-  const payoutMass = payoutWeights.reduce((sum, w) => sum + Number(w || 0), 0) / 100
-
-  const share = myStrength / totalStrength
-  const expectedPrize = Math.floor(pool * payoutMass * share)
-  const expectedPole = Math.floor(POLE_BONUS * share)
-  const expectedFastLap = Math.floor(FASTEST_LAP_BONUS * share * 1.08)
-  const expectedGross = expectedPrize + expectedPole + expectedFastLap
+  const assumedEntrants = 6
+  const payoutPreview = calculateRacePayouts({
+    entrants: Array.from({ length: assumedEntrants }, (_, idx) => ({
+      userId: `preview-${idx}`,
+      carId: idx + 1,
+      tier: key,
+      entryFee: entry
+    })),
+    finishOrder: Array.from({ length: assumedEntrants }, (_, idx) => idx)
+  })
+  const payoutMass = payoutPreview.placements
+    .slice(0, 3)
+    .reduce((sum, row) => sum + Math.max(0, Number(row.payout || 0)), 0)
+  const expectedGross = Math.floor(payoutMass / assumedEntrants)
 
   const expectedWear = Math.max(1, Math.round(5 * (wearMultByTier[key] ?? 1)))
   const expectedRepair = expectedWear * repairPerPoint
   const expectedNetPerRace = expectedGross - entry - expectedRepair
 
-  const buyIn = Number(CAR_TIERS[key]?.price || 0)
+  const buyIn = Number(F1_CAR_TIERS[key]?.price || 0)
   let breakEvenLabel = 'unlikely at average results'
   if (expectedNetPerRace > 0) {
     const races = Math.ceil(buyIn / expectedNetPerRace)
     breakEvenLabel = `~${races} races`
   }
 
-  return { expectedNetPerRace, breakEvenLabel }
+  return { expectedNetPerRace, breakEvenLabel, assumedEntrants }
 }
 
 function estimateResaleValue (car) {
@@ -624,16 +542,8 @@ function computeStrength (car, track) {
 function oddsFromStrengths (strengths, cars = []) {
   let marketStrengths = strengths.map((s, i) => {
     const tierKey = normalizeTierKey(cars?.[i]?.tier)
-    return Math.max(0.0001, Number(s || 0) * getBetMarketMultiplier(tierKey, lockedRaceMode, lockedRaceType))
+    return Math.max(0.0001, Number(s || 0) * getBetMarketMultiplier(tierKey, lockedRaceTier, lockedRaceType))
   })
-
-  // In ELITE mode, slightly compress strengths toward the mean so odds board
-  // stays tighter and reflects a more competitive top-tier field.
-  if (lockedRaceMode === 'elite' && marketStrengths.length > 1) {
-    const avg = marketStrengths.reduce((a, b) => a + b, 0) / marketStrengths.length
-    const compress = 0.18
-    marketStrengths = marketStrengths.map((s) => (s * (1 - compress)) + (avg * compress))
-  }
 
   if (lockedRaceType === 'drag' && marketStrengths.length === 2) {
     const avg = (marketStrengths[0] + marketStrengths[1]) / 2
@@ -709,9 +619,8 @@ let _lastProgress = null
 
 let lockedTrack = null
 let lockedEntryGross = 0
-let lockedRaceMode = 'open'
+let lockedRaceTier = 'starter'
 let lockedRaceType = 'gp'
-let lockedPayoutPlan = PRIZE_SPLIT_BY_MODE.open
 let lockedDragTier = null
 let entryTimer = null
 
@@ -824,7 +733,7 @@ export async function handleBuyCar (ctx) {
     return
   }
 
-  const tier = CAR_TIERS[tierKey]
+  const tier = F1_CAR_TIERS[tierKey]
   if (!tier) {
     await postMessage({
       room,
@@ -961,7 +870,7 @@ export async function handleBuyCar (ctx) {
       `${selectedFile ? `🖼️ Chosen option: **#${selectedOption}**\n` : ''}` +
       `${buyCost.fee > 0 ? `💼 Wealth fee: **${fmtMoney(buyCost.fee)}**\n` : ''}` +
       `💰 Balance: **${fmtMoney(updated)}**\n` +
-      'Next: `/mycars`, `/carstats`, `/gp start open`',
+      'Next: `/mycars`, `/carstats`, `/gp start starter`',
     images: imageUrl ? [imageUrl] : undefined
   })
 }
@@ -1578,22 +1487,133 @@ export async function handleF1Leaderboard (ctx) {
   await postMessage({ room, message: '```\n' + lines.join('\n') + '\n```' })
 }
 
+async function refundEntryCharges (charges = [], reason = 'Race cancelled') {
+  for (const charge of charges) {
+    if (!charge?.userId || !Number.isFinite(Number(charge.amount)) || Number(charge.amount) <= 0) continue
+    await safeCall(creditGameWin, [charge.userId, Number(charge.amount), null, {
+      source: 'f1',
+      category: 'entry_refund',
+      note: reason
+    }]).catch(() => null)
+  }
+}
+
+async function settleRaceBets ({ winnerIdx, winnerKey, oddsDec = [], slipsByUser = {} } = {}) {
+  const betPayouts = {}
+  const betSettlements = {}
+
+  for (const [userId, slips] of Object.entries(slipsByUser || {})) {
+    let totalWin = 0
+    let totalStaked = 0
+
+    for (const slip of (slips || [])) {
+      const amt = Number(slip?.amount)
+      if (!Number.isFinite(amt) || amt <= 0) continue
+      totalStaked += amt
+
+      const slipKey = String(slip?.betKey || '').trim()
+      if (slipKey) {
+        if (winnerKey && slipKey === winnerKey) {
+          const dec = Number(oddsDec?.[winnerIdx] ?? 0)
+          totalWin += Math.floor(amt * Math.max(1.01, Number.isFinite(dec) ? dec : 1.01))
+        }
+        continue
+      }
+
+      const carIndex = Number(slip?.carIndex)
+      if (Number.isFinite(carIndex) && carIndex === winnerIdx) {
+        const dec = Number(oddsDec?.[carIndex] ?? 0)
+        totalWin += Math.floor(amt * Math.max(1.01, Number.isFinite(dec) ? dec : 1.01))
+      }
+    }
+
+    if (totalWin > 0) {
+      betPayouts[userId] = totalWin
+      await safeCall(creditGameWin, [userId, totalWin, null, {
+        source: 'f1',
+        category: 'bet_win',
+        note: 'F1 betting payout'
+      }]).catch(() => null)
+    }
+
+    if (totalStaked > 0 || totalWin > 0) {
+      betSettlements[userId] = {
+        staked: Math.floor(totalStaked),
+        returned: Math.floor(totalWin),
+        net: Math.floor(totalWin - totalStaked)
+      }
+    }
+  }
+
+  return { betPayouts, betSettlements }
+}
+
+async function postTierRaceResults ({
+  raceTier,
+  raceLabel,
+  track,
+  payoutSummary,
+  placements = [],
+  fastestLap = null,
+  betPayouts = {},
+  betSettlements = {}
+} = {}) {
+  const lines = []
+  lines.push(`🏁 ${raceLabel} Results`)
+  lines.push('')
+
+  for (const placement of placements) {
+    const owner = placement?.userId ? (placement.ownerName || (await safeCall(getUserNickname, [placement.userId]).catch(() => null))?.replace(/^@/, '') || 'Unknown') : 'House'
+    const payoutText = placement.payout > 0 ? `won ${fmtMoney(placement.payout)}` : 'no payout'
+    const netSign = placement.netResult >= 0 ? '+' : '-'
+    lines.push(`${placement.finishPosition}. ${placement.carName} (${owner}) — ${payoutText} · entry ${fmtMoney(placement.entryFee)} · net ${netSign}${fmtMoney(Math.abs(placement.netResult))}`)
+  }
+
+  lines.push('')
+  lines.push(`💰 Prize Pool: ${fmtMoney(payoutSummary.prizePool)}`)
+  lines.push(`🏦 House Cut: ${fmtMoney(payoutSummary.houseCut)}`)
+  lines.push(`🎟 Total Entry Fees: ${fmtMoney(payoutSummary.totalEntryFees)}`)
+
+  if (fastestLap?.label) {
+    lines.push(`⚡ Fastest Lap: ${fastestLap.label} (${fastestLap.time.toFixed(3)}s)`)
+  }
+
+  await postMessage({ room: ROOM, message: lines.join('\n') })
+
+  const users = [...new Set([...Object.keys(betPayouts || {}), ...Object.keys(betSettlements || {})])]
+  if (!users.length) return
+
+  const rows = ['SETTLEMENT BREAKDOWN', '']
+  for (const userId of users.slice(0, 12)) {
+    const nick = await safeCall(getUserNickname, [userId]).catch(() => null)
+    const tag = nick?.replace(/^@/, '') || `<@uid:${userId}>`
+    const raceRow = placements.find((row) => String(row.userId) === String(userId))
+    const raceNet = Math.floor(Number(raceRow?.netResult || 0))
+    const bet = betSettlements?.[userId] || { returned: 0, net: 0 }
+    const betReturned = Math.max(0, Math.floor(Number(bet.returned || 0)))
+    const betNet = Math.floor(Number(bet.net || 0))
+    const totalNet = raceNet + betNet
+    rows.push(`${tag} · Race net ${raceNet >= 0 ? '+' : '-'}${fmtMoney(Math.abs(raceNet))} · Bet return ${fmtMoney(betReturned)} (net ${betNet >= 0 ? '+' : '-'}${fmtMoney(Math.abs(betNet))}) · Total ${totalNet >= 0 ? '+' : '-'}${fmtMoney(Math.abs(totalNet))}`)
+  }
+
+  await postMessage({ room: ROOM, message: '```\n' + rows.join('\n') + '\n```' })
+}
+
 // ── Race lifecycle ─────────────────────────────────────────────────────
-export async function startF1Race (modeArg = 'open') {
+export async function startF1Race (tierArg = 'starter') {
   if (isAccepting || isStratOpen || isRunning) {
     await safeCall(postMessage, [{ room: ROOM, message: '⛔ A Grand Prix is already in progress.' }])
     return
   }
 
-  const normalizedMode = normalizeRaceMode(modeArg)
-  if (!normalizedMode) {
+  const raceTier = normalizeF1Tier(tierArg)
+  if (!raceTier) {
     await safeCall(postMessage, [{
       room: ROOM,
-      message: `❗ Unknown race mode \`${String(modeArg)}\`. Use: \`/gp start rookie\`, \`/gp start open\`, or \`/gp start elite\`.`
+      message: '❗ Unknown race tier. Use: `/gp start starter`, `/gp start pro`, `/gp start hyper`, or `/gp start legendary`.'
     }])
     return
   }
-  const modeConfig = RACE_MODES[normalizedMode]
 
   isAccepting = true
   isStratOpen = false
@@ -1606,10 +1626,9 @@ export async function startF1Race (modeArg = 'open') {
   bets = {}
   _lastProgress = null
   lockedEntryGross = 0
-  lockedRaceMode = normalizedMode
+  lockedRaceTier = raceTier
   lockedRaceType = 'gp'
   lockedDragTier = null
-  lockedPayoutPlan = modeConfig.payoutPlan || PRIZE_SPLIT_BY_MODE.open
 
   const all = await safeCall(getAllCars).catch(() => [])
   await ensurePersistentCarImages(all)
@@ -1619,28 +1638,24 @@ export async function startF1Race (modeArg = 'open') {
     c.ownerId &&
     activeIds.includes(c.ownerId) &&
     !c.retired &&
-    modeConfig.allowedTiers.has(normalizeTierKey(c.tier))
+    normalizeTierKey(c.tier) === raceTier
   )
   for (const c of avail) eligibleByName.set(String(c.name || '').toLowerCase(), c)
 
+  const tierConfig = getF1TierConfig(raceTier)
   await safeCall(postMessage, [{
     room: ROOM,
     message:
-      `🏎️ **${modeConfig.label} GRAND PRIX STARTING!** Owners: type your car’s exact name in the next ${ENTRY_MS / 1000}s to enter.\n` +
-      `${raceModeSummary(normalizedMode)}\n` +
-      `${normalizedMode === 'elite' ? 'Elite balance: HYPER gets a small pace bump; LEGENDARY gets a small pace trim.\n' : ''}` +
-      `Fixed prize pool (${modeConfig.label}): ${fmtMoney(getModeGuaranteedPurse(normalizedMode))}\n` +
-      `Entry fee (${modeConfig.label}): ${fmtMoney(getModeEntryFee(normalizedMode))} per car\n` +
-      'Garage upkeep per extra active car (charged on entry):\n' +
-      `• STARTER: ${fmtMoney(getGarageUpkeepPerExtraCar('starter'))}\n` +
-      `• PRO: ${fmtMoney(getGarageUpkeepPerExtraCar('pro'))}\n` +
-      `• HYPER: ${fmtMoney(getGarageUpkeepPerExtraCar('hyper'))}\n` +
-      `• LEGENDARY: ${fmtMoney(getGarageUpkeepPerExtraCar('legendary'))}`
+      `🏎️ **${getF1RaceLabel(raceTier).toUpperCase()} STARTING!** Owners: type your car’s exact name in the next ${ENTRY_MS / 1000}s to enter.\n` +
+      `${raceTierSummary(raceTier)}\n` +
+      `Purchase price: ${fmtMoney(tierConfig?.price || 0)}\n` +
+      `Minimum entrants: ${F1_RACE_SETTINGS.minEntrants}\n` +
+      'Prize pool is funded from entry fees only: 85% to purse, 15% house cut.'
   }])
 
   if (avail.length) {
     const lines = []
-    lines.push(`AVAILABLE CARS — ${modeConfig.label} MODE (owners only — type exact name to enter)`)
+    lines.push(`AVAILABLE ${getF1TierLabel(raceTier).toUpperCase()} CARS`)
     lines.push('')
     const list = avail.slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''))).slice(0, 20)
     for (const c of list) {
@@ -1652,7 +1667,7 @@ export async function startF1Race (modeArg = 'open') {
 
     await safeCall(postMessage, [{ room: ROOM, message: '```' + '\n' + lines.join('\n') + '\n```' }])
   } else {
-    await safeCall(postMessage, [{ room: ROOM, message: `⚠️ No eligible user cars detected online for ${modeConfig.label} mode — bots will fill the grid.` }])
+    await safeCall(postMessage, [{ room: ROOM, message: `⚠️ No eligible ${getF1TierLabel(raceTier).toUpperCase()} cars are online right now.` }])
   }
 
   entryTimer = setTimeout(lockEntriesAndOpenStrategy, ENTRY_MS)
@@ -1664,10 +1679,8 @@ export async function startDragRace (tierArg = 'starter') {
     return
   }
 
-  const dragTier = normalizeTierKey(tierArg)
-  const tierKeyRaw = String(tierArg || '').toLowerCase()
-  const isKnownTier = Object.prototype.hasOwnProperty.call(ENTRY_FEE_BY_TIER, tierKeyRaw)
-  if (!isKnownTier) {
+  const dragTier = normalizeF1Tier(tierArg)
+  if (!dragTier) {
     await safeCall(postMessage, [{
       room: ROOM,
       message: '❗ Unknown drag tier. Use: `/drag start starter`, `/drag start pro`, `/drag start hyper`, or `/drag start legendary`.'
@@ -1686,10 +1699,9 @@ export async function startDragRace (tierArg = 'starter') {
   bets = {}
   _lastProgress = null
   lockedEntryGross = 0
-  lockedRaceMode = 'open'
+  lockedRaceTier = dragTier
   lockedRaceType = 'drag'
   lockedDragTier = dragTier
-  lockedPayoutPlan = DRAG_PAYOUT_SPLIT
 
   const all = await safeCall(getAllCars).catch(() => [])
   await ensurePersistentCarImages(all)
@@ -1781,10 +1793,9 @@ function cleanup () {
   bets = {}
   _lastProgress = null
   lockedEntryGross = 0
-  lockedRaceMode = 'open'
+  lockedRaceTier = 'starter'
   lockedRaceType = 'gp'
   lockedDragTier = null
-  lockedPayoutPlan = PRIZE_SPLIT_BY_MODE.open
 }
 
 async function lockEntriesAndOpenStrategy () {
@@ -1794,82 +1805,74 @@ async function lockEntriesAndOpenStrategy () {
 
     const all = await safeCall(getAllCars).catch(() => [])
     const enteredCars = (all || []).filter(c => entered.has(c.id))
-      .filter(c => (lockedRaceType === 'drag' ? normalizeTierKey(c.tier) === lockedDragTier : true))
-    const targetFieldSize = lockedRaceType === 'drag' ? DRAG_FIELD_SIZE : MIN_FIELD
-    const need = Math.max(0, targetFieldSize - enteredCars.length)
+      .filter(c => (lockedRaceType === 'drag' ? normalizeTierKey(c.tier) === lockedDragTier : normalizeTierKey(c.tier) === lockedRaceTier))
 
-    // Charge fixed race-tier entry fees now
-    const filtered = []
-    let totalEntryGross = 0
-    for (const c of enteredCars) {
-      const ownerId = c.ownerId
-      const tierKey = normalizeTierKey(c.tier)
-      const entryFee = lockedRaceType === 'drag' ? 0 : getModeEntryFee(lockedRaceMode)
-      const ownerCars = await safeCall(getUserCars, [ownerId]).catch(() => [])
-      const activeOwnedCars = Array.isArray(ownerCars)
-        ? ownerCars.filter(car => !car?.retired).length
-        : 1
-      const upkeepFee = lockedRaceType === 'drag'
-        ? 0
-        : Math.max(0, activeOwnedCars - 1) * getGarageUpkeepPerExtraCar(tierKey)
-      const bal = await safeCall(getUserWallet, [ownerId]).catch(() => null)
-      const wealthFee = getProgressiveWealthFee({ balance: bal, baseAmount: entryFee + upkeepFee, source: 'f1' })
-      const totalCharge = entryFee + upkeepFee + wealthFee.fee
-      const nick = await safeCall(getUserNickname, [ownerId]).catch(() => '@user')
-      if (typeof bal !== 'number' || bal < totalCharge) {
-        await safeCall(postMessage, [{
-          room: ROOM,
-          message: `❗ ${nick} could not pay ${tierKey.toUpperCase()} race costs (${fmtMoney(totalCharge)} = entry ${fmtMoney(entryFee)} + upkeep ${fmtMoney(upkeepFee)}${wealthFee.fee > 0 ? ` + wealth fee ${fmtMoney(wealthFee.fee)}` : ''}). ${carLabel(c)} removed from grid.`
-        }])
-        continue
-      }
-      const chargeResult = await safeCall(chargeF1Cost, [
-        ownerId,
-        entryFee + upkeepFee,
-        'race_entry',
-        `${lockedRaceMode} race entry`,
-        bal
-      ]).catch(() => ({ ok: false }))
-      if (!chargeResult?.ok) {
-        await safeCall(postMessage, [{
-          room: ROOM,
-          message: `❗ ${nick} could not pay ${tierKey.toUpperCase()} race costs (${fmtMoney(totalCharge)} = entry ${fmtMoney(entryFee)} + upkeep ${fmtMoney(upkeepFee)}${wealthFee.fee > 0 ? ` + wealth fee ${fmtMoney(wealthFee.fee)}` : ''}). ${carLabel(c)} removed from grid.`
-        }])
-        continue
-      }
-      if (entryFee > 0 && c?.id != null) {
-        await safeCall(recordCarEntryFee, [c.id, entryFee]).catch(() => null)
-      }
-      totalEntryGross += entryFee
-      filtered.push(c)
+    if (lockedRaceType !== 'drag' && enteredCars.length < F1_RACE_SETTINGS.minEntrants) {
+      await safeCall(postMessage, [{
+        room: ROOM,
+        message: `❌ ${getF1RaceLabel(lockedRaceTier)} cancelled. Need at least ${F1_RACE_SETTINGS.minEntrants} entrants; only ${enteredCars.length} joined.`
+      }])
+      cleanup()
+      return
     }
-    lockedEntryGross = totalEntryGross
 
-    // bots (grand prix + drag backfill)
+    const charges = []
+    if (lockedRaceType !== 'drag') {
+      const entryFee = getTierEntryFee(lockedRaceTier)
+      for (const car of enteredCars) {
+        const balance = await safeCall(getUserWallet, [car.ownerId]).catch(() => null)
+        const nick = await safeCall(getUserNickname, [car.ownerId]).catch(() => '@user')
+        if (typeof balance !== 'number' || balance < entryFee) {
+          await refundEntryCharges(charges, 'Grand Prix cancelled')
+          await safeCall(postMessage, [{
+            room: ROOM,
+            message: `❌ ${getF1RaceLabel(lockedRaceTier)} cancelled. ${nick?.replace(/^@/, '')} could not pay the ${fmtMoney(entryFee)} entry fee for ${carLabel(car)}.`
+          }])
+          cleanup()
+          return
+        }
+
+        const debit = await safeCall(applyGameDeltaInTransaction, [car.ownerId, -entryFee, {
+          requireSufficientFunds: true,
+          meta: {
+            source: 'f1',
+            category: 'race_entry',
+            note: `${lockedRaceTier} grand prix entry`
+          }
+        }]).catch(() => ({ ok: false }))
+
+        if (!debit?.ok) {
+          await refundEntryCharges(charges, 'Grand Prix cancelled')
+          await safeCall(postMessage, [{
+            room: ROOM,
+            message: `❌ ${getF1RaceLabel(lockedRaceTier)} cancelled. Could not debit ${carLabel(car)} for entry.`
+          }])
+          cleanup()
+          return
+        }
+
+        charges.push({
+          userId: car.ownerId,
+          carId: car.id,
+          amount: entryFee
+        })
+      }
+    }
+
+    lockedEntryGross = charges.reduce((sum, row) => sum + Number(row.amount || 0), 0)
+
     const bots = []
     const used = new Set((all || []).map(c => String(c.name || '').toLowerCase()))
-    for (const c of filtered) used.add(String(c.name || '').toLowerCase())
-
-    const botRangeByMode = {
-      rookie: {
-        power: [54, 64], handling: [54, 64], aero: [52, 62], reliability: [55, 66], tire: [53, 64]
-      },
-      open: {
-        power: [58, 70], handling: [58, 70], aero: [56, 68], reliability: [59, 72], tire: [57, 70]
-      },
-      elite: {
-        power: [67, 79], handling: [67, 79], aero: [66, 78], reliability: [68, 80], tire: [67, 79]
-      }
-    }
-    const botRange = botRangeByMode[lockedRaceMode] || botRangeByMode.open
+    for (const c of enteredCars) used.add(String(c.name || '').toLowerCase())
 
     if (lockedRaceType === 'drag') {
       const dragTier = normalizeTierKey(lockedDragTier || 'starter')
-      const base = CAR_TIERS[dragTier]?.base || CAR_TIERS.starter.base
-      const dragLivery = CAR_TIERS[dragTier]?.livery || '⬛'
+      const base = F1_CAR_TIERS[dragTier]?.base || F1_CAR_TIERS.starter.base
+      const dragLivery = F1_CAR_TIERS[dragTier]?.livery || '⬛'
       const dragBotBiasByTier = { starter: 0, pro: 1, hyper: 2, legendary: 3 }
       const botBias = Number(dragBotBiasByTier[dragTier] ?? 0)
       const jitterDrag = (x) => clamp(Number(x || 50) + botBias + rint(-2, 4), 35, 96)
+      const need = Math.max(0, DRAG_FIELD_SIZE - enteredCars.length)
       for (let i = 0; i < need; i++) {
         const name = generateCarName(used)
         used.add(name.toLowerCase())
@@ -1890,32 +1893,11 @@ async function lockEntriesAndOpenStrategy () {
           imageUrl: null
         })
       }
-    } else {
-      for (let i = 0; i < need; i++) {
-        const name = generateCarName(used)
-        used.add(name.toLowerCase())
-        bots.push({
-          id: null,
-          ownerId: null,
-          name,
-          livery: '⬛',
-          tier: 'bot',
-          price: 0,
-          power: rint(botRange.power[0], botRange.power[1]),
-          handling: rint(botRange.handling[0], botRange.handling[1]),
-          aero: rint(botRange.aero[0], botRange.aero[1]),
-          reliability: rint(botRange.reliability[0], botRange.reliability[1]),
-          tire: rint(botRange.tire[0], botRange.tire[1]),
-          wear: 0,
-          teamLabel: '—',
-          imageUrl: null
-        })
-      }
     }
 
     // team labels
     const withTeam = []
-    for (const c of filtered) {
+    for (const c of enteredCars) {
       const team = await safeCall(getTeamByOwner, [c.ownerId]).catch(() => null)
       withTeam.push({ ...c, teamLabel: teamLabel(team) })
     }
@@ -1923,7 +1905,7 @@ async function lockEntriesAndOpenStrategy () {
     field = [...withTeam, ...bots].map(c => {
       const label = carLabel(c)
       return { ...c, label, teamLabel: c.teamLabel || '—' }
-    }).map(c => applyRaceModeBalanceToCar(c, lockedRaceMode))
+    })
 
     // ✅ lock track + odds for the betting window (transparent, fair)
     lockedTrack = (lockedRaceType === 'drag') ? pickDragTrack() : pickTrack()
@@ -1938,7 +1920,7 @@ async function lockEntriesAndOpenStrategy () {
     await safeCall(postMessage, [{
       room: ROOM,
       message: `${lockedRaceType === 'drag' ? 'Drag odds are live!' : 'Place your bets!'}\n` +
-        `• /bet <slot> <amount>  (min ${fmtMoney(BET_MIN)} · max ${fmtMoney(getBetMaxForRaceContext(lockedRaceMode, lockedRaceType))})\n` +
+        `• /bet <slot> <amount>  (min ${fmtMoney(BET_MIN)} · max ${fmtMoney(getBetMaxForRaceContext(lockedRaceTier, lockedRaceType))})\n` +
         `• Slot = betting board row number (1-${field.length})\n`
     }])
 
@@ -1969,6 +1951,7 @@ async function lockEntriesAndOpenStrategy () {
 }
 
 async function startRaceRun () {
+  let shouldRefundOnFailure = lockedRaceType === 'gp'
   try {
     isRunning = true
     const track = lockedTrack || (lockedRaceType === 'drag' ? pickDragTrack() : pickTrack())
@@ -1987,30 +1970,24 @@ async function startRaceRun () {
     const prizeBreakdown = lockedRaceType === 'drag'
       ? (() => {
           const gross = Math.max(0, Math.floor(Number(lockedEntryGross || 0)))
-          const rake = Math.floor(gross * (HOUSE_RAKE_PCT / 100))
-          const fromFees = Math.max(0, gross - rake)
+          const rake = 0
+          const fromFees = gross
           const guaranteed = getDragGuaranteedPurse(lockedDragTier || 'starter')
           return { gross, rake, fromFees, guaranteed, net: fromFees + guaranteed }
         })()
-      : (() => {
-          const gross = Math.max(0, Math.floor(Number(lockedEntryGross || 0)))
-          const rake = Math.floor(gross * (HOUSE_RAKE_PCT / 100))
-          const fromFees = Math.max(0, gross - rake)
-          const guaranteed = getModeGuaranteedPurse(lockedRaceMode)
-          return { gross, rake, fromFees, guaranteed, net: guaranteed }
-        })()
-    const gross = prizeBreakdown.gross
-    const rake = prizeBreakdown.rake
-    const fromFees = prizeBreakdown.fromFees
-    const guaranteed = prizeBreakdown.guaranteed
-    const net = prizeBreakdown.net
-    const poleWinnerOwnerId = field[0]?.ownerId || null
+      : calculatePrizePool(lockedEntryGross)
+    const gross = prizeBreakdown.gross ?? prizeBreakdown.totalEntryFees ?? 0
+    const houseCut = prizeBreakdown.houseCut ?? prizeBreakdown.rake ?? 0
+    const net = prizeBreakdown.prizePool ?? prizeBreakdown.net
+    const distribution = lockedRaceType === 'drag'
+      ? DRAG_PAYOUT_SPLIT
+      : (getPayoutDistribution(field.length)?.percentages || [])
 
     await postMessage({
       room: ROOM,
       message:
-        `💰 Prize Pool: ${fmtMoney(net)} (fixed ${String(lockedRaceMode || 'open').toUpperCase()} purse)` +
-        `${lockedRaceType !== 'drag' ? `\nEntry fees collected: ${fmtMoney(gross)} · Rake: ${fmtMoney(rake)} · Net fees retained: ${fmtMoney(fromFees)}` : ''}` +
+        `${lockedRaceType === 'drag' ? '💰 Drag Purse' : `💰 ${getF1RaceLabel(lockedRaceTier)} Prize Pool`}: ${fmtMoney(net)}` +
+        `${lockedRaceType !== 'drag' ? `\n🎟 Total Entry Fees: ${fmtMoney(gross)} · 🏦 House Cut: ${fmtMoney(houseCut)} · Split: ${distribution.join('/')}` : ''}` +
         `${lockedRaceType === 'drag' ? `\nTier: ${String(lockedDragTier || '').toUpperCase()} · Winner takes all.` : ''}`
     })
     await DELAY(500)
@@ -2036,18 +2013,6 @@ async function startRaceRun () {
 
     await DELAY(1200)
 
-    // 2) Pole bonus announcement also feels better pre-start (optional)
-    if (lockedRaceType !== 'drag' && poleWinnerOwnerId && POLE_BONUS > 0) {
-      const nick = await safeCall(getUserNickname, [poleWinnerOwnerId]).catch(() => null)
-      const tag = nick?.replace(/^@/, '') || `<@uid:${poleWinnerOwnerId}>`
-      const poleDisplayBonus = Math.floor(POLE_BONUS * getTierPayoutMultiplier(field[0]?.tier, lockedRaceMode, lockedRaceType))
-      await safeCall(postMessage, [{
-        room: ROOM,
-        message: `🎯 Pole Position Bonus goes to ${tag} (${fmtMoney(poleDisplayBonus)})`
-      }])
-      await DELAY(800)
-    }
-
     await postMessage({ room: ROOM, message: 'Final checks complete.' })
     await DELAY(900)
 
@@ -2055,23 +2020,117 @@ async function startRaceRun () {
     await sendLightsOutSequence(ROOM)
 
     // 4) Start the race
-    await runRace({
+    const raceResult = await runRace({
       cars: field,
       track,
       raceType: lockedRaceType,
-      raceMode: lockedRaceMode,
-      prizePool: net,
-      payoutPlan: lockedPayoutPlan,
-      humanEntrants: field.filter(car => car?.ownerId).length,
-      poleBonus: lockedRaceType === 'drag' ? 0 : POLE_BONUS,
-      fastestLapBonus: lockedRaceType === 'drag' ? 0 : FASTEST_LAP_BONUS,
-      poleWinnerOwnerId,
-      poleWinnerCarId: field[0]?.id ?? null,
+      raceTier: lockedRaceTier,
       bets,
       lockedOddsDec
     })
+    shouldRefundOnFailure = false
+
+    if (lockedRaceType === 'drag') {
+      const winnerIdx = raceResult?.winnerIdx ?? 0
+      const winner = field[winnerIdx]
+      const dragPayout = prizeBreakdown.net
+      if (winner?.ownerId) {
+        await safeCall(creditGameWin, [winner.ownerId, dragPayout, null, {
+          source: 'f1',
+          category: 'drag_win',
+          note: `${lockedDragTier} drag payout`
+        }]).catch(() => null)
+        if (winner?.id != null) {
+          await safeCall(recordCarRaceFinancials, [winner.id, { entryFee: 0, payout: dragPayout }]).catch(() => null)
+        }
+      }
+
+      await postMessage({
+        room: ROOM,
+        message: `🏁 ${String(lockedDragTier || '').toUpperCase()} Drag Results\n\n1. ${winner?.label || 'House Car'} — ${winner?.ownerId ? `won ${fmtMoney(dragPayout)}` : 'house win'}\n\n💰 Prize Pool: ${fmtMoney(dragPayout)}`
+      })
+      cleanup()
+      return
+    }
+
+    const payoutSummary = calculateRacePayouts({
+      entrants: field.map((car) => ({
+        userId: car.ownerId,
+        carId: car.id,
+        carName: car.label,
+        tier: lockedRaceTier,
+        entryFee: getTierEntryFee(lockedRaceTier)
+      })),
+      finishOrder: raceResult.finishOrder
+    })
+
+    const ownerNames = new Map()
+    for (const row of payoutSummary.placements) {
+      if (!row.userId || ownerNames.has(row.userId)) continue
+      const nick = await safeCall(getUserNickname, [row.userId]).catch(() => null)
+      ownerNames.set(row.userId, nick ? String(nick).replace(/^@/, '') : 'Unknown')
+    }
+
+    const placements = payoutSummary.placements.map((row) => ({
+      ...row,
+      ownerName: row.userId ? (ownerNames.get(row.userId) || 'Unknown') : 'House'
+    }))
+
+    for (const row of placements) {
+      if (row.userId && row.payout > 0) {
+        await safeCall(creditGameWin, [row.userId, row.payout, null, {
+          source: 'f1',
+          category: 'race_prize',
+          note: `${lockedRaceTier} grand prix P${row.finishPosition}`
+        }]).catch(() => null)
+      }
+      if (row.carId != null) {
+        await safeCall(recordCarRaceFinancials, [row.carId, {
+          entryFee: row.entryFee,
+          payout: row.payout
+        }]).catch(() => null)
+      }
+    }
+
+    const betResults = await settleRaceBets({
+      winnerIdx: raceResult.winnerIdx,
+      winnerKey: raceResult.winnerKey,
+      oddsDec: lockedOddsDec,
+      slipsByUser: bets
+    })
+
+    const raceId = `f1-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    await safeCall(logF1RaceResults, [{
+      raceId,
+      roomId: ROOM,
+      tier: lockedRaceTier,
+      track,
+      entrantCount: field.length,
+      totalEntryFees: payoutSummary.totalEntryFees,
+      prizePool: payoutSummary.prizePool,
+      houseCut: payoutSummary.houseCut,
+      placements
+    }]).catch(() => null)
+
+    await postTierRaceResults({
+      raceTier: lockedRaceTier,
+      raceLabel: getF1RaceLabel(lockedRaceTier),
+      track,
+      payoutSummary,
+      placements,
+      fastestLap: raceResult.fastestLap,
+      betPayouts: betResults.betPayouts,
+      betSettlements: betResults.betSettlements
+    })
+
+    cleanup()
   } catch (e) {
     console.error('[f1race] startRaceRun error:', e)
+    if (shouldRefundOnFailure && lockedRaceType === 'gp' && lockedEntryGross > 0 && Array.isArray(field) && field.length) {
+      await refundEntryCharges(field
+        .filter((car) => car?.ownerId)
+        .map((car) => ({ userId: car.ownerId, amount: getTierEntryFee(lockedRaceTier) })), 'Race failed to start')
+    }
     await safeCall(postMessage, [{ room: ROOM, message: '❌ Race failed to start.' }])
     cleanup()
   }
@@ -2104,81 +2163,6 @@ if (!globalThis[LISTENER_GUARD_KEY]) {
 
     await postMessage({ room: ROOM, message: lines.join('\n') })
   })
-
-  bus.on('raceFinished', async ({ finishOrder, cars, payouts, payoutDetails, betPayouts, betSettlements, track, prizePool, fastestLap }) => {
-    try {
-      const top = finishOrder.slice(0, Math.min(8, finishOrder.length))
-      const payoutByIndex = new Map(
-        (Array.isArray(payoutDetails) ? payoutDetails : [])
-          .map((row) => [Number(row?.idx), Number(row?.amount || 0)])
-      )
-
-      const lines = []
-      lines.push(`RESULTS — ${track.emoji} ${track.name}`)
-      lines.push(`Prize Pool: ${fmtMoney(prizePool)}`)
-      lines.push('')
-
-      const paid = top.slice(0, 5).map((idx, place) => {
-        const c = cars[idx]
-        const tag = c.ownerId ? `<@uid:${c.ownerId}>` : 'House'
-        const pay = c.ownerId ? (payoutByIndex.get(Number(idx)) || 0) : 0
-        return `${place + 1}. ${c.label} — ${tag}${pay ? ` · ${fmtMoney(pay)}` : ''}`
-      })
-      lines.push(...paid)
-
-      if (fastestLap?.ownerId) {
-        lines.push('')
-        lines.push(`⚡ Fastest Lap: ${fastestLap.label} · Bonus: ${fmtMoney(fastestLap.bonus)}`)
-      }
-
-      await postMessage({ room: ROOM, message: '```\n' + lines.join('\n') + '\n```' })
-
-      const winnerIdx = finishOrder?.[0]
-      const winnerCar = (winnerIdx != null) ? cars?.[winnerIdx] : null
-      if (winnerCar?.imageUrl) {
-        await postMessage({
-          room: ROOM,
-          message: `🏆 Winner photo: **${winnerCar.label}**`,
-          images: [winnerCar.imageUrl]
-        })
-      }
-
-      const raceMap = (payouts && typeof payouts === 'object') ? payouts : {}
-      const betMap = (betSettlements && typeof betSettlements === 'object') ? betSettlements : {}
-      const users = [...new Set([...Object.keys(raceMap), ...Object.keys(betMap)])]
-
-      if (users.length) {
-        const rows = []
-        const fmtSignedMoney = (n) => `${n >= 0 ? '+' : '-'}${fmtMoney(Math.abs(n))}`
-        rows.push('SETTLEMENT BREAKDOWN')
-        rows.push('')
-
-        for (const userId of users.slice(0, 12)) {
-          const nick = await safeCall(getUserNickname, [userId]).catch(() => null)
-          const tag = nick?.replace(/^@/, '') || `<@uid:${userId}>`
-          const raceWin = Math.max(0, Math.floor(Number(raceMap[userId] || 0)))
-          const b = betMap[userId] || { staked: 0, returned: 0, net: 0 }
-          const betReturned = Math.max(0, Math.floor(Number(b.returned || 0)))
-          const betNet = Math.floor(Number(b.net || 0))
-          const totalNet = raceWin + betNet
-          rows.push(
-            `${tag} · Race ${fmtMoney(raceWin)} · Bet return ${fmtMoney(betReturned)} (net ${fmtSignedMoney(betNet)}) · Total net ${fmtSignedMoney(totalNet)}`
-          )
-        }
-
-        await postMessage({ room: ROOM, message: '```\n' + rows.join('\n') + '\n```' })
-      }
-
-      const betWinners = betPayouts && typeof betPayouts === 'object'
-        ? Object.entries(betPayouts).filter(([, amt]) => Number(amt) > 0)
-        : []
-      if (betWinners.length) {
-        await postMessage({ room: ROOM, message: '🎟️ Bets settled. Bet return and net are shown in the settlement breakdown.' })
-      }
-    } finally {
-      cleanup()
-    }
-  })
 }
 
 // ── Help ───────────────────────────────────────────────────────────────
@@ -2202,10 +2186,10 @@ export async function handleF1Help (ctx) {
     '/sellcar <name>        - sell a car back for cash',
     '/carpics               - show photos of your cars',
     '',
-    '/gp start <mode>       - start a Grand Prix (rookie/open/elite)',
+    '/gp start <tier>       - start a Grand Prix (starter/pro/hyper/legendary)',
     '/drag start <tier>     - start a 1v1 drag race (same tier only)',
     '(during entry) type your exact car name to enter',
-    `(during betting) /bet <slot> <amount> - bet by board row number shown on board (min ${fmtMoney(BET_MIN)}; max depends on race mode)`
+    `(during betting) /bet <slot> <amount> - bet by board row number shown on board (min ${fmtMoney(BET_MIN)}; max depends on race tier)`
   ].join('\n')
 
   await postMessage({ room, message: '```\n' + msg + '\n```' })

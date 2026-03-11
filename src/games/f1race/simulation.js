@@ -1,14 +1,8 @@
 // src/games/f1race/simulation.js
 
 import { bus, safeCall } from './service.js'
-import { creditGameWin } from '../../database/dbwalletmanager.js'
-import { addCarEarnings, updateCarAfterRaceResult } from '../../database/dbcars.js'
-import { postMessage } from '../../libs/cometchat.js'
-import { getUserNickname } from '../../utils/nickname.js'
+import { updateCarAfterRaceResult } from '../../database/dbcars.js'
 import { stat01 } from './utils/track.js'
-import { env } from '../../config.js'
-
-const ROOM = process.env.ROOM_UUID
 
 export const LEGS = 6
 const DRAG_LEGS = 4
@@ -56,24 +50,6 @@ function carBetKey (car) {
 function normalizeTierKey (tierKey) {
   const key = String(tierKey || '').toLowerCase()
   return Object.prototype.hasOwnProperty.call(TIER_WEAR_MULT, key) ? key : 'starter'
-}
-
-function adjustPlacePayout (car, place, baseAmt, humanEntrants = 0, raceMode = 'open', raceType = 'gp') {
-  const amt = Math.max(0, Math.floor(Number(baseAmt || 0)))
-  if (amt <= 0) return 0
-  return amt
-}
-
-function tierScaledBonus (car, baseBonus, raceMode = 'open', raceType = 'gp') {
-  const base = Math.max(0, Math.floor(Number(baseBonus || 0)))
-  if (base <= 0) return 0
-  if (String(raceType || 'gp').toLowerCase() !== 'drag' && String(raceMode || 'open').toLowerCase() !== 'elite') {
-    return base
-  }
-
-  const tier = normalizeTierKey(car?.tier)
-  const payoutMultByTier = { starter: 1.00, pro: 1.08, hyper: 1.22, legendary: 1.40 }
-  return Math.floor(base * Number(payoutMultByTier[tier] ?? 1))
 }
 
 function wearMultiplierForCar (car) {
@@ -221,14 +197,7 @@ export async function runRace ({
   cars,
   track,
   raceType = 'gp',
-  raceMode = 'open',
-  prizePool,
-  payoutPlan,
-  humanEntrants = 0,
-  poleBonus = 0,
-  fastestLapBonus = 0,
-  poleWinnerOwnerId = null,
-  poleWinnerCarId = null,
+  raceTier = 'starter',
 
   // betting
   bets = {},
@@ -252,16 +221,6 @@ export async function runRace ({
     bestLapTime: Infinity,
     startPos: idx
   }))
-
-  const poleCar = (poleWinnerCarId != null) ? cars.find(c => c?.id === poleWinnerCarId) : null
-  const paidPoleBonus = tierScaledBonus(poleCar, poleBonus, raceMode, raceKind)
-
-  if (paidPoleBonus > 0 && poleWinnerOwnerId) {
-    await safeCall(creditGameWin, [poleWinnerOwnerId, paidPoleBonus]).catch(() => null)
-    if (poleWinnerCarId != null) {
-      await safeCall(addCarEarnings, [poleWinnerCarId, paidPoleBonus, { pole: true }]).catch(() => null)
-    }
-  }
 
   let prevOrder = null
 
@@ -425,108 +384,6 @@ export async function runRace ({
     ? { index: fastest.index, label: fastest.label, ownerId: fastest.ownerId, time: fastest.bestLapTime }
     : null
 
-  // Prize payouts:
-  // - Each finishing place keeps its configured share of the purse.
-  // - Bots can consume a paid place; their share is not redistributed.
-  const payouts = {}
-  const payoutDetails = []
-  const paidPlaces = Math.min(5, finishOrder.length)
-  for (let place = 0; place < paidPlaces; place++) {
-    const idx = finishOrder[place]
-    const car = cars[idx]
-    const baseWeight = Number(payoutPlan?.[place] ?? 0)
-    const baseAmt = Math.floor(Number(prizePool || 0) * (baseWeight / 100))
-    const amt = adjustPlacePayout(car, place, baseAmt, humanEntrants, raceMode, raceKind)
-    if (amt <= 0 || !car?.ownerId) continue
-
-    payouts[car.ownerId] = (payouts[car.ownerId] || 0) + amt
-    payoutDetails.push({
-      place: place + 1,
-      idx,
-      ownerId: car.ownerId,
-      amount: amt
-    })
-    await safeCall(creditGameWin, [car.ownerId, amt, null, {
-      source: 'f1',
-      category: 'race_prize',
-      note: `F1 place payout P${place + 1}`
-    }])
-    const paidCarId = cars?.[idx]?.id
-    if (paidCarId != null) {
-      await safeCall(addCarEarnings, [paidCarId, amt]).catch(() => null)
-    }
-  }
-
-  let fastestLapAwarded = null
-  if (fastestLapBonus > 0 && fastestLap?.ownerId) {
-    const fastestCar = cars?.[fastestLap.index]
-    const paidFastestLapBonus = tierScaledBonus(fastestCar, fastestLapBonus, raceMode, raceKind)
-    await safeCall(creditGameWin, [fastestLap.ownerId, paidFastestLapBonus, null, {
-      source: 'f1',
-      category: 'fastest_lap_bonus',
-      note: 'F1 fastest lap bonus'
-    }]).catch(() => null)
-    const fastestCarId = cars?.[fastestLap.index]?.id
-    if (fastestCarId != null) {
-      await safeCall(addCarEarnings, [fastestCarId, paidFastestLapBonus, { fastestLap: true }]).catch(() => null)
-    }
-    fastestLapAwarded = { ...fastestLap, bonus: paidFastestLapBonus }
-  }
-
-  // ✅ Bet settlement
-  // Supports:
-  // - NEW slips: { betKey: "car:123" | "label:..." , amount }
-  // - OLD slips: { carIndex, amount } (less safe; fallback only)
-  const betPayouts = {}
-  const betSettlements = {}
-  for (const [userId, slips] of Object.entries(bets || {})) {
-    let totalWin = 0
-    let totalStaked = 0
-
-    for (const s of (slips || [])) {
-      const amt = Number(s.amount)
-      if (!Number.isFinite(amt) || amt <= 0) continue
-      totalStaked += amt
-
-      // Prefer stable betKey matching
-      const slipKey = String(s.betKey || '').trim()
-      if (slipKey) {
-        if (winnerKey && slipKey === winnerKey) {
-          const dec = Number(lockedOddsDec?.[winnerIdx] ?? 0)
-          const payoutDec = Number.isFinite(dec) ? Math.max(1.01, dec) : 1.01
-          totalWin += Math.floor(amt * payoutDec)
-        }
-        continue
-      }
-
-      // Fallback legacy behavior (NOT recommended): compare indexes
-      const idx = Number(s.carIndex)
-      if (!Number.isFinite(idx)) continue
-      if (idx === winnerIdx) {
-        const dec = Number(lockedOddsDec?.[idx] ?? 0)
-        const payoutDec = Number.isFinite(dec) ? Math.max(1.01, dec) : 1.01
-        totalWin += Math.floor(amt * payoutDec)
-      }
-    }
-
-    if (totalWin > 0) {
-      betPayouts[userId] = (betPayouts[userId] || 0) + totalWin
-      await safeCall(creditGameWin, [userId, totalWin, null, {
-        source: 'f1',
-        category: 'bet_win',
-        note: 'F1 betting payout'
-      }])
-    }
-
-    if (totalStaked > 0 || totalWin > 0) {
-      betSettlements[userId] = {
-        staked: Math.floor(totalStaked),
-        returned: Math.floor(totalWin),
-        net: Math.floor(totalWin - totalStaked)
-      }
-    }
-  }
-
   // Car wear + win/loss persistence
   try {
     const finishPosByIndex = new Map()
@@ -551,29 +408,16 @@ export async function runRace ({
     console.warn('[f1race] updateCarAfterRaceResult failed:', e?.message)
   }
 
-  await safeCall(postMessage, [{ room: ROOM, message: '🏁 **CHECKERED FLAG!**' }])
-  await DELAY(850)
-
-  if (winnerCar?.ownerId) {
-    const nick = await safeCall(getUserNickname, [winnerCar.ownerId]).catch(() => null)
-    const tag = nick?.replace(/^@/, '') || `<@uid:${winnerCar.ownerId}>`
-    await safeCall(postMessage, [{ room: ROOM, message: `🥇 **${winnerCar.label}** wins the ${track.emoji} **${track.name}**! (${tag})` }])
-  } else {
-    await safeCall(postMessage, [{ room: ROOM, message: `🥇 **${winnerCar?.label || 'House Car'}** wins the ${track.emoji} **${track.name}**!` }])
-  }
-
-  bus.emit('raceFinished', {
+  return {
+    raceTier,
     winnerIdx,
+    winnerKey,
+    winnerCar,
     finishOrder,
-    cars: cars.map((c, i) => ({ index: i, label: c.label, ownerId: c.ownerId || null, imageUrl: c.imageUrl || null })),
-    payouts,
-    payoutDetails,
-    betPayouts,
-    betSettlements,
+    fastestLap,
     track,
-    prizePool,
-    fastestLap: fastestLapAwarded,
-    poleBonus: paidPoleBonus,
-    poleWinnerOwnerId: poleWinnerOwnerId || null
-  })
+    cars: cars.map((c, i) => ({ index: i, label: c.label, ownerId: c.ownerId || null, imageUrl: c.imageUrl || null })),
+    bets,
+    lockedOddsDec
+  }
 }

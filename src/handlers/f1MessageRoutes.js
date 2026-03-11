@@ -27,7 +27,7 @@ export async function routeF1Message ({
   } = handlers
 
   if (/^\/(gp|f1)\s+start\b/i.test(txt)) {
-    const mode = (txt.match(/^\/(?:gp|f1)\s+start(?:\s+(\w+))?\b/i) || [])[1] || 'open'
+    const mode = (txt.match(/^\/(?:gp|f1)\s+start(?:\s+(\w+))?\b/i) || [])[1] || 'starter'
     log('▶ dispatch → startF1Race')
     startF1Race(mode).catch(err => logger.error('[f1Route] startF1Race failed', { err: err?.message || err, mode }))
     return true

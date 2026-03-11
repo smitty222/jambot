@@ -50,6 +50,8 @@ function ensureCarsTable () {
   const statColumns = [
     ['careerEarnings', 'INTEGER DEFAULT 0'],
     ['entryFeesPaid', 'INTEGER DEFAULT 0'],
+    ['raceWinnings', 'INTEGER DEFAULT 0'],
+    ['netRaceProfit', 'INTEGER DEFAULT 0'],
     ['repairSpend', 'INTEGER DEFAULT 0'],
     ['podiums', 'INTEGER DEFAULT 0'],
     ['dnfs', 'INTEGER DEFAULT 0'],
@@ -246,6 +248,24 @@ export function recordCarEntryFee (id, amount) {
   return true
 }
 
+export function recordCarRaceFinancials (id, { entryFee = 0, payout = 0 } = {}) {
+  ensureCarsTable()
+  const fee = Math.max(0, Math.floor(Number(entryFee || 0)))
+  const winnings = Math.max(0, Math.floor(Number(payout || 0)))
+  const net = winnings - fee
+
+  db.prepare(`
+    UPDATE cars
+    SET entryFeesPaid = COALESCE(entryFeesPaid, 0) + ?,
+        careerEarnings = COALESCE(careerEarnings, 0) + ?,
+        raceWinnings = COALESCE(raceWinnings, 0) + ?,
+        netRaceProfit = COALESCE(netRaceProfit, 0) + ?
+    WHERE id = ?
+  `).run(fee, winnings, winnings, net, Number(id))
+
+  return true
+}
+
 export function recordCarRepairSpend (id, amount) {
   ensureCarsTable()
   const inc = Math.max(0, Math.floor(Number(amount || 0)))
@@ -268,6 +288,8 @@ export function getUserCarStatsSummary (ownerId) {
       COALESCE(SUM(price), 0) AS totalPurchaseSpend,
       COALESCE(SUM(careerEarnings), 0) AS totalCarEarnings,
       COALESCE(SUM(entryFeesPaid), 0) AS totalEntryFeesPaid,
+      COALESCE(SUM(raceWinnings), 0) AS totalRaceWinnings,
+      COALESCE(SUM(netRaceProfit), 0) AS totalNetRaceProfit,
       COALESCE(SUM(repairSpend), 0) AS totalRepairSpend,
       COALESCE(SUM(races), 0) AS totalRaces,
       COALESCE(SUM(wins), 0) AS totalWins,
@@ -302,7 +324,7 @@ export function getTopOwnersByCarReturn (limit = 10) {
       ownerId,
       COALESCE(MAX(ownerName), '') AS ownerName,
       COUNT(*) AS carsOwned,
-      COALESCE(SUM(careerEarnings), 0) AS totalCarReturn,
+      COALESCE(SUM(netRaceProfit), COALESCE(SUM(careerEarnings), 0) - COALESCE(SUM(entryFeesPaid), 0)) AS totalCarReturn,
       COALESCE(SUM(wins), 0) AS totalWins,
       COALESCE(SUM(races), 0) AS totalRaces
     FROM cars
