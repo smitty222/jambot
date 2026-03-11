@@ -54,6 +54,7 @@ const ENTRY_MS = 30_000
 const STRAT_MS = 45_000
 const DRAG_ENTRY_MS = 30_000
 const DRAG_STRAT_MS = 20_000
+const GP_STANDARD_FIELD_SIZE = Math.max(1, Number(F1_RACE_SETTINGS.standardFieldSize || 8))
 const DRAG_FIELD_SIZE = 2
 const DRAG_PAYOUT_SPLIT = [100]
 
@@ -270,16 +271,8 @@ function normalizeTierKey (tierKey) {
 
 function raceTierSummary (tierKey) {
   const normalized = normalizeTierKey(tierKey)
-  const distributionLines = F1_RACE_SETTINGS.payoutDistributions
-    .slice()
-    .reverse()
-    .map((rule) => {
-      const range = Number.isFinite(Number(rule.maxEntrants))
-        ? `${rule.minEntrants}-${rule.maxEntrants}`
-        : `${rule.minEntrants}+`
-      return `${range} entrants: ${rule.percentages.join('/')}`
-    })
-  return `${getF1TierLabel(normalized).toUpperCase()} ONLY · Entry ${fmtMoney(getTierEntryFee(normalized))} · Payouts ${distributionLines.join(' · ')}`
+  const distribution = getPayoutDistribution(GP_STANDARD_FIELD_SIZE)?.percentages || []
+  return `${getF1TierLabel(normalized).toUpperCase()} ONLY · Entry ${fmtMoney(getTierEntryFee(normalized))} · Purse = entry x ${GP_STANDARD_FIELD_SIZE} x ${Number(F1_RACE_SETTINGS.purseMultiplier || 1.25).toFixed(2)} · Payouts ${distribution.join('/')}`
 }
 
 function getTierEntryFee (tierKey) {
@@ -434,7 +427,7 @@ function estimateTierValueMetrics (tierKey) {
     legendary: 0.70
   }
 
-  const assumedEntrants = 6
+  const assumedEntrants = GP_STANDARD_FIELD_SIZE
   const payoutPreview = calculateRacePayouts({
     entrants: Array.from({ length: assumedEntrants }, (_, idx) => ({
       userId: `preview-${idx}`,
@@ -445,7 +438,7 @@ function estimateTierValueMetrics (tierKey) {
     finishOrder: Array.from({ length: assumedEntrants }, (_, idx) => idx)
   })
   const payoutMass = payoutPreview.placements
-    .slice(0, 3)
+    .slice(0, 5)
     .reduce((sum, row) => sum + Math.max(0, Number(row.payout || 0)), 0)
   const expectedGross = Math.floor(payoutMass / assumedEntrants)
 
@@ -1571,8 +1564,9 @@ async function postTierRaceResults ({
 
   lines.push('')
   lines.push(`💰 Prize Pool: ${fmtMoney(payoutSummary.prizePool)}`)
-  lines.push(`🏦 House Cut: ${fmtMoney(payoutSummary.houseCut)}`)
-  lines.push(`🎟 Total Entry Fees: ${fmtMoney(payoutSummary.totalEntryFees)}`)
+  lines.push(`🏟 Standard Field: ${payoutSummary.standardFieldSize} cars`)
+  lines.push(`🏦 House Bonus: ${fmtMoney(payoutSummary.houseContribution || 0)}`)
+  lines.push(`🎟 Base Entry Pot: ${fmtMoney(payoutSummary.totalEntryFees)}`)
 
   if (fastestLap?.label) {
     lines.push(`⚡ Fastest Lap: ${fastestLap.label} (${fastestLap.time.toFixed(3)}s)`)
@@ -1650,7 +1644,7 @@ export async function startF1Race (tierArg = 'starter') {
       `${raceTierSummary(raceTier)}\n` +
       `Purchase price: ${fmtMoney(tierConfig?.price || 0)}\n` +
       `Minimum entrants: ${F1_RACE_SETTINGS.minEntrants}\n` +
-      'Prize pool is funded from entry fees only: 85% to purse, 15% house cut.'
+      `Standard ${GP_STANDARD_FIELD_SIZE}-car purse uses entry x ${GP_STANDARD_FIELD_SIZE} x ${Number(F1_RACE_SETTINGS.purseMultiplier || 1.25).toFixed(2)}. P1-P5 are paid.`
   }])
 
   if (avail.length) {
@@ -1893,6 +1887,34 @@ async function lockEntriesAndOpenStrategy () {
           imageUrl: null
         })
       }
+    } else {
+      const gpTier = normalizeTierKey(lockedRaceTier || 'starter')
+      const base = F1_CAR_TIERS[gpTier]?.base || F1_CAR_TIERS.starter.base
+      const gpLivery = F1_CAR_TIERS[gpTier]?.livery || '⬛'
+      const gpBotBiasByTier = { starter: -1, pro: 0, hyper: 1, legendary: 2 }
+      const botBias = Number(gpBotBiasByTier[gpTier] ?? 0)
+      const jitterGp = (x) => clamp(Number(x || 50) + botBias + rint(-4, 4), 35, 96)
+      const need = Math.max(0, GP_STANDARD_FIELD_SIZE - enteredCars.length)
+      for (let i = 0; i < need; i++) {
+        const name = generateCarName(used)
+        used.add(name.toLowerCase())
+        bots.push({
+          id: null,
+          ownerId: null,
+          name,
+          livery: gpLivery,
+          tier: gpTier,
+          price: 0,
+          power: jitterGp(base.power),
+          handling: jitterGp(base.handling),
+          aero: jitterGp(base.aero),
+          reliability: jitterGp(base.reliability),
+          tire: jitterGp(base.tire),
+          wear: 0,
+          teamLabel: 'BOT',
+          imageUrl: null
+        })
+      }
     }
 
     // team labels
@@ -1975,9 +1997,9 @@ async function startRaceRun () {
           const guaranteed = getDragGuaranteedPurse(lockedDragTier || 'starter')
           return { gross, rake, fromFees, guaranteed, net: fromFees + guaranteed }
         })()
-      : calculatePrizePool(lockedEntryGross)
+      : calculatePrizePool(getTierEntryFee(lockedRaceTier), GP_STANDARD_FIELD_SIZE)
     const gross = prizeBreakdown.gross ?? prizeBreakdown.totalEntryFees ?? 0
-    const houseCut = prizeBreakdown.houseCut ?? prizeBreakdown.rake ?? 0
+    const houseBonus = prizeBreakdown.houseContribution ?? 0
     const net = prizeBreakdown.prizePool ?? prizeBreakdown.net
     const distribution = lockedRaceType === 'drag'
       ? DRAG_PAYOUT_SPLIT
@@ -1987,7 +2009,7 @@ async function startRaceRun () {
       room: ROOM,
       message:
         `${lockedRaceType === 'drag' ? '💰 Drag Purse' : `💰 ${getF1RaceLabel(lockedRaceTier)} Prize Pool`}: ${fmtMoney(net)}` +
-        `${lockedRaceType !== 'drag' ? `\n🎟 Total Entry Fees: ${fmtMoney(gross)} · 🏦 House Cut: ${fmtMoney(houseCut)} · Split: ${distribution.join('/')}` : ''}` +
+        `${lockedRaceType !== 'drag' ? `\n🎟 Base Entry Pot: ${fmtMoney(gross)} · 🏦 House Bonus: ${fmtMoney(houseBonus)} · Split: ${distribution.join('/')} · Field: ${GP_STANDARD_FIELD_SIZE}` : ''}` +
         `${lockedRaceType === 'drag' ? `\nTier: ${String(lockedDragTier || '').toUpperCase()} · Winner takes all.` : ''}`
     })
     await DELAY(500)

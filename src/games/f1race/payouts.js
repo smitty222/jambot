@@ -19,17 +19,22 @@ export function getPayoutDistribution (numEntrants) {
   }) || null
 }
 
-export function calculatePrizePool (totalEntryFees) {
-  const total = Math.max(0, Math.floor(Number(totalEntryFees || 0)))
-  const prizePool = Math.floor(total * Number(F1_RACE_SETTINGS.prizePoolPercentage || 0))
-  const houseCut = Math.max(0, total - prizePool)
+export function calculatePrizePool (entryFee, fieldSize = F1_RACE_SETTINGS.standardFieldSize) {
+  const normalizedEntryFee = Math.max(0, Math.floor(Number(entryFee || 0)))
+  const normalizedFieldSize = Math.max(0, Math.floor(Number(fieldSize || 0)))
+  const purseMultiplier = Math.max(0, Number(F1_RACE_SETTINGS.purseMultiplier || 0))
+  const totalEntryFees = normalizedEntryFee * normalizedFieldSize
+  const prizePool = Math.floor(totalEntryFees * purseMultiplier)
+  const houseContribution = Math.max(0, prizePool - totalEntryFees)
 
   return {
-    totalEntryFees: total,
+    entryFee: normalizedEntryFee,
+    standardFieldSize: normalizedFieldSize,
+    totalEntryFees,
     prizePool,
-    houseCut,
-    prizePoolPercentage: Number(F1_RACE_SETTINGS.prizePoolPercentage || 0),
-    houseCutPercentage: Number(F1_RACE_SETTINGS.houseCutPercentage || 0)
+    houseCut: 0,
+    houseContribution,
+    purseMultiplier
   }
 }
 
@@ -63,8 +68,8 @@ export function calculateRacePayouts ({ entrants = [], finishOrder = [] } = {}) 
     throw new Error(`NO_PAYOUT_RULE_FOR_${entrantCount}_ENTRANTS`)
   }
 
-  const totalEntryFees = normalizedEntrants.reduce((sum, entrant) => sum + entrant.entryFee, 0)
-  const prize = calculatePrizePool(totalEntryFees)
+  const entryFee = Math.max(0, Math.floor(Number(normalizedEntrants[0]?.entryFee || 0)))
+  const prize = calculatePrizePool(entryFee, F1_RACE_SETTINGS.standardFieldSize)
   const payoutAmounts = splitPrizePool(prize.prizePool, distributionRule.percentages)
   const payoutByIndex = new Map()
   payoutAmounts.forEach((amount, idx) => {
@@ -96,6 +101,9 @@ export function calculateRacePayouts ({ entrants = [], finishOrder = [] } = {}) 
     totalEntryFees: prize.totalEntryFees,
     prizePool: prize.prizePool,
     houseCut: prize.houseCut,
+    houseContribution: prize.houseContribution,
+    standardFieldSize: prize.standardFieldSize,
+    purseMultiplier: prize.purseMultiplier,
     placements
   }
 }

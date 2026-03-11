@@ -43,13 +43,10 @@ export const F1_CAR_TIERS = {
 
 export const F1_RACE_SETTINGS = {
   minEntrants: 3,
-  prizePoolPercentage: 0.85,
-  houseCutPercentage: 0.15,
+  standardFieldSize: 8,
+  purseMultiplier: 1.25,
   payoutDistributions: [
-    { minEntrants: 9, percentages: [45, 25, 15, 10, 5] },
-    { minEntrants: 6, maxEntrants: 8, percentages: [50, 30, 20] },
-    { minEntrants: 4, maxEntrants: 5, percentages: [60, 25, 15] },
-    { minEntrants: 3, maxEntrants: 3, percentages: [70, 30] }
+    { minEntrants: 3, percentages: [35, 24, 17, 14, 10] }
   ]
 }
 
