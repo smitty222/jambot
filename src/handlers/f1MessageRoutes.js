@@ -13,6 +13,7 @@ export async function routeF1Message ({
     handleGarageCommand,
     handleMyCars,
     handleCarStats,
+    handleF1RaceHistory,
     handleF1Stats,
     handleF1Leaderboard,
     handleWearCommand,
@@ -58,6 +59,11 @@ export async function routeF1Message ({
 
   if (/^\/carstats\b/i.test(txt) || /^\/car\s+stats\b/i.test(txt)) {
     await handleCarStats(payload)
+    return true
+  }
+
+  if (/^\/(myresults|racehistory)\b/i.test(txt)) {
+    await handleF1RaceHistory(payload)
     return true
   }
 

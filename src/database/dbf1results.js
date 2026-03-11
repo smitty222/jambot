@@ -113,3 +113,61 @@ export function logF1RaceResults ({
   tx(placements)
   return true
 }
+
+export function getRecentF1ResultsByUser (userId, limit = 10) {
+  ensureF1RaceResultsTable()
+  const normalizedLimit = Math.max(1, Math.min(25, Math.floor(Number(limit || 10))))
+  return db.prepare(`
+    SELECT
+      raceId,
+      tier,
+      trackName,
+      carName,
+      finishPosition,
+      payout,
+      creditedAmount,
+      entryFeePaid,
+      netResult,
+      createdAt
+    FROM f1_race_results
+    WHERE userId = ?
+    ORDER BY datetime(createdAt) DESC, id DESC
+    LIMIT ?
+  `).all(String(userId), normalizedLimit)
+}
+
+export function getF1CareerStatsByUser (userId) {
+  ensureF1RaceResultsTable()
+  return db.prepare(`
+    SELECT
+      COUNT(*) AS totalRaces,
+      SUM(CASE WHEN finishPosition = 1 THEN 1 ELSE 0 END) AS wins,
+      SUM(CASE WHEN finishPosition <= 3 THEN 1 ELSE 0 END) AS podiums,
+      SUM(CASE WHEN finishPosition <= 5 THEN 1 ELSE 0 END) AS cashes,
+      MIN(finishPosition) AS bestFinish,
+      AVG(finishPosition) AS avgFinish,
+      SUM(payout) AS grossPayout,
+      SUM(creditedAmount) AS creditedAmount,
+      SUM(entryFeePaid) AS entryFeesPaid,
+      SUM(netResult) AS netResult
+    FROM f1_race_results
+    WHERE userId = ?
+  `).get(String(userId))
+}
+
+export function getF1TierStatsByUser (userId) {
+  ensureF1RaceResultsTable()
+  return db.prepare(`
+    SELECT
+      tier,
+      COUNT(*) AS races,
+      SUM(CASE WHEN finishPosition = 1 THEN 1 ELSE 0 END) AS wins,
+      SUM(CASE WHEN finishPosition <= 3 THEN 1 ELSE 0 END) AS podiums,
+      AVG(finishPosition) AS avgFinish,
+      SUM(netResult) AS netResult
+    FROM f1_race_results
+    WHERE userId = ?
+    GROUP BY tier
+    ORDER BY races DESC, tier ASC
+  `).all(String(userId))
+}

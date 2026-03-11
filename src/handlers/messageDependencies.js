@@ -31,6 +31,7 @@ import {
   handleTeamCommand,
   handleF1Help,
   handleCarStats,
+  handleF1RaceHistory,
   handleF1Stats,
   handleF1Leaderboard
 } from '../games/f1race/handlers/commands.js'
@@ -57,6 +58,7 @@ export const f1RouteHandlers = {
   handleGarageCommand,
   handleMyCars,
   handleCarStats,
+  handleF1RaceHistory,
   handleF1Stats,
   handleF1Leaderboard,
   handleWearCommand,

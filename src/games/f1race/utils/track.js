@@ -91,8 +91,61 @@ export function getBestTrackForCar (car = {}) {
   return ranked[0]?.track || null
 }
 
+export function getTrackFitRankings (car = {}) {
+  return TRACKS
+    .map((track) => ({
+      track,
+      score: scoreCarForTrack(car, track)
+    }))
+    .sort((a, b) => b.score - a.score)
+}
+
+export function getCarArchetype (car = {}) {
+  const stats = [
+    ['power', Number(car.power || 0), 'Power build'],
+    ['handling', Number(car.handling || 0), 'Technical specialist'],
+    ['aero', Number(car.aero || 0), 'Aero package'],
+    ['reliability', Number(car.reliability || 0), 'Reliable grinder'],
+    ['tire', Number(car.tire || 0), 'Tire whisperer']
+  ].sort((a, b) => b[1] - a[1])
+
+  const top = stats[0]
+  const second = stats[1]
+  if (!top) return 'Balanced'
+  if ((top[1] - second[1]) <= 2) return 'Balanced'
+  return top[2]
+}
+
 export function getTrackPreferenceSummary (car = {}) {
   const bestTrack = getBestTrackForCar(car)
   if (!bestTrack) return 'Best track: —'
   return `Best track: ${bestTrack.name}`
+}
+
+export function getTrackPreferenceDetails (car = {}) {
+  const ranked = getTrackFitRankings(car)
+  const bestTrack = ranked[0]?.track || null
+  const secondTrack = ranked[1]?.track || null
+  const archetype = getCarArchetype(car)
+
+  if (!bestTrack) {
+    return {
+      archetype,
+      bestTrackLabel: 'Best track: —',
+      fitSummary: `${archetype} · Best track: —`
+    }
+  }
+
+  const edgePct = secondTrack
+    ? Math.max(0, Math.round((ranked[0].score - ranked[1].score) * 100))
+    : 0
+  const edgeLabel = edgePct > 0 ? ` (+${edgePct} fit)` : ''
+
+  return {
+    archetype,
+    bestTrack,
+    secondTrack,
+    bestTrackLabel: `Best track: ${bestTrack.name}${edgeLabel}`,
+    fitSummary: `${archetype} · Best track: ${bestTrack.name}${edgeLabel}`
+  }
 }

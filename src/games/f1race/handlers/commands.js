@@ -11,6 +11,11 @@ import { fetchCurrentUsers } from '../../../utils/API.js'
 import { createTeam, getTeamByOwner, updateTeamIdentity } from '../../../database/dbteams.js'
 import { getCompactEquippedTitleTag } from '../../../database/dbprestige.js'
 import {
+  getRecentF1ResultsByUser,
+  getF1CareerStatsByUser,
+  getF1TierStatsByUser
+} from '../../../database/dbf1results.js'
+import {
   insertCar,
   getAllCars,
   getUserCars,
@@ -44,7 +49,11 @@ import {
   calculateRacePayouts,
   calculateRacePurse
 } from '../payouts.js'
-import { pickTrack, pickDragTrack, getTrackPreferenceSummary } from '../utils/track.js'
+import {
+  pickTrack,
+  pickDragTrack,
+  getTrackPreferenceDetails
+} from '../utils/track.js'
 import { renderGrid, renderRaceProgress, renderDragProgress, fmtMoney } from '../utils/render.js'
 import { env } from '../../../config.js'
 
@@ -276,7 +285,8 @@ function raceTierSummary (tierKey) {
     entryFee: getTierEntryFee(normalized),
     fieldSize: GP_STANDARD_FIELD_SIZE
   })
-  return `${getF1TierLabel(normalized).toUpperCase()} ONLY · Entry ${fmtMoney(getTierEntryFee(normalized))} · Purse ${fmtMoney(purse.purse)} · P1-P5 paid`
+  const payouts = getGrandPrixPayoutLadder(normalized)
+  return `${getF1TierLabel(normalized).toUpperCase()} ONLY · Entry ${fmtMoney(getTierEntryFee(normalized))} · Purse ${fmtMoney(purse.purse)} · P1 ${fmtMoney(payouts[0] || 0)}`
 }
 
 function getTierEntryFee (tierKey) {
@@ -363,6 +373,50 @@ function parseArg (txt, re) {
   return (String(txt || '').match(re) || [])[1]
 }
 
+function findUserCar (cars = [], query = '') {
+  const q = String(query || '').trim().toLowerCase()
+  if (!q) return null
+  return (
+    cars.find(c => String(c.name || '').toLowerCase() === q) ||
+    cars.find(c => String(c.name || '').toLowerCase().includes(q))
+  )
+}
+
+function getGrandPrixPayoutPreview (tierKey) {
+  const normalized = normalizeTierKey(tierKey)
+  return calculateRacePayouts({
+    entrants: Array.from({ length: GP_STANDARD_FIELD_SIZE }, (_, idx) => ({
+      userId: `preview-${idx}`,
+      carId: idx + 1,
+      tier: normalized,
+      entryFee: getTierEntryFee(normalized)
+    })),
+    finishOrder: Array.from({ length: GP_STANDARD_FIELD_SIZE }, (_, idx) => idx),
+    entryFee: getTierEntryFee(normalized),
+    fieldSize: GP_STANDARD_FIELD_SIZE
+  })
+}
+
+function getGrandPrixPayoutLadder (tierKey) {
+  return getGrandPrixPayoutPreview(tierKey).placements
+    .slice(0, 5)
+    .map((row) => Math.max(0, Math.floor(Number(row.payout || 0))))
+}
+
+function formatGrandPrixPayoutLine (tierKey) {
+  const payouts = getGrandPrixPayoutLadder(tierKey)
+  return `Payouts: P1 ${fmtMoney(payouts[0] || 0)} · P2 ${fmtMoney(payouts[1] || 0)} · P3 ${fmtMoney(payouts[2] || 0)} · P4 ${fmtMoney(payouts[3] || 0)} · P5 ${fmtMoney(payouts[4] || 0)}`
+}
+
+function getCarIdentitySummary (car) {
+  const details = getTrackPreferenceDetails(car)
+  return details.fitSummary
+}
+
+function formatCarStatLine (car) {
+  return `PWR ${toInt(car.power)} · HDL ${toInt(car.handling)} · AERO ${toInt(car.aero)} · REL ${toInt(car.reliability)} · TIRE ${toInt(car.tire)}`
+}
+
 function buildBuyCarShopCard (balance) {
   const bal = Number(balance || 0)
 
@@ -379,7 +433,7 @@ function buildBuyCarShopCard (balance) {
     const entry = getTierEntryFee(key)
     const repair = getTierRepairCostPerPoint(key)
     const value = estimateTierValueMetrics(key)
-    const bestTrack = getTrackPreferenceSummary(tier.base)
+    const bestTrack = getCarIdentitySummary(tier.base)
 
     lines.push(`${tier.livery} ${key.toUpperCase()} — ${fmtMoney(tier.price)}`)
     lines.push(`${TIER_PITCH[key]}`)
@@ -864,15 +918,15 @@ export async function handleBuyCar (ctx) {
   }
 
   const purchasedCar = { ...carRecord, id }
-  const purchasedTrackSummary = getTrackPreferenceSummary(purchasedCar)
+  const purchasedTrackSummary = getTrackPreferenceDetails(purchasedCar)
 
   const updated = await safeCall(getUserWallet, [userId]).catch(() => null)
   await postMessage({
     room,
     message:
       `✅ ${nick} bought a **${tierKey.toUpperCase()}** car: **${tier.livery} ${name}**\n` +
-      `📊 Stats: PWR ${carRecord.power} · HDL ${carRecord.handling} · AERO ${carRecord.aero} · REL ${carRecord.reliability} · TIRE ${carRecord.tire}\n` +
-      `🗺️ ${purchasedTrackSummary}\n` +
+      `📊 Stats: ${formatCarStatLine(carRecord)}\n` +
+      `🗺️ ${purchasedTrackSummary.fitSummary}\n` +
       `${selectedFile ? `🖼️ Chosen option: **#${selectedOption}**\n` : ''}` +
       `${buyCost.fee > 0 ? `💼 Wealth fee: **${fmtMoney(buyCost.fee)}**\n` : ''}` +
       `💰 Balance: **${fmtMoney(updated)}**\n` +
@@ -907,7 +961,7 @@ export async function handleMyCars (ctx) {
     const wear = Number(c.wear || 0)
     const wearTag = wear >= 80 ? '⚠️' : (wear >= 60 ? '🟡' : '🟢')
     const earnings = toInt(c.careerEarnings)
-    lines.push(`• ${carLabel(c)} — Tier ${String(c.tier || '—').toUpperCase()} · ${getTrackPreferenceSummary(c)} · Wear ${wear}% ${wearTag} · W ${c.wins || 0} / R ${c.races || 0} · Return ${fmtMoney(earnings)}`)
+    lines.push(`• ${carLabel(c)} — Tier ${String(c.tier || '—').toUpperCase()} · ${getCarIdentitySummary(c)} · Wear ${wear}% ${wearTag} · W ${c.wins || 0} / R ${c.races || 0} · Return ${fmtMoney(earnings)}`)
   }
 
   lines.push('')
@@ -946,10 +1000,11 @@ export async function handleGarageCommand (ctx) {
   for (const car of cars.slice(0, 12)) {
     const wear = Number(car.wear || 0)
     const wearTag = wear >= 80 ? '⚠️' : (wear >= 60 ? '🟡' : '🟢')
+    const trackDetails = getTrackPreferenceDetails(car)
     const lines = [
       `**${carLabel(car)}**`,
-      `Tier: ${String(car.tier || '—').toUpperCase()} · ${getTrackPreferenceSummary(car)} · Wear ${wear}% ${wearTag}`,
-      `Stats: PWR ${toInt(car.power)} · HDL ${toInt(car.handling)} · AERO ${toInt(car.aero)} · REL ${toInt(car.reliability)} · TIRE ${toInt(car.tire)}`
+      `Tier: ${String(car.tier || '—').toUpperCase()} · ${trackDetails.fitSummary} · Wear ${wear}% ${wearTag}`,
+      `Stats: ${formatCarStatLine(car)}`
     ]
 
     await postMessage({
@@ -1031,10 +1086,7 @@ export async function handleCarShow (ctx) {
 
   const cars = await safeCall(getUserCars, [userId]).catch(() => [])
   await ensurePersistentCarImages(cars)
-  const q = String(nameArg).toLowerCase()
-  const car =
-    cars.find(c => String(c.name || '').toLowerCase() === q) ||
-    cars.find(c => String(c.name || '').toLowerCase().includes(q))
+  const car = findUserCar(cars, nameArg)
 
   if (!car) {
     await postMessage({ room, message: `❗ ${nick}, couldn’t find that car in your garage.` })
@@ -1052,14 +1104,15 @@ export async function handleCarShow (ctx) {
   const avgFinish = Number(car.finishCount || 0) > 0
     ? `P${(Number(car.finishSum || 0) / Number(car.finishCount || 1)).toFixed(2)}`
     : '—'
+  const trackDetails = getTrackPreferenceDetails(car)
 
   await postMessage({
     room,
     message:
       `🏎️ **${carLabel(car)}**\n` +
       `Team: **${car.teamId ? 'Assigned' : '—'}** · Tier: **${tierKey.toUpperCase()}** · Wear: **${wear}%** · W ${car.wins || 0} / R ${car.races || 0}\n` +
-      `Stats: **PWR ${toInt(car.power)} · HDL ${toInt(car.handling)} · AERO ${toInt(car.aero)} · REL ${toInt(car.reliability)} · TIRE ${toInt(car.tire)}**\n` +
-      `${getTrackPreferenceSummary(car)}\n` +
+      `Identity: **${trackDetails.fitSummary}**\n` +
+      `Stats: **${formatCarStatLine(car)}**\n` +
       `Return (earnings only): **${fmtMoney(earnings)}** · Net career: **${fmtMoney(net)}**\n` +
       `Spent: buy ${fmtMoney(car.price || 0)} · entry ${fmtMoney(entryFees)} · repair ${fmtMoney(repairSpend)}\n` +
       `Best finish: **${bestFinish}** · Avg finish: **${avgFinish}** · Podiums: **${toInt(car.podiums)}** · DNFs: **${toInt(car.dnfs)}**\n` +
@@ -1399,10 +1452,7 @@ export async function handleCarStats (ctx) {
   }
 
   if (nameArg) {
-    const q = String(nameArg).toLowerCase()
-    const car =
-      cars.find(c => String(c.name || '').toLowerCase() === q) ||
-      cars.find(c => String(c.name || '').toLowerCase().includes(q))
+    const car = findUserCar(cars, nameArg)
 
     if (!car) {
       await postMessage({ room, message: `❗ ${nick}, couldn’t find that car in your garage.` })
@@ -1416,8 +1466,8 @@ export async function handleCarStats (ctx) {
     const lines = []
     lines.push(`CAR STATS — ${carLabel(car)}`)
     lines.push('')
-    lines.push(`Stats: PWR ${toInt(car.power)} · HDL ${toInt(car.handling)} · AERO ${toInt(car.aero)} · REL ${toInt(car.reliability)} · TIRE ${toInt(car.tire)}`)
-    lines.push(getTrackPreferenceSummary(car))
+    lines.push(`Identity: ${getCarIdentitySummary(car)}`)
+    lines.push(`Stats: ${formatCarStatLine(car)}`)
     lines.push(`Return (earnings only): ${fmtMoney(toInt(car.careerEarnings))}`)
     lines.push(`Net career: ${fmtMoney(carCareerNet(car))}`)
     lines.push(`Buy-in: ${fmtMoney(toInt(car.price))} · Entry Fees: ${fmtMoney(toInt(car.entryFeesPaid))} · Repairs: ${fmtMoney(toInt(car.repairSpend))}`)
@@ -1470,6 +1520,8 @@ export async function handleF1Stats (ctx) {
   const nick = await safeCall(getUserNickname, [userId]).catch(() => '@user')
   const totals = await safeCall(getUserCarStatsSummary, [userId]).catch(() => null)
   const topCars = await safeCall(getTopCarsByEarnings, [userId, 3]).catch(() => [])
+  const career = await safeCall(getF1CareerStatsByUser, [userId]).catch(() => null)
+  const tierRows = await safeCall(getF1TierStatsByUser, [userId]).catch(() => [])
 
   const carsOwned = toInt(totals?.carsOwned)
   if (!carsOwned) {
@@ -1498,6 +1550,12 @@ export async function handleF1Stats (ctx) {
   lines.push(`📈 Net (no buy-in): **${fmtMoney(netNoBuyIn)}**`)
   lines.push(`🏦 Net (all-in): **${fmtMoney(allInNet)}**`)
 
+  if (Number(career?.totalRaces || 0) > 0) {
+    lines.push('')
+    lines.push(`🏆 GP Cashes: **${toInt(career?.cashes)}** · Best GP Finish: **${career?.bestFinish ? `P${toInt(career.bestFinish)}` : '—'}** · GP Avg: **${career?.avgFinish ? `P${Number(career.avgFinish).toFixed(2)}` : '—'}**`)
+    lines.push(`💵 GP Net: **${fmtMoney(toInt(career?.netResult))}** · GP Gross Payouts: **${fmtMoney(toInt(career?.creditedAmount))}**`)
+  }
+
   if (topCars.length) {
     lines.push('')
     lines.push('🔥 **Top Cars by Return**')
@@ -1506,8 +1564,16 @@ export async function handleF1Stats (ctx) {
     })
   }
 
+  if (tierRows.length) {
+    lines.push('')
+    lines.push('🏁 **Tier Form**')
+    tierRows.slice(0, 4).forEach((row) => {
+      lines.push(`${String(row.tier || 'starter').toUpperCase()}: ${toInt(row.races)} races · ${toInt(row.wins)} wins · ${toInt(row.podiums)} podiums · Avg ${row.avgFinish ? `P${Number(row.avgFinish).toFixed(2)}` : '—'} · Net ${fmtMoney(toInt(row.netResult))}`)
+    })
+  }
+
   lines.push('')
-  lines.push('More: `/carstats` · `/carstats <car name>` · `/f1leaderboard`')
+  lines.push('More: `/carstats` · `/carstats <car name>` · `/myresults` · `/f1leaderboard`')
   await postMessage({ room, message: lines.join('\n') })
 }
 
@@ -1541,6 +1607,41 @@ export async function handleF1Leaderboard (ctx) {
 
   lines.push('')
   lines.push('Return = prize/pole/fastest-lap earnings from owned cars (betting excluded).')
+  await postMessage({ room, message: '```\n' + lines.join('\n') + '\n```' })
+}
+
+export async function handleF1RaceHistory (ctx) {
+  const room = ctx?.room || ROOM
+  const userId = ctx?.sender
+  const txt = String(ctx?.message || '').trim()
+  const rawLimit = parseArg(txt, /^\/(?:myresults|racehistory)(?:\s+(\d+))?$/i)
+  const limit = rawLimit ? Math.max(3, Math.min(12, parseInt(rawLimit, 10) || 8)) : 8
+  const nick = await safeCall(getUserNickname, [userId]).catch(() => '@user')
+  const rows = await safeCall(getRecentF1ResultsByUser, [userId, limit]).catch(() => [])
+  const career = await safeCall(getF1CareerStatsByUser, [userId]).catch(() => null)
+
+  if (!rows.length) {
+    await postMessage({ room, message: `${nick}, no Grand Prix results logged yet. Run a few races first.` })
+    return
+  }
+
+  const lines = []
+  lines.push(`${String(nick || '@user').replace(/^@/, '')} — RECENT GRAND PRIX RESULTS`)
+  lines.push('')
+  rows.forEach((row, idx) => {
+    const when = String(row.createdAt || '').replace('T', ' ').slice(0, 16) || 'recent'
+    const net = toInt(row.netResult)
+    const netLabel = `${net >= 0 ? '+' : '-'}${fmtMoney(Math.abs(net))}`
+    lines.push(`${idx + 1}. P${toInt(row.finishPosition)} · ${String(row.tier || 'starter').toUpperCase()} · ${row.carName || 'Unknown Car'} · ${row.trackName || 'Unknown Track'}`)
+    lines.push(`   Prize ${fmtMoney(toInt(row.creditedAmount))} · Entry ${fmtMoney(toInt(row.entryFeePaid))} · Net ${netLabel} · ${when}`)
+  })
+
+  if (Number(career?.totalRaces || 0) > 0) {
+    lines.push('')
+    lines.push(`Career GP: ${toInt(career.totalRaces)} races · ${toInt(career.wins)} wins · ${toInt(career.podiums)} podiums · ${toInt(career.cashes)} cashes`)
+    lines.push(`Best finish ${career.bestFinish ? `P${toInt(career.bestFinish)}` : '—'} · Avg ${career.avgFinish ? `P${Number(career.avgFinish).toFixed(2)}` : '—'} · Net ${fmtMoney(toInt(career.netResult))}`)
+  }
+
   await postMessage({ room, message: '```\n' + lines.join('\n') + '\n```' })
 }
 
@@ -1670,7 +1771,7 @@ export async function startF1Race (tierArg = 'starter') {
       `🏎️ **${getF1RaceLabel(raceTier).toUpperCase()}**\n` +
       `${lockedTrack?.emoji || '🏁'} **${lockedTrack?.name || 'Balanced GP'}**\n` +
       `Entry: **${fmtMoney(getTierEntryFee(raceTier))}** · Purse: **${fmtMoney(calculateRacePurse({ entryFee: getTierEntryFee(raceTier), fieldSize: GP_STANDARD_FIELD_SIZE }).purse)}** · Field: **${GP_STANDARD_FIELD_SIZE}**\n` +
-      `Payouts: **P1-P5**\n` +
+      `${formatGrandPrixPayoutLine(raceTier)}\n` +
       `Owners: type your car’s exact name in the next **${ENTRY_MS / 1000}s** to enter.`
   }])
 
@@ -1848,9 +1949,7 @@ async function lockEntriesAndOpenStrategy () {
 
       const dragTier = normalizeTierKey(lockedDragTier || 'starter')
       const base = F1_CAR_TIERS[dragTier]?.base || F1_CAR_TIERS.starter.base
-      const dragBotBiasByTier = { starter: 0, pro: 1, hyper: 2, legendary: 3 }
-      const botBias = Number(dragBotBiasByTier[dragTier] ?? 0)
-      const jitterDrag = (x) => clamp(Number(x || 50) + botBias + rint(-2, 4), 35, 96)
+      const jitterDrag = (x) => clamp(Number(x || 50) + rint(-2, 2), 38, 94)
       const need = Math.max(0, DRAG_FIELD_SIZE - enteredCars.length)
       for (let i = 0; i < need; i++) {
         const name = generateCarName(used)
@@ -2101,6 +2200,8 @@ export async function handleF1Help (ctx) {
     '/mycars                - list your cars',
     '/carstats [name]       - return/profit stats for your garage or one car',
     '/f1stats               - quick garage summary stats',
+    '/myresults [count]     - your recent Grand Prix finishes and GP career line',
+    '/racehistory [count]   - alias for /myresults',
     '/f1leaderboard [count] - top owners by total car return',
     '/wear [name]           - show wear for all cars or one car',
     '/car <name>            - show your car (image + stats)',
