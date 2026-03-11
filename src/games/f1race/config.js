@@ -17,7 +17,7 @@ export const F1_CAR_TIERS = {
     label: 'Pro',
     raceLabel: 'Pro Grand Prix',
     price: 90000,
-    entryFee: 2500,
+    entryFee: 2000,
     livery: '🟦',
     base: { power: 63, handling: 62, aero: 61, reliability: 64, tire: 62 }
   },
@@ -26,7 +26,7 @@ export const F1_CAR_TIERS = {
     label: 'Hyper',
     raceLabel: 'Hyper Grand Prix',
     price: 200000,
-    entryFee: 6000,
+    entryFee: 3000,
     livery: '🟩',
     base: { power: 70, handling: 69, aero: 68, reliability: 71, tire: 69 }
   },
@@ -35,19 +35,17 @@ export const F1_CAR_TIERS = {
     label: 'Legendary',
     raceLabel: 'Legendary Grand Prix',
     price: 400000,
-    entryFee: 12000,
+    entryFee: 6000,
     livery: '🟪',
     base: { power: 76, handling: 75, aero: 74, reliability: 77, tire: 75 }
   }
 }
 
 export const F1_RACE_SETTINGS = {
-  minEntrants: 3,
+  minEntrants: 0,
   standardFieldSize: 8,
   purseMultiplier: 1.25,
-  payoutDistributions: [
-    { minEntrants: 3, percentages: [35, 24, 17, 14, 10] }
-  ]
+  payoutPercentages: [35, 24, 17, 14, 10]
 }
 
 export function normalizeF1Tier (tierKey) {
