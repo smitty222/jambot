@@ -8,8 +8,48 @@ import {
 } from './sportsTeams.js'
 
 const BETS_FILE = 'src/data/bets.json'
+const STALE_BET_GRACE_MS = 36 * 60 * 60 * 1000
 
 const mlbGamesCache = []
+
+function normalizeUserUuid (value) {
+  const raw = Array.isArray(value) ? value[0] : value
+  return String(raw || '').trim()
+}
+
+function toTimestamp (value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Date.parse(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return NaN
+}
+
+function getBetExpiryTimestamp (bet) {
+  const commenceAt = toTimestamp(bet?.commenceTime)
+  if (Number.isFinite(commenceAt)) return commenceAt + STALE_BET_GRACE_MS
+
+  const createdAt = toTimestamp(bet?.createdAt)
+  if (Number.isFinite(createdAt)) return createdAt + STALE_BET_GRACE_MS
+
+  return 0
+}
+
+function isLegacyPendingBet (bet) {
+  return bet?.status === 'pending' && !Number.isFinite(toTimestamp(bet?.commenceTime)) && !Number.isFinite(toTimestamp(bet?.createdAt))
+}
+
+async function refundStaleBet (bet, reason) {
+  const amount = Math.max(0, Math.floor(Number(bet?.amount || 0)))
+  if (amount > 0) {
+    await addToUserWallet(normalizeUserUuid(bet?.senderUUID), amount)
+  }
+
+  bet.status = 'refunded'
+  bet.refundedAt = new Date().toISOString()
+  bet.refundReason = reason
+}
 
 export async function loadBets () {
   try {
@@ -36,6 +76,7 @@ export function formatOdds (price) {
 }
 
 export async function placeSportsBet (senderUUID, index, team, betTypeInput, amount, sport) {
+  const normalizedSenderUUID = normalizeUserUuid(senderUUID)
   const games = await getOddsForSport(sport)
   if (!games || index < 0 || index >= games.length) {
     return `Game ${index + 1} not found for ${sport}.`
@@ -68,23 +109,25 @@ export async function placeSportsBet (senderUUID, index, team, betTypeInput, amo
 
   const odds = oddsObj.price
 
-  const wallet = await getUserWallet(senderUUID)
+  const wallet = await getUserWallet(normalizedSenderUUID)
   if (wallet < amount) return `Insufficient funds. You have $${wallet}.`
 
-  const removeSuccess = await removeFromUserWallet(senderUUID, amount)
+  const removeSuccess = await removeFromUserWallet(normalizedSenderUUID, amount)
   if (!removeSuccess) return 'Failed to debit wallet. Try again later.'
 
   const bets = await loadBets()
   if (!bets[game.id]) bets[game.id] = []
 
   bets[game.id].push({
-    senderUUID,
+    senderUUID: normalizedSenderUUID,
     gameIndex: index,
     gameId: game.id,
     sport,
     team: teamAbbrUpper,
     odds,
     amount,
+    createdAt: new Date().toISOString(),
+    commenceTime: game.commenceTime || null,
     status: 'pending',
     type: betType
   })
@@ -97,6 +140,7 @@ export async function placeSportsBet (senderUUID, index, team, betTypeInput, amo
 export async function resolveCompletedBets (sportKey) {
   const bets = await loadBets()
   const completedGames = await getLatestScoresForSport(sportKey)
+  const now = Date.now()
   let updated = false
 
   for (const game of completedGames) {
@@ -125,16 +169,35 @@ export async function resolveCompletedBets (sportKey) {
     }
   }
 
+  for (const gameBets of Object.values(bets)) {
+    for (const bet of gameBets || []) {
+      if (bet?.status !== 'pending' || bet?.sport !== sportKey) continue
+
+      if (isLegacyPendingBet(bet)) {
+        await refundStaleBet(bet, 'legacy_pending_cleanup')
+        updated = true
+        continue
+      }
+
+      const expiryTs = getBetExpiryTimestamp(bet)
+      if (!expiryTs || now < expiryTs) continue
+
+      await refundStaleBet(bet, 'stale_unresolved')
+      updated = true
+    }
+  }
+
   if (updated) await saveBets(bets)
 }
 
 export async function getOpenBetsForUser (userUUID) {
+  const normalizedUserUUID = normalizeUserUuid(userUUID)
   const bets = await loadBets()
   const rows = []
 
   for (const [gameId, gameBets] of Object.entries(bets)) {
     for (const bet of gameBets || []) {
-      if (bet?.senderUUID !== userUUID || bet?.status !== 'pending') continue
+      if (normalizeUserUuid(bet?.senderUUID) !== normalizedUserUUID || bet?.status !== 'pending') continue
 
       rows.push({
         ...bet,

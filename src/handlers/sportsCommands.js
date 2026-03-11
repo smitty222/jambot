@@ -38,6 +38,11 @@ const SCORE_HANDLERS = {
   nfl: handleNflScoresCommand
 }
 
+function normalizeUserUuid (value = '') {
+  const raw = Array.isArray(value) ? value[0] : value
+  return String(raw || '').trim()
+}
+
 export function parseSportAlias (value = '') {
   const sportAlias = String(value || '').trim().toLowerCase()
   return {
@@ -396,7 +401,7 @@ export function createSportsBetCommandHandler (deps = {}) {
   } = deps
 
   return async function handleSportsBetCommandImpl ({ payload, room }) {
-    const senderUUID = payload?.sender
+    const senderUUID = normalizeUserUuid(payload?.sender)
     const nickname = await getSenderNicknameImpl(senderUUID)
     const parsed = parseSportsBetArgs(payload?.message)
 
@@ -469,9 +474,9 @@ export function createOpenBetsCommandHandler (deps = {}) {
   } = deps
 
   return async function handleOpenBetsCommandImpl ({ payload, room, forceSelf = false }) {
-    const senderUUID = payload?.sender
+    const senderUUID = normalizeUserUuid(payload?.sender)
     const parts = String(payload?.message || '').trim().split(/\s+/)
-    const targetUUID = forceSelf ? senderUUID : (parseUidFromMentionOrRaw(parts[1]) || senderUUID)
+    const targetUUID = normalizeUserUuid(forceSelf ? senderUUID : (parseUidFromMentionOrRaw(parts[1]) || senderUUID))
     const openBets = await getOpenBetsForUserImpl(targetUUID)
 
     if (!openBets.length) {
