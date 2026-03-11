@@ -48,11 +48,16 @@ const ENTRY_FEE_BY_TIER = {
   hyper: env.f1EntryFeeHyper,
   legendary: env.f1EntryFeeLegendary
 }
+const ENTRY_FEE_BY_MODE = {
+  rookie: env.f1RaceEntryFeeRookie,
+  open: env.f1RaceEntryFeeOpen,
+  elite: env.f1RaceEntryFeeElite
+}
 const HOUSE_RAKE_PCT = env.f1HouseRakePct // percent
 const PRIZE_SPLIT_BY_MODE = {
-  rookie: [60, 30, 10], // top 3 paid
-  open: [45, 25, 15, 10, 5],
-  elite: [42, 27, 18, 10, 3]
+  rookie: [40, 24, 16, 12, 8],
+  open: [40, 24, 16, 12, 8],
+  elite: [40, 24, 16, 12, 8]
 }
 const GUARANTEED_PURSE_BY_MODE = {
   rookie: env.f1PurseFloorRookie,
@@ -126,7 +131,6 @@ const ELITE_MODE_STAT_DELTA_BY_TIER = {
   hyper: env.f1EliteStatDeltaHyper,
   legendary: env.f1EliteStatDeltaLegendary
 }
-
 // ── Visuals: car images (local tier folders) ───────────────────────────────
 // Place your images in:
 // src/games/f1race/assets/cars/starter
@@ -303,6 +307,12 @@ function raceModeSummary (modeKey) {
   return `${mode.label} · Tiers: ${tiers} · Split: ${split}`
 }
 
+function getModeEntryFee (modeKey) {
+  const normalized = normalizeRaceMode(modeKey) || 'open'
+  const raw = Number(ENTRY_FEE_BY_MODE[normalized] ?? ENTRY_FEE_BY_MODE.open)
+  return Math.max(0, Math.floor(raw))
+}
+
 function getTierEntryFee (tierKey) {
   const normalized = normalizeTierKey(tierKey)
   const raw = Number(ENTRY_FEE_BY_TIER[normalized] ?? ENTRY_FEE_BY_TIER.starter)
@@ -448,13 +458,13 @@ function buildBuyCarShopCard (balance) {
 
   for (const key of TIER_ORDER) {
     const tier = CAR_TIERS[key]
-    const entry = getTierEntryFee(key)
+    const entry = getModeEntryFee('open')
     const repair = getTierRepairCostPerPoint(key)
     const value = estimateTierValueMetrics(key)
 
     lines.push(`${tier.livery} ${key.toUpperCase()} — ${fmtMoney(tier.price)}`)
     lines.push(`${TIER_PITCH[key]}`)
-    lines.push(`Race costs: entry ${fmtMoney(entry)} · repair ${fmtMoney(repair)}/1% wear`)
+    lines.push(`Race costs: OPEN entry ${fmtMoney(entry)} · repair ${fmtMoney(repair)}/1% wear`)
     lines.push(`Projected return/race (OPEN): ${fmtMoney(value.expectedNetPerRace)}`)
     lines.push(`Approx break-even (OPEN): ${value.breakEvenLabel}`)
     lines.push('')
@@ -494,7 +504,7 @@ function tierBaseStrength (tierKey) {
 
 function estimateTierValueMetrics (tierKey) {
   const key = normalizeTierKey(tierKey)
-  const entry = getTierEntryFee(key)
+  const entry = getModeEntryFee('open')
   const repairPerPoint = getTierRepairCostPerPoint(key)
   const wearMultByTier = {
     starter: 1.00,
@@ -510,10 +520,8 @@ function estimateTierValueMetrics (tierKey) {
   const totalStrength = Math.max(1, adjusted.reduce((sum, n) => sum + n, 0))
 
   // OPEN-mode baseline for shop guidance.
-  const avgEntry = Math.floor(TIER_ORDER.reduce((sum, t) => sum + getTierEntryFee(t), 0) / Math.max(1, TIER_ORDER.length))
   const fieldSize = Math.max(6, MIN_FIELD)
-  const feePool = Math.floor(avgEntry * fieldSize * (1 - (HOUSE_RAKE_PCT / 100)))
-  const pool = feePool + getModeGuaranteedPurse('open')
+  const pool = getModeGuaranteedPurse('open')
   const payoutWeights = PRIZE_SPLIT_BY_MODE.open
   const payoutMass = payoutWeights.reduce((sum, w) => sum + Number(w || 0), 0) / 100
 
@@ -1621,12 +1629,8 @@ export async function startF1Race (modeArg = 'open') {
       `🏎️ **${modeConfig.label} GRAND PRIX STARTING!** Owners: type your car’s exact name in the next ${ENTRY_MS / 1000}s to enter.\n` +
       `${raceModeSummary(normalizedMode)}\n` +
       `${normalizedMode === 'elite' ? 'Elite balance: HYPER gets a small pace bump; LEGENDARY gets a small pace trim.\n' : ''}` +
-      `Guaranteed purse floor (${modeConfig.label}): ${fmtMoney(getModeGuaranteedPurse(normalizedMode))}\n` +
-      'Tier entry fees (charged at lock-in):\n' +
-      `• STARTER: ${fmtMoney(getTierEntryFee('starter'))}\n` +
-      `• PRO: ${fmtMoney(getTierEntryFee('pro'))}\n` +
-      `• HYPER: ${fmtMoney(getTierEntryFee('hyper'))}\n` +
-      `• LEGENDARY: ${fmtMoney(getTierEntryFee('legendary'))}\n` +
+      `Fixed prize pool (${modeConfig.label}): ${fmtMoney(getModeGuaranteedPurse(normalizedMode))}\n` +
+      `Entry fee (${modeConfig.label}): ${fmtMoney(getModeEntryFee(normalizedMode))} per car\n` +
       'Garage upkeep per extra active car (charged on entry):\n' +
       `• STARTER: ${fmtMoney(getGarageUpkeepPerExtraCar('starter'))}\n` +
       `• PRO: ${fmtMoney(getGarageUpkeepPerExtraCar('pro'))}\n` +
@@ -1794,13 +1798,13 @@ async function lockEntriesAndOpenStrategy () {
     const targetFieldSize = lockedRaceType === 'drag' ? DRAG_FIELD_SIZE : MIN_FIELD
     const need = Math.max(0, targetFieldSize - enteredCars.length)
 
-    // Charge tier-based entry fees now
+    // Charge fixed race-tier entry fees now
     const filtered = []
     let totalEntryGross = 0
     for (const c of enteredCars) {
       const ownerId = c.ownerId
       const tierKey = normalizeTierKey(c.tier)
-      const entryFee = lockedRaceType === 'drag' ? 0 : getTierEntryFee(tierKey)
+      const entryFee = lockedRaceType === 'drag' ? 0 : getModeEntryFee(lockedRaceMode)
       const ownerCars = await safeCall(getUserCars, [ownerId]).catch(() => [])
       const activeOwnedCars = Array.isArray(ownerCars)
         ? ownerCars.filter(car => !car?.retired).length
@@ -1823,7 +1827,7 @@ async function lockEntriesAndOpenStrategy () {
         ownerId,
         entryFee + upkeepFee,
         'race_entry',
-        `${lockedRaceMode} ${tierKey} race entry`,
+        `${lockedRaceMode} race entry`,
         bal
       ]).catch(() => ({ ok: false }))
       if (!chargeResult?.ok) {
@@ -1988,14 +1992,25 @@ async function startRaceRun () {
           const guaranteed = getDragGuaranteedPurse(lockedDragTier || 'starter')
           return { gross, rake, fromFees, guaranteed, net: fromFees + guaranteed }
         })()
-      : prizePoolFromGrossFees(lockedEntryGross, lockedRaceMode)
-    const { gross, rake, fromFees, guaranteed, net } = prizeBreakdown
+      : (() => {
+          const gross = Math.max(0, Math.floor(Number(lockedEntryGross || 0)))
+          const rake = Math.floor(gross * (HOUSE_RAKE_PCT / 100))
+          const fromFees = Math.max(0, gross - rake)
+          const guaranteed = getModeGuaranteedPurse(lockedRaceMode)
+          return { gross, rake, fromFees, guaranteed, net: guaranteed }
+        })()
+    const gross = prizeBreakdown.gross
+    const rake = prizeBreakdown.rake
+    const fromFees = prizeBreakdown.fromFees
+    const guaranteed = prizeBreakdown.guaranteed
+    const net = prizeBreakdown.net
     const poleWinnerOwnerId = field[0]?.ownerId || null
 
     await postMessage({
       room: ROOM,
       message:
-        `💰 Prize Pool: ${fmtMoney(net)} (fees ${fmtMoney(fromFees)} + floor ${fmtMoney(guaranteed)}; rake ${fmtMoney(rake)} from ${fmtMoney(gross)} gross fees)` +
+        `💰 Prize Pool: ${fmtMoney(net)} (fixed ${String(lockedRaceMode || 'open').toUpperCase()} purse)` +
+        `${lockedRaceType !== 'drag' ? `\nEntry fees collected: ${fmtMoney(gross)} · Rake: ${fmtMoney(rake)} · Net fees retained: ${fmtMoney(fromFees)}` : ''}` +
         `${lockedRaceType === 'drag' ? `\nTier: ${String(lockedDragTier || '').toUpperCase()} · Winner takes all.` : ''}`
     })
     await DELAY(500)
@@ -2047,6 +2062,7 @@ async function startRaceRun () {
       raceMode: lockedRaceMode,
       prizePool: net,
       payoutPlan: lockedPayoutPlan,
+      humanEntrants: field.filter(car => car?.ownerId).length,
       poleBonus: lockedRaceType === 'drag' ? 0 : POLE_BONUS,
       fastestLapBonus: lockedRaceType === 'drag' ? 0 : FASTEST_LAP_BONUS,
       poleWinnerOwnerId,

@@ -29,15 +29,6 @@ const MODE_MULT = { push: 1.020, norm: 1.000, save: 0.988 }
 const MODE_WEAR = { push: 8, norm: 5, save: 3 }
 const MODE_DNF = { push: 0.010, norm: 0.005, save: 0.0025 }
 const TIER_WEAR_MULT = { starter: 1.00, pro: 0.94, hyper: 0.82, legendary: 0.70 }
-const ENTRY_FEE_BY_TIER = {
-  starter: env.f1EntryFeeStarter,
-  pro: env.f1EntryFeePro,
-  hyper: env.f1EntryFeeHyper,
-  legendary: env.f1EntryFeeLegendary
-}
-const ELITE_FOURTH_PLACE_BONUS_OVER_ENTRY = 750
-const ELITE_FIFTH_PLACE_BUFFER_UNDER_ENTRY = 750
-
 const DELAY = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
 function rand () { return Math.random() }
@@ -67,29 +58,9 @@ function normalizeTierKey (tierKey) {
   return Object.prototype.hasOwnProperty.call(TIER_WEAR_MULT, key) ? key : 'starter'
 }
 
-function getEntryFeeForCar (car) {
-  const tier = normalizeTierKey(car?.tier)
-  return Math.max(0, Math.floor(Number(ENTRY_FEE_BY_TIER[tier] ?? 0)))
-}
-
-function adjustPlacePayout (car, place, baseAmt, raceMode = 'open', raceType = 'gp') {
+function adjustPlacePayout (car, place, baseAmt, humanEntrants = 0, raceMode = 'open', raceType = 'gp') {
   const amt = Math.max(0, Math.floor(Number(baseAmt || 0)))
   if (amt <= 0) return 0
-  if (String(raceType || 'gp').toLowerCase() !== 'gp') return amt
-  if (String(raceMode || 'open').toLowerCase() !== 'elite') return amt
-  if (!car?.ownerId) return amt
-
-  const entryFee = getEntryFeeForCar(car)
-  if (entryFee <= 0) return amt
-
-  if (Number(place) === 3) {
-    return Math.min(amt, entryFee + ELITE_FOURTH_PLACE_BONUS_OVER_ENTRY)
-  }
-
-  if (Number(place) === 4) {
-    return Math.min(amt, Math.max(0, entryFee - ELITE_FIFTH_PLACE_BUFFER_UNDER_ENTRY))
-  }
-
   return amt
 }
 
@@ -253,6 +224,7 @@ export async function runRace ({
   raceMode = 'open',
   prizePool,
   payoutPlan,
+  humanEntrants = 0,
   poleBonus = 0,
   fastestLapBonus = 0,
   poleWinnerOwnerId = null,
@@ -464,7 +436,7 @@ export async function runRace ({
     const car = cars[idx]
     const baseWeight = Number(payoutPlan?.[place] ?? 0)
     const baseAmt = Math.floor(Number(prizePool || 0) * (baseWeight / 100))
-    const amt = adjustPlacePayout(car, place, baseAmt, raceMode, raceKind)
+    const amt = adjustPlacePayout(car, place, baseAmt, humanEntrants, raceMode, raceKind)
     if (amt <= 0 || !car?.ownerId) continue
 
     payouts[car.ownerId] = (payouts[car.ownerId] || 0) + amt
