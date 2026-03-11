@@ -49,7 +49,7 @@ function normalizeEntrant (entrant = {}) {
 function splitPurse (purse, percentages = []) {
   const totalPurse = Math.max(0, Math.floor(Number(purse || 0)))
   const normalized = (percentages || []).map((pct) => Math.max(0, Number(pct || 0)))
-  const payouts = normalized.map((pct) => Math.floor(totalPurse * (pct / 100)))
+  const payouts = normalized.map((pct) => Math.floor((totalPurse * (pct / 100)) + 1e-6))
   const distributed = payouts.reduce((sum, amount) => sum + amount, 0)
   const remainder = Math.max(0, totalPurse - distributed)
   if (payouts.length > 0 && remainder > 0) payouts[0] += remainder

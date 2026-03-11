@@ -1667,11 +1667,11 @@ export async function startF1Race (tierArg = 'starter') {
   await safeCall(postMessage, [{
     room: ROOM,
     message:
-      `🏎️ **${getF1RaceLabel(raceTier).toUpperCase()} STARTING!** Owners: type your car’s exact name in the next ${ENTRY_MS / 1000}s to enter.\n` +
-      `Track: **${lockedTrack?.emoji || '🏁'} ${lockedTrack?.name || 'Balanced GP'}**\n` +
-      `${raceTierSummary(raceTier)}\n` +
-      `Field size: ${GP_STANDARD_FIELD_SIZE} cars\n` +
-      'Empty grid spots are filled by house bots. If no owners enter, the house still runs the race.'
+      `🏎️ **${getF1RaceLabel(raceTier).toUpperCase()}**\n` +
+      `${lockedTrack?.emoji || '🏁'} **${lockedTrack?.name || 'Balanced GP'}**\n` +
+      `Entry: **${fmtMoney(getTierEntryFee(raceTier))}** · Purse: **${fmtMoney(calculateRacePurse({ entryFee: getTierEntryFee(raceTier), fieldSize: GP_STANDARD_FIELD_SIZE }).purse)}** · Field: **${GP_STANDARD_FIELD_SIZE}**\n` +
+      `Payouts: **P1-P5**\n` +
+      `Owners: type your car’s exact name in the next **${ENTRY_MS / 1000}s** to enter.`
   }])
 
   if (avail.length) {

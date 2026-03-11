@@ -132,11 +132,9 @@ async function postGrandPrixResults ({
   const lines = [`🏁 ${raceLabel} Results`, '']
 
   for (const placement of placements) {
-    const owner = placement.isBot
-      ? 'Bot'
-      : (placement.ownerName || 'Unknown')
+    const owner = placement.isBot ? '' : ` (${placement.ownerName || 'Unknown'})`
     const payoutText = placement.payout > 0 ? ` — ${fmtMoney(placement.payout)}` : ''
-    lines.push(`${placement.finishPosition}. ${placement.carName} (${owner})${payoutText}`)
+    lines.push(`${placement.finishPosition}. ${placement.carName}${owner}${payoutText}`)
   }
 
   lines.push('')

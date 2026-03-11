@@ -44,8 +44,8 @@ export const F1_CAR_TIERS = {
 export const F1_RACE_SETTINGS = {
   minEntrants: 0,
   standardFieldSize: 8,
-  purseMultiplier: 1.25,
-  payoutPercentages: [35, 24, 17, 14, 10]
+  purseMultiplier: 1.5625,
+  payoutPercentages: [38, 25.2, 17.6, 11.2, 8]
 }
 
 export function normalizeF1Tier (tierKey) {
