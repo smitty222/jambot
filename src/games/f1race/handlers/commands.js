@@ -639,6 +639,19 @@ function formatOdds (dec) {
   return dec.toFixed(2)
 }
 
+function seedRaceField (cars = [], track, raceType) {
+  return cars.map((c) => {
+    const bestTrack = (raceType === 'drag') ? null : getBestTrackForCar(c)
+    const ownerBonus = c?.ownerId ? OWNER_GRID_BONUS : 0
+    const trackFitBonus = (c?.ownerId && track?.key && bestTrack?.key === track.key) ? 0.012 : 0
+    const bias = raceType === 'drag'
+      ? ((Number(c.power || 50) * 1.7 + Number(c.tire || 50) + Number(c.aero || 50)) / 370)
+      : ((Number(c.handling || 50) + Number(c.aero || 50)) / 200)
+    const roll = Math.random() * 0.12
+    return { c, q: roll + bias * 0.08 + ownerBonus + trackFitBonus }
+  }).sort((a, b) => b.q - a.q).map(x => x.c)
+}
+
 // ── Team generation ────────────────────────────────────────────────────
 function generateTeamIdentity () {
   const BADGES = ['🟥', '🟦', '🟩', '🟨', '🟪', '⬛', '⬜', '🟧', '🟫', '🔺', '🔷', '⭐']
@@ -2001,8 +2014,15 @@ async function lockEntriesAndOpenStrategy () {
       lockedEntryGross = prepared.entryCharges.reduce((sum, row) => sum + Number(row.amount || 0), 0)
     }
 
-    // ✅ lock track + odds for the betting window (transparent, fair)
-    lockedTrack = (lockedRaceType === 'drag') ? pickDragTrack() : pickTrack()
+    // Keep the announced GP track locked through betting and race start.
+    // Drag does not announce a track during entry, so it can be selected here.
+    lockedTrack = (lockedRaceType === 'drag')
+      ? (lockedTrack || pickDragTrack())
+      : (lockedTrack || pickTrack())
+
+    // Lock the actual starting grid before betting so slot order and odds
+    // reflect the field that will race.
+    field = seedRaceField(field, lockedTrack, lockedRaceType)
 
     const strengths0 = field.map(c => computeStrength(c, lockedTrack))
     lockedOddsDec = oddsFromStrengths(strengths0, field)
@@ -2049,20 +2069,6 @@ async function startRaceRun () {
   try {
     isRunning = true
     const track = lockedTrack || (lockedRaceType === 'drag' ? pickDragTrack() : pickTrack())
-
-    // Official grid with slight bias (handling+aero)
-    const seeded = field.map((c) => {
-      const bestTrack = (lockedRaceType === 'drag') ? null : getBestTrackForCar(c)
-      const ownerBonus = c?.ownerId ? OWNER_GRID_BONUS : 0
-      const trackFitBonus = (c?.ownerId && track?.key && bestTrack?.key === track.key) ? 0.012 : 0
-      const bias = lockedRaceType === 'drag'
-        ? ((Number(c.power || 50) * 1.7 + Number(c.tire || 50) + Number(c.aero || 50)) / 370)
-        : ((Number(c.handling || 50) + Number(c.aero || 50)) / 200)
-      const roll = Math.random() * 0.12
-      return { c, q: roll + bias * 0.08 + ownerBonus + trackFitBonus }
-    }).sort((a, b) => b.q - a.q).map(x => x.c)
-
-    field = seeded
 
     if (lockedRaceType === 'drag') {
       const prizeBreakdown = (() => {
