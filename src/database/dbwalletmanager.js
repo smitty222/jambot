@@ -836,7 +836,7 @@ const MONTHLY_FILTERS = {
     label: 'Monthly F1 Net'
   },
   monthlygamblers: {
-    where: "source IN ('slots', 'roulette', 'horse_race', 'f1')",
+    where: "(source IN ('slots', 'roulette', 'horse_race') OR (source = 'f1' AND category IN ('bet', 'bet_win')))",
     order: 'total DESC, eventCount DESC, userUUID ASC',
     label: 'Monthly Gambling Net'
   }
