@@ -66,7 +66,7 @@ function generateBotName (usedLower = new Set()) {
 function createBotCar (tierKey, usedNames = new Set()) {
   const normalizedTier = normalizeF1Tier(tierKey) || 'starter'
   const tier = F1_CAR_TIERS[normalizedTier] || F1_CAR_TIERS.starter
-  const statJitter = (base) => clamp(Number(base || 50) + rint(-3, 3), 38, 94)
+  const statJitter = (base) => clamp(Number(base || 50) - 1 + rint(-3, 2), 38, 93)
   const name = generateBotName(usedNames)
 
   return {

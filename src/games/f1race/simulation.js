@@ -2,7 +2,7 @@
 
 import { bus, safeCall } from './service.js'
 import { updateCarAfterRaceResult } from '../../database/dbcars.js'
-import { stat01 } from './utils/track.js'
+import { stat01, getBestTrackForCar } from './utils/track.js'
 
 export const LEGS = 6
 const DRAG_LEGS = 4
@@ -20,6 +20,8 @@ const STANDARD_MODE_MULT = 1.000
 const STANDARD_MODE_WEAR = 5
 const STANDARD_MODE_DNF = 0.005
 const TIER_WEAR_MULT = { starter: 1.00, pro: 0.94, hyper: 0.82, legendary: 0.70 }
+const OWNER_TRACK_FIT_BONUS = 0.018
+const GP_GRID_START_STEP = 0.0011
 const DELAY = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
 function rand () { return Math.random() }
@@ -69,12 +71,16 @@ function computePaceScalar (car, track, legIndex) {
     w.tire * tire +
     w.reliability * reliability
 
+  const trackFitBonus = (car?.ownerId && track?.key && getBestTrackForCar(car)?.key === track.key)
+    ? (1 + OWNER_TRACK_FIT_BONUS)
+    : 1
+
   const wear = Math.max(0, Math.min(100, Number(car.wear || 0)))
   const wearPenalty = (wear / 100) * 0.10
 
   const tireDrop = STANDARD_TIRE_DEG * legIndex
 
-  const mapped = 0.97 + base * 0.095
+  const mapped = 0.97 + (base * trackFitBonus) * 0.095
   return Math.max(0.90, Math.min(1.12, (mapped * (STANDARD_TIRE_START - tireDrop) * (1 - wearPenalty) * STANDARD_MODE_MULT)))
 }
 
@@ -190,7 +196,7 @@ export async function runRace ({
     ownerId: c.ownerId || null,
     label: c.label,
     teamLabel: c.teamLabel || '—',
-    progress: 0,
+    progress: raceKind === 'drag' ? 0 : Math.max(0, (cars.length - 1 - idx) * GP_GRID_START_STEP),
     lastDelta: 0,
     dnf: false,
     dnfReason: null,

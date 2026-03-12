@@ -52,6 +52,7 @@ import {
 import {
   pickTrack,
   pickDragTrack,
+  getBestTrackForCar,
   getTrackPreferenceDetails
 } from '../utils/track.js'
 import { renderGrid, renderRaceProgress, renderDragProgress, fmtMoney } from '../utils/render.js'
@@ -109,6 +110,8 @@ const BET_MAX_BY_MODE = {
   hyper: Math.min(BET_MAX, 7000),
   legendary: BET_MAX
 }
+const OWNER_TRACK_FIT_BONUS = 0.018
+const OWNER_GRID_BONUS = 0.010
 
 const TIER_PITCH = {
   starter: 'Great first car. Cheap entry and repair costs.',
@@ -588,6 +591,10 @@ function computeStrength (car, track) {
   // wear penalty
   const wear = Math.max(0, Math.min(100, Number(car.wear || 0)))
   base *= (1 - (wear / 100) * 0.08) // up to -8%
+
+  if (car?.ownerId && track?.key && getBestTrackForCar(car)?.key === track.key) {
+    base *= (1 + OWNER_TRACK_FIT_BONUS)
+  }
 
   return Math.max(0.001, base)
 }
@@ -1949,7 +1956,7 @@ async function lockEntriesAndOpenStrategy () {
 
       const dragTier = normalizeTierKey(lockedDragTier || 'starter')
       const base = F1_CAR_TIERS[dragTier]?.base || F1_CAR_TIERS.starter.base
-      const jitterDrag = (x) => clamp(Number(x || 50) + rint(-2, 2), 38, 94)
+      const jitterDrag = (x) => clamp(Number(x || 50) - 1 + rint(-2, 1), 38, 93)
       const need = Math.max(0, DRAG_FIELD_SIZE - enteredCars.length)
       for (let i = 0; i < need; i++) {
         const name = generateCarName(used)
@@ -2045,11 +2052,14 @@ async function startRaceRun () {
 
     // Official grid with slight bias (handling+aero)
     const seeded = field.map((c) => {
+      const bestTrack = (lockedRaceType === 'drag') ? null : getBestTrackForCar(c)
+      const ownerBonus = c?.ownerId ? OWNER_GRID_BONUS : 0
+      const trackFitBonus = (c?.ownerId && track?.key && bestTrack?.key === track.key) ? 0.012 : 0
       const bias = lockedRaceType === 'drag'
         ? ((Number(c.power || 50) * 1.7 + Number(c.tire || 50) + Number(c.aero || 50)) / 370)
         : ((Number(c.handling || 50) + Number(c.aero || 50)) / 200)
       const roll = Math.random() * 0.12
-      return { c, q: roll + bias * 0.08 }
+      return { c, q: roll + bias * 0.08 + ownerBonus + trackFitBonus }
     }).sort((a, b) => b.q - a.q).map(x => x.c)
 
     field = seeded
