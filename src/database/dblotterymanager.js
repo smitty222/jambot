@@ -7,6 +7,7 @@ import { getUserNickname } from '../utils/nickname.js'
 // Helpers to work with mentions and display names
 import { sanitizeNickname, formatMention, getDisplayName } from '../utils/names.js'
 import { addToUserWallet, getUserWallet, removeFromUserWallet } from '../database/dbwalletmanager.js'
+import { syncLotteryPrestige } from './dbprestige.js'
 import { findUserIdAndNickname } from '../database/dblotteryquestionparser.js'
 import { storeItems } from '../libs/jamflowStore.js'
 
@@ -160,6 +161,7 @@ async function drawWinningNumber () {
         INSERT INTO lottery_winners (userId, nickname, displayName, winningNumber, amountWon, timestamp)
         VALUES (?, ?, ?, ?, ?, datetime('now'))
       `).run(userId, mention, displayName, winningNumber, LOTTERY_WIN_AMOUNT)
+      syncLotteryPrestige({ userUUID: userId })
 
       // Compose a message using the mention syntax for the chat
       message += `\n ${mention} wins $${LOTTERY_WIN_AMOUNT.toLocaleString()}!`

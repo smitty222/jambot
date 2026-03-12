@@ -1,22 +1,34 @@
 import db from './db.js'
 
 const BADGE_DEFS = {
-  dj_streak_3: { label: 'Warm Deck', description: 'Hit a 3-song DJ streak.', emoji: '🎚️' },
-  dj_streak_5: { label: 'Room Favorite', description: 'Hit a 5-song DJ streak.', emoji: '🎧' },
-  dj_streak_8: { label: 'Selector Supreme', description: 'Hit an 8-song DJ streak.', emoji: '📀' },
-  dj_streak_12: { label: 'Legendary Crate', description: 'Hit a 12-song DJ streak.', emoji: '🏆' },
-  monthly_earner_1: { label: 'Money Machine', description: 'Finished #1 in monthly net gain.', emoji: '💸' },
-  monthly_dj_1: { label: 'Monthly Headliner', description: 'Finished #1 in monthly DJ earnings.', emoji: '🎤' },
-  monthly_f1_1: { label: 'Grid Boss', description: 'Finished #1 in monthly F1 net.', emoji: '🏎️' },
-  monthly_gambler_1: { label: 'Heat Check', description: 'Finished #1 in monthly gambling net.', emoji: '🎲' }
+  dj_streak_3: { label: 'Needle Drop', description: 'Hit a 3-song DJ streak.', emoji: '🎚️' },
+  dj_streak_5: { label: 'Crowd Mover', description: 'Hit a 5-song DJ streak.', emoji: '🎧' },
+  dj_streak_8: { label: 'Selector Elite', description: 'Hit an 8-song DJ streak.', emoji: '📀' },
+  dj_streak_12: { label: 'Crate Monarch', description: 'Hit a 12-song DJ streak.', emoji: '🏆' },
+  monthly_earner_1: { label: 'Money Monarch', description: 'Finished #1 in monthly net gain.', emoji: '💸' },
+  monthly_dj_1: { label: 'Headliner', description: 'Finished #1 in monthly DJ earnings.', emoji: '🎤' },
+  monthly_f1_1: { label: 'Pole King', description: 'Finished #1 in monthly F1 net.', emoji: '🏎️' },
+  monthly_gambler_1: { label: 'Table Tyrant', description: 'Finished #1 in monthly gambling net.', emoji: '🎲' },
+  slots_bonus_hunter: { label: 'Bonus Hunter', description: 'Triggered a slots jackpot bonus round.', emoji: '💎' },
+  slots_feature_hunter: { label: 'Feature Hunter', description: 'Unlocked slots free spins.', emoji: '🎟️' },
+  slots_jackpot_bite: { label: 'Jackpot Bite', description: 'Collected a slice of the slots jackpot.', emoji: '💰' },
+  slots_collector: { label: 'Reel Collector', description: 'Completed a slots collection reward.', emoji: '🧰' },
+  horse_first_winner: { label: 'First Across', description: 'Owned a horse that won a race.', emoji: '🏇' },
+  horse_stable_star: { label: 'Stable Star', description: 'Reached 5 career wins across your horses.', emoji: '🌟' },
+  horse_cash_ticket: { label: 'Cash Ticket', description: 'Hit a big horse-race payout.', emoji: '🎫' },
+  bj_first_blackjack: { label: 'Natural Twenty-One', description: 'Hit a natural blackjack.', emoji: '🂡' },
+  bj_double_down: { label: 'Double Down Hero', description: 'Won a doubled blackjack hand.', emoji: '🎴' },
+  bj_big_hand: { label: 'Big Hand', description: 'Won a big blackjack payout.', emoji: '♠️' },
+  lottery_first_hit: { label: 'Lucky Number', description: 'Won the lottery for the first time.', emoji: '🎱' },
+  lottery_repeat_winner: { label: 'Loaded Dice', description: 'Won the lottery 3 times.', emoji: '🍀' }
 }
 
 const TITLE_DEFS = {
-  room_favorite: { label: 'Room Favorite', description: 'Monthly top DJ title.', emoji: '🎤' },
-  high_roller: { label: 'High Roller', description: 'Monthly top gambler title.', emoji: '🎲' },
-  grid_king: { label: 'Grid King', description: 'Monthly top F1 title.', emoji: '🏁' },
-  money_machine: { label: 'Money Machine', description: 'Monthly top net-gain title.', emoji: '💸' },
-  crate_legend: { label: 'Crate Legend', description: 'Earned from a 12-song DJ streak.', emoji: '📀' }
+  room_favorite: { label: 'Headliner', description: 'Monthly top DJ title.', emoji: '🎤' },
+  high_roller: { label: 'Table Tyrant', description: 'Monthly top gambler title.', emoji: '🎲' },
+  grid_king: { label: 'Pole King', description: 'Monthly top F1 title.', emoji: '🏁' },
+  money_machine: { label: 'Money Monarch', description: 'Monthly top net-gain title.', emoji: '💸' },
+  crate_legend: { label: 'Crate Monarch', description: 'Earned from a 12-song DJ streak.', emoji: '📀' }
 }
 
 const MONTHLY_PRESTIGE = {
@@ -250,4 +262,102 @@ export function syncMonthlyPrestigeAwards (leaderboardType, rows = [], monthKey 
   })
 
   return [config.badgeKey, config.titleKey]
+}
+
+function getHorseOwnerWinCount (ownerId) {
+  if (!ownerId) return 0
+  const row = db.prepare(`
+    SELECT COALESCE(SUM(wins), 0) AS totalWins
+    FROM horses
+    WHERE ownerId = ?
+  `).get(String(ownerId))
+  return Number(row?.totalWins || 0)
+}
+
+function getLotteryWinCount (userUUID) {
+  if (!userUUID) return 0
+  const row = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM lottery_winners
+    WHERE userId = ?
+  `).get(String(userUUID))
+  return Number(row?.total || 0)
+}
+
+export function syncSlotsPrestige ({ userUUID, bonusTriggered = false, featureTriggered = false, jackpotWon = 0, collectionRewardTotal = 0 } = {}) {
+  if (!userUUID) return []
+  const awarded = []
+
+  if (bonusTriggered) awarded.push('slots_bonus_hunter')
+  if (featureTriggered) awarded.push('slots_feature_hunter')
+  if (Number(jackpotWon || 0) > 0) awarded.push('slots_jackpot_bite')
+  if (Number(collectionRewardTotal || 0) > 0) awarded.push('slots_collector')
+
+  for (const badgeKey of awarded) {
+    awardBadge(userUUID, badgeKey, { source: 'slots' })
+  }
+
+  return awarded
+}
+
+export function syncHorsePrestige ({ ownerId = null, payoutEntries = [] } = {}) {
+  const awarded = []
+
+  if (ownerId) {
+    const totalWins = getHorseOwnerWinCount(ownerId)
+    if (totalWins >= 1) {
+      awardBadge(ownerId, 'horse_first_winner', { source: 'horse_race', meta: { totalWins } })
+      awarded.push('horse_first_winner')
+    }
+    if (totalWins >= 5) {
+      awardBadge(ownerId, 'horse_stable_star', { source: 'horse_race', meta: { totalWins } })
+      awarded.push('horse_stable_star')
+    }
+  }
+
+  for (const entry of Array.isArray(payoutEntries) ? payoutEntries : []) {
+    const userUUID = entry?.userUUID
+    const amount = Number(entry?.amount || 0)
+    if (userUUID && amount >= 1000) {
+      awardBadge(userUUID, 'horse_cash_ticket', {
+        source: 'horse_race',
+        meta: { payout: amount }
+      })
+      awarded.push('horse_cash_ticket')
+    }
+  }
+
+  return awarded
+}
+
+export function syncBlackjackPrestige ({ userUUID, isNaturalBlackjack = false, doubledWin = false, profit = 0 } = {}) {
+  if (!userUUID) return []
+  const awarded = []
+
+  if (isNaturalBlackjack) awarded.push('bj_first_blackjack')
+  if (doubledWin) awarded.push('bj_double_down')
+  if (Number(profit || 0) >= 500) awarded.push('bj_big_hand')
+
+  for (const badgeKey of awarded) {
+    awardBadge(userUUID, badgeKey, { source: 'blackjack', meta: { profit: Number(profit || 0) } })
+  }
+
+  return awarded
+}
+
+export function syncLotteryPrestige ({ userUUID } = {}) {
+  if (!userUUID) return []
+  const totalWins = getLotteryWinCount(userUUID)
+  const awarded = []
+
+  if (totalWins >= 1) {
+    awardBadge(userUUID, 'lottery_first_hit', { source: 'lottery', meta: { totalWins } })
+    awarded.push('lottery_first_hit')
+  }
+  if (totalWins >= 3) {
+    awardBadge(userUUID, 'lottery_repeat_winner', { source: 'lottery', meta: { totalWins } })
+    awarded.push('lottery_repeat_winner')
+  }
+
+  return awarded
 }

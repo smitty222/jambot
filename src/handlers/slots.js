@@ -4,6 +4,7 @@ import {
   syncWalletBalanceFromDb
 } from '../database/dbwalletmanager.js'
 import db from '../database/db.js'
+import { syncSlotsPrestige } from '../database/dbprestige.js'
 import { createSlotsPersistence } from './slotsPersistence.js'
 import { createSlotsStateHelpers } from './slotsState.js'
 
@@ -364,6 +365,8 @@ async function spinBonusOnce (userUUID) {
   lines.push(`🪙 BALANCE: $${formatBalance(balance)}`)
   lines.push(`💰 JACKPOT NOW: $${formatMoney(newJackpot)}`)
 
+  syncSlotsPrestige({ userUUID, jackpotWon })
+
   return lines.join('\n')
 }
 
@@ -527,6 +530,7 @@ async function spinFeatureOnce (userUUID) {
   }
 
   if (triggeredBonusFromFeature) {
+    syncSlotsPrestige({ userUUID, bonusTriggered: true })
     return [
       renderSlot(result[0], result[1], result[2], `🎟️ FREE SPIN ${spinNumber}/${spinsTotal}`),
       '\n🚨 💎💎💎 JACKPOT BONUS TRIGGERED (FROM FREE SPINS) 💎💎💎 🚨',
@@ -795,6 +799,12 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
 
     settleSpinTx()
     balance = syncWalletBalanceFromDb(userUUID)
+    syncSlotsPrestige({
+      userUUID,
+      bonusTriggered: bonusTriggeredThisPlay,
+      featureTriggered: featureTriggeredThisPlay,
+      collectionRewardTotal: collection.rewardTotal
+    })
 
     const didWin = totalWinnings > 0
     const resultLine = didWin

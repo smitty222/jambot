@@ -195,12 +195,16 @@ export const COMMAND_GUIDES = {
     '- `/monthlydj [count]`',
     '- `/monthlyf1 [count]`',
     '- `/monthlygamblers [count]`',
+    '',
+    'Prestige',
     '- `/djstreak`',
     '- `/badges`',
     '- `/titles`',
     '- `/title equip <key>`',
     '- `/title clear`',
     '- `/profile`',
+    '',
+    'Transfers & checks',
     '- `/getwallet`',
     '- `/checkbalance <@user>`',
     '- `/tip <@user> <amount>`',
@@ -330,8 +334,19 @@ export function createRoomUtilityHandlers (deps = {}) {
         '- `/score` — Spotify popularity score',
         '- `/reviewhelp` — How to review songs',
         '- `/bankroll` — Wallet leaderboard',
+        '- `/badges` — See your unlocked badges',
+        '- `/monthly` — Monthly leaderboard',
         '- `/suggestsongs` — Song suggestions',
         '- `/store` — Buyable novelty commands'
+      ].join('\n'))
+
+      sections.push([
+        '— Prestige & Leaderboards —',
+        '- `/commands wallet` or `/wallet` — Wallet, leaderboards, badges, and titles',
+        '- `/monthly` `/monthlydj` `/monthlyf1` `/monthlygamblers` — Monthly boards',
+        '- `/bankroll` `/topnetworth` — Top money boards',
+        '- `/djstreak` `/badges` `/titles` `/profile` — Prestige progress',
+        '- `/title equip <key>` — Equip a title you own'
       ].join('\n'))
 
       sections.push([

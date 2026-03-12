@@ -2,6 +2,7 @@
 
 import { postMessage } from '../../../libs/cometchat.js'
 import { getUserWallet, debitGameBet } from '../../../database/dbwalletmanager.js'
+import { syncHorsePrestige } from '../../../database/dbprestige.js'
 import { getUserNickname } from '../../../utils/nickname.js'
 import { getAllHorses, getUserHorses, setHorseImageUrl } from '../../../database/dbhorses.js'
 import { fetchCurrentUsers } from '../../../utils/API.js'
@@ -762,6 +763,14 @@ if (!globalThis[LISTENER_GUARD_KEY]) {
       const payoutEntries = payouts && typeof payouts === 'object'
         ? Object.entries(payouts).filter(([, amount]) => Number(amount) > 0)
         : []
+
+      syncHorsePrestige({
+        ownerId: winnerHorse?.ownerId || null,
+        payoutEntries: payoutEntries.map(([userUUID, amount]) => ({
+          userUUID,
+          amount: Number(amount || 0)
+        }))
+      })
 
       if (payoutEntries.length > 0) {
         await DELAY(RESULTS_PACING.payoutLineBeatMs)

@@ -128,14 +128,31 @@ export const PUBLIC_SITE_COMMAND_GROUPS = [
       '/monthlydj [count]',
       '/monthlyf1 [count]',
       '/monthlygamblers [count]',
+      '/profile',
+      '/djstreak',
+      '/badges',
+      '/titles',
+      '/title equip <key>',
+      '/title clear',
+      '/checkbalance <@user>',
+      '/tip <@user> <amount>'
+    ]
+  },
+  {
+    group: 'Prestige',
+    items: [
       '/djstreak',
       '/badges',
       '/titles',
       '/title equip <key>',
       '/title clear',
       '/profile',
-      '/checkbalance <@user>',
-      '/tip <@user> <amount>'
+      '/monthly [count]',
+      '/monthlydj [count]',
+      '/monthlyf1 [count]',
+      '/monthlygamblers [count]',
+      '/bankroll',
+      '/topnetworth'
     ]
   },
   {
