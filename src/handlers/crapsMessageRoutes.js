@@ -8,7 +8,7 @@ export async function routeCrapsChatMessage ({
 }) {
   if (
     /^\/craps\b/i.test(txt) ||
-    /^\/(roll|pass|dontpass|come|place|removeplace)\b/i.test(txt) ||
+    /^\/(roll|pass|dontpass|come|dontcome|place|removeplace|press|take|odds|layodds|working|bets|payouts)\b/i.test(txt) ||
     /^\/join\s+(craps|cr)\b/i.test(txt)
   ) {
     log('▶ dispatch → routeCrapsMessage')

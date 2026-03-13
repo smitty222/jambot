@@ -5,6 +5,7 @@ import { handleBotRandomAvatarCommand } from './avatarCommands.js'
 import {
   startHorseRace,
   handleHorseBet,
+  isHorseBettingOpen,
   isWaitingForEntries,
   handleHorseEntryAttempt,
   handleHorseHelpCommand,
@@ -39,6 +40,7 @@ import { handleLotteryNumber } from '../database/dblotterymanager.js'
 
 export const horseRouteHandlers = {
   isWaitingForEntries,
+  isHorseBettingOpen,
   handleHorseEntryAttempt,
   startHorseRace,
   handleHorseBet,

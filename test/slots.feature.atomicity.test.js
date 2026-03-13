@@ -40,6 +40,9 @@ function resetTestTables () {
   db.prepare('DROP TABLE IF EXISTS slot_collections').run()
   db.prepare('DROP TABLE IF EXISTS slot_jackpot_contributions').run()
   db.prepare('DROP TABLE IF EXISTS app_settings').run()
+  db.prepare('DROP TABLE IF EXISTS prestige_profiles').run()
+  db.prepare('DROP TABLE IF EXISTS prestige_titles').run()
+  db.prepare('DROP TABLE IF EXISTS prestige_badges').run()
 
   db.prepare(`
     CREATE TABLE users (
@@ -77,6 +80,38 @@ function resetTestTables () {
     CREATE TABLE app_settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
+    )
+  `).run()
+
+  db.prepare(`
+    CREATE TABLE prestige_badges (
+      userUUID TEXT NOT NULL,
+      badgeKey TEXT NOT NULL,
+      awardedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      source TEXT,
+      meta TEXT,
+      expiresAt TEXT,
+      PRIMARY KEY (userUUID, badgeKey)
+    )
+  `).run()
+
+  db.prepare(`
+    CREATE TABLE prestige_titles (
+      userUUID TEXT NOT NULL,
+      titleKey TEXT NOT NULL,
+      awardedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      source TEXT,
+      meta TEXT,
+      expiresAt TEXT,
+      PRIMARY KEY (userUUID, titleKey)
+    )
+  `).run()
+
+  db.prepare(`
+    CREATE TABLE prestige_profiles (
+      userUUID TEXT PRIMARY KEY,
+      equippedTitleKey TEXT,
+      updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
     )
   `).run()
 

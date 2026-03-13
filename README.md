@@ -61,6 +61,8 @@ Jambot relies on many environment variables to talk to external services. A samp
 
 Other variables configure optional features: Spotify credentials (`SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `SPOTIFY_REFRESH_TOKEN`), Genius and Last.fm tokens, odds API key for sports bets, site publishing schedule and many tunables controlling game timers, AI rate limits, logging and more.  See `src/config.js` for the full list and default values.  All required variables are validated at startup; missing secrets will cause the bot to exit with a helpful message.
 
+For user-scoped Spotify/queue commands, keep per-user TT Live tokens in environment variables such as `IAN_USER_TOKEN`, `SMITTY_USER_TOKEN`, `CAM_USER_TOKEN`, `GAB_USER_TOKEN` and `ALEX_USER_TOKEN`. These should be treated as secrets and must not be hardcoded in source control.
+
 ### Commands
 
 Slash commands trigger most of Jambot’s functionality. Commands are grouped roughly into:

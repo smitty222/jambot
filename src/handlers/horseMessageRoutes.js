@@ -8,6 +8,7 @@ export async function routeHorseMessage ({
 }) {
   const {
     isWaitingForEntries,
+    isHorseBettingOpen,
     handleHorseEntryAttempt,
     startHorseRace,
     handleHorseBet,
@@ -33,6 +34,7 @@ export async function routeHorseMessage ({
   }
 
   if (/^\/(?:horse|place|show|exacta|trifecta)\b/i.test(txt)) {
+    if (!isHorseBettingOpen()) return false
     log('▶ dispatch → handleHorseBet')
     await handleHorseBet(payload)
     return true

@@ -55,6 +55,74 @@ test('routeCrapsChatMessage routes craps slash commands', async () => {
   assert.deepEqual(routed, [{ message: '/roll', sender: 'user-2' }])
 })
 
+test('routeCrapsChatMessage routes new craps bet-management commands', async () => {
+  const routed = []
+
+  const handled = await routeCrapsChatMessage({
+    txt: '/odds pass 25',
+    payload: { message: '/odds pass 25', sender: 'user-2' },
+    routeCrapsMessage: async (payload) => routed.push(payload),
+    log: () => {}
+  })
+
+  assert.equal(handled, true)
+  assert.deepEqual(routed, [{ message: '/odds pass 25', sender: 'user-2' }])
+})
+
+test('routeHorseMessage does not swallow /place when horse betting is closed', async () => {
+  const betRecorder = createAsyncRecorder()
+
+  const handled = await routeHorseMessage({
+    txt: '/place 6 25',
+    payload: { message: '/place 6 25', sender: 'user-3' },
+    handlers: {
+      isWaitingForEntries: () => false,
+      isHorseBettingOpen: () => false,
+      handleHorseEntryAttempt: async () => {},
+      startHorseRace: async () => {},
+      handleHorseBet: betRecorder.fn,
+      handleBuyHorse: async () => {},
+      handleSellHorse: async () => {},
+      handleMyHorsesCommand: async () => {},
+      handleHorseHelpCommand: async () => {},
+      handleHorseStatsCommand: async () => {},
+      handleTopHorsesCommand: async () => {},
+      handleHofPlaqueCommand: async () => {}
+    },
+    log: () => {}
+  })
+
+  assert.equal(handled, false)
+  assert.deepEqual(betRecorder.calls, [])
+})
+
+test('routeHorseMessage handles /place when horse betting is open', async () => {
+  const betRecorder = createAsyncRecorder()
+
+  const handled = await routeHorseMessage({
+    txt: '/place 2 25',
+    payload: { message: '/place 2 25', sender: 'user-4' },
+    handlers: {
+      isWaitingForEntries: () => false,
+      isHorseBettingOpen: () => true,
+      handleHorseEntryAttempt: async () => {},
+      startHorseRace: async () => {},
+      handleHorseBet: betRecorder.fn,
+      handleBuyHorse: async () => {},
+      handleSellHorse: async () => {},
+      handleMyHorsesCommand: async () => {},
+      handleHorseHelpCommand: async () => {},
+      handleHorseStatsCommand: async () => {},
+      handleTopHorsesCommand: async () => {},
+      handleHofPlaqueCommand: async () => {}
+    },
+    log: () => {}
+  })
+
+  assert.equal(handled, true)
+  assert.deepEqual(betRecorder.calls, [[{ message: '/place 2 25', sender: 'user-4' }]])
+})
+
 test('routeF1Message preserves non-command entry without triggering bet handling', async () => {
   const entryRecorder = createAsyncRecorder()
   const betRecorder = createAsyncRecorder()

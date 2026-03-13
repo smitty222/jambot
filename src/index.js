@@ -201,7 +201,8 @@ app.get('/health', (req, res) => {
     const status = getHealthStatus({
       db,
       connected: botConnected,
-      uptime: process.uptime()
+      uptime: process.uptime(),
+      startupGraceSeconds: env.botStartupGraceS
     })
 
     if (!status.ok) {

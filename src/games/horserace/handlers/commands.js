@@ -162,6 +162,7 @@ let eligibleByName = new Map() // nameLower -> horse
 
 // ── Public API ─────────────────────────────────────────────────────────
 export function isWaitingForEntries () { return isAcceptingEntries === true }
+export function isHorseBettingOpen () { return isBettingOpen === true }
 
 export async function startHorseRace () {
   if (isAcceptingEntries || isBettingOpen || isRaceRunning) {
