@@ -85,40 +85,44 @@ export async function handleLotteryCommand (payload) {
 
 // ✅ Player picks a number
 export async function handleLotteryNumber (payload) {
-  if (!LotteryGameActive) return
+  if (!LotteryGameActive) return false
 
   const room = process.env.ROOM_UUID
   const userId = payload.sender
 
   // Accept bare numbers or messages containing a number like "#69" or "/lottery 69"
   const match = String(payload.message || '').match(/(\d{1,3})/)
-  if (!match) return
+  if (!match) return false
 
   const number = parseInt(match[1], 10)
   const nickname = await getUserNickname(userId)
 
-  if (Number.isNaN(number) || number < MIN_NUMBER || number > MAX_NUMBER) return
+  if (Number.isNaN(number) || number < MIN_NUMBER || number > MAX_NUMBER) return false
 
   if (lotteryEntries[userId]) {
-    return await postMessage({ room, message: `${nickname} you already picked ${lotteryEntries[userId]}` })
+    await postMessage({ room, message: `${nickname} you already picked ${lotteryEntries[userId]}` })
+    return true
   }
 
   const balance = await getUserWallet(userId)
   if (balance < cost) {
-    return await postMessage({
+    await postMessage({
       room,
       message: `${nickname} you need $${cost}, but you only have $${balance}.`
     })
+    return true
   }
 
   // IMPORTANT: await wallet debit (prevents Promise truthiness bugs)
   const success = await removeFromUserWallet(userId, cost)
   if (!success) {
-    return await postMessage({ room, message: `${nickname} error charging wallet.` })
+    await postMessage({ room, message: `${nickname} error charging wallet.` })
+    return true
   }
 
   lotteryEntries[userId] = number
   await postMessage({ room, message: `${nickname} entered with #${number}. Good luck!` })
+  return true
 }
 
 // ✅ Draw and process winning number

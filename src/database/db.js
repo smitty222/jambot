@@ -30,6 +30,9 @@ try {
 const source = process.env.DB_PATH
   ? 'env'
   : (DB_PATH.startsWith('/data') ? 'fly-auto' : 'repo-default')
+const shouldThrowOnOpenFailure =
+  process.env.NODE_ENV === 'production' &&
+  process.env.JAMBOT_ALLOW_DB_STUB !== '1'
 
 console.log(`[db] Using ${DB_PATH} (${source})`)
 
@@ -44,6 +47,10 @@ try {
   console.log('[db] opened successfully')
 } catch (e) {
   console.error('[db] FAILED to open database:', e?.message || e)
+
+  if (shouldThrowOnOpenFailure) {
+    throw e
+  }
 
   // Fallback stub so the rest of the app and non-DB tests can still boot.
   // The goal is graceful degradation for module initialization paths
@@ -60,6 +67,7 @@ try {
 
   db = {
     available: false,
+    unavailableReason: e?.message || String(e),
     prepare () {
       return noopStatement
     },

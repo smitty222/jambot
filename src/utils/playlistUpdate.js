@@ -1,13 +1,12 @@
 import { fetchSpotifyPlaylistTracks } from './API.js'
 import fetch from 'node-fetch'
-import dotenv from 'dotenv'
+import { env } from '../config.js'
+import { logger } from './logging.js'
 
-dotenv.config()
-
-const clientId = process.env.SPOTIFY_CLIENT_ID
-const clientSecret = process.env.SPOTIFY_CLIENT_SECRET
-let accessToken = process.env.SPOTIFY_ACCESS_TOKEN
-const refreshToken = process.env.SPOTIFY_REFRESH_TOKEN
+const clientId = env.spotifyClientId
+const clientSecret = env.spotifyClientSecret
+let accessToken = env.spotifyAccessToken
+const refreshToken = env.spotifyRefreshToken
 
 async function refreshAccessToken () {
   const authOptions = {
@@ -30,7 +29,7 @@ async function refreshAccessToken () {
     accessToken = data.access_token // Update the access token
     return accessToken
   } catch (error) {
-    console.error('Error refreshing access token:', error)
+    logger.error('[playlistUpdate] error refreshing access token', { err: error })
     throw error
   }
 }
@@ -50,7 +49,7 @@ async function addTracksToPlaylist (playlistId, trackUris, position = null) {
   const tracksToAdd = trackUris.filter(uri => !existingTrackUris.includes(uri))
 
   if (tracksToAdd.length === 0) {
-    console.log('All tracks are already in the playlist. No new tracks added.')
+    logger.info('[playlistUpdate] no new tracks to add', { playlistId })
     return null // No new tracks to add
   }
 
@@ -96,7 +95,7 @@ async function addTracksToPlaylist (playlistId, trackUris, position = null) {
     const data = await response.json()
     return data.snapshot_id // Return the snapshot ID of the updated playlist
   } catch (error) {
-    console.error('Error adding tracks to playlist:', error)
+    logger.error('[playlistUpdate] error adding tracks to playlist', { playlistId, err: error })
     throw error
   }
 }
@@ -117,9 +116,11 @@ async function removeTrackFromPlaylist (playlistId, trackUri) {
     tracks: [{ uri: trackUri }]
   }
 
-  console.log('Request URL:', url) // Log the request URL
-  console.log('Request Headers:', headers) // Log the request headers
-  console.log('Request Body:', JSON.stringify(body)) // Log the request body
+  logger.debug('[playlistUpdate] removing track from playlist', {
+    playlistId,
+    url,
+    body
+  })
 
   try {
     let response = await fetch(url, {
@@ -149,7 +150,7 @@ async function removeTrackFromPlaylist (playlistId, trackUri) {
     const data = await response.json()
     return data.snapshot_id
   } catch (error) {
-    console.error('Error removing track from playlist:', error)
+    logger.error('[playlistUpdate] error removing track from playlist', { playlistId, trackUri, err: error })
     throw error
   }
 }

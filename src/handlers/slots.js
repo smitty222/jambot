@@ -7,6 +7,7 @@ import db from '../database/db.js'
 import { syncSlotsPrestige } from '../database/dbprestige.js'
 import { createSlotsPersistence } from './slotsPersistence.js'
 import { createSlotsStateHelpers } from './slotsState.js'
+import { logger } from '../utils/logging.js'
 
 // ───────────────────────────────────────────────────────────
 // Slot machine symbols and payouts (ONE LINE)
@@ -354,7 +355,7 @@ async function spinBonusOnce (userUUID) {
 
     settleBonusTx()
   } catch (e) {
-    console.error('[Slots] bonus settlement failed:', e)
+    logger.error('[Slots] bonus settlement failed', { err: e })
     return 'An error occurred while settling your bonus round.'
   }
 
@@ -525,7 +526,7 @@ async function spinFeatureOnce (userUUID) {
     if (code === 'FEATURE_SESSION_EXPIRED' || code === 'FEATURE_SESSION_MISSING') {
       return 'Feature session expired.'
     }
-    console.error('[Slots] feature settlement failed:', e)
+    logger.error('[Slots] feature settlement failed', { err: e })
     return 'An error occurred while settling your free spin.'
   }
 
@@ -841,7 +842,7 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
       const balance = syncWalletBalanceFromDb(userUUID)
       return `Invalid bet amount. Your balance is $${formatBalance(balance)}.`
     }
-    console.error('Slots error:', err)
+    logger.error('[Slots] play error', { err })
     return 'An error occurred while playing slots.'
   }
 }

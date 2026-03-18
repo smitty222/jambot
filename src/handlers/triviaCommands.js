@@ -1,6 +1,7 @@
 import { postMessage } from '../libs/cometchat.js'
 import { getTriviaQuestions, decodeHtml } from '../utils/API.js'
 import { getCompactEquippedTitleTag } from '../database/dbprestige.js'
+import { logger } from '../utils/logging.js'
 
 let currentQuestion = null
 let userScores = {}
@@ -24,7 +25,7 @@ function compactLeaderboardName (uuid, maxLen = 10) {
 }
 
 function resetGameState () {
-  console.log('🧹 Resetting game state...')
+  logger.info('[trivia] resetting game state')
   currentQuestion = null
   userScores = {}
   totalRounds = 0
@@ -45,7 +46,7 @@ function getRandomCategory (exclude = []) {
   const available = categoryPool.filter(id => !exclude.includes(id))
   if (available.length === 0) return null
   const chosen = available[Math.floor(Math.random() * available.length)]
-  console.log(`🎯 Chose random category: ${chosen}`)
+  logger.info('[trivia] chose category', { categoryId: chosen })
   return chosen
 }
 
@@ -72,7 +73,7 @@ function getCategoryName (id) {
 
 async function askNextQuestion (room) {
   if (currentQuestionIndex >= currentQuestions.length) {
-    console.log(`🏁 Round ${currentRound} complete.`)
+    logger.info('[trivia] round complete', { currentRound })
     await postMessage({ room, message: `🏁 End of Round ${currentRound}!` })
 
     setTimeout(async () => {
@@ -80,7 +81,7 @@ async function askNextQuestion (room) {
       await postMessage({ room, message: `📊 Leaderboard:\n🏆 **Leaderboard:**\n\n${leaderboard}` })
 
       if (currentRound >= totalRounds) {
-        console.log('🎉 Game complete!')
+        logger.info('[trivia] game complete', { totalRounds })
         await postMessage({ room, message: '🎉 Game Over!' })
         await postMessage({ room, message: `🏆 Final Leaderboard:\n🏆 **Leaderboard:**\n\n${leaderboard}` })
 
@@ -103,7 +104,7 @@ async function askNextQuestion (room) {
   }
 
   currentQuestion = currentQuestions[currentQuestionIndex]
-  console.log(`🎤 Asking question ${currentQuestionIndex + 1}:`, currentQuestion)
+  logger.info('[trivia] asking question', { questionIndex: currentQuestionIndex + 1, currentRound, currentCategory, question: currentQuestion?.question })
   pendingAnswers = {}
 
   await postMessage({ room, message: formatQuestionMessage(currentQuestion) })
@@ -114,7 +115,7 @@ async function askNextQuestion (room) {
 async function resolveAnswers (room) {
   answerTimer = null
   const correctLetter = currentQuestion.correctAnswer.toUpperCase()
-  console.log(`✅ Resolving answers — correct: ${correctLetter}`)
+  logger.info('[trivia] resolving answers', { correctLetter, answerCount: Object.keys(pendingAnswers).length })
 
   const correctUsers = []
   const incorrectUsers = []
@@ -156,7 +157,7 @@ async function startNewRound (room) {
   currentQuestionIndex = 0
   currentCategory = getRandomCategory([...usedCategories])
   if (!currentCategory) {
-    console.log('🚫 No more unused categories left.')
+    logger.warn('[trivia] no unused categories left')
     await postMessage({ room, message: 'No more categories available. Trivia game over!' })
     resetGameState()
     return
@@ -174,23 +175,23 @@ async function startNewRound (room) {
 
     const questionsBatch = await getTriviaQuestions(currentCategory, questionsNeeded)
     if (!questionsBatch || questionsBatch.length === 0) {
-      console.log(`❌ No questions returned on attempt ${attempts} for category ${currentCategory}`)
+      logger.warn('[trivia] no questions returned', { attempts, currentCategory })
       continue
     }
 
     for (const q of questionsBatch) {
       const decodedQuestion = decodeHtml(q.question || '')
       if (!decodedQuestion.trim()) {
-        console.log(`⚠️ Skipped empty question on attempt ${attempts}`)
+        logger.debug('[trivia] skipped empty question', { attempts, currentCategory })
         continue
       }
       const duplicate = currentQuestions.find(existing => decodeHtml(existing.question) === decodedQuestion)
       if (!duplicate) {
         currentQuestions.push(q)
-        console.log(`✅ Added question ${currentQuestions.length} on attempt ${attempts}:`, decodedQuestion)
+        logger.debug('[trivia] added question', { count: currentQuestions.length, attempts, currentCategory, question: decodedQuestion })
         if (currentQuestions.length >= questionsNeeded) break
       } else {
-        console.log(`⚠️ Duplicate question skipped on attempt ${attempts}:`, decodedQuestion)
+        logger.debug('[trivia] skipped duplicate question', { attempts, currentCategory, question: decodedQuestion })
       }
     }
   }
@@ -210,7 +211,7 @@ async function handleTriviaStart (room, rounds = 1) {
     return
   }
 
-  console.log(`🎮 Trivia game starting with ${rounds} rounds`)
+  logger.info('[trivia] starting game', { rounds })
   resetGameState()
   isGameActive = true
   totalRounds = parseInt(rounds) || 1
@@ -236,7 +237,7 @@ async function handleTriviaSubmit (payload, room, userUUID) {
     return
   }
 
-  console.log(`📝 ${userUUID} answered ${answer}`)
+  logger.info('[trivia] answer received', { userUUID, answer })
   pendingAnswers[userUUID] = answer.slice(1)
   await postMessage({ room, message: `<@uid:${userUUID}> answered.` })
 }
@@ -251,7 +252,7 @@ async function handleTriviaEnd (room) {
     answerTimer = null
   }
 
-  console.log('🛑 Game ended manually.')
+  logger.info('[trivia] game ended manually')
   const leaderboard = formatLeaderboard().trim()
   await postMessage({ room, message: `🛑 Trivia game ended early.\n\n🏆 Final Leaderboard:\n🏆 **Leaderboard:**\n\n${leaderboard}` })
   resetGameState()

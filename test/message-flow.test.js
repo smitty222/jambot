@@ -31,6 +31,24 @@ test('maybeHandleDirectMessage handles only user receiver types', async () => {
   assert.deepEqual(seen, [{ message: '/help', sender: 'user-1' }])
 })
 
+test('maybeHandleDirectMessage returns false when the DM handler throws', async () => {
+  let logged = false
+
+  const handled = await maybeHandleDirectMessage({
+    receiverType: 'user',
+    payload: { message: '/help', sender: 'user-1' },
+    handleDirectMessage: async () => {
+      throw new Error('boom')
+    },
+    logError: () => {
+      logged = true
+    }
+  })
+
+  assert.equal(handled, false)
+  assert.equal(logged, true)
+})
+
 test('maybeHandleGifMessage logs gif payloads and returns true', async () => {
   const infoCalls = []
 
@@ -113,6 +131,25 @@ test('maybeHandleLotteryFallback ignores slash commands and inactive rounds', as
   assert.equal(slashHandled, false)
   assert.equal(inactiveHandled, false)
   assert.equal(called, false)
+})
+
+test('maybeHandleLotteryFallback only handles valid lottery payloads', async () => {
+  const invalidHandled = await maybeHandleLotteryFallback({
+    txt: 'hello room',
+    payload: { message: 'hello room' },
+    lotteryGameActive: true,
+    handleLotteryNumber: async () => false
+  })
+
+  const validHandled = await maybeHandleLotteryFallback({
+    txt: '#77',
+    payload: { message: '#77' },
+    lotteryGameActive: true,
+    handleLotteryNumber: async () => true
+  })
+
+  assert.equal(invalidHandled, false)
+  assert.equal(validHandled, true)
 })
 
 test('maybeDispatchCommand returns dispatcher result and swallows errors', async () => {

@@ -180,7 +180,12 @@ export async function publishDbSnapshot ({
   //    If the worker route (/api/publishDbSnapshot) doesn't exist yet,
   //    it will 404. We do NOT want that to crash the cron.
   try {
-    await postJson('/api/publishDbSnapshot', payload)
+    await postJson('/api/publishDb', {
+      tables: {
+        db_raw_snapshot: payload
+      },
+      privateOnly: ['db_raw_snapshot']
+    })
     log('[publish-snapshot] remote publish complete')
   } catch (err) {
     warn('[publish-snapshot] remote publish failed:', err?.message || err)

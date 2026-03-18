@@ -9,12 +9,11 @@ export async function maybeHandleDirectMessage ({
   if (receiverType !== 'user') return false
 
   try {
-    await handleDirectMessage(payload)
+    return Boolean(await handleDirectMessage(payload))
   } catch (err) {
     logError('DM handler error:', err)
+    return false
   }
-
-  return true
 }
 
 export async function maybeHandleGifMessage ({
@@ -70,8 +69,7 @@ export async function maybeHandleLotteryFastPath ({
 }) {
   try {
     if (lotteryGameActive && /^\d{1,3}$/.test(txt.trim())) {
-      await handleLotteryNumber(payload)
-      return true
+      return Boolean(await handleLotteryNumber(payload))
     }
   } catch (err) {
     logger.error('Error in lottery fast path:', err?.message || err)
@@ -88,8 +86,7 @@ export async function maybeHandleLotteryFallback ({
 }) {
   if (txt.startsWith('/') || !lotteryGameActive) return false
 
-  await handleLotteryNumber(payload)
-  return true
+  return Boolean(await handleLotteryNumber(payload))
 }
 
 export async function maybeDispatchCommand ({

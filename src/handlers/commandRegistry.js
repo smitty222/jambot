@@ -12,6 +12,7 @@ import { resolveDispatchCommand as resolveDispatchCommandBase } from './commandR
 import { dispatchWithRegistry } from './dispatchCore.js'
 import { createSlotsRegistryHandler, buildSlotsInfoMessage } from './slotsRegistryHandler.js'
 import { createAvatarCommandRegistry } from './avatarCommandRegistry.js'
+import { readSongBlacklist, writeSongBlacklist } from '../utils/songBlacklist.js'
 
 // Game and feature handlers
 import { handleCryptoCommand } from './crypto.js'
@@ -154,8 +155,6 @@ import { createRoomFunHandlers } from './roomFunCommands.js'
 import { createSecretFunHandlers } from './secretFunCommands.js'
 import { createQueuePlaylistHandlers } from './queuePlaylistCommands.js'
 import { createReactionHandlers } from './reactionCommands.js'
-import { createMiscCommandHandlers } from './miscCommandHandlers.js'
-import { createBlackjackHandlers } from './blackjackCommands.js'
 import { handleAddAvatarCommand } from './addAvatar.js'
 import { handleRemoveAvatarCommand } from './removeAvatar.js'
 import { getSenderNickname } from '../utils/helpers.js'
@@ -209,6 +208,27 @@ function formatCompactLeaderboardLine ({ rank, uuid, name, amount }) {
   const money = `${numeric < 0 ? '-' : ''}$${formatWholeDollars(Math.abs(numeric))}`
   return `${rank}. ${titleTag ? `${titleTag} ` : ''}${compactName} ${money}`
 }
+
+function createLazyHandlerLoader (loadFactory) {
+  let handlersPromise = null
+
+  return async function getHandlers () {
+    if (!handlersPromise) {
+      handlersPromise = loadFactory()
+    }
+    return handlersPromise
+  }
+}
+
+const getMiscCommandHandlers = createLazyHandlerLoader(async () => {
+  const { createMiscCommandHandlers } = await import('./miscCommandHandlers.js')
+  return createMiscCommandHandlers()
+})
+
+const getBlackjackHandlers = createLazyHandlerLoader(async () => {
+  const { createBlackjackHandlers } = await import('./blackjackCommands.js')
+  return createBlackjackHandlers()
+})
 
 async function postCareerLossesLeaderboard (room, args = '') {
   const requested = Number.parseInt(String(args || '').trim(), 10)
@@ -1103,21 +1123,20 @@ Please refresh your page for the queue to update`
   // 🆕 Show newest albums by country: `/newalbums [countryCode]`
   newalbums: async ({ payload, room, args }) => {
     const country = ((args || '').trim().split(/\s+/)[0] || 'US').toUpperCase()
-    console.log('[newalbums] command received:', payload.message)
-    console.log('[newalbums] country:', country)
+    logger.info('[newalbums] command received', { message: payload.message, country })
 
     let albums
     try {
       albums = await getSpotifyNewAlbumsViaSearch(country, 6)
-      console.log('[newalbums] albums fetched:', albums?.length || 0)
+      logger.info('[newalbums] albums fetched', { country, count: albums?.length || 0 })
     } catch (err) {
-      console.error('[newalbums] fetch failed:', err)
+      logger.error('[newalbums] fetch failed', { country, err })
       await postMessage({ room, message: `❌ Failed to fetch new albums.\n\`${err.message}\`` })
       return
     }
 
     if (!albums || albums.length === 0) {
-      console.warn('[newalbums] no albums returned')
+      logger.warn('[newalbums] no albums returned', { country })
       await postMessage({ room, message: `No recent full album releases found for ${country}.` })
       return
     }
@@ -1132,7 +1151,7 @@ _${a.name || 'Unknown Album'}_
       )
     }).join('\n\n')
 
-    console.log('[newalbums] posting message to room')
+    logger.info('[newalbums] posting message to room', { country, count: albums.length })
     await postMessage({
       room,
       message:
@@ -1153,13 +1172,18 @@ ${blocks}
   }
 }
 
+let knownCommandNames = new Set(Object.keys(commandRegistry))
+
+function extendCommandRegistry (entries) {
+  Object.assign(commandRegistry, entries)
+  knownCommandNames = new Set(Object.keys(commandRegistry))
+}
+
 const modControlHandlers = createModControlHandlers()
 const roomUtilityHandlers = createRoomUtilityHandlers()
 const roomFunHandlers = createRoomFunHandlers()
 const secretFunHandlers = createSecretFunHandlers()
 const reactionHandlers = createReactionHandlers()
-const miscCommandHandlers = createMiscCommandHandlers()
-const blackjackHandlers = createBlackjackHandlers()
 const avatarCommandHandlers = createAvatarCommandRegistry({
   postMessage,
   isUserAuthorized,
@@ -1218,97 +1242,105 @@ const queuePlaylistHandlers = createQueuePlaylistHandlers({
     const { addDollarsByUUID } = await import('../database/dbwalletmanager.js')
     return addDollarsByUUID(...args)
   },
-  readBlacklistFile: async () => {
-    const fs = await import('fs')
-    const path = await import('path')
-    const blacklistPath = path.join(process.cwd(), 'src/data/songBlacklist.json')
-    try {
-      const raw = await fs.promises.readFile(blacklistPath, 'utf8')
-      return JSON.parse(raw)
-    } catch {
-      return []
-    }
-  },
-  writeBlacklistFile: async (items) => {
-    const fs = await import('fs')
-    const path = await import('path')
-    const blacklistPath = path.join(process.cwd(), 'src/data/songBlacklist.json')
-    await fs.promises.writeFile(blacklistPath, JSON.stringify(items, null, 2))
-  }
+  readBlacklistFile: readSongBlacklist,
+  writeBlacklistFile: writeSongBlacklist
 })
 
-Object.assign(commandRegistry, {
+extendCommandRegistry({
   ...avatarCommandHandlers,
   begonebitch: async ({ payload, room, state, roomBot }) => {
     await reactionHandlers.begonebitch({ payload, room, state, roomBot })
   },
   blackjack: async ({ payload, room, args }) => {
+    const blackjackHandlers = await getBlackjackHandlers()
     await blackjackHandlers.blackjack({ payload, room, args })
   },
   bj: async ({ payload, room, args }) => {
+    const blackjackHandlers = await getBlackjackHandlers()
     await blackjackHandlers.bj({ payload, room, args })
   },
   join: async ({ payload, room }) => {
+    const blackjackHandlers = await getBlackjackHandlers()
     await blackjackHandlers.join({ payload, room })
   },
   bet: async ({ payload, room, args }) => {
+    const blackjackHandlers = await getBlackjackHandlers()
     await blackjackHandlers.bet({ payload, room, args })
   },
   hit: async ({ payload, room }) => {
+    const blackjackHandlers = await getBlackjackHandlers()
     await blackjackHandlers.hit({ payload, room })
   },
   stand: async ({ payload, room }) => {
+    const blackjackHandlers = await getBlackjackHandlers()
     await blackjackHandlers.stand({ payload, room })
   },
   double: async ({ payload, room }) => {
+    const blackjackHandlers = await getBlackjackHandlers()
     await blackjackHandlers.double({ payload, room })
   },
   surrender: async ({ payload, room }) => {
+    const blackjackHandlers = await getBlackjackHandlers()
     await blackjackHandlers.surrender({ payload, room })
   },
   split: async ({ payload, room }) => {
+    const blackjackHandlers = await getBlackjackHandlers()
     await blackjackHandlers.split({ payload, room })
   },
   theme: async ({ payload, room }) => {
+    const miscCommandHandlers = await getMiscCommandHandlers()
     await miscCommandHandlers.theme({ payload, room })
   },
   settheme: async ({ payload, room }) => {
+    const miscCommandHandlers = await getMiscCommandHandlers()
     await miscCommandHandlers.settheme({ payload, room })
   },
   removetheme: async ({ payload, room }) => {
+    const miscCommandHandlers = await getMiscCommandHandlers()
     await miscCommandHandlers.removetheme({ payload, room })
   },
   lottowinners: async ({ room }) => {
+    const miscCommandHandlers = await getMiscCommandHandlers()
     await miscCommandHandlers.lottowinners({ room })
   },
   jackpot: async ({ room }) => {
+    const miscCommandHandlers = await getMiscCommandHandlers()
     await miscCommandHandlers.jackpot({ room })
   },
   triviastart: async ({ room, args }) => {
+    const miscCommandHandlers = await getMiscCommandHandlers()
     await miscCommandHandlers.triviastart({ room, args })
   },
   triviaend: async ({ room }) => {
+    const miscCommandHandlers = await getMiscCommandHandlers()
     await miscCommandHandlers.triviaend({ room })
   },
   trivia: async ({ room }) => {
+    const miscCommandHandlers = await getMiscCommandHandlers()
     await miscCommandHandlers.trivia({ room })
   },
   a: async ({ payload, room }) => {
+    const miscCommandHandlers = await getMiscCommandHandlers()
     await miscCommandHandlers.a({ payload, room })
   },
   b: async ({ payload, room }) => {
+    const miscCommandHandlers = await getMiscCommandHandlers()
     await miscCommandHandlers.b({ payload, room })
   },
   c: async ({ payload, room }) => {
+    const miscCommandHandlers = await getMiscCommandHandlers()
     await miscCommandHandlers.c({ payload, room })
   },
   d: async ({ payload, room }) => {
+    const miscCommandHandlers = await getMiscCommandHandlers()
     await miscCommandHandlers.d({ payload, room })
   },
   store: async ({ payload, room }) => {
+    const miscCommandHandlers = await getMiscCommandHandlers()
     await miscCommandHandlers.store({ payload, room })
   },
   '8ball': async ({ payload, room }) => {
+    const miscCommandHandlers = await getMiscCommandHandlers()
     await miscCommandHandlers['8ball']({ payload, room })
   },
   gifs: async ({ room }) => {
@@ -1541,7 +1573,7 @@ Object.assign(commandRegistry, {
  * @returns {Promise<boolean>}
  */
 export function resolveDispatchCommand (txt) {
-  return resolveDispatchCommandBase(txt, new Set(Object.keys(commandRegistry)))
+  return resolveDispatchCommandBase(txt, knownCommandNames)
 }
 
 export async function dispatchCommand (txt, payload, room, context = {}) {

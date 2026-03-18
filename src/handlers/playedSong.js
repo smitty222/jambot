@@ -5,6 +5,8 @@ import { roomThemes } from '../utils/roomThemes.js'
 import { getCurrentDJUUIDs } from '../libs/bot.js'
 import { getUserNickname } from '../utils/nickname.js'
 import { QueueManager } from '../utils/queueManager.js'
+import { env } from '../config.js'
+import { logger } from '../utils/logging.js'
 
 // Manage the persistent album list.  When an album is played during an album
 // theme, we'll remove it from the saved list if present.
@@ -14,6 +16,10 @@ import { removeAlbum } from '../utils/albumlistManager.js'
 import db from '../database/db.js'
 
 const queueManager = new QueueManager(getUserNickname)
+const logInfo = (message, meta = {}) => logger.info(message, meta)
+const logDebug = (message, meta = {}) => logger.debug(message, meta)
+const logWarn = (message, meta = {}) => logger.warn(message, meta)
+const logError = (message, meta = {}) => logger.error(message, meta)
 
 const stageLock = { locked: false, userUuid: null, timeout: null }
 
@@ -33,15 +39,18 @@ function getThemeViaBetterSqlite (room) {
     const row = db.prepare('SELECT theme FROM themes WHERE roomId = ?').get(room)
     if (row?.theme) return { theme: String(row.theme), source: 'better-sqlite3' }
   } catch (e) {
-    console.warn('[AlbumTheme] better-sqlite3 lookup error:', e?.message || e)
+    logWarn('[AlbumTheme] better-sqlite3 lookup error', { err: e?.message || e })
   }
   return null
 }
 async function getRoomTheme (room) {
   const b = getThemeViaBetterSqlite(room)
-  if (b) { console.log(`[AlbumTheme] theme from ${b.source}: "${b.theme}"`); return b.theme }
+  if (b) {
+    logDebug('[AlbumTheme] theme loaded from db', { source: b.source, theme: b.theme })
+    return b.theme
+  }
   const t = roomThemes[room] || ''
-  console.log(`[AlbumTheme] theme fallback: "${t}"`)
+  logDebug('[AlbumTheme] theme fallback used', { theme: t })
   return t
 }
 function isAlbumWord (t) {
@@ -49,16 +58,16 @@ function isAlbumWord (t) {
 }
 
 const handleAlbumTheme = async (_payload) => {
-  const room = process.env.ROOM_UUID
+  const room = env.roomUuid
 
   const rawTheme = await getRoomTheme(room)
   const albumActive = isAlbumWord(rawTheme)
-  console.log(`[AlbumTheme] resolved="${(rawTheme || '').toLowerCase()}" active=${albumActive}`)
+  logInfo('[AlbumTheme] theme evaluated', { resolvedTheme: (rawTheme || '').toLowerCase(), albumActive })
   if (!albumActive) return
 
   const currentSong = roomBot.currentSong
   if (!currentSong || !currentSong.spotifyTrackId) {
-    console.log('[AlbumTheme] Missing spotifyTrackId; skipping album flow for this track.')
+    logInfo('[AlbumTheme] skipping album flow; spotifyTrackId missing')
     return
   }
 
@@ -128,7 +137,7 @@ const handleAlbumTheme = async (_payload) => {
           })
         }
       } catch (err) {
-        console.error('[AlbumTheme] Failed to remove album from list:', err?.message || err)
+        logError('[AlbumTheme] failed to remove album from list', { err: err?.message || err })
       }
     }
 
@@ -186,14 +195,14 @@ Want to go next? Type \`/q+\` to claim your spot and play an album!`
         }
       }, reminderTime)
 
-      console.log(`[AlbumTheme] Will remove DJ <@uid:${currentDJUuid}> in ${adjustedDuration}ms`)
+      logInfo('[AlbumTheme] scheduled DJ removal after album end', { currentDJUuid, adjustedDuration })
 
       setTimeout(async () => {
         try {
           const onStage = getCurrentDJUUIDs(roomBot.state)
           if (!onStage.includes(currentDJUuid)) return
 
-          console.log(`[AlbumTheme] Removing DJ after album end: ${currentDJUuid}`)
+          logInfo('[AlbumTheme] removing DJ after album end', { currentDJUuid })
           await roomBot.removeDJ(currentDJUuid)
 
           const nextUser = await queueManager.advanceQueue()
@@ -247,7 +256,7 @@ Want to go next? Type \`/q+\` to claim your spot and play an album!`
             await postMessage({ room, message: '🎵 No one is in the queue. The stage is open to play the next album!' })
           }
         } catch (error) {
-          console.error('[AlbumTheme] Error during DJ transition:', error)
+          logError('[AlbumTheme] error during DJ transition', { err: error })
         }
       }, adjustedDuration)
     }
@@ -262,7 +271,7 @@ Want to go next? Type \`/q+\` to claim your spot and play an album!`
       })
     }
   } catch (error) {
-    console.error('Error in handleAlbumTheme:', error)
+    logError('[AlbumTheme] error in handleAlbumTheme', { err: error })
   }
 }
 

@@ -1,5 +1,7 @@
 import { roomBot } from '../runtime/roomBot.js'
 import { postMessage } from '../libs/cometchat.js'
+import { env } from '../config.js'
+import { logger } from './logging.js'
 // Use the standalone nickname util instead of importing from the monolithic
 // message handler. This avoids a circular dependency and makes the
 // function more reusable.
@@ -15,7 +17,7 @@ function convertDurationToSeconds (duration) {
 async function escortUserFromDJStand (userUuid) {
   try {
     if (activeRemovals[userUuid]) {
-      console.log(`User ${userUuid} is already scheduled for removal.`)
+      logger.info('[escortDJ] removal already scheduled', { userUuid })
       return
     }
 
@@ -30,7 +32,7 @@ async function escortUserFromDJStand (userUuid) {
     // Mark the user for removal to prevent duplicate timeouts
     activeRemovals[userUuid] = true
 
-    console.log(`User ${userUuid} will be removed in ${songDurationInSeconds} seconds`)
+    logger.info('[escortDJ] scheduled DJ removal', { userUuid, songDurationInSeconds })
 
     setTimeout(async () => {
       try {
@@ -41,7 +43,7 @@ async function escortUserFromDJStand (userUuid) {
 
         // Send a message thanking the DJ
         await postMessage({
-          room: process.env.ROOM_UUID,
+          room: env.roomUuid,
           message: `@${nickname} its been an honor and a privilege. Thanks for DJing.`
         })
 
@@ -49,22 +51,22 @@ async function escortUserFromDJStand (userUuid) {
 
         // Send the stage dive message
         await postMessage({
-          room: process.env.ROOM_UUID,
+          room: env.roomUuid,
           message: `@${nickname} stage dive!`
         })
 
         // Remove the DJ from the stage
         await roomBot.removeDJ(userUuid)
-        console.log(`User ${userUuid} removed from DJ stand after their song ended.`)
+        logger.info('[escortDJ] DJ removed after song ended', { userUuid })
 
         // Clear the active removal status
         delete activeRemovals[userUuid]
       } catch (error) {
-        console.error('Error during DJ removal process:', error)
+        logger.error('[escortDJ] error during DJ removal process', { userUuid, err: error })
       }
     }, songDurationInSeconds * 1000) // Use the song duration to time the removal
   } catch (error) {
-    console.error('Error escorting user from DJ stand:', error)
+    logger.error('[escortDJ] error escorting user from DJ stand', { userUuid, err: error })
   }
 }
 

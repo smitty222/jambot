@@ -7,19 +7,21 @@
 // `message.js` and make the codebase easier to maintain.
 
 import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
+import { env } from '../config.js'
+import { logger } from '../utils/logging.js'
 import { isUserAuthorized } from '../utils/API.js'
 import { getUserWallet } from '../database/dbwalletmanager.js'
 
 // Build an allow list of UUIDs that are always considered DM admins.
 const DM_ALLOW_LIST = new Set(
-  (process.env.DM_ALLOW_LIST || '')
+  (env.dmAllowList || '')
     .split(',')
     .map(s => s.trim())
     .filter(Boolean)
 )
 
 // TTL user token used for mod checks. See utils/API.js for details.
-const ttlUserToken = process.env.TTL_USER_TOKEN
+const ttlUserToken = env.ttlUserToken
 
 // Determine whether the sender is allowed to use admin DM commands.
 async function isDmAdmin (uuid) {
@@ -49,86 +51,82 @@ async function sendAuthenticatedDM (userUuid, text) {
  * @param {Object} payload The CometChat DM payload.
  */
 export async function handleDirectMessage (payload) {
-  try {
-    // Normalize sender from various payload shapes
-    const senderRaw =
-      payload?.sender ?? payload?.senderId ?? payload?.from ?? payload?.data?.sender
-    const sender =
-      typeof senderRaw === 'string'
-        ? senderRaw
-        : senderRaw?.uid || senderRaw?.id || senderRaw?.userUuid || senderRaw?.userId || ''
+  // Normalize sender from various payload shapes
+  const senderRaw =
+    payload?.sender ?? payload?.senderId ?? payload?.from ?? payload?.data?.sender
+  const sender =
+    typeof senderRaw === 'string'
+      ? senderRaw
+      : senderRaw?.uid || senderRaw?.id || senderRaw?.userUuid || senderRaw?.userId || ''
 
-    // Normalize text
-    const rawText = (payload?.message ?? payload?.data?.text ?? payload?.text ?? '').toString()
-    const text = rawText.trim()
-    if (!sender || !text) return
+  // Normalize text
+  const rawText = (payload?.message ?? payload?.data?.text ?? payload?.text ?? '').toString()
+  const text = rawText.trim()
+  if (!sender || !text) return false
 
-    console.log(`[DM] from ${sender}: ${text}`)
+  logger.info('[DM] received', { sender, text })
 
-    // Ignore our own messages
-    const botUid = process.env.BOT_USER_UUID || process.env.CHAT_USER_ID
-    if (botUid && sender === botUid) return
+  // Ignore our own messages
+  const botUid = env.botUserUuid || env.chatUserId
+  if (botUid && sender === botUid) return true
 
-    // Parse "/command args"
-    const m = text.match(/^\/(\S+)(?:\s+([\s\S]*))?$/)
-    if (!m) {
-      await sendAuthenticatedDM(sender, '🤖 Unknown DM input. Try `/help`.')
-      return
-    }
-    const cmd = m[1].toLowerCase()
-    const args = (m[2] || '').trim()
-
-    // Public DM commands (anyone)
-    if (cmd === 'help') {
-      await sendAuthenticatedDM(sender,
-        [
-          'DM Commands:',
-          '• /help — show this',
-          '• /whoami — show your UUID',
-          '• /balance — show your wallet',
-          '',
-          'Admin-only:',
-          '• /say <message> — post in the room'
-        ].join('\n')
-      )
-      return
-    }
-
-    if (cmd === 'whoami') {
-      await sendAuthenticatedDM(sender, `Your UUID: ${sender}`)
-      return
-    }
-
-    if (cmd === 'balance') {
-      try {
-        const bal = await getUserWallet(sender)
-        await sendAuthenticatedDM(sender, `Your balance is $${bal}.`)
-      } catch {
-        await sendAuthenticatedDM(sender, 'Sorry, unable to retrieve your balance right now.')
-      }
-      return
-    }
-
-    // Admin-only DM commands
-    const admin = await isDmAdmin(sender)
-
-    if (cmd === 'say') {
-      if (!admin) {
-        await sendAuthenticatedDM(sender, '⛔ You’re not allowed to use /say.')
-        return
-      }
-      if (!args) {
-        await sendAuthenticatedDM(sender, 'Usage: /say <message>')
-        return
-      }
-      await postMessage({ room: process.env.ROOM_UUID, message: args })
-      await sendAuthenticatedDM(sender, '✅ Posted to room.')
-      return
-    }
-
-    // Unknown DM command
-    await sendAuthenticatedDM(sender, `🤖 Unknown DM command: \`${cmd}\`. Try \`/help\`.`)
-  } catch (err) {
-    console.error('DM handler error:', err)
+  // Parse "/command args"
+  const m = text.match(/^\/(\S+)(?:\s+([\s\S]*))?$/)
+  if (!m) {
+    await sendAuthenticatedDM(sender, '🤖 Unknown DM input. Try `/help`.')
+    return true
   }
+  const cmd = m[1].toLowerCase()
+  const args = (m[2] || '').trim()
+
+  // Public DM commands (anyone)
+  if (cmd === 'help') {
+    await sendAuthenticatedDM(sender,
+      [
+        'DM Commands:',
+        '• /help — show this',
+        '• /whoami — show your UUID',
+        '• /balance — show your wallet',
+        '',
+        'Admin-only:',
+        '• /say <message> — post in the room'
+      ].join('\n')
+    )
+    return true
+  }
+
+  if (cmd === 'whoami') {
+    await sendAuthenticatedDM(sender, `Your UUID: ${sender}`)
+    return true
+  }
+
+  if (cmd === 'balance') {
+    try {
+      const bal = await getUserWallet(sender)
+      await sendAuthenticatedDM(sender, `Your balance is $${bal}.`)
+    } catch {
+      await sendAuthenticatedDM(sender, 'Sorry, unable to retrieve your balance right now.')
+    }
+    return true
+  }
+
+  // Admin-only DM commands
+  const admin = await isDmAdmin(sender)
+
+  if (cmd === 'say') {
+    if (!admin) {
+      await sendAuthenticatedDM(sender, '⛔ You’re not allowed to use /say.')
+      return true
+    }
+    if (!args) {
+      await sendAuthenticatedDM(sender, 'Usage: /say <message>')
+      return true
+    }
+    await postMessage({ room: env.roomUuid, message: args })
+    await sendAuthenticatedDM(sender, '✅ Posted to room.')
+    return true
+  }
+
+  await sendAuthenticatedDM(sender, `🤖 Unknown DM command: \`${cmd}\`. Try \`/help\`.`)
+  return true
 }

@@ -1,5 +1,4 @@
 // site/app.js (modern12)
-/* global localStorage */
 const APP_VER = 'modern12'
 console.log('[jj] app.js booted', APP_VER, new Date().toISOString())
 
@@ -15,11 +14,25 @@ window.addEventListener('error', (e) => {
   } catch {}
 })
 
-// Prefer an override set in index.html, otherwise auto-detect dev/prod
+function isLocalHost (host) {
+  return host === 'localhost' || host === '127.0.0.1' || host === '[::1]'
+}
+
+// Prefer an explicit override. Otherwise prefer prod, except on localhost where dev is first.
+const windowHost = typeof window !== 'undefined' ? window.location.hostname : ''
+const defaultOrigins = isLocalHost(windowHost)
+  ? [
+      'https://jamflow-site-api-dev.jamflowbot.workers.dev',
+      'https://jamflow-site-api.jamflowbot.workers.dev'
+    ]
+  : [
+      'https://jamflow-site-api.jamflowbot.workers.dev',
+      'https://jamflow-site-api-dev.jamflowbot.workers.dev'
+    ]
+
 const CANDIDATE_ORIGINS = [
   (typeof window !== 'undefined' && window.JJ_API_ORIGIN) || null,
-  'https://jamflow-site-api-dev.jamflowbot.workers.dev',
-  'https://jamflow-site-api.jamflowbot.workers.dev'
+  ...defaultOrigins
 ].filter(Boolean)
 
 let API_ORIGIN = null
@@ -209,8 +222,37 @@ function setTokenStatus (msg, ok = false) {
   els.tokenStatus.textContent = msg || ''
   els.tokenStatus.style.color = ok ? '#22c55e' : ''
 }
-function getToken () { return localStorage.getItem('JJ_MOD_TOKEN') || '' }
-function setToken (val) { if (val) localStorage.setItem('JJ_MOD_TOKEN', val); else localStorage.removeItem('JJ_MOD_TOKEN') }
+function migrateLegacyToken () {
+  try {
+    const sessionToken = window.sessionStorage.getItem('JJ_MOD_TOKEN')
+    if (sessionToken) return
+
+    const legacyToken = window.localStorage.getItem('JJ_MOD_TOKEN')
+    if (!legacyToken) return
+
+    window.sessionStorage.setItem('JJ_MOD_TOKEN', legacyToken)
+    window.localStorage.removeItem('JJ_MOD_TOKEN')
+  } catch {}
+}
+function getToken () {
+  try {
+    return window.sessionStorage.getItem('JJ_MOD_TOKEN') || ''
+  } catch {
+    return ''
+  }
+}
+function setToken (val) {
+  try {
+    if (val) {
+      window.sessionStorage.setItem('JJ_MOD_TOKEN', val)
+      window.localStorage.removeItem('JJ_MOD_TOKEN')
+    } else {
+      window.sessionStorage.removeItem('JJ_MOD_TOKEN')
+      window.localStorage.removeItem('JJ_MOD_TOKEN')
+    }
+  } catch {}
+}
+migrateLegacyToken()
 if (els.tokenInput) els.tokenInput.value = getToken()
 if (els.tokenInput) els.tokenInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveTokenHandler() })
 if (els.toggleTokenVis && els.tokenInput) {

@@ -1,65 +1,17 @@
 import { getCurrentDJUUIDs } from '../libs/bot.js'
 import { readRecentSongs } from '../database/dbrecentsongsmanager.js'
 import { searchSpotify, getTopTracksByTag, getTopChartTracks, fetchSpotifyPlaylistTracks } from './API.js'
+import { env } from '../config.js'
 import { getTheme } from './themeManager.js'
 import { themeSynonyms } from '../libs/themeSynonyms.js'
-import fs from 'fs/promises'
-import * as fsSync from 'fs'
-import path from 'path'
+import { isSongBlacklisted } from './songBlacklist.js'
+import { logger } from './logging.js'
 import { roomBot } from '../runtime/roomBot.js'
 
-const blacklistPath = path.join(process.cwd(), 'src/data/songBlacklist.json')
-
-// In-memory cache of the blacklist. It will be lazily loaded on first
-// access and invalidated when the underlying file changes. Using an
-// in-memory cache avoids synchronous fs reads on every track lookup.
-let blacklistCache = null
-
-/**
- * Load the song blacklist from disk. If the list has already been
- * loaded and has not been invalidated, the cached version is returned.
- * @returns {Promise<string[]>}
- */
-async function loadBlacklist () {
-  if (Array.isArray(blacklistCache)) {
-    return blacklistCache
-  }
-  try {
-    const data = await fs.readFile(blacklistPath, 'utf8')
-    blacklistCache = JSON.parse(data)
-  } catch (err) {
-    blacklistCache = []
-  }
-  return blacklistCache
-}
-
-// Watch the blacklist file and invalidate the cache when it changes. We
-// use fs.watchFile from the sync fs module because fs/promises does not
-// expose watchFile. This watcher is non-blocking and keeps the cache
-// fresh during runtime.
-try {
-  fsSync.watchFile(blacklistPath, { persistent: false }, (curr, prev) => {
-    if (curr.mtimeMs !== prev.mtimeMs) {
-      blacklistCache = null
-    }
-  })
-} catch {
-  // In environments where watchFile is not supported, skip invalidation
-  // and rely on TTL-based cache expiration.
-}
-
-/**
- * Determine whether a track is blacklisted. Reads from the cached
- * blacklist, loading it if necessary.
- *
- * @param {string} trackName
- * @param {string} artistName
- * @returns {Promise<boolean>}
- */
-async function isBlacklisted (trackName, artistName) {
-  const list = await loadBlacklist()
-  return list.includes(`${artistName} - ${trackName}`)
-}
+const logInfo = (message, meta = {}) => logger.info(message, meta)
+const logDebug = (message, meta = {}) => logger.debug(message, meta)
+const logWarn = (message, meta = {}) => logger.warn(message, meta)
+const logError = (message, meta = {}) => logger.error(message, meta)
 
 function normalize (str) {
   return str.toLowerCase().replace(/[^\w\s]/gi, '').trim()
@@ -68,20 +20,20 @@ function normalize (str) {
 export async function getPopularSpotifyTrackID (minPopularity = 0, currentState = null) {
   const recentSongs = readRecentSongs()
   const recentSet = new Set(recentSongs.map(s => normalize(`${s.artistName} - ${s.trackName}`)))
-  const botUUID = process.env.BOT_USER_UUID
-  const roomUUID = process.env.ROOM_UUID
+  const botUUID = env.botUserUuid
+  const roomUUID = env.roomUuid
 
   const currentTheme = getTheme(roomUUID)?.toLowerCase() || 'just jam'
-  console.log(`🎨 Current room theme: "${currentTheme}"`)
+  logInfo('[autodj] current theme', { currentTheme })
 
   // === SPECIAL CASE: HITS THEME ===
   if (currentTheme === 'hits') {
-    console.log('🔥 Using Last.fm top chart tracks for \'Hits\' theme...')
+    logInfo('[autodj] using hits chart source')
     const chartPool = await getTopChartTracks(100)
     const shuffledChartTracks = chartPool.sort(() => Math.random() - 0.5)
     const chartTracks = shuffledChartTracks.slice(0, 15)
 
-    console.log(`📊 Retrieved ${chartTracks.length} chart tracks.`)
+    logInfo('[autodj] fetched chart tracks', { count: chartTracks.length })
 
     const validTracks = []
 
@@ -89,94 +41,94 @@ export async function getPopularSpotifyTrackID (minPopularity = 0, currentState 
       try {
         const trackDetails = await searchSpotify(artistName, trackName)
         if (!trackDetails) {
-          console.log(`❌ Spotify search failed: ${trackName} by ${artistName}`)
+          logDebug('[autodj] spotify search failed for chart track', { trackName, artistName })
           continue
         }
 
         const normalized = normalize(`${trackDetails.spotifyArtistName} - ${trackDetails.spotifyTrackName}`)
 
         if (trackDetails.popularity < minPopularity) {
-          console.log(`🚫 Too low popularity: ${trackDetails.spotifyTrackName} (${trackDetails.popularity})`)
+          logDebug('[autodj] skipped chart track for popularity', { trackName: trackDetails.spotifyTrackName, artistName: trackDetails.spotifyArtistName, popularity: trackDetails.popularity, minPopularity })
           continue
         }
         if (recentSet.has(normalized)) {
-          console.log(`🚫 Recently played: ${trackDetails.spotifyTrackName}`)
+          logDebug('[autodj] skipped recently played chart track', { trackName: trackDetails.spotifyTrackName, artistName: trackDetails.spotifyArtistName })
           continue
         }
-        if (await isBlacklisted(trackDetails.spotifyTrackName, trackDetails.spotifyArtistName)) {
-          console.log(`🚫 Blacklisted: ${trackDetails.spotifyTrackName} by ${trackDetails.spotifyArtistName}`)
+        if (await isSongBlacklisted(trackDetails.spotifyTrackName, trackDetails.spotifyArtistName)) {
+          logDebug('[autodj] skipped blacklisted chart track', { trackName: trackDetails.spotifyTrackName, artistName: trackDetails.spotifyArtistName })
           continue
         }
 
-        console.log(`✅ Eligible chart track: ${trackDetails.spotifyTrackName} by ${trackDetails.spotifyArtistName}`)
+        logDebug('[autodj] eligible chart track', { trackName: trackDetails.spotifyTrackName, artistName: trackDetails.spotifyArtistName })
         validTracks.push(trackDetails)
       } catch (err) {
-        console.error(`❌ Error processing chart track: ${trackName} by ${artistName}`, err)
+        logError('[autodj] error processing chart track', { trackName, artistName, err })
       }
     }
 
     if (validTracks.length > 0) {
       const randomIndex = Math.floor(Math.random() * validTracks.length)
       const selected = validTracks[randomIndex]
-      console.log(`🎲 Selected from chart: ${selected.spotifyTrackName} by ${selected.spotifyArtistName}`)
+      logInfo('[autodj] selected chart track', { trackName: selected.spotifyTrackName, artistName: selected.spotifyArtistName })
       return selected.spotifyTrackID
     } else {
-      console.log('⚠️ No valid chart tracks found. Falling back to Just Jam logic...')
+      logInfo('[autodj] no valid chart tracks found; falling back')
     }
   }
 
   // === THEME-BASED TRACK SELECTION ===
   if (currentTheme !== 'just jam' && currentTheme !== 'hits') {
     const tagsToTry = themeSynonyms[currentTheme] || [currentTheme]
-    console.log(`🔍 Using Last.fm tag.getTopTracks with tags: ${tagsToTry.join(', ')}`)
+    logInfo('[autodj] using tag sources', { currentTheme, tagsToTry })
 
     for (const tag of tagsToTry) {
       const tagTracks = await getTopTracksByTag(tag, 10)
       const validTracks = []
 
-      console.log(`📀 Found ${tagTracks.length} tracks for tag "${tag}"`)
+      logInfo('[autodj] fetched themed tag tracks', { tag, count: tagTracks.length })
 
       for (const { artistName, trackName } of tagTracks) {
         try {
           const trackDetails = await searchSpotify(artistName, trackName)
           if (!trackDetails) {
-            console.log(`❌ Spotify search failed: ${trackName} by ${artistName}`)
+            logDebug('[autodj] spotify search failed for themed track', { tag, trackName, artistName })
             continue
           }
 
           const normalized = normalize(`${trackDetails.spotifyArtistName} - ${trackDetails.spotifyTrackName}`)
 
           if (trackDetails.popularity < minPopularity) {
-            console.log(`🚫 Popularity too low: ${trackDetails.spotifyTrackName} (${trackDetails.popularity})`)
+            logDebug('[autodj] skipped themed track for popularity', { tag, trackName: trackDetails.spotifyTrackName, artistName: trackDetails.spotifyArtistName, popularity: trackDetails.popularity, minPopularity })
             continue
           }
           if (recentSet.has(normalized)) {
-            console.log(`🚫 Recently played: ${trackDetails.spotifyTrackName}`)
+            logDebug('[autodj] skipped recently played themed track', { tag, trackName: trackDetails.spotifyTrackName, artistName: trackDetails.spotifyArtistName })
             continue
           }
-          if (await isBlacklisted(trackDetails.spotifyTrackName, trackDetails.spotifyArtistName)) {
-            console.log(`🚫 Blacklisted: ${trackDetails.spotifyTrackName} by ${trackDetails.spotifyArtistName}`)
+          if (await isSongBlacklisted(trackDetails.spotifyTrackName, trackDetails.spotifyArtistName)) {
+            logDebug('[autodj] skipped blacklisted themed track', { tag, trackName: trackDetails.spotifyTrackName, artistName: trackDetails.spotifyArtistName })
             continue
           }
 
-          console.log(`✅ Eligible themed track: ${trackDetails.spotifyTrackName} by ${trackDetails.spotifyArtistName}`)
+          logDebug('[autodj] eligible themed track', { tag, trackName: trackDetails.spotifyTrackName, artistName: trackDetails.spotifyArtistName })
           validTracks.push(trackDetails)
         } catch (err) {
-          console.error(`❌ Error processing tag track: ${trackName} by ${artistName}`, err)
+          logError('[autodj] error processing themed track', { tag, trackName, artistName, err })
         }
       }
 
       if (validTracks.length > 0) {
         const randomIndex = Math.floor(Math.random() * validTracks.length)
         const selected = validTracks[randomIndex]
-        console.log(`🎲 Selected from theme: ${selected.spotifyTrackName} by ${selected.spotifyArtistName}`)
+        logInfo('[autodj] selected themed track', { tag, trackName: selected.spotifyTrackName, artistName: selected.spotifyArtistName })
         return selected.spotifyTrackID
       } else {
-        console.log(`⚠️ No valid tracks found for tag "${tag}"`)
+        logInfo('[autodj] no valid tracks found for tag', { tag })
       }
     }
 
-    console.log('🛑 No valid tag-based songs found. Falling back to Just Jam logic...')
+    logInfo('[autodj] no valid themed tracks found; falling back')
   }
 
   // === FALLBACK: SIMILAR TRACKS FROM RECENT SONGS ===
@@ -190,12 +142,9 @@ export async function getPopularSpotifyTrackID (minPopularity = 0, currentState 
     currentDJCount = nonBotDJs.length || 1
     isBotOnlyDJ = nonBotDJs.length === 0
 
-    console.log(`🎤 All DJs from helper: ${JSON.stringify(djUUIDs)}`)
-    console.log(`🧠 Bot UUID: ${botUUID}`)
-    console.log(`👤 Non-bot DJs on stage: ${nonBotDJs.length}`)
-    console.log(`🤖 Is bot the only DJ? ${isBotOnlyDJ}`)
+    logDebug('[autodj] stage context', { djUUIDs, botUUID, nonBotDjCount: nonBotDJs.length, isBotOnlyDJ })
   } else {
-    console.warn('⚠️ currentState is missing or null')
+    logWarn('[autodj] room state missing while selecting track')
   }
 
   const userPlayedSongs = recentSongs.filter(song => song.dj !== 'bot')
@@ -208,42 +157,42 @@ export async function getPopularSpotifyTrackID (minPopularity = 0, currentState 
     }
   }
 
-  console.log(`🎯 Found ${similarTrackSuggestions.length} raw similar tracks to consider.`)
+  logInfo('[autodj] found similar track suggestions', { count: similarTrackSuggestions.length })
 
   const validTracks = (
     await Promise.all(
       similarTrackSuggestions.map(async ({ trackName, artistName }) => {
         if (!trackName || !artistName) {
-          console.log('⚠️ Missing track or artist')
+          logDebug('[autodj] skipped similar track with missing metadata')
           return null
         }
 
         try {
           const trackDetails = await searchSpotify(artistName, trackName)
           if (!trackDetails) {
-            console.log(`❌ Spotify search failed: ${trackName} by ${artistName}`)
+            logDebug('[autodj] spotify search failed for fallback track', { trackName, artistName })
             return null
           }
 
           const normalized = normalize(`${trackDetails.spotifyArtistName} - ${trackDetails.spotifyTrackName}`)
 
           if (trackDetails.popularity < minPopularity) {
-            console.log(`🚫 Popularity too low: ${trackDetails.spotifyTrackName} (${trackDetails.popularity})`)
+            logDebug('[autodj] skipped fallback track for popularity', { trackName: trackDetails.spotifyTrackName, artistName: trackDetails.spotifyArtistName, popularity: trackDetails.popularity, minPopularity })
             return null
           }
           if (recentSet.has(normalized)) {
-            console.log(`🚫 Recently played: ${trackDetails.spotifyTrackName}`)
+            logDebug('[autodj] skipped recently played fallback track', { trackName: trackDetails.spotifyTrackName, artistName: trackDetails.spotifyArtistName })
             return null
           }
-          if (await isBlacklisted(trackDetails.spotifyTrackName, trackDetails.spotifyArtistName)) {
-            console.log(`🚫 Blacklisted: ${trackDetails.spotifyTrackName} by ${trackDetails.spotifyArtistName}`)
+          if (await isSongBlacklisted(trackDetails.spotifyTrackName, trackDetails.spotifyArtistName)) {
+            logDebug('[autodj] skipped blacklisted fallback track', { trackName: trackDetails.spotifyTrackName, artistName: trackDetails.spotifyArtistName })
             return null
           }
 
-          console.log(`✅ Eligible fallback track: ${trackDetails.spotifyTrackName} by ${trackDetails.spotifyArtistName}`)
+          logDebug('[autodj] eligible fallback track', { trackName: trackDetails.spotifyTrackName, artistName: trackDetails.spotifyArtistName })
           return trackDetails
         } catch (err) {
-          console.error(`❌ Error processing fallback track: ${trackName} by ${artistName}`, err)
+          logError('[autodj] error processing fallback track', { trackName, artistName, err })
           return null
         }
       })
@@ -253,16 +202,16 @@ export async function getPopularSpotifyTrackID (minPopularity = 0, currentState 
   if (validTracks.length > 0) {
     const randomIndex = Math.floor(Math.random() * validTracks.length)
     const selected = validTracks[randomIndex]
-    console.log(`🎲 Selected from fallback: ${selected.spotifyTrackName} by ${selected.spotifyArtistName}`)
+    logInfo('[autodj] selected fallback similar track', { trackName: selected.spotifyTrackName, artistName: selected.spotifyArtistName })
     return selected.spotifyTrackID
   }
 
   // === SIMILAR TRACKS FAILED — FALL BACK TO DEFAULT PLAYLIST ===
-  console.log('❌ No valid fallback similar tracks found. Using default playlist instead.')
+  logInfo('[autodj] no valid fallback similar tracks found; using default playlist')
 
   const playlistID = '61vNvZ72Ay7rQgFZYmDixU'
   const playlistTracks = await fetchSpotifyPlaylistTracks(playlistID)
-  console.log(`📚 Retrieved ${playlistTracks.length} tracks from playlist ${playlistID}`)
+  logInfo('[autodj] fetched playlist fallback tracks', { playlistID, count: playlistTracks.length })
 
   // Filter and map playlist tracks asynchronously so that we can await
   // blacklist checks. Using a for-of loop instead of Array.filter
@@ -271,20 +220,20 @@ export async function getPopularSpotifyTrackID (minPopularity = 0, currentState 
   for (const item of playlistTracks) {
     const track = item.track
     if (!track || !track.name || !track.artists?.[0]?.name) {
-      console.log('⚠️ Invalid track format. Skipping...')
+      logDebug('[autodj] skipped invalid playlist fallback track')
       continue
     }
     const normalized = normalize(`${track.artists[0].name} - ${track.name}`)
     if (track.popularity < minPopularity) {
-      console.log(`🚫 Skipping low popularity: ${track.name} (${track.popularity})`)
+      logDebug('[autodj] skipped playlist fallback track for popularity', { trackName: track.name, artistName: track.artists[0].name, popularity: track.popularity, minPopularity })
       continue
     }
     if (recentSet.has(normalized)) {
-      console.log(`🚫 Skipping recently played: ${track.name}`)
+      logDebug('[autodj] skipped recently played playlist fallback track', { trackName: track.name, artistName: track.artists[0].name })
       continue
     }
-    if (await isBlacklisted(track.name, track.artists[0].name)) {
-      console.log(`🚫 Skipping blacklisted: ${track.name} by ${track.artists[0].name}`)
+    if (await isSongBlacklisted(track.name, track.artists[0].name)) {
+      logDebug('[autodj] skipped blacklisted playlist fallback track', { trackName: track.name, artistName: track.artists[0].name })
       continue
     }
     filtered.push({
@@ -298,10 +247,10 @@ export async function getPopularSpotifyTrackID (minPopularity = 0, currentState 
   if (filtered.length > 0) {
     const randomIndex = Math.floor(Math.random() * filtered.length)
     const selected = filtered[randomIndex]
-    console.log(`🎲 Selected from playlist: ${selected.spotifyTrackName} by ${selected.spotifyArtistName}`)
+    logInfo('[autodj] selected playlist fallback track', { trackName: selected.spotifyTrackName, artistName: selected.spotifyArtistName })
     return selected.spotifyTrackID
   } else {
-    console.log('❌ No valid tracks found in default playlist either.')
+    logWarn('[autodj] no valid tracks found in default playlist fallback')
     return null
   }
 }
