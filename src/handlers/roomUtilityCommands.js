@@ -214,6 +214,9 @@ export const COMMAND_GUIDES = {
     '- `/sports scores <sport> [YYYY-MM-DD]`',
     '- `/sports odds <sport>`',
     '- `/sports bet <sport> <index> <team> <ml|spread> <amount>`',
+    '- `/madness odds`',
+    '- `/madness bet <index> <team> <ml|spread> <amount>`',
+    '- `/madness bets [<@uid:USER>]`',
     '- `/sports bets [<@uid:USER>]`',
     '- `/sports resolve [sport]`'
   ].join('\n'),

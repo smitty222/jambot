@@ -527,6 +527,7 @@ test('handleMadnessPick accepts team abbreviations and confirms with the team co
     payload: { sender: 'user-1', message: '/madness pick 1 smu' },
     room: 'room-1'
   }, {
+    now: () => new Date('2026-03-20T11:00:00-04:00'),
     postMessage: async (msg) => posted.push(msg),
     getMadnessGamesCommandSlate: async () => [{
       id: 'game-1',
@@ -558,6 +559,7 @@ test('handleMadnessPick accepts the same ESPN short labels shown on the board', 
     payload: { sender: 'user-1', message: '/madness pick 1 northcarolina' },
     room: 'room-1'
   }, {
+    now: () => new Date('2026-03-20T11:00:00-04:00'),
     postMessage: async (msg) => posted.push(msg),
     getMadnessGamesCommandSlate: async () => [{
       id: 'game-1',
@@ -589,6 +591,7 @@ test('handleMadnessPick rejects indexes outside the current /madness games slate
     payload: { sender: 'user-1', message: '/madness pick 2 duke' },
     room: 'room-1'
   }, {
+    now: () => new Date('2026-03-20T11:00:00-04:00'),
     postMessage: async (msg) => posted.push(msg),
     getMadnessGamesCommandSlate: async () => [{
       id: 'game-1',
@@ -603,7 +606,7 @@ test('handleMadnessPick rejects indexes outside the current /madness games slate
 
   assert.deepEqual(posted, [{
     room: 'room-1',
-    message: 'Invalid game index. You can only pick from the games currently shown in `/madness games`.'
+    message: 'Invalid game index. You can only pick from the games currently shown in `/madness board`.'
   }])
 })
 
@@ -658,7 +661,7 @@ test('postMadnessPicks refreshes matchup seeds and game indexes from the live sl
 
   assert.equal(posted.length, 1)
   assert.match(posted[0].message, /🧾 \*\*Your March Madness Picks\*\* \(2026\)/)
-  assert.match(posted[0].message, /2\. DUKE \| \(1\) NCTH vs \(8\) DBD \| ⏳ pending/)
+  assert.match(posted[0].message, /2\. DUKE \| \(1\) North Carolina vs \(8\) Duke \| ⏳ pending/)
 })
 
 test('postMadnessPicks only shows picks from the men’s March Madness bracket', async () => {
@@ -713,7 +716,7 @@ test('postMadnessPicks only shows picks from the men’s March Madness bracket',
   })
 
   assert.equal(posted.length, 1)
-  assert.match(posted[0].message, /DUKE \| \(1\) NCTH vs \(8\) DBD \| ⏳ pending/)
+  assert.match(posted[0].message, /DUKE \| \(1\) North Carolina vs \(8\) Duke \| ⏳ pending/)
   assert.doesNotMatch(posted[0].message, /Kansas|Houston|KU/)
 })
 

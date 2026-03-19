@@ -1,9 +1,12 @@
 import fetch from 'node-fetch'
 import { formatOdds } from './sportsBet.js'
 import { getGenericDisplayTeamCode } from './sportsTeams.js'
+import { getMarchMadnessTournamentMatchups } from './API.js'
+import { filterMarchMadnessOddsGames } from './marchMadness.js'
 
 const SPORTS_TIME_ZONE = 'America/New_York'
 const SPORTS_TIME_ZONE_LABEL = 'ET'
+export const MARCH_MADNESS_ODDS_SPORT_KEY = 'basketball_ncaab_madness'
 
 /// /////////////////////////////// Odds API ////////////////////////////////////////////
 export class OddsApiError extends Error {
@@ -17,6 +20,10 @@ export class OddsApiError extends Error {
 }
 
 export async function fetchOddsForSport (sportKey) {
+  if (sportKey === MARCH_MADNESS_ODDS_SPORT_KEY) {
+    return fetchMarchMadnessOdds()
+  }
+
   const ODDS_API_KEY = process.env.ODDS_API_KEY
   const BASE_URL = `https://api.the-odds-api.com/v4/sports/${sportKey}/odds`
 
@@ -36,6 +43,15 @@ export async function fetchOddsForSport (sportKey) {
 
   const data = await response.json()
   return filterFanDuelOnly(data) // Only return FanDuel odds
+}
+
+export async function fetchMarchMadnessOdds () {
+  const [games, tournamentMatchups] = await Promise.all([
+    fetchOddsForSport('basketball_ncaab'),
+    getMarchMadnessTournamentMatchups(['yesterday', 'today', 'tomorrow'])
+  ])
+
+  return filterMarchMadnessOddsGames(games, tournamentMatchups)
 }
 
 function filterFanDuelOnly (games) {
@@ -68,6 +84,7 @@ function filterFanDuelOnly (games) {
 
 export function formatOddsMessage (games, sportKey, now = Date.now()) {
   const title = formatSportTitle(sportKey)
+  const displayLimit = sportKey === MARCH_MADNESS_ODDS_SPORT_KEY ? 16 : 5
   const normalizedGames = Array.isArray(games)
     ? [...games].sort((a, b) => toTimestamp(a?.commenceTime) - toTimestamp(b?.commenceTime))
     : []
@@ -76,7 +93,7 @@ export function formatOddsMessage (games, sportKey, now = Date.now()) {
     return `🎲 Today's ${title} Odds:\n\nNo FanDuel lines are posted right now.`
   }
 
-  return `🎲 Today's ${title} Odds:\n\n` + normalizedGames.slice(0, 5).map((game, i) => {
+  return `🎲 Today's ${title} Odds:\n\n` + normalizedGames.slice(0, displayLimit).map((game, i) => {
     const { bookmaker, homeTeam, awayTeam, commenceTime } = game
     const h2h = bookmaker?.markets?.find(m => m.key === 'h2h')?.outcomes || []
     const spreads = bookmaker?.markets?.find(m => m.key === 'spreads')?.outcomes || []
@@ -99,7 +116,7 @@ export function formatOddsMessage (games, sportKey, now = Date.now()) {
     const awaySpread = spreadMap[awayTeam] ? `${formatSpread(spreadMap[awayTeam].point)} (${spreadMap[awayTeam].price})` : 'N/A'
     const homeSpread = spreadMap[homeTeam] ? `${formatSpread(spreadMap[homeTeam].point)} (${spreadMap[homeTeam].price})` : 'N/A'
 
-    const separator = sportKey === 'basketball_ncaab' ? 'vs' : '@'
+    const separator = sportKey === 'basketball_ncaab' || sportKey === MARCH_MADNESS_ODDS_SPORT_KEY ? 'vs' : '@'
     return `${i + 1}. ${awayLabel} ${separator} ${homeLabel} • 🕒 ${timeStr}${liveLabel}\n` +
              `🧢 ML — ${awayLabel}: ${awayML} | ${homeLabel}: ${homeML}\n` +
              `📏 Spread — ${awayLabel}: ${awaySpread} | ${homeLabel}: ${homeSpread}`
@@ -111,6 +128,7 @@ function formatSportTitle (sportKey) {
     baseball_mlb: 'MLB',
     basketball_nba: 'NBA',
     basketball_ncaab: 'NCAAB',
+    [MARCH_MADNESS_ODDS_SPORT_KEY]: "Men's March Madness",
     americanfootball_nfl: 'NFL',
     icehockey_nhl: 'NHL'
   }
@@ -163,7 +181,7 @@ function formatOddsTeamLabel (teamName, sportKey) {
   const raw = String(teamName || '').trim()
   if (!raw) return 'Unknown Team'
 
-  if (sportKey === 'basketball_ncaab') return getGenericDisplayTeamCode(raw)
+  if (sportKey === 'basketball_ncaab' || sportKey === MARCH_MADNESS_ODDS_SPORT_KEY) return getGenericDisplayTeamCode(raw)
   return getGenericDisplayTeamCode(raw)
 }
 

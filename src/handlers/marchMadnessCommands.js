@@ -8,12 +8,23 @@ import {
   getMarchMadnessTournamentGames,
   getUserNicknameByUuid
 } from '../utils/API.js'
-import { resolveCompletedBets } from '../utils/sportsBet.js'
+import { getOpenBetsForUser, placeSportsBet, resolveCompletedBets } from '../utils/sportsBet.js'
 import { getGenericDisplayTeamCode, getPreferredGameTeamCode, normalizeSportsTeamInput, resolveTeamNameFromInput } from '../utils/sportsTeams.js'
+import { getOddsForSport, saveOddsForSport } from '../utils/bettingOdds.js'
+import {
+  fetchOddsForSport,
+  formatOddsMessage,
+  formatSportsEventTime,
+  OddsApiError,
+  MARCH_MADNESS_ODDS_SPORT_KEY
+} from '../utils/sportsBetAPI.js'
+import { getUserWallet } from '../database/dbwalletmanager.js'
+import { getSenderNickname } from '../utils/helpers.js'
 import {
   getMarchMadnessBankrollLeaderboard,
   getMarchMadnessPointsLeaderboard,
   getMarchMadnessSeasonYear,
+  MARCH_MADNESS_SOURCE,
   listMarchMadnessPicksForUser,
   resolveMarchMadnessPicks,
   upsertMarchMadnessPick
@@ -239,7 +250,9 @@ async function enrichMadnessPicks (rows = [], {
         : Number.isFinite(savedGameIndex)
           ? savedGameIndex + 1
           : row.gameIndex,
-      teamCode: game ? getPreferredGameTeamCode(row?.teamName, game) : row.teamCode,
+      teamCode: game
+        ? (row?.teamName ? getPreferredGameTeamCode(row.teamName, game) : row.teamCode)
+        : row.teamCode,
       awayTeam: game?.awayTeam || row.awayTeam,
       awaySeed: Number.isFinite(Number(game?.awaySeed)) ? Number(game.awaySeed) : row.awaySeed,
       homeTeam: game?.homeTeam || row.homeTeam,
@@ -310,10 +323,72 @@ export function buildMadnessHubMessage (monthKey = getCurrentMonthKey()) {
     '- `/madness bankroll` — March Madness betting leaderboard',
     '',
     '━━ Betting ━━',
-    '- `/sports odds ncaab` — current NCAAB betting board',
-    '- `/sports bet ncaab <gameIndex> <teamCode> ml <amount>` — place a bet',
-    '- `/sports bets` — show your open sports bets'
+    '- `/madness odds` — tournament-only betting board',
+    '- `/madness bet <gameIndex> <teamCode> <ml|spread> <amount>` — place a tournament bet',
+    '- `/madness bets` — show your open March Madness bets'
   ].join('\n')
+}
+
+function parseMadnessBetInput (message = '') {
+  const parts = String(message || '').trim().split(/\s+/)
+  const rawIndex = Number.parseInt(parts[2], 10)
+  const team = String(parts[3] || '').trim()
+  const betType = String(parts[4] || '').trim().toLowerCase()
+  const amount = Number.parseFloat(parts[5])
+
+  if (!Number.isFinite(rawIndex) || rawIndex <= 0 || !team || !betType || !Number.isFinite(amount) || amount <= 0) {
+    return { ok: false }
+  }
+
+  return {
+    ok: true,
+    index: rawIndex - 1,
+    team,
+    betType,
+    amount
+  }
+}
+
+function buildMadnessOddsErrorMessage (error) {
+  if (error instanceof OddsApiError) {
+    if (error.status === 401) {
+      return "Couldn't refresh March Madness odds because the Odds API rejected the request (401 Unauthorized). Check the `ODDS_API_KEY`."
+    }
+
+    if (error.message === 'ODDS_API_KEY is missing.') {
+      return "Couldn't refresh March Madness odds because `ODDS_API_KEY` is not configured."
+    }
+
+    return `Couldn't refresh March Madness odds right now (${error.message}).`
+  }
+
+  return "Sorry, something went wrong fetching March Madness odds."
+}
+
+function parseUidFromMentionOrRaw (value = '') {
+  const trimmed = String(value || '').trim()
+  const mentionMatch = /<@uid:([\w-]+)>/i.exec(trimmed)
+  if (mentionMatch?.[1]) return mentionMatch[1]
+  return /^[\w-]{6,}$/.test(trimmed) ? trimmed : ''
+}
+
+function formatMadnessOpenBetLine (bet, game) {
+  const matchup = game?.awayTeam && game?.homeTeam
+    ? `${getGenericDisplayTeamCode(game.awayTeam)} vs ${getGenericDisplayTeamCode(game.homeTeam)}`
+    : `Game ${Number(bet.gameIndex || 0) + 1}`
+  const spreadLine = String(bet.type || '').toLowerCase() === 'spread' && Number.isFinite(Number(bet.spreadPoint))
+    ? ` ${Number(bet.spreadPoint) > 0 ? '+' : ''}${Number(bet.spreadPoint)}`
+    : ''
+  const startLabel = bet?.commenceTime
+    ? `Start: ${formatSportsEventTime(bet.commenceTime, { includeDate: true })}`
+    : null
+
+  return [
+    matchup,
+    `Pick: ${String(bet.teamCode || bet.team || '').toUpperCase()} ${String(bet.type || '').toUpperCase()}${spreadLine} at ${bet.odds > 0 ? `+${bet.odds}` : bet.odds}`,
+    `Risk: $${Number(bet.amount || 0)}`,
+    startLabel
+  ].filter(Boolean).join(' | ')
 }
 
 export async function postMadnessLeaderboard (room, {
@@ -594,6 +669,134 @@ export async function postMadnessLiveScores (room, {
   await postMessageImpl({ room, message })
 }
 
+export async function postMadnessOdds (room, {
+  postMessage: postMessageImpl = postMessage,
+  fetchOddsForSport: fetchOddsForSportImpl = fetchOddsForSport,
+  saveOddsForSport: saveOddsForSportImpl = saveOddsForSport,
+  getOddsForSport: getOddsForSportImpl = getOddsForSport,
+  formatOddsMessage: formatOddsMessageImpl = formatOddsMessage
+} = {}) {
+  try {
+    const games = await fetchOddsForSportImpl(MARCH_MADNESS_ODDS_SPORT_KEY)
+    await saveOddsForSportImpl(MARCH_MADNESS_ODDS_SPORT_KEY, games)
+    await postMessageImpl({
+      room,
+      message: formatOddsMessageImpl(games, MARCH_MADNESS_ODDS_SPORT_KEY)
+    })
+  } catch (error) {
+    const cachedOdds = await getOddsForSportImpl(MARCH_MADNESS_ODDS_SPORT_KEY).catch(() => [])
+
+    if (Array.isArray(cachedOdds) && cachedOdds.length) {
+      await postMessageImpl({
+        room,
+        message: `${formatOddsMessageImpl(cachedOdds, MARCH_MADNESS_ODDS_SPORT_KEY)}\n\n⚠️ Live odds refresh failed, so this is the last saved board.`
+      })
+      return
+    }
+
+    await postMessageImpl({
+      room,
+      message: buildMadnessOddsErrorMessage(error)
+    })
+  }
+}
+
+export async function handleMadnessBet ({ payload, room }, deps = {}) {
+  const {
+    postMessage: postMessageImpl = postMessage,
+    getOddsForSport: getOddsForSportImpl = getOddsForSport,
+    getUserWallet: getUserWalletImpl = getUserWallet,
+    getSenderNickname: getSenderNicknameImpl = getSenderNickname,
+    placeSportsBet: placeSportsBetImpl = placeSportsBet
+  } = deps
+
+  const senderUUID = payload?.sender
+  const nickname = await getSenderNicknameImpl(senderUUID)
+  const parsed = parseMadnessBetInput(payload?.message)
+
+  if (!parsed.ok) {
+    await postMessageImpl({
+      room,
+      message: 'Usage: /madness bet <gameIndex> <teamCode> <ml|spread> <amount>\nExample: /madness bet 1 DUKE ml 25'
+    })
+    return
+  }
+
+  const oddsData = await getOddsForSportImpl(MARCH_MADNESS_ODDS_SPORT_KEY)
+  if (!oddsData || parsed.index < 0 || parsed.index >= oddsData.length) {
+    await postMessageImpl({
+      room,
+      message: 'Invalid game index. Use `/madness odds` to see the current tournament board.'
+    })
+    return
+  }
+
+  const balance = await getUserWalletImpl(senderUUID)
+  if (parsed.amount > balance) {
+    await postMessageImpl({
+      room,
+      message: `Insufficient funds, ${nickname}. Your balance is $${balance}.`
+    })
+    return
+  }
+
+  const result = await placeSportsBetImpl(
+    senderUUID,
+    parsed.index,
+    parsed.team,
+    parsed.betType,
+    parsed.amount,
+    'basketball_ncaab',
+    {
+      oddsSportKey: MARCH_MADNESS_ODDS_SPORT_KEY
+    }
+  )
+
+  await postMessageImpl({ room, message: result })
+}
+
+export async function postMadnessOpenBets (room, {
+  payload,
+  postMessage: postMessageImpl = postMessage,
+  getSenderNickname: getSenderNicknameImpl = getSenderNickname,
+  getOpenBetsForUser: getOpenBetsForUserImpl = getOpenBetsForUser,
+  getOddsForSport: getOddsForSportImpl = getOddsForSport
+} = {}) {
+  const senderUUID = payload?.sender
+  const parts = String(payload?.message || '').trim().split(/\s+/)
+  const targetUUID = parseUidFromMentionOrRaw(parts[2]) || senderUUID
+  const openBets = (await getOpenBetsForUserImpl(targetUUID))
+    .filter(bet => String(bet?.ledgerSource || '') === MARCH_MADNESS_SOURCE)
+
+  if (!openBets.length) {
+    const nick = targetUUID === senderUUID
+      ? 'You'
+      : await getSenderNicknameImpl(targetUUID).catch(() => `<@uid:${targetUUID}>`)
+    await postMessageImpl({
+      room,
+      message: targetUUID === senderUUID
+        ? 'You have no open March Madness bets.'
+        : `${nick} has no open March Madness bets.`
+    })
+    return
+  }
+
+  const games = await getOddsForSportImpl(MARCH_MADNESS_ODDS_SPORT_KEY).catch(() => [])
+  const lines = openBets.map((bet) => {
+    const game = (games || []).find(entry => entry.id === bet.gameId) || null
+    return `- ${formatMadnessOpenBetLine(bet, game)}`
+  })
+
+  const headerName = targetUUID === senderUUID
+    ? 'Your'
+    : `${await getSenderNicknameImpl(targetUUID).catch(() => `<@uid:${targetUUID}>`)}'s`
+
+  await postMessageImpl({
+    room,
+    message: [`🎟️ ${headerName} March Madness Bets`, '', ...lines].join('\n')
+  })
+}
+
 export function createMadnessCommandHandler (deps = {}) {
   const {
     postMessage: postMessageImpl = postMessage,
@@ -601,10 +804,13 @@ export function createMadnessCommandHandler (deps = {}) {
     postMadnessGames: postMadnessGamesImpl = postMadnessGames,
     postMadnessPickBoard: postMadnessPickBoardImpl = postMadnessPickBoard,
     postMadnessLiveScores: postMadnessLiveScoresImpl = postMadnessLiveScores,
+    postMadnessOdds: postMadnessOddsImpl = postMadnessOdds,
     postMadnessLeaderboard: postMadnessLeaderboardImpl = postMadnessLeaderboard,
     postMadnessBankrollLeaderboard: postMadnessBankrollLeaderboardImpl = postMadnessBankrollLeaderboard,
     handleMadnessPick: handleMadnessPickImpl = handleMadnessPick,
-    postMadnessPicks: postMadnessPicksImpl = postMadnessPicks
+    postMadnessPicks: postMadnessPicksImpl = postMadnessPicks,
+    handleMadnessBet: handleMadnessBetImpl = handleMadnessBet,
+    postMadnessOpenBets: postMadnessOpenBetsImpl = postMadnessOpenBets
   } = deps
 
   return async function handleMadnessCommand ({ payload, room }) {
@@ -634,18 +840,33 @@ export function createMadnessCommandHandler (deps = {}) {
       return
     }
 
+    if (subcommand === 'odds') {
+      await postMadnessOddsImpl(room, deps)
+      return
+    }
+
     if (subcommand === 'leaderboard' || subcommand === 'leaders' || subcommand === 'top') {
       await postMadnessLeaderboardImpl(room, { args: parts.slice(2).join(' ') })
       return
     }
 
-    if (subcommand === 'bankroll' || subcommand === 'money' || subcommand === 'bets') {
+    if (subcommand === 'bankroll' || subcommand === 'money') {
       await postMadnessBankrollLeaderboardImpl(room, { args: parts.slice(2).join(' ') })
       return
     }
 
     if (subcommand === 'pick' || subcommand === 'picksubmit') {
       await handleMadnessPickImpl({ payload, room }, deps)
+      return
+    }
+
+    if (subcommand === 'bet') {
+      await handleMadnessBetImpl({ payload, room }, deps)
+      return
+    }
+
+    if (subcommand === 'bets' || subcommand === 'mybets') {
+      await postMadnessOpenBetsImpl(room, { payload, ...deps })
       return
     }
 

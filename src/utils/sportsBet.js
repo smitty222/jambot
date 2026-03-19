@@ -119,6 +119,10 @@ function formatSpreadPoint (point) {
   return Number(point) > 0 ? `+${point}` : `${point}`
 }
 
+function formatSportsBetBoardLabel (sportKey = '') {
+  return sportKey === 'basketball_ncaab_madness' ? 'March Madness' : sportKey
+}
+
 function getGameWinnerTeamName (game = {}) {
   const homeScore = Number(game?.scores?.home)
   const awayScore = Number(game?.scores?.away)
@@ -206,11 +210,15 @@ function getSettlementLookbackDays (bets = {}, sportKey, now = Date.now()) {
   return Math.max(1, Math.min(MAX_SCORE_LOOKBACK_DAYS, Math.ceil(elapsed / DAY_MS) + 1))
 }
 
-export async function placeSportsBet (senderUUID, index, team, betTypeInput, amount, sport) {
+export async function placeSportsBet (senderUUID, index, team, betTypeInput, amount, sport, options = {}) {
+  const {
+    oddsSportKey = sport,
+    ledgerSource: forcedLedgerSource = null
+  } = options
   const normalizedSenderUUID = normalizeUserUuid(senderUUID)
-  const games = await getOddsForSport(sport)
+  const games = await getOddsForSport(oddsSportKey)
   if (!games || index < 0 || index >= games.length) {
-    return `Game ${index + 1} not found for ${sport}.`
+    return `Game ${index + 1} not found for ${formatSportsBetBoardLabel(oddsSportKey)}.`
   }
 
   const game = games[index]
@@ -219,11 +227,11 @@ export async function placeSportsBet (senderUUID, index, team, betTypeInput, amo
 
   const h2h = bookmaker.markets.find(m => m.key === 'h2h')?.outcomes || []
   const spreads = bookmaker.markets.find(m => m.key === 'spreads')?.outcomes || []
-  const ledgerSource = sport === 'basketball_ncaab'
+  const ledgerSource = forcedLedgerSource || (sport === 'basketball_ncaab'
     ? (isMarchMadnessOddsGame(game, await getMarchMadnessTournamentMatchups(['yesterday', 'today', 'tomorrow']))
         ? MARCH_MADNESS_SOURCE
         : 'sports')
-    : 'sports'
+    : 'sports')
 
   const teamAbbrUpper = team.toUpperCase()
   const fullTeamName = resolveTeamNameFromInput(teamAbbrUpper, [game.awayTeam, game.homeTeam])
@@ -305,7 +313,7 @@ export async function placeSportsBet (senderUUID, index, team, betTypeInput, amo
     ? `${teamCode} (${betType} ${formatSpreadPoint(spreadPoint)})`
     : `${teamCode} (${betType})`
 
-  return `✅ Bet placed! $${amount} on ${betLabel} at ${formatOdds(odds)} odds (Game ${index + 1}, ${sport}).`
+  return `✅ Bet placed! $${amount} on ${betLabel} at ${formatOdds(odds)} odds (Game ${index + 1}, ${formatSportsBetBoardLabel(oddsSportKey)}).`
 }
 
 export async function resolveCompletedBets (sportKey) {
