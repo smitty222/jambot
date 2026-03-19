@@ -5,6 +5,7 @@ import {
   getMarchMadnessGameboardGames,
   getMarchMadnessLiveScores,
   getMarchMadnessScores,
+  getMarchMadnessTournamentGames,
   getUserNicknameByUuid
 } from '../utils/API.js'
 import { resolveCompletedBets } from '../utils/sportsBet.js'
@@ -149,6 +150,17 @@ async function ensureMadnessOdds ({
   return Array.isArray(games) ? games : []
 }
 
+async function getMadnessGamesCommandSlate ({
+  requestedDate = 'today',
+  now = new Date(),
+  timeZone = 'America/New_York',
+  getMarchMadnessGameboardGames: getMarchMadnessGameboardGamesImpl = getMarchMadnessGameboardGames
+} = {}) {
+  const resolvedDate = resolveMadnessGamesDateToken(requestedDate, now, timeZone)
+  const games = await getMarchMadnessGameboardGamesImpl(resolvedDate)
+  return Array.isArray(games) ? games : []
+}
+
 async function enrichMadnessPicks (rows = [], {
   getMarchMadnessGameboardGames: getMarchMadnessGameboardGamesImpl = getMarchMadnessGameboardGames
 } = {}) {
@@ -197,6 +209,31 @@ async function enrichMadnessPicks (rows = [], {
       displayMatchup: game?.displayMatchup || row.displayMatchup
     }
   })
+}
+
+async function filterMensMarchMadnessPicks (rows = [], {
+  getMarchMadnessTournamentGames: getMarchMadnessTournamentGamesImpl = getMarchMadnessTournamentGames
+} = {}) {
+  if (!Array.isArray(rows) || !rows.length) return []
+
+  const requestedDates = [...new Set(
+    rows
+      .map(row => String(row?.commenceTime || '').slice(0, 10).trim())
+      .filter(Boolean)
+  )]
+
+  if (!requestedDates.length) return []
+
+  const tournamentGames = await getMarchMadnessTournamentGamesImpl(requestedDates)
+  const tournamentGameIds = new Set(
+    (Array.isArray(tournamentGames) ? tournamentGames : [])
+      .map(game => String(game?.id || '').trim())
+      .filter(Boolean)
+  )
+
+  if (!tournamentGameIds.size) return []
+
+  return rows.filter(row => tournamentGameIds.has(String(row?.gameId || '').trim()))
 }
 
 function resolveMadnessPickTeamName (input, game = {}) {
@@ -330,7 +367,7 @@ export async function postMadnessBankrollLeaderboard (room, {
 export async function handleMadnessPick ({ payload, room }, deps = {}) {
   const {
     postMessage: postMessageImpl = postMessage,
-    ensureMadnessOdds: ensureMadnessOddsImpl = ensureMadnessOdds,
+    getMadnessGamesCommandSlate: getMadnessGamesCommandSlateImpl = getMadnessGamesCommandSlate,
     upsertMarchMadnessPick: upsertMarchMadnessPickImpl = upsertMarchMadnessPick,
     getMarchMadnessSeasonYear: getMarchMadnessSeasonYearImpl = getMarchMadnessSeasonYear,
     now: nowImpl = () => new Date(),
@@ -350,7 +387,7 @@ export async function handleMadnessPick ({ payload, room }, deps = {}) {
   }
 
   const now = nowImpl()
-  const games = await ensureMadnessOddsImpl({
+  const games = await getMadnessGamesCommandSlateImpl({
     requestedDate: resolveMadnessGamesDateToken('', now, timeZone),
     now,
     timeZone,
@@ -360,7 +397,7 @@ export async function handleMadnessPick ({ payload, room }, deps = {}) {
   if (!game) {
     await postMessageImpl({
       room,
-      message: 'Invalid game index. Use `/madness board` to see the current pick board.'
+      message: 'Invalid game index. You can only pick from the games currently shown in `/madness games`.'
     })
     return
   }
@@ -427,12 +464,16 @@ export async function postMadnessPicks (room, {
   listMarchMadnessPicksForUser: listMarchMadnessPicksForUserImpl = listMarchMadnessPicksForUser,
   resolveMarchMadnessPicks: resolveMarchMadnessPicksImpl = resolveMarchMadnessPicks,
   getMarchMadnessSeasonYear: getMarchMadnessSeasonYearImpl = getMarchMadnessSeasonYear,
-  getMarchMadnessGameboardGames: getMarchMadnessGameboardGamesImpl = getMarchMadnessGameboardGames
+  getMarchMadnessGameboardGames: getMarchMadnessGameboardGamesImpl = getMarchMadnessGameboardGames,
+  getMarchMadnessTournamentGames: getMarchMadnessTournamentGamesImpl = getMarchMadnessTournamentGames
 } = {}) {
   const seasonYear = getMarchMadnessSeasonYearImpl()
   await resolveMarchMadnessPicksImpl({ seasonYear })
   const savedRows = listMarchMadnessPicksForUserImpl(payload?.sender, seasonYear)
-  const rows = await enrichMadnessPicks(savedRows, {
+  const tournamentRows = await filterMensMarchMadnessPicks(savedRows, {
+    getMarchMadnessTournamentGames: getMarchMadnessTournamentGamesImpl
+  })
+  const rows = await enrichMadnessPicks(tournamentRows, {
     getMarchMadnessGameboardGames: getMarchMadnessGameboardGamesImpl
   })
 

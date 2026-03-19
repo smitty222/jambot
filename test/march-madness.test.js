@@ -137,6 +137,10 @@ test('buildMadnessPickBoard shows numbered games with team codes for picking', (
 
 test('isMarchMadnessEvent only accepts seeded tournament matchups', () => {
   assert.equal(isMarchMadnessEvent({
+    links: [{
+      rel: ['bracket', 'desktop', 'event'],
+      href: 'https://www.espn.com/mens-college-basketball/bracket/_/season/2026/2026-ncaa-tournament'
+    }],
     competitions: [{
       competitors: [
         { homeAway: 'away', seed: 12, team: { displayName: 'VCU Rams' } },
@@ -153,10 +157,23 @@ test('isMarchMadnessEvent only accepts seeded tournament matchups', () => {
       ]
     }]
   }), false)
+
+  assert.equal(isMarchMadnessEvent({
+    competitions: [{
+      competitors: [
+        { homeAway: 'away', curatedRank: { current: 13 }, team: { displayName: 'Troy Trojans' } },
+        { homeAway: 'home', curatedRank: { current: 4 }, team: { displayName: 'Nebraska Cornhuskers' } }
+      ]
+    }]
+  }), false)
 })
 
 test('filterMarchMadnessOddsGames keeps only games between tournament teams', () => {
   const matchups = buildMarchMadnessTournamentMatchups([{
+    links: [{
+      rel: ['bracket', 'desktop', 'event'],
+      href: 'https://www.espn.com/mens-college-basketball/bracket/_/season/2026/2026-ncaa-tournament'
+    }],
     date: '2026-03-20T18:20:00-04:00',
     competitions: [{
       competitors: [
@@ -195,6 +212,10 @@ test('filterMarchMadnessOddsGames keeps only games between tournament teams', ()
 
 test('filterMarchMadnessOddsGames preserves canonical tournament team names for display', () => {
   const matchups = buildMarchMadnessTournamentMatchups([{
+    links: [{
+      rel: ['bracket', 'desktop', 'event'],
+      href: 'https://www.espn.com/mens-college-basketball/bracket/_/season/2026/2026-ncaa-tournament'
+    }],
     date: '2026-03-20T18:20:00-04:00',
     competitions: [{
       competitors: [
@@ -236,6 +257,10 @@ test('filterMarchMadnessOddsGames preserves canonical tournament team names for 
 
 test('isMarchMadnessOddsGame rejects unrelated school matchups with overlapping nickname patterns', () => {
   const matchups = buildMarchMadnessTournamentMatchups([{
+    links: [{
+      rel: ['bracket', 'desktop', 'event'],
+      href: 'https://www.espn.com/mens-college-basketball/bracket/_/season/2026/2026-ncaa-tournament'
+    }],
     date: '2026-03-20T18:20:00-04:00',
     competitions: [{
       competitors: [

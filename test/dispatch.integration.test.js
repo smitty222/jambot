@@ -526,7 +526,7 @@ test('handleMadnessPick accepts team abbreviations and confirms with the team co
     room: 'room-1'
   }, {
     postMessage: async (msg) => posted.push(msg),
-    ensureMadnessOdds: async () => [{
+    getMadnessGamesCommandSlate: async () => [{
       id: 'game-1',
       awayTeam: 'Miami (OH) RedHawks',
       awayShortName: 'Miami (OH)',
@@ -557,7 +557,7 @@ test('handleMadnessPick accepts the same ESPN short labels shown on the board', 
     room: 'room-1'
   }, {
     postMessage: async (msg) => posted.push(msg),
-    ensureMadnessOdds: async () => [{
+    getMadnessGamesCommandSlate: async () => [{
       id: 'game-1',
       awayTeam: 'North Carolina Tar Heels',
       awayShortName: 'North Carolina',
@@ -580,6 +580,31 @@ test('handleMadnessPick accepts the same ESPN short labels shown on the board', 
   }])
 })
 
+test('handleMadnessPick rejects indexes outside the current /madness games slate', async () => {
+  const posted = []
+
+  await handleMadnessPick({
+    payload: { sender: 'user-1', message: '/madness pick 2 duke' },
+    room: 'room-1'
+  }, {
+    postMessage: async (msg) => posted.push(msg),
+    getMadnessGamesCommandSlate: async () => [{
+      id: 'game-1',
+      awayTeam: 'North Carolina Tar Heels',
+      awayShortName: 'North Carolina',
+      homeTeam: 'Duke Blue Devils',
+      homeShortName: 'Duke',
+      commenceTime: '2026-03-20T19:10:00-04:00'
+    }],
+    getMarchMadnessSeasonYear: () => 2026
+  })
+
+  assert.deepEqual(posted, [{
+    room: 'room-1',
+    message: 'Invalid game index. You can only pick from the games currently shown in `/madness games`.'
+  }])
+})
+
 test('postMadnessPicks refreshes matchup seeds and game indexes from the live slate', async () => {
   const posted = []
 
@@ -598,6 +623,14 @@ test('postMadnessPicks refreshes matchup seeds and game indexes from the live sl
       homeSeed: null,
       commenceTime: '2026-03-20T23:10:00.000Z',
       status: 'pending'
+    }],
+    getMarchMadnessTournamentGames: async () => [{
+      id: 'game-2',
+      awayTeam: 'North Carolina Tar Heels',
+      awaySeed: 1,
+      homeTeam: 'Duke Blue Devils',
+      homeSeed: 8,
+      commenceTime: '2026-03-20T23:10:00.000Z'
     }],
     getMarchMadnessGameboardGames: async () => [
       {
@@ -624,6 +657,62 @@ test('postMadnessPicks refreshes matchup seeds and game indexes from the live sl
   assert.equal(posted.length, 1)
   assert.match(posted[0].message, /🧾 \*\*Your March Madness Picks\*\* \(2026\)/)
   assert.match(posted[0].message, /2\. DUKE \| \(1\) NCTH vs \(8\) DBD \| ⏳ pending/)
+})
+
+test('postMadnessPicks only shows picks from the men’s March Madness bracket', async () => {
+  const posted = []
+
+  await postMadnessPicks('room-1', {
+    payload: { sender: 'user-1' },
+    postMessage: async (msg) => posted.push(msg),
+    resolveMarchMadnessPicks: async () => {},
+    getMarchMadnessSeasonYear: () => 2026,
+    listMarchMadnessPicksForUser: () => [
+      {
+        gameId: 'tourney-1',
+        gameIndex: 0,
+        teamCode: 'DUKE',
+        awayTeam: 'North Carolina Tar Heels',
+        awaySeed: 1,
+        homeTeam: 'Duke Blue Devils',
+        homeSeed: 8,
+        commenceTime: '2026-03-20T23:10:00.000Z',
+        status: 'pending'
+      },
+      {
+        gameId: 'not-madness-1',
+        gameIndex: 1,
+        teamCode: 'KU',
+        awayTeam: 'Kansas Jayhawks',
+        awaySeed: null,
+        homeTeam: 'Houston Cougars',
+        homeSeed: null,
+        commenceTime: '2026-03-20T19:00:00.000Z',
+        status: 'pending'
+      }
+    ],
+    getMarchMadnessTournamentGames: async () => [{
+      id: 'tourney-1',
+      awayTeam: 'North Carolina Tar Heels',
+      awaySeed: 1,
+      homeTeam: 'Duke Blue Devils',
+      homeSeed: 8,
+      commenceTime: '2026-03-20T23:10:00.000Z'
+    }],
+    getMarchMadnessGameboardGames: async () => [{
+      id: 'tourney-1',
+      awayTeam: 'North Carolina Tar Heels',
+      awaySeed: 1,
+      homeTeam: 'Duke Blue Devils',
+      homeSeed: 8,
+      displayMatchup: '(1) North Carolina vs (8) Duke',
+      commenceTime: '2026-03-20T23:10:00.000Z'
+    }]
+  })
+
+  assert.equal(posted.length, 1)
+  assert.match(posted[0].message, /DUKE \| \(1\) NCTH vs \(8\) DBD \| ⏳ pending/)
+  assert.doesNotMatch(posted[0].message, /Kansas|Houston|KU/)
 })
 
 test('createMadnessCommandHandler routes leaderboard requests', async () => {

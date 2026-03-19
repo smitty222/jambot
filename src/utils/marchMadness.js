@@ -93,8 +93,14 @@ export function isMarchMadnessEvent (event = {}) {
   const competitors = Array.isArray(comp?.competitors) ? comp.competitors : []
   const home = competitors.find(c => c?.homeAway === 'home') || competitors[0]
   const away = competitors.find(c => c?.homeAway === 'away') || competitors[1]
+  const links = Array.isArray(event?.links) ? event.links : []
+  const hasNcaaBracketLink = links.some((link) => {
+    const rel = Array.isArray(link?.rel) ? link.rel : []
+    const href = String(link?.href || '')
+    return rel.includes('bracket') && /ncaa-tournament/i.test(href)
+  })
 
-  return hasMarchMadnessTournamentSeed(home) && hasMarchMadnessTournamentSeed(away)
+  return hasNcaaBracketLink && hasMarchMadnessTournamentSeed(home) && hasMarchMadnessTournamentSeed(away)
 }
 
 export function buildMarchMadnessTournamentAliasSet (events = []) {
