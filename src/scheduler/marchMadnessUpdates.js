@@ -7,6 +7,7 @@ import {
   getMarchMadnessTournamentGames
 } from '../utils/API.js'
 import { getGenericDisplayTeamCode } from '../utils/sportsTeams.js'
+import { buildMadnessBoardEntries } from '../handlers/marchMadnessCommands.js'
 import db from '../database/db.js'
 
 const NO_LIVE_GAMES_MESSAGE = 'No live NCAAB games right now.'
@@ -94,6 +95,44 @@ function formatTipoffTimeEt (commenceTime, timeZone = 'America/New_York') {
   })} ET`
 }
 
+function formatDateInTimeZone (date, timeZone = 'America/New_York') {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date)
+
+  const mapped = Object.fromEntries(parts.map(part => [part.type, part.value]))
+  return `${mapped.year}-${mapped.month}-${mapped.day}`
+}
+
+export function attachMarchMadnessReminderGameIndices (games = [], reminderCandidates = [], timeZone = 'America/New_York') {
+  if (!Array.isArray(reminderCandidates) || !reminderCandidates.length) return []
+
+  const gamesByDate = new Map()
+  for (const game of (Array.isArray(games) ? games : [])) {
+    const tip = new Date(game?.commenceTime || '')
+    if (Number.isNaN(tip.getTime())) continue
+    const dateKey = formatDateInTimeZone(tip, timeZone)
+    const dateGames = gamesByDate.get(dateKey) || []
+    dateGames.push(game)
+    gamesByDate.set(dateKey, dateGames)
+  }
+
+  const gameIndexById = new Map()
+  for (const [dateKey, dateGames] of gamesByDate.entries()) {
+    buildMadnessBoardEntries(dateGames, dateKey, timeZone).forEach(({ game, gameIndex }) => {
+      gameIndexById.set(String(game?.id || ''), gameIndex)
+    })
+  }
+
+  return reminderCandidates.map((game) => ({
+    ...game,
+    gameIndex: gameIndexById.get(String(game?.id || '')) || game?.gameIndex || null
+  }))
+}
+
 export function selectMarchMadnessPickReminderGames (games = [], now = new Date(), leadMinutes = 30, remindedGameIds = []) {
   const nowTs = now.getTime()
   const leadMs = Math.max(1, Math.floor(Number(leadMinutes || 30))) * 60 * 1000
@@ -121,7 +160,8 @@ export function buildMarchMadnessPickReminderMessage (games = [], now = new Date
     const tipClock = formatTipoffTimeEt(game?.commenceTime, timeZone)
     const awayCode = getGenericDisplayTeamCode(game?.canonicalAwayTeam || game?.awayTeam)
     const homeCode = getGenericDisplayTeamCode(game?.canonicalHomeTeam || game?.homeTeam)
-    return `${index + 1}. ${awayCode} vs ${homeCode} • ${tipClock} • starts in ${tipText}`
+    const displayIndex = Number.isFinite(Number(game?.gameIndex)) ? Number(game.gameIndex) : index + 1
+    return `${displayIndex}. ${awayCode} vs ${homeCode} • ${tipClock} • starts in ${tipText}`
   })
 
   const moreCount = Math.max(0, (games?.length || 0) - upcoming.length)
@@ -224,7 +264,8 @@ export function createMarchMadnessUpdateRunner (deps = {}) {
       const reminderCandidates = selectMarchMadnessPickReminderGames(upcomingGames, now, leadMinutes, activeReminderIds)
 
       if (reminderCandidates.length) {
-        const reminderMessage = buildMarchMadnessPickReminderMessage(reminderCandidates, now)
+        const indexedReminderCandidates = attachMarchMadnessReminderGameIndices(upcomingGames, reminderCandidates)
+        const reminderMessage = buildMarchMadnessPickReminderMessage(indexedReminderCandidates, now)
         await postMessageImpl({ room, message: reminderMessage })
         const nextState = { ...reminderState }
         for (const game of reminderCandidates) {

@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  attachMarchMadnessReminderGameIndices,
   buildMarchMadnessPickReminderMessage,
   createMarchMadnessUpdateRunner,
   decorateMarchMadnessUpdateMessage,
@@ -122,14 +123,28 @@ test('selectMarchMadnessPickReminderGames chooses games tipping soon and skips r
 test('buildMarchMadnessPickReminderMessage formats a concise reminder', () => {
   const now = new Date('2026-03-20T18:00:00-04:00')
   const message = buildMarchMadnessPickReminderMessage([
-    { id: 'g1', awayTeam: 'Virginia Commonwealth Rams', homeTeam: 'Brigham Young Cougars', commenceTime: '2026-03-20T22:20:00.000Z' },
-    { id: 'g2', awayTeam: 'Drake Bulldogs', homeTeam: 'Missouri Tigers', commenceTime: '2026-03-20T22:25:00.000Z' }
+    { id: 'g1', gameIndex: 2, awayTeam: 'Virginia Commonwealth Rams', homeTeam: 'Brigham Young Cougars', commenceTime: '2026-03-20T22:20:00.000Z' },
+    { id: 'g2', gameIndex: 4, awayTeam: 'Drake Bulldogs', homeTeam: 'Missouri Tigers', commenceTime: '2026-03-20T22:25:00.000Z' }
   ], now)
 
   assert.match(message, /March Madness picks reminder/)
-  assert.match(message, /VCR vs BYC • 6:20 PM ET • starts in 20 min/)
-  assert.match(message, /DB vs MT • 6:25 PM ET • starts in 25 min/)
+  assert.match(message, /2\. VCR vs BYC • 6:20 PM ET • starts in 20 min/)
+  assert.match(message, /4\. DB vs MT • 6:25 PM ET • starts in 25 min/)
   assert.match(message, /\/madness pick <gameIndex> <teamCode>/)
+})
+
+test('attachMarchMadnessReminderGameIndices uses board order from the full slate', () => {
+  const indexedGames = attachMarchMadnessReminderGameIndices([
+    { id: 'g1', awayTeam: 'Akron', homeTeam: 'Arizona', commenceTime: '2026-03-20T22:10:00.000Z' },
+    { id: 'g2', awayTeam: 'Virginia Commonwealth Rams', homeTeam: 'Brigham Young Cougars', commenceTime: '2026-03-20T22:20:00.000Z' },
+    { id: 'g3', awayTeam: 'Drake Bulldogs', homeTeam: 'Missouri Tigers', commenceTime: '2026-03-20T22:25:00.000Z' }
+  ], [
+    { id: 'g2', awayTeam: 'Virginia Commonwealth Rams', homeTeam: 'Brigham Young Cougars', commenceTime: '2026-03-20T22:20:00.000Z' }
+  ])
+
+  assert.deepEqual(indexedGames.map(game => ({ id: game.id, gameIndex: game.gameIndex })), [
+    { id: 'g2', gameIndex: 2 }
+  ])
 })
 
 test('createMarchMadnessUpdateRunner posts picks reminders before tipoff', async () => {
@@ -141,6 +156,7 @@ test('createMarchMadnessUpdateRunner posts picks reminders before tipoff', async
     postMessage: async (msg) => posted.push(msg),
     getMarchMadnessLiveScores: async () => 'No live NCAAB games right now.',
     loadUpcomingMarchMadnessGames: async () => [
+      { id: 'g0', awayTeam: 'Akron', homeTeam: 'Arizona', commenceTime: '2026-03-20T18:10:00-04:00' },
       { id: 'g1', awayTeam: 'VCU', homeTeam: 'BYU', commenceTime: '2026-03-20T18:20:00-04:00' }
     ],
     leadMinutes: 30,
@@ -151,5 +167,5 @@ test('createMarchMadnessUpdateRunner posts picks reminders before tipoff', async
 
   assert.equal(posted.length, 1)
   assert.match(posted[0].message, /March Madness picks reminder/)
-  assert.match(posted[0].message, /VCU vs BYU/)
+  assert.match(posted[0].message, /2\. VCU vs BYU/)
 })
