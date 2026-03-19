@@ -1185,6 +1185,55 @@ export function formatEspnScoreboardTeamName (team = {}, sportPath = '') {
   return 'Unknown Team'
 }
 
+function sortEspnScoreboardEvents (events = []) {
+  return [...(Array.isArray(events) ? events : [])].sort((a, b) => {
+    const pa = a?.competitions?.[0]?.status?.period || 0
+    const pb = b?.competitions?.[0]?.status?.period || 0
+    return pb - pa
+  })
+}
+
+export async function getMarchMadnessGameboardGames (requestedDate, { liveOnly = false } = {}) {
+  const events = await fetchEspnScoreboardEvents('basketball/mens-college-basketball', requestedDate)
+  const filteredEvents = sortEspnScoreboardEvents(
+    (liveOnly
+      ? events.filter(g => String(g?.status?.type?.description || '').trim() === 'In Progress')
+      : events
+    ).filter(event => isMarchMadnessEvent(event))
+  )
+
+  return filteredEvents.map((event) => {
+    const comp = event?.competitions?.[0] || {}
+    const home = comp?.competitors?.find(c => c.homeAway === 'home')
+    const away = comp?.competitors?.find(c => c.homeAway === 'away')
+    const homeShortName = formatEspnScoreboardTeamName(home?.team, 'basketball/mens-college-basketball')
+    const awayShortName = formatEspnScoreboardTeamName(away?.team, 'basketball/mens-college-basketball')
+    const homeSeedLabel = formatEspnTournamentSeed(home)
+    const awaySeedLabel = formatEspnTournamentSeed(away)
+
+    return {
+      id: String(event?.id || ''),
+      commenceTime: comp?.date || event?.date || null,
+      status: String(event?.status?.type?.description || '').trim(),
+      completed: Boolean(event?.status?.type?.completed || comp?.status?.type?.completed),
+      period: comp?.status?.period || 0,
+      awayTeam: formatEspnTournamentGameTeamName(away?.team),
+      homeTeam: formatEspnTournamentGameTeamName(home?.team),
+      awaySeed: Number.parseInt(away?.seed ?? away?.tournamentSeed ?? away?.team?.seed ?? away?.team?.tournamentSeed, 10) || null,
+      homeSeed: Number.parseInt(home?.seed ?? home?.tournamentSeed ?? home?.team?.seed ?? home?.team?.tournamentSeed, 10) || null,
+      awayShortName,
+      homeShortName,
+      awayDisplayName: `${awaySeedLabel}${awayShortName}`.trim(),
+      homeDisplayName: `${homeSeedLabel}${homeShortName}`.trim(),
+      displayMatchup: `${`${awaySeedLabel}${awayShortName}`.trim()} vs ${`${homeSeedLabel}${homeShortName}`.trim()}`,
+      scores: {
+        away: away?.score,
+        home: home?.score
+      }
+    }
+  }).filter(game => game.id && game.awayTeam && game.homeTeam)
+}
+
 async function espnScoreboard (sportPath, requestedDate, options = {}) {
   const {
     liveOnly = false,
@@ -1199,6 +1248,29 @@ async function espnScoreboard (sportPath, requestedDate, options = {}) {
       : cacheKeyBase
 
   return getCachedScoreboard(cacheKey, async () => {
+    if (sportPath === 'basketball/mens-college-basketball' && tournamentOnly) {
+      const filteredGames = await getMarchMadnessGameboardGames(requestedDate, { liveOnly })
+      if (!filteredGames.length) {
+        const noGamesMessage = liveOnly
+          ? 'No live NCAAB games right now.\n'
+          : 'No March Madness games available right now.\n'
+        return noGamesMessage
+      }
+
+      const lines = filteredGames.map((game) => formatScoreboardLine({
+        awayName: game.awayDisplayName,
+        awayScore: game?.scores?.away,
+        homeName: game.homeDisplayName,
+        homeScore: game?.scores?.home,
+        status: game.status,
+        sportPath,
+        competitionDate: game.commenceTime,
+        period: game.period
+      }))
+
+      return `🏀 NCAAB Gameboard\n\n${lines.join('\n')}\n`
+    }
+
     const events = await fetchEspnScoreboardEvents(sportPath, requestedDate)
     const games = liveOnly
       ? events.filter(g => String(g?.status?.type?.description || '').trim() === 'In Progress')
@@ -1206,13 +1278,9 @@ async function espnScoreboard (sportPath, requestedDate, options = {}) {
     const filteredGames = tournamentOnly
       ? games.filter(event => isMarchMadnessEvent(event))
       : games
-    filteredGames.sort((a, b) => {
-      const pa = a?.competitions?.[0]?.status?.period || 0
-      const pb = b?.competitions?.[0]?.status?.period || 0
-      return pb - pa
-    })
+    const sortedGames = sortEspnScoreboardEvents(filteredGames)
 
-    if (!filteredGames.length) {
+    if (!sortedGames.length) {
       const sportLabelMap = {
         'baseball/mlb': 'MLB',
         'hockey/nhl': 'NHL',
@@ -1229,7 +1297,7 @@ async function espnScoreboard (sportPath, requestedDate, options = {}) {
         : noGamesMessage
     }
 
-    const lines = filteredGames.map(g => {
+    const lines = sortedGames.map(g => {
       const comp = g?.competitions?.[0]
       const home = comp?.competitors?.find(c => c.homeAway === 'home')
       const away = comp?.competitors?.find(c => c.homeAway === 'away')

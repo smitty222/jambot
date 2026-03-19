@@ -529,7 +529,9 @@ test('handleMadnessPick accepts team abbreviations and confirms with the team co
     ensureMadnessOdds: async () => [{
       id: 'game-1',
       awayTeam: 'Miami (OH) RedHawks',
+      awayShortName: 'Miami (OH)',
       homeTeam: 'SMU Mustangs',
+      homeShortName: 'SMU',
       commenceTime: '2026-03-20T19:10:00-04:00'
     }],
     upsertMarchMadnessPick: ({ teamName }) => ({
@@ -544,6 +546,37 @@ test('handleMadnessPick accepts team abbreviations and confirms with the team co
   assert.deepEqual(posted, [{
     room: 'room-1',
     message: '✅ Pick locked in: SMU for Game 1.'
+  }])
+})
+
+test('handleMadnessPick accepts the same ESPN short labels shown on the board', async () => {
+  const posted = []
+
+  await handleMadnessPick({
+    payload: { sender: 'user-1', message: '/madness pick 1 northcarolina' },
+    room: 'room-1'
+  }, {
+    postMessage: async (msg) => posted.push(msg),
+    ensureMadnessOdds: async () => [{
+      id: 'game-1',
+      awayTeam: 'North Carolina Tar Heels',
+      awayShortName: 'North Carolina',
+      homeTeam: 'Duke Blue Devils',
+      homeShortName: 'Duke',
+      commenceTime: '2026-03-20T19:10:00-04:00'
+    }],
+    upsertMarchMadnessPick: ({ teamName }) => ({
+      ok: true,
+      created: true,
+      teamName,
+      teamCode: 'NCTH'
+    }),
+    getMarchMadnessSeasonYear: () => 2026
+  })
+
+  assert.deepEqual(posted, [{
+    room: 'room-1',
+    message: '✅ Pick locked in: NCTH for Game 1.'
   }])
 })
 
@@ -566,13 +599,14 @@ test('postMadnessPicks refreshes matchup seeds and game indexes from the live sl
       commenceTime: '2026-03-20T23:10:00.000Z',
       status: 'pending'
     }],
-    getMarchMadnessTournamentGames: async () => [
+    getMarchMadnessGameboardGames: async () => [
       {
         id: 'game-1',
         awayTeam: 'Miami (OH) RedHawks',
         awaySeed: 11,
         homeTeam: 'SMU Mustangs',
         homeSeed: 6,
+        displayMatchup: '(11) Miami (OH) vs (6) SMU',
         commenceTime: '2026-03-20T16:15:00.000Z'
       },
       {
@@ -581,6 +615,7 @@ test('postMadnessPicks refreshes matchup seeds and game indexes from the live sl
         awaySeed: 1,
         homeTeam: 'Duke Blue Devils',
         homeSeed: 8,
+        displayMatchup: '(1) North Carolina vs (8) Duke',
         commenceTime: '2026-03-20T23:10:00.000Z'
       }
     ]

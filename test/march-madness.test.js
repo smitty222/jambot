@@ -114,22 +114,24 @@ test('formatScoreboardLine falls back to competition date for tipoff time', () =
 test('buildMadnessPickBoard shows numbered games with team codes for picking', () => {
   const board = buildMadnessPickBoard([
     {
-      id: 'g2',
-      awayTeam: 'North Carolina Tar Heels',
-      homeTeam: 'Duke Blue Devils',
-      commenceTime: '2026-03-20T23:10:00.000Z'
-    },
-    {
       id: 'g1',
       awayTeam: 'Miami (OH) RedHawks',
       homeTeam: 'SMU Mustangs',
+      displayMatchup: '(11) Miami (OH) vs (6) SMU',
       commenceTime: '2026-03-20T16:15:00.000Z'
+    },
+    {
+      id: 'g2',
+      awayTeam: 'North Carolina Tar Heels',
+      homeTeam: 'Duke Blue Devils',
+      displayMatchup: '(1) North Carolina vs (8) Duke',
+      commenceTime: '2026-03-20T23:10:00.000Z'
     }
   ], '2026-03-20', new Date('2026-03-20T11:00:00-04:00'))
 
   assert.match(board, /🎯 Pick Board/)
-  assert.match(board, /1\. MOR vs SMU • 🕒 12:15 PM/)
-  assert.match(board, /2\. NCTH vs DBD • 🕒 7:10 PM/)
+  assert.match(board, /1\. \(11\) Miami \(OH\) vs \(6\) SMU • 🕒 12:15 PM/)
+  assert.match(board, /2\. \(1\) North Carolina vs \(8\) Duke • 🕒 7:10 PM/)
   assert.match(board, /\/madness pick <gameIndex> <teamCode>/)
 })
 
