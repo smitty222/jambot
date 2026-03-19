@@ -336,6 +336,55 @@ test('handleMadnessBet uses today-only March Madness board ordering', async () =
   assert.equal(messages[0].message, 'bet placed')
 })
 
+test('handleMadnessBet accepts board team abbreviations like VAN and MCN', async () => {
+  const messages = []
+  const placed = []
+
+  await handleMadnessBet({
+    payload: {
+      sender: 'user-1',
+      message: '/madness bet 1 VAN spread 1000'
+    },
+    room: 'room-1'
+  }, {
+    now: () => new Date('2026-03-20T11:00:00-04:00'),
+    postMessage: async (payload) => { messages.push(payload) },
+    getUserWallet: async () => 5000,
+    getSenderNickname: async () => 'Ryan',
+    ensureMadnessOdds: async () => ([
+      {
+        id: 'vandy-game',
+        awayTeam: 'Vanderbilt Commodores',
+        homeTeam: 'McNeese Cowboys',
+        awayShortName: 'VAN',
+        homeShortName: 'MCN',
+        awayDisplayName: '(10) VAN',
+        homeDisplayName: '(7) MCN',
+        commenceTime: '2026-03-20T19:00:00.000Z'
+      }
+    ]),
+    getOddsForSport: async () => ([
+      {
+        id: 'odds-vandy-game',
+        awayTeam: 'Vanderbilt',
+        homeTeam: 'McNeese',
+        commenceTime: '2026-03-20T19:00:00.000Z',
+        bookmaker: { markets: [] }
+      }
+    ]),
+    placeSportsBet: async (...args) => {
+      placed.push(args)
+      return 'bet placed'
+    }
+  })
+
+  assert.equal(placed.length, 1)
+  assert.equal(placed[0][2], 'VAN')
+  assert.equal(placed[0][6].resolvedTeamName, 'Vanderbilt Commodores')
+  assert.equal(placed[0][6].preferredTeamCode, 'VAN')
+  assert.equal(messages[0].message, 'bet placed')
+})
+
 test('buildMadnessOddsBoardEntries keeps board ordering and drops off-board odds games', () => {
   const entries = buildMadnessOddsBoardEntries([
     {

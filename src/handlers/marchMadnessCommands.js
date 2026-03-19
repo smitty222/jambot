@@ -815,6 +815,18 @@ export async function handleMadnessBet ({ payload, room }, deps = {}) {
     return
   }
 
+  const selectedTeamName = resolveMadnessPickTeamName(parsed.team, selectedEntry?.boardGame || selectedEntry?.oddsGame || {})
+  if (!selectedTeamName) {
+    const game = selectedEntry?.boardGame || selectedEntry?.oddsGame || {}
+    const awayCode = getPreferredGameTeamCode(game?.awayTeam, game)
+    const homeCode = getPreferredGameTeamCode(game?.homeTeam, game)
+    await postMessageImpl({
+      room,
+      message: `Couldn't match "${parsed.team}" to this game. Try one of: ${awayCode} or ${homeCode}.`
+    })
+    return
+  }
+
   const balance = await getUserWalletImpl(senderUUID)
   if (parsed.amount > balance) {
     await postMessageImpl({
@@ -832,7 +844,9 @@ export async function handleMadnessBet ({ payload, room }, deps = {}) {
     parsed.amount,
     'basketball_ncaab',
     {
-      oddsSportKey: MARCH_MADNESS_ODDS_SPORT_KEY
+      oddsSportKey: MARCH_MADNESS_ODDS_SPORT_KEY,
+      resolvedTeamName: selectedTeamName,
+      preferredTeamCode: getPreferredGameTeamCode(selectedTeamName, selectedEntry?.boardGame || selectedEntry?.oddsGame || {})
     }
   )
 

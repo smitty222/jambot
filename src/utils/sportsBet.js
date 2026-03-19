@@ -213,7 +213,9 @@ function getSettlementLookbackDays (bets = {}, sportKey, now = Date.now()) {
 export async function placeSportsBet (senderUUID, index, team, betTypeInput, amount, sport, options = {}) {
   const {
     oddsSportKey = sport,
-    ledgerSource: forcedLedgerSource = null
+    ledgerSource: forcedLedgerSource = null,
+    resolvedTeamName: forcedResolvedTeamName = null,
+    preferredTeamCode: forcedPreferredTeamCode = null
   } = options
   const normalizedSenderUUID = normalizeUserUuid(senderUUID)
   const games = await getOddsForSport(oddsSportKey)
@@ -234,10 +236,10 @@ export async function placeSportsBet (senderUUID, index, team, betTypeInput, amo
     : 'sports')
 
   const teamAbbrUpper = team.toUpperCase()
-  const fullTeamName = resolveTeamNameFromInput(teamAbbrUpper, [game.awayTeam, game.homeTeam])
+  const fullTeamName = forcedResolvedTeamName || resolveTeamNameFromInput(teamAbbrUpper, [game.awayTeam, game.homeTeam])
 
   if (!fullTeamName) return `Invalid team abbreviation for game ${index + 1}.`
-  const teamCode = getGenericDisplayTeamCode(fullTeamName)
+  const teamCode = forcedPreferredTeamCode || getGenericDisplayTeamCode(fullTeamName)
   const commenceTs = toTimestamp(game.commenceTime)
   if (Number.isFinite(commenceTs) && Date.now() >= commenceTs) {
     return `Betting is closed for Game ${index + 1}; it already started.`
