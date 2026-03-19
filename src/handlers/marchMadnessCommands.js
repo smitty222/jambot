@@ -1,5 +1,5 @@
 import { postMessage } from '../libs/cometchat.js'
-import { getCurrentMonthKey } from '../database/dbwalletmanager.js'
+import { getCurrentMonthKey, getUserWallet } from '../database/dbwalletmanager.js'
 import { getCompactEquippedTitleTag } from '../database/dbprestige.js'
 import {
   getMarchMadnessGameboardGames,
@@ -18,7 +18,6 @@ import {
   OddsApiError,
   MARCH_MADNESS_ODDS_SPORT_KEY
 } from '../utils/sportsBetAPI.js'
-import { getUserWallet } from '../database/dbwalletmanager.js'
 import { getSenderNickname } from '../utils/helpers.js'
 import {
   getMarchMadnessBankrollLeaderboard,
@@ -65,6 +64,10 @@ export function buildMadnessBoardEntries (games = [], requestedDate = '', timeZo
   return sortMadnessGames(games)
     .filter(game => formatDateInTimeZone(new Date(game?.commenceTime || ''), timeZone) === requestedDate)
     .map((game, index) => ({ game, gameIndex: index + 1 }))
+}
+
+export function filterMadnessGamesToDate (games = [], requestedDate = '', timeZone = 'America/New_York') {
+  return buildMadnessBoardEntries(games, requestedDate, timeZone).map(({ game }) => game)
 }
 
 function formatMadnessTipoffTime (commenceTime, timeZone = 'America/New_York') {
@@ -362,7 +365,7 @@ function buildMadnessOddsErrorMessage (error) {
     return `Couldn't refresh March Madness odds right now (${error.message}).`
   }
 
-  return "Sorry, something went wrong fetching March Madness odds."
+  return 'Sorry, something went wrong fetching March Madness odds.'
 }
 
 function parseUidFromMentionOrRaw (value = '') {
@@ -674,14 +677,21 @@ export async function postMadnessOdds (room, {
   fetchOddsForSport: fetchOddsForSportImpl = fetchOddsForSport,
   saveOddsForSport: saveOddsForSportImpl = saveOddsForSport,
   getOddsForSport: getOddsForSportImpl = getOddsForSport,
-  formatOddsMessage: formatOddsMessageImpl = formatOddsMessage
+  formatOddsMessage: formatOddsMessageImpl = formatOddsMessage,
+  now: nowImpl = () => new Date(),
+  timeZone = 'America/New_York'
 } = {}) {
+  const requestedDate = resolveMadnessGamesDateToken('today', nowImpl(), timeZone)
+
   try {
     const games = await fetchOddsForSportImpl(MARCH_MADNESS_ODDS_SPORT_KEY)
     await saveOddsForSportImpl(MARCH_MADNESS_ODDS_SPORT_KEY, games)
     await postMessageImpl({
       room,
-      message: formatOddsMessageImpl(games, MARCH_MADNESS_ODDS_SPORT_KEY)
+      message: formatOddsMessageImpl(
+        filterMadnessGamesToDate(games, requestedDate, timeZone),
+        MARCH_MADNESS_ODDS_SPORT_KEY
+      )
     })
   } catch (error) {
     const cachedOdds = await getOddsForSportImpl(MARCH_MADNESS_ODDS_SPORT_KEY).catch(() => [])
@@ -689,7 +699,10 @@ export async function postMadnessOdds (room, {
     if (Array.isArray(cachedOdds) && cachedOdds.length) {
       await postMessageImpl({
         room,
-        message: `${formatOddsMessageImpl(cachedOdds, MARCH_MADNESS_ODDS_SPORT_KEY)}\n\n⚠️ Live odds refresh failed, so this is the last saved board.`
+        message: `${formatOddsMessageImpl(
+          filterMadnessGamesToDate(cachedOdds, requestedDate, timeZone),
+          MARCH_MADNESS_ODDS_SPORT_KEY
+        )}\n\n⚠️ Live odds refresh failed, so this is the last saved board.`
       })
       return
     }
@@ -707,7 +720,9 @@ export async function handleMadnessBet ({ payload, room }, deps = {}) {
     getOddsForSport: getOddsForSportImpl = getOddsForSport,
     getUserWallet: getUserWalletImpl = getUserWallet,
     getSenderNickname: getSenderNicknameImpl = getSenderNickname,
-    placeSportsBet: placeSportsBetImpl = placeSportsBet
+    placeSportsBet: placeSportsBetImpl = placeSportsBet,
+    now: nowImpl = () => new Date(),
+    timeZone = 'America/New_York'
   } = deps
 
   const senderUUID = payload?.sender
@@ -722,11 +737,24 @@ export async function handleMadnessBet ({ payload, room }, deps = {}) {
     return
   }
 
+  const requestedDate = resolveMadnessGamesDateToken('today', nowImpl(), timeZone)
   const oddsData = await getOddsForSportImpl(MARCH_MADNESS_ODDS_SPORT_KEY)
-  if (!oddsData || parsed.index < 0 || parsed.index >= oddsData.length) {
+  const todaysOddsData = filterMadnessGamesToDate(oddsData, requestedDate, timeZone)
+
+  if (!todaysOddsData.length || parsed.index < 0 || parsed.index >= todaysOddsData.length) {
     await postMessageImpl({
       room,
-      message: 'Invalid game index. Use `/madness odds` to see the current tournament board.'
+      message: 'Invalid game index. Use `/madness games` to see today’s men’s March Madness slate.'
+    })
+    return
+  }
+
+  const selectedGame = todaysOddsData[parsed.index]
+  const oddsIndex = (oddsData || []).findIndex(game => game?.id === selectedGame?.id)
+  if (oddsIndex < 0) {
+    await postMessageImpl({
+      room,
+      message: 'That March Madness game is not available for betting right now.'
     })
     return
   }
@@ -742,7 +770,7 @@ export async function handleMadnessBet ({ payload, room }, deps = {}) {
 
   const result = await placeSportsBetImpl(
     senderUUID,
-    parsed.index,
+    oddsIndex,
     parsed.team,
     parsed.betType,
     parsed.amount,

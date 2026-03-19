@@ -796,7 +796,9 @@ test('buildMadnessHubMessage documents the March Madness flow', () => {
   assert.match(message, /\/madness leaderboard/)
   assert.match(message, /\/madness bankroll/)
   assert.match(message, /Betting/)
-  assert.match(message, /\/sports odds ncaab/)
+  assert.match(message, /\/madness odds/)
+  assert.match(message, /\/madness bet <gameIndex> <teamCode> <ml\|spread> <amount>/)
+  assert.match(message, /\/madness bets/)
 })
 
 test('resolveMadnessGamesDateToken maps relative date shortcuts', () => {

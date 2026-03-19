@@ -9,6 +9,7 @@ import {
 import {
   buildMadnessBoardEntries,
   buildMadnessPickBoard,
+  handleMadnessBet,
   handleMadnessPick,
   postMadnessPicks
 } from '../src/handlers/marchMadnessCommands.js'
@@ -281,6 +282,46 @@ test('handleMadnessPick preserves compact board abbreviations like USF', async (
   assert.equal(picks[0].teamName, 'South Florida Bulls')
   assert.equal(picks[0].teamCode, 'USF')
   assert.match(messages[0].message, /Pick updated: USF for Game 1/)
+})
+
+test('handleMadnessBet uses today-only March Madness board ordering', async () => {
+  const messages = []
+  const placed = []
+
+  await handleMadnessBet({
+    payload: {
+      message: '/madness bet 1 DUKE ml 25',
+      sender: 'user-1'
+    },
+    room: 'room-1'
+  }, {
+    now: () => new Date('2026-03-20T11:00:00-04:00'),
+    postMessage: async (payload) => { messages.push(payload) },
+    getSenderNickname: async () => 'Allen',
+    getUserWallet: async () => 100,
+    getOddsForSport: async () => ([
+      {
+        id: 'tomorrow-game',
+        awayTeam: 'Houston Cougars',
+        homeTeam: 'Gonzaga Bulldogs',
+        commenceTime: '2026-03-21T19:00:00.000Z'
+      },
+      {
+        id: 'today-game',
+        awayTeam: 'Duke Blue Devils',
+        homeTeam: 'VCU Rams',
+        commenceTime: '2026-03-20T19:00:00.000Z'
+      }
+    ]),
+    placeSportsBet: async (...args) => {
+      placed.push(args)
+      return 'bet placed'
+    }
+  })
+
+  assert.equal(placed.length, 1)
+  assert.equal(placed[0][1], 1)
+  assert.equal(messages[0].message, 'bet placed')
 })
 
 test('postMadnessPicks shows the live board index for saved picks', async () => {
