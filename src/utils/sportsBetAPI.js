@@ -82,11 +82,16 @@ function filterFanDuelOnly (games) {
     .filter(Boolean) // Remove nulls
 }
 
-export function formatOddsMessage (games, sportKey, now = Date.now()) {
+export function formatOddsMessage (games, sportKey, now = Date.now(), options = {}) {
+  const { preserveOrder = false } = options
   const title = formatSportTitle(sportKey)
   const displayLimit = sportKey === MARCH_MADNESS_ODDS_SPORT_KEY ? 16 : 5
   const normalizedGames = Array.isArray(games)
-    ? [...games].sort((a, b) => toTimestamp(a?.commenceTime) - toTimestamp(b?.commenceTime))
+    ? (
+        preserveOrder
+          ? [...games]
+          : [...games].sort((a, b) => toTimestamp(a?.commenceTime) - toTimestamp(b?.commenceTime))
+      )
     : []
 
   if (!normalizedGames.length) {
@@ -94,7 +99,7 @@ export function formatOddsMessage (games, sportKey, now = Date.now()) {
   }
 
   return `🎲 Today's ${title} Odds:\n\n` + normalizedGames.slice(0, displayLimit).map((game, i) => {
-    const { bookmaker, homeTeam, awayTeam, commenceTime, canonicalHomeTeam, canonicalAwayTeam } = game
+    const { bookmaker, homeTeam, awayTeam, commenceTime, canonicalHomeTeam, canonicalAwayTeam, awayDisplayName, homeDisplayName } = game
     const h2h = bookmaker?.markets?.find(m => m.key === 'h2h')?.outcomes || []
     const spreads = bookmaker?.markets?.find(m => m.key === 'spreads')?.outcomes || []
     const liveLabel = isGameLikelyLive(game, now) ? ' 🔴 LIVE' : ''
@@ -105,8 +110,12 @@ export function formatOddsMessage (games, sportKey, now = Date.now()) {
     const timeStr = formatOddsGameTime(commenceTime)
 
     // Labels
-    const awayLabel = formatOddsTeamLabel(displayAwayTeam, sportKey)
-    const homeLabel = formatOddsTeamLabel(displayHomeTeam, sportKey)
+    const awayLabel = sportKey === MARCH_MADNESS_ODDS_SPORT_KEY
+      ? String(awayDisplayName || '').trim() || formatOddsTeamLabel(displayAwayTeam, sportKey)
+      : formatOddsTeamLabel(displayAwayTeam, sportKey)
+    const homeLabel = sportKey === MARCH_MADNESS_ODDS_SPORT_KEY
+      ? String(homeDisplayName || '').trim() || formatOddsTeamLabel(displayHomeTeam, sportKey)
+      : formatOddsTeamLabel(displayHomeTeam, sportKey)
 
     // Moneyline
     const oddsMap = Object.fromEntries(h2h.map(o => [o.name, formatOdds(o.price)]))

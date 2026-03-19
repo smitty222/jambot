@@ -103,6 +103,9 @@ export function buildMadnessOddsBoardEntries (
         oddsIndex,
         oddsGame: {
           ...oddsGame,
+          commenceTime: game?.commenceTime || oddsGame?.commenceTime,
+          awayDisplayName: game?.awayDisplayName || oddsGame?.awayDisplayName || oddsGame?.canonicalAwayTeam || oddsGame?.awayTeam,
+          homeDisplayName: game?.homeDisplayName || oddsGame?.homeDisplayName || oddsGame?.canonicalHomeTeam || oddsGame?.homeTeam,
           canonicalAwayTeam: game?.awayTeam || oddsGame?.canonicalAwayTeam || oddsGame?.awayTeam,
           canonicalHomeTeam: game?.homeTeam || oddsGame?.canonicalHomeTeam || oddsGame?.homeTeam
         }
@@ -735,7 +738,9 @@ export async function postMadnessOdds (room, {
       room,
       message: formatOddsMessageImpl(
         boardOddsEntries.map(({ oddsGame }) => oddsGame),
-        MARCH_MADNESS_ODDS_SPORT_KEY
+        MARCH_MADNESS_ODDS_SPORT_KEY,
+        Date.now(),
+        { preserveOrder: true }
       )
     })
   } catch (error) {
@@ -747,7 +752,9 @@ export async function postMadnessOdds (room, {
         room,
         message: `${formatOddsMessageImpl(
           boardOddsEntries.map(({ oddsGame }) => oddsGame),
-          MARCH_MADNESS_ODDS_SPORT_KEY
+          MARCH_MADNESS_ODDS_SPORT_KEY,
+          Date.now(),
+          { preserveOrder: true }
         )}\n\n⚠️ Live odds refresh failed, so this is the last saved board.`
       })
       return

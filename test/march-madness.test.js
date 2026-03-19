@@ -423,6 +423,87 @@ test('postMadnessOdds formats only games from today board', async () => {
   assert.equal(messages[0].message, 'Duke vs VCU')
 })
 
+test('postMadnessOdds preserves the /madness games slate order and times', async () => {
+  const messages = []
+
+  await postMadnessOdds('room-1', {
+    now: () => new Date('2026-03-20T11:00:00-04:00'),
+    postMessage: async (payload) => { messages.push(payload) },
+    ensureMadnessOdds: async () => ([
+      {
+        id: 'early-board',
+        awayTeam: 'Miami (OH) RedHawks',
+        homeTeam: 'SMU Mustangs',
+        awayShortName: 'Miami (OH)',
+        homeShortName: 'SMU',
+        commenceTime: '2026-03-20T16:15:00.000Z'
+      },
+      {
+        id: 'late-board',
+        awayTeam: 'Duke Blue Devils',
+        homeTeam: 'VCU Rams',
+        awayShortName: 'Duke',
+        homeShortName: 'VCU',
+        commenceTime: '2026-03-20T19:00:00.000Z'
+      }
+    ]),
+    fetchOddsForSport: async () => ([
+      {
+        id: 'late-odds',
+        awayTeam: 'Duke',
+        homeTeam: 'VCU',
+        commenceTime: '2026-03-20T23:30:00.000Z'
+      },
+      {
+        id: 'early-odds',
+        awayTeam: 'Miami (OH)',
+        homeTeam: 'SMU',
+        commenceTime: '2026-03-21T01:00:00.000Z'
+      }
+    ]),
+    saveOddsForSport: async () => {},
+    formatOddsMessage: (games) => games.map(game => `${game.awayTeam} vs ${game.homeTeam} @ ${game.commenceTime}`).join('\n')
+  })
+
+  assert.equal(
+    messages[0].message,
+    'Miami (OH) vs SMU @ 2026-03-20T16:15:00.000Z\nDuke vs VCU @ 2026-03-20T19:00:00.000Z'
+  )
+})
+
+test('postMadnessOdds uses the same board display labels as /madness games', async () => {
+  const messages = []
+
+  await postMadnessOdds('room-1', {
+    now: () => new Date('2026-03-20T11:00:00-04:00'),
+    postMessage: async (payload) => { messages.push(payload) },
+    ensureMadnessOdds: async () => ([
+      {
+        id: 'today-game',
+        awayTeam: 'North Carolina Tar Heels',
+        homeTeam: 'Duke Blue Devils',
+        awayShortName: 'North Carolina',
+        homeShortName: 'Duke',
+        awayDisplayName: '(1) North Carolina',
+        homeDisplayName: '(8) Duke',
+        commenceTime: '2026-03-20T19:00:00.000Z'
+      }
+    ]),
+    fetchOddsForSport: async () => ([
+      {
+        id: 'today-game-odds',
+        awayTeam: 'North Carolina',
+        homeTeam: 'Duke',
+        commenceTime: '2026-03-20T19:00:00.000Z'
+      }
+    ]),
+    saveOddsForSport: async () => {},
+    formatOddsMessage: (games) => `${games[0].awayDisplayName} vs ${games[0].homeDisplayName}`
+  })
+
+  assert.equal(messages[0].message, '(1) North Carolina vs (8) Duke')
+})
+
 test('postMadnessPicks shows the live board index for saved picks', async () => {
   const messages = []
 
