@@ -1,5 +1,4 @@
 import {
-  buildGenericTeamAliases,
   normalizeSportsTeamInput
 } from './sportsTeams.js'
 
@@ -13,11 +12,47 @@ function collectTeamCandidateValues (team = {}) {
     team?.displayName,
     team?.shortDisplayName,
     team?.location,
-    team?.abbreviation,
-    team?.name
+    team?.abbreviation
   ]
     .map(value => String(value || '').trim())
     .filter(Boolean)
+}
+
+function getLeadingShortAbbreviation (value = '') {
+  const firstToken = String(value || '')
+    .split(/[^A-Za-z0-9.&-]+/)
+    .map(token => token.trim())
+    .filter(Boolean)[0] || ''
+
+  return /^[A-Z0-9.&-]{2,5}$/.test(firstToken) ? normalizeSportsTeamInput(firstToken) : ''
+}
+
+function buildStrongTeamAliases (value = '') {
+  const raw = String(value || '').trim()
+  const normalized = normalizeSportsTeamInput(raw)
+  const tokens = raw
+    .split(/[^A-Za-z0-9]+/)
+    .map(token => token.trim().toLowerCase())
+    .filter(Boolean)
+
+  if (!tokens.length) return new Set()
+
+  const leadingAbbreviation = getLeadingShortAbbreviation(raw)
+  const cityTokens = tokens.slice(0, -1)
+  const cityJoined = cityTokens.join('')
+  const cityInitials = cityTokens.map(token => token[0]).join('')
+  const fullInitials = tokens.map(token => token[0]).join('')
+  const lastTwoTokens = tokens.slice(-2).join('')
+
+  return new Set([
+    normalized,
+    tokens.join(''),
+    leadingAbbreviation,
+    cityJoined,
+    cityInitials.length >= 2 ? cityInitials : '',
+    fullInitials.length >= 3 ? fullInitials : '',
+    lastTwoTokens.length >= 6 ? lastTwoTokens : ''
+  ].filter(Boolean))
 }
 
 function getPreferredTeamName (team = {}) {
@@ -70,7 +105,7 @@ export function buildMarchMadnessTournamentAliasSet (events = []) {
     for (const competitor of competitors) {
       for (const value of collectTeamCandidateValues(competitor?.team)) {
         aliases.add(normalizeSportsTeamInput(value))
-        for (const alias of buildGenericTeamAliases(value)) aliases.add(alias)
+        for (const alias of buildStrongTeamAliases(value)) aliases.add(alias)
       }
     }
   }
@@ -83,7 +118,7 @@ function buildCompetitorAliasSet (competitor = {}) {
 
   for (const value of collectTeamCandidateValues(competitor?.team)) {
     aliases.add(normalizeSportsTeamInput(value))
-    for (const alias of buildGenericTeamAliases(value)) aliases.add(alias)
+    for (const alias of buildStrongTeamAliases(value)) aliases.add(alias)
   }
 
   return aliases
@@ -119,8 +154,8 @@ export function findMatchingMarchMadnessMatchup (game = {}, tournamentMatchups =
   const matchups = Array.isArray(tournamentMatchups) ? tournamentMatchups : []
   if (!matchups.length) return null
 
-  const awayAliases = buildGenericTeamAliases(game?.awayTeam)
-  const homeAliases = buildGenericTeamAliases(game?.homeTeam)
+  const awayAliases = buildStrongTeamAliases(game?.awayTeam)
+  const homeAliases = buildStrongTeamAliases(game?.homeTeam)
   const gameTs = toTimestamp(game?.commenceTime)
   const maxDiffMs = Math.max(1, Number(timeWindowHours || 16)) * 60 * 60 * 1000
 

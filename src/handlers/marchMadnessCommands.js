@@ -4,14 +4,11 @@ import { getCompactEquippedTitleTag } from '../database/dbprestige.js'
 import {
   getMarchMadnessLiveScores,
   getMarchMadnessScores,
-  getMarchMadnessTournamentMatchups,
+  getMarchMadnessTournamentGames,
   getUserNicknameByUuid
 } from '../utils/API.js'
-import { fetchOddsForSport } from '../utils/sportsBetAPI.js'
-import { getOddsForSport, saveOddsForSport } from '../utils/bettingOdds.js'
 import { resolveCompletedBets } from '../utils/sportsBet.js'
 import { getGenericDisplayTeamCode, resolveTeamNameFromInput } from '../utils/sportsTeams.js'
-import { filterMarchMadnessOddsGames } from '../utils/marchMadness.js'
 import {
   getMarchMadnessBankrollLeaderboard,
   getMarchMadnessPointsLeaderboard,
@@ -135,26 +132,10 @@ async function getDisplayNames (rows = [], getUserNicknameByUuidImpl = getUserNi
 }
 
 async function ensureMadnessOdds ({
-  getOddsForSport: getOddsForSportImpl = getOddsForSport,
-  fetchOddsForSport: fetchOddsForSportImpl = fetchOddsForSport,
-  saveOddsForSport: saveOddsForSportImpl = saveOddsForSport,
-  getMarchMadnessTournamentMatchups: getMarchMadnessTournamentMatchupsImpl = getMarchMadnessTournamentMatchups
+  getMarchMadnessTournamentGames: getMarchMadnessTournamentGamesImpl = getMarchMadnessTournamentGames
 } = {}) {
-  const tournamentMatchups = await getMarchMadnessTournamentMatchupsImpl(['yesterday', 'today', 'tomorrow'])
-  let games = await getOddsForSportImpl('basketball_ncaab')
-  if (Array.isArray(games) && games.length) {
-    return sortMadnessGames(filterMarchMadnessOddsGames(games, tournamentMatchups))
-  }
-
-  const freshGames = await fetchOddsForSportImpl('basketball_ncaab')
-  if (Array.isArray(freshGames) && freshGames.length) {
-    await saveOddsForSportImpl('basketball_ncaab', freshGames)
-    games = freshGames
-  }
-
-  return Array.isArray(games)
-    ? sortMadnessGames(filterMarchMadnessOddsGames(games, tournamentMatchups))
-    : []
+  const games = await getMarchMadnessTournamentGamesImpl(['yesterday', 'today', 'tomorrow'])
+  return Array.isArray(games) ? sortMadnessGames(games) : []
 }
 
 export function buildMadnessHubMessage (monthKey = getCurrentMonthKey()) {
@@ -285,7 +266,7 @@ export async function handleMadnessPick ({ payload, room }, deps = {}) {
   if (!Number.isFinite(rawIndex) || rawIndex <= 0 || !teamInput) {
     await postMessageImpl({
       room,
-      message: 'Usage: /madness pick <gameIndex> <team>\nExample: /madness pick 1 duke'
+      message: 'Usage: /madness pick <gameIndex> <teamCode>\nExample: /madness pick 1 DUKE'
     })
     return
   }
@@ -295,7 +276,7 @@ export async function handleMadnessPick ({ payload, room }, deps = {}) {
   if (!game) {
     await postMessageImpl({
       room,
-      message: 'Invalid game index. Use `/sports odds ncaab` to see the current board.'
+      message: 'Invalid game index. Use `/madness board` to see the current pick board.'
     })
     return
   }
@@ -368,7 +349,7 @@ export async function postMadnessPicks (room, {
   if (!rows.length) {
     await postMessageImpl({
       room,
-      message: 'You have no March Madness picks yet. Try `/madness pick 1 duke`.'
+      message: 'You have no March Madness picks yet. Try `/madness board` and then `/madness pick 1 DUKE`.'
     })
     return
   }

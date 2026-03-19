@@ -200,6 +200,60 @@ export async function getMarchMadnessTournamentMatchups (requestedDates = []) {
   return buildMarchMadnessTournamentMatchups(tournamentEvents)
 }
 
+export function formatEspnTournamentGameTeamName (team = {}) {
+  const displayName = String(team?.displayName || '').trim()
+  if (displayName) return displayName
+
+  const shortDisplayName = String(team?.shortDisplayName || '').trim()
+  if (shortDisplayName) return shortDisplayName
+
+  const location = String(team?.location || '').trim()
+  const nickname = String(team?.name || '').trim()
+  if (location && nickname) return `${location} ${nickname}`
+  if (location) return location
+
+  const abbreviation = String(team?.abbreviation || '').trim()
+  if (abbreviation) return abbreviation
+
+  return 'Unknown Team'
+}
+
+export async function getMarchMadnessTournamentGames (requestedDates = []) {
+  const rawDates = Array.isArray(requestedDates) ? requestedDates : [requestedDates]
+  const dates = [...new Set(rawDates.map(date => normalizeRequestedDateForEspn(date)).filter(Boolean))]
+  if (!dates.length) return []
+
+  const eventGroups = await Promise.all(
+    dates.map(date => fetchEspnScoreboardEvents('basketball/mens-college-basketball', date))
+  )
+
+  return eventGroups
+    .flat()
+    .filter(event => isMarchMadnessEvent(event))
+    .map((event) => {
+      const competition = event?.competitions?.[0] || {}
+      const home = competition?.competitors?.find(c => c.homeAway === 'home')
+      const away = competition?.competitors?.find(c => c.homeAway === 'away')
+      const statusText = String(event?.status?.type?.description || competition?.status?.type?.description || '').trim()
+
+      return {
+        id: String(event?.id || ''),
+        commenceTime: competition?.date || event?.date || null,
+        status: statusText,
+        completed: Boolean(event?.status?.type?.completed || competition?.status?.type?.completed),
+        awayTeam: formatEspnTournamentGameTeamName(away?.team),
+        homeTeam: formatEspnTournamentGameTeamName(home?.team),
+        awaySeed: Number.parseInt(away?.seed ?? away?.tournamentSeed ?? away?.team?.seed ?? away?.team?.tournamentSeed, 10) || null,
+        homeSeed: Number.parseInt(home?.seed ?? home?.tournamentSeed ?? home?.team?.seed ?? home?.team?.tournamentSeed, 10) || null,
+        scores: {
+          away: away?.score,
+          home: home?.score
+        }
+      }
+    })
+    .filter(game => game.id && game.awayTeam && game.homeTeam)
+}
+
 /* ────────────────────────────────────────────────────────────────
  * Spotify token & request helpers
  * ──────────────────────────────────────────────────────────────── */

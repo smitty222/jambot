@@ -1,5 +1,5 @@
 import db from './db.js'
-import { getLatestScoresForSport } from '../utils/sportsBetAPI.js'
+import { getMarchMadnessTournamentGames } from '../utils/API.js'
 import {
   getGenericDisplayTeamCode,
   normalizeSportsTeamInput
@@ -206,15 +206,28 @@ export function getMarchMadnessBankrollLeaderboard (limit = 10, seasonYear = get
 export async function resolveMarchMadnessPicks (deps = {}) {
   const {
     seasonYear = getMarchMadnessSeasonYear(),
-    getLatestScoresForSport: getLatestScoresForSportImpl = getLatestScoresForSport,
-    daysFrom = 45
+    getMarchMadnessTournamentGames: getMarchMadnessTournamentGamesImpl = getMarchMadnessTournamentGames
   } = deps
 
   const normalizedSeason = normalizeSeasonYear(seasonYear)
-  const completedGames = await getLatestScoresForSportImpl('basketball_ncaab', daysFrom)
-  if (!Array.isArray(completedGames) || completedGames.length === 0) {
+  const pendingRows = db.prepare(`
+    SELECT DISTINCT substr(commenceTime, 1, 10) AS gameDate
+    FROM march_madness_picks
+    WHERE seasonYear = ? AND status = 'pending' AND commenceTime IS NOT NULL
+  `).all(normalizedSeason)
+
+  const requestedDates = pendingRows
+    .map(row => String(row?.gameDate || '').trim())
+    .filter(Boolean)
+
+  if (!requestedDates.length) {
     return { resolvedGames: 0, resolvedPicks: 0 }
   }
+
+  const completedGames = (await getMarchMadnessTournamentGamesImpl(requestedDates))
+    .filter(game => game?.completed)
+
+  if (!completedGames.length) return { resolvedGames: 0, resolvedPicks: 0 }
 
   let resolvedGames = 0
   let resolvedPicks = 0

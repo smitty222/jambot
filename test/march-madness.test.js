@@ -11,6 +11,7 @@ import {
   buildMarchMadnessTournamentMatchups,
   findMatchingMarchMadnessMatchup,
   filterMarchMadnessOddsGames,
+  isMarchMadnessOddsGame,
   isMarchMadnessEvent
 } from '../src/utils/marchMadness.js'
 import {
@@ -221,7 +222,7 @@ test('filterMarchMadnessOddsGames preserves canonical tournament team names for 
 
   const filtered = filterMarchMadnessOddsGames([{
     id: 'g1',
-    awayTeam: 'Virginia Commonwealth Rams',
+    awayTeam: 'VCU Rams',
     homeTeam: 'Brigham Young Cougars',
     commenceTime: '2026-03-20T18:20:00-04:00'
   }], matchups)
@@ -229,4 +230,40 @@ test('filterMarchMadnessOddsGames preserves canonical tournament team names for 
   assert.equal(filtered[0].canonicalAwayTeam, 'VCU Rams')
   assert.equal(filtered[0].canonicalHomeTeam, 'Brigham Young Cougars')
   assert.equal(findMatchingMarchMadnessMatchup(filtered[0], matchups)?.homeName, 'Brigham Young Cougars')
+})
+
+test('isMarchMadnessOddsGame rejects unrelated school matchups with overlapping nickname patterns', () => {
+  const matchups = buildMarchMadnessTournamentMatchups([{
+    date: '2026-03-20T18:20:00-04:00',
+    competitions: [{
+      competitors: [
+        {
+          homeAway: 'away',
+          seed: 11,
+          team: {
+            displayName: 'VCU Rams',
+            shortDisplayName: 'VCU Rams',
+            location: 'VCU',
+            abbreviation: 'VCU'
+          }
+        },
+        {
+          homeAway: 'home',
+          seed: 6,
+          team: {
+            displayName: 'North Carolina Tar Heels',
+            shortDisplayName: 'North Carolina Tar Heels',
+            location: 'North Carolina',
+            abbreviation: 'UNC'
+          }
+        }
+      ]
+    }]
+  }])
+
+  assert.equal(isMarchMadnessOddsGame({
+    awayTeam: 'South Florida Bulls',
+    homeTeam: 'Louisville Cardinals',
+    commenceTime: '2026-03-20T17:30:00Z'
+  }, matchups), false)
 })

@@ -4,13 +4,10 @@ import { logger as defaultLogger } from '../utils/logging.js'
 import { postMessage } from '../libs/cometchat.js'
 import {
   getMarchMadnessLiveScores,
-  getMarchMadnessTournamentMatchups
+  getMarchMadnessTournamentGames
 } from '../utils/API.js'
 import { getGenericDisplayTeamCode } from '../utils/sportsTeams.js'
 import db from '../database/db.js'
-import { getOddsForSport, saveOddsForSport } from '../utils/bettingOdds.js'
-import { fetchOddsForSport } from '../utils/sportsBetAPI.js'
-import { filterMarchMadnessOddsGames } from '../utils/marchMadness.js'
 
 const NO_LIVE_GAMES_MESSAGE = 'No live NCAAB games right now.'
 const KEY_ENABLED = 'march_madness_updates_enabled'
@@ -140,22 +137,10 @@ export function buildMarchMadnessPickReminderMessage (games = [], now = new Date
 }
 
 async function loadUpcomingMarchMadnessGames ({
-  getOddsForSport: getOddsForSportImpl = getOddsForSport,
-  fetchOddsForSport: fetchOddsForSportImpl = fetchOddsForSport,
-  saveOddsForSport: saveOddsForSportImpl = saveOddsForSport,
-  getMarchMadnessTournamentMatchups: getMarchMadnessTournamentMatchupsImpl = getMarchMadnessTournamentMatchups
+  getMarchMadnessTournamentGames: getMarchMadnessTournamentGamesImpl = getMarchMadnessTournamentGames
 } = {}) {
-  const tournamentMatchups = await getMarchMadnessTournamentMatchupsImpl(['yesterday', 'today', 'tomorrow'])
-  let games = await getOddsForSportImpl('basketball_ncaab')
-  if (Array.isArray(games) && games.length) return filterMarchMadnessOddsGames(games, tournamentMatchups)
-
-  const freshGames = await fetchOddsForSportImpl('basketball_ncaab')
-  if (Array.isArray(freshGames) && freshGames.length) {
-    await saveOddsForSportImpl('basketball_ncaab', freshGames)
-    games = freshGames
-  }
-
-  return Array.isArray(games) ? filterMarchMadnessOddsGames(games, tournamentMatchups) : []
+  const games = await getMarchMadnessTournamentGamesImpl(['yesterday', 'today', 'tomorrow'])
+  return Array.isArray(games) ? games : []
 }
 
 export function extractMarchMadnessUpsetAlerts (message = '') {
