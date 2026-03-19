@@ -127,6 +127,7 @@ import {
   handleMyBetsCommand,
   handleOpenBetsCommand
 } from './sportsCommands.js'
+import { handleMadnessCommand } from './marchMadnessCommands.js'
 import {
   handleCheckBalanceCommand,
   handleBankrollCommand,
@@ -784,6 +785,9 @@ const commandRegistry = {
   },
   sports: async ({ payload, room }) => {
     await handleSportsCommand({ payload, room })
+  },
+  madness: async ({ payload, room }) => {
+    await handleMadnessCommand({ payload, room })
   },
   mlb: async ({ payload, room }) => {
     await handleMlbScoresCommand({ payload, room })
@@ -1556,6 +1560,9 @@ extendCommandRegistry({
   },
   infotoggle: async ({ payload, room, ttlUserToken }) => {
     await modControlHandlers.infotoggle({ payload, room, ttlUserToken })
+  },
+  madnessupdates: async ({ payload, room, ttlUserToken }) => {
+    await modControlHandlers.madnessupdates({ payload, room, ttlUserToken })
   },
   infotone: async ({ payload, room, ttlUserToken }) => {
     await modControlHandlers.infotone({ payload, room, ttlUserToken })

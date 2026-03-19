@@ -11,5 +11,23 @@
       "status": "pending",
       "type": "ml"
     }
+  ],
+  "ffe3c0fdb29507477476637fcbc795cf": [
+    {
+      "senderUUID": "210141ad-6b01-4665-84dc-e47ea7c27dcb",
+      "gameIndex": 0,
+      "gameId": "ffe3c0fdb29507477476637fcbc795cf",
+      "sport": "basketball_ncaab",
+      "teamName": "Ohio State Buckeyes",
+      "teamCode": "OSB",
+      "team": "OSB",
+      "odds": -134,
+      "spreadPoint": null,
+      "amount": 2,
+      "createdAt": "2026-03-19T14:56:13.654Z",
+      "commenceTime": "2026-03-19T16:15:00Z",
+      "status": "pending",
+      "type": "ml"
+    }
   ]
 }

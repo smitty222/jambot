@@ -3,20 +3,36 @@ import { formatOdds } from './sportsBet.js'
 import { getGenericDisplayTeamCode } from './sportsTeams.js'
 
 /// /////////////////////////////// Odds API ////////////////////////////////////////////
+export class OddsApiError extends Error {
+  constructor (message, { status = null, sportKey = '', body = '' } = {}) {
+    super(message)
+    this.name = 'OddsApiError'
+    this.status = status
+    this.sportKey = sportKey
+    this.body = body
+  }
+}
+
 export async function fetchOddsForSport (sportKey) {
   const ODDS_API_KEY = process.env.ODDS_API_KEY
   const BASE_URL = `https://api.the-odds-api.com/v4/sports/${sportKey}/odds`
 
-  try {
-    const response = await fetch(`${BASE_URL}?apiKey=${ODDS_API_KEY}&regions=us&markets=h2h,spreads&oddsFormat=american`)
-    if (!response.ok) throw new Error(`Failed to fetch odds: ${response.statusText}`)
-
-    const data = await response.json()
-    return filterFanDuelOnly(data) // Only return FanDuel odds
-  } catch (error) {
-    console.error(`Error fetching odds for ${sportKey}:`, error)
-    return null
+  if (!ODDS_API_KEY) {
+    throw new OddsApiError('ODDS_API_KEY is missing.', { sportKey })
   }
+
+  const response = await fetch(`${BASE_URL}?apiKey=${ODDS_API_KEY}&regions=us&markets=h2h,spreads&oddsFormat=american`)
+  if (!response.ok) {
+    const body = await response.text().catch(() => '')
+    throw new OddsApiError(`Failed to fetch odds: ${response.status} ${response.statusText}`, {
+      status: response.status,
+      sportKey,
+      body
+    })
+  }
+
+  const data = await response.json()
+  return filterFanDuelOnly(data) // Only return FanDuel odds
 }
 
 function filterFanDuelOnly (games) {
@@ -49,22 +65,25 @@ function filterFanDuelOnly (games) {
 
 export function formatOddsMessage (games, sportKey) {
   const title = formatSportTitle(sportKey)
+  const normalizedGames = Array.isArray(games)
+    ? [...games].sort((a, b) => toTimestamp(a?.commenceTime) - toTimestamp(b?.commenceTime))
+    : []
 
-  return `🎲 Today's ${title} Odds:\n\n` + games.slice(0, 5).map((game, i) => {
+  if (!normalizedGames.length) {
+    return `🎲 Today's ${title} Odds:\n\nNo FanDuel lines are posted right now.`
+  }
+
+  return `🎲 Today's ${title} Odds:\n\n` + normalizedGames.slice(0, 5).map((game, i) => {
     const { bookmaker, homeTeam, awayTeam, commenceTime } = game
     const h2h = bookmaker?.markets?.find(m => m.key === 'h2h')?.outcomes || []
     const spreads = bookmaker?.markets?.find(m => m.key === 'spreads')?.outcomes || []
 
     // Time formatting
-    const gameTime = new Date(commenceTime)
-    const timeStr = gameTime.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit'
-    })
+    const timeStr = formatOddsGameTime(commenceTime)
 
-    // Abbreviations
-    const awayAbbr = getGenericDisplayTeamCode(awayTeam)
-    const homeAbbr = getGenericDisplayTeamCode(homeTeam)
+    // Labels
+    const awayLabel = formatOddsTeamLabel(awayTeam, sportKey)
+    const homeLabel = formatOddsTeamLabel(homeTeam, sportKey)
 
     // Moneyline
     const oddsMap = Object.fromEntries(h2h.map(o => [o.name, formatOdds(o.price)]))
@@ -76,10 +95,10 @@ export function formatOddsMessage (games, sportKey) {
     const awaySpread = spreadMap[awayTeam] ? `${formatSpread(spreadMap[awayTeam].point)} (${spreadMap[awayTeam].price})` : 'N/A'
     const homeSpread = spreadMap[homeTeam] ? `${formatSpread(spreadMap[homeTeam].point)} (${spreadMap[homeTeam].price})` : 'N/A'
 
-    return `${i + 1}. ${awayTeam} @ ${homeTeam}\n` +
-             `🕒 ${timeStr}\n` +
-             `🧢 ML — ${awayAbbr}: ${awayML} | ${homeAbbr}: ${homeML}\n` +
-             `📏 Spread — ${awayAbbr}: ${awaySpread} | ${homeAbbr}: ${homeSpread}`
+    const separator = sportKey === 'basketball_ncaab' ? 'vs' : '@'
+    return `${i + 1}. ${awayLabel} ${separator} ${homeLabel} • 🕒 ${timeStr}\n` +
+             `🧢 ML — ${awayLabel}: ${awayML} | ${homeLabel}: ${homeML}\n` +
+             `📏 Spread — ${awayLabel}: ${awaySpread} | ${homeLabel}: ${homeSpread}`
   }).join('\n\n')
 }
 
@@ -98,6 +117,29 @@ function formatSportTitle (sportKey) {
 // Helper to add sign for positive spreads
 function formatSpread (point) {
   return point > 0 ? `+${point}` : `${point}`
+}
+
+function toTimestamp (value) {
+  const ts = Date.parse(String(value || ''))
+  return Number.isFinite(ts) ? ts : Number.MAX_SAFE_INTEGER
+}
+
+function formatOddsGameTime (commenceTime) {
+  const gameTime = new Date(commenceTime)
+  if (Number.isNaN(gameTime.getTime())) return 'TBD'
+
+  return gameTime.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit'
+  })
+}
+
+function formatOddsTeamLabel (teamName, sportKey) {
+  const raw = String(teamName || '').trim()
+  if (!raw) return 'Unknown Team'
+
+  if (sportKey === 'basketball_ncaab') return getGenericDisplayTeamCode(raw)
+  return getGenericDisplayTeamCode(raw)
 }
 
 export async function getLatestScoresForSport (sportKey, daysFrom = 1) {

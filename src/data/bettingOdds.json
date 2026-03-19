@@ -1,3 +1,1285 @@
 {
-  "baseball_mlb": []
+  "baseball_mlb": [],
+  "basketball_ncaab": [
+    {
+      "id": "ffe3c0fdb29507477476637fcbc795cf",
+      "commenceTime": "2026-03-19T16:15:00Z",
+      "homeTeam": "Ohio State Buckeyes",
+      "awayTeam": "TCU Horned Frogs",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Ohio State Buckeyes",
+                "price": -134
+              },
+              {
+                "name": "TCU Horned Frogs",
+                "price": 112
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Ohio State Buckeyes",
+                "price": -106,
+                "point": -2.5
+              },
+              {
+                "name": "TCU Horned Frogs",
+                "price": -114,
+                "point": 2.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "df39114e937cbae1271ab4267afae55d",
+      "commenceTime": "2026-03-19T16:40:00Z",
+      "homeTeam": "Nebraska Cornhuskers",
+      "awayTeam": "Troy Trojans",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Nebraska Cornhuskers",
+                "price": -1250
+              },
+              {
+                "name": "Troy Trojans",
+                "price": 740
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Nebraska Cornhuskers",
+                "price": -102,
+                "point": -13.5
+              },
+              {
+                "name": "Troy Trojans",
+                "price": -120,
+                "point": 13.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "f7b3bd4eccbe852bda4d3446090eedad",
+      "commenceTime": "2026-03-19T17:30:00Z",
+      "homeTeam": "Louisville Cardinals",
+      "awayTeam": "South Florida Bulls",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Louisville Cardinals",
+                "price": -182
+              },
+              {
+                "name": "South Florida Bulls",
+                "price": 150
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Louisville Cardinals",
+                "price": -105,
+                "point": -4.5
+              },
+              {
+                "name": "South Florida Bulls",
+                "price": -115,
+                "point": 4.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "5ee2959a7e3a36958ec1948e2911d209",
+      "commenceTime": "2026-03-19T17:50:00Z",
+      "homeTeam": "Wisconsin Badgers",
+      "awayTeam": "High Point Panthers",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "High Point Panthers",
+                "price": 430
+              },
+              {
+                "name": "Wisconsin Badgers",
+                "price": -600
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "High Point Panthers",
+                "price": -110,
+                "point": 10.5
+              },
+              {
+                "name": "Wisconsin Badgers",
+                "price": -110,
+                "point": -10.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "65e6158d4f85c02c5909322558981536",
+      "commenceTime": "2026-03-19T18:50:50Z",
+      "homeTeam": "Duke Blue Devils",
+      "awayTeam": "Siena Saints",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Duke Blue Devils",
+                "price": -50000
+              },
+              {
+                "name": "Siena Saints",
+                "price": 5500
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Duke Blue Devils",
+                "price": -120,
+                "point": -27.5
+              },
+              {
+                "name": "Siena Saints",
+                "price": -102,
+                "point": 27.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "9957c1ba3bbf4571f8ae879f4c5f8191",
+      "commenceTime": "2026-03-19T19:15:00Z",
+      "homeTeam": "Vanderbilt Commodores",
+      "awayTeam": "McNeese Cowboys",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "McNeese Cowboys",
+                "price": 580
+              },
+              {
+                "name": "Vanderbilt Commodores",
+                "price": -880
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "McNeese Cowboys",
+                "price": -115,
+                "point": 12.5
+              },
+              {
+                "name": "Vanderbilt Commodores",
+                "price": -105,
+                "point": -12.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "e1392b7328ef7749e85605ddae5ab7cf",
+      "commenceTime": "2026-03-19T20:05:59Z",
+      "homeTeam": "Michigan St Spartans",
+      "awayTeam": "North Dakota St Bison",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Michigan St Spartans",
+                "price": -2500
+              },
+              {
+                "name": "North Dakota St Bison",
+                "price": 1100
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Michigan St Spartans",
+                "price": -120,
+                "point": -15.5
+              },
+              {
+                "name": "North Dakota St Bison",
+                "price": -102,
+                "point": 15.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "f238a7dd73a634df2b455b017e2cefe6",
+      "commenceTime": "2026-03-19T20:25:05Z",
+      "homeTeam": "Arkansas Razorbacks",
+      "awayTeam": "Hawai'i Rainbow Warriors",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Arkansas Razorbacks",
+                "price": -2000
+              },
+              {
+                "name": "Hawai'i Rainbow Warriors",
+                "price": 980
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Arkansas Razorbacks",
+                "price": -110,
+                "point": -15.5
+              },
+              {
+                "name": "Hawai'i Rainbow Warriors",
+                "price": -110,
+                "point": 15.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "54f2978fe672f1d22f40fb742b4e56fc",
+      "commenceTime": "2026-03-19T22:50:00Z",
+      "homeTeam": "North Carolina Tar Heels",
+      "awayTeam": "VCU Rams",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "North Carolina Tar Heels",
+                "price": -144
+              },
+              {
+                "name": "VCU Rams",
+                "price": 120
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "North Carolina Tar Heels",
+                "price": -110,
+                "point": -2.5
+              },
+              {
+                "name": "VCU Rams",
+                "price": -110,
+                "point": 2.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dc6f71cb1afa7a72165707c843095089",
+      "commenceTime": "2026-03-19T23:10:42Z",
+      "homeTeam": "Michigan Wolverines",
+      "awayTeam": "Howard Bison",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Howard Bison",
+                "price": 7000
+              },
+              {
+                "name": "Michigan Wolverines",
+                "price": -100000
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Howard Bison",
+                "price": -115,
+                "point": 31.5
+              },
+              {
+                "name": "Michigan Wolverines",
+                "price": -105,
+                "point": -31.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "5b9fe866ea3b4f58a1e005af132c185d",
+      "commenceTime": "2026-03-19T23:25:00Z",
+      "homeTeam": "BYU Cougars",
+      "awayTeam": "Texas Longhorns",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "BYU Cougars",
+                "price": -142
+              },
+              {
+                "name": "Texas Longhorns",
+                "price": 118
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "BYU Cougars",
+                "price": -106,
+                "point": -2.5
+              },
+              {
+                "name": "Texas Longhorns",
+                "price": -114,
+                "point": 2.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "237f9c30050d3f038aae1e26ccfabb66",
+      "commenceTime": "2026-03-19T23:35:00Z",
+      "homeTeam": "Saint Mary's Gaels",
+      "awayTeam": "Texas A&M Aggies",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Saint Mary's Gaels",
+                "price": -156
+              },
+              {
+                "name": "Texas A&M Aggies",
+                "price": 130
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Saint Mary's Gaels",
+                "price": -120,
+                "point": -2.5
+              },
+              {
+                "name": "Texas A&M Aggies",
+                "price": -102,
+                "point": 2.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "f1385beee81b374402faa277ca8b6122",
+      "commenceTime": "2026-03-20T01:25:00Z",
+      "homeTeam": "Illinois Fighting Illini",
+      "awayTeam": "Pennsylvania Quakers",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Illinois Fighting Illini",
+                "price": -20000
+              },
+              {
+                "name": "Pennsylvania Quakers",
+                "price": 3500
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Illinois Fighting Illini",
+                "price": -110,
+                "point": -25.5
+              },
+              {
+                "name": "Pennsylvania Quakers",
+                "price": -110,
+                "point": 25.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "2ae3d7e84eac7c14989d08fcb2ca7d8e",
+      "commenceTime": "2026-03-20T01:45:00Z",
+      "homeTeam": "Georgia Bulldogs",
+      "awayTeam": "Saint Louis Billikens",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Georgia Bulldogs",
+                "price": -138
+              },
+              {
+                "name": "Saint Louis Billikens",
+                "price": 115
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Georgia Bulldogs",
+                "price": -105,
+                "point": -2.5
+              },
+              {
+                "name": "Saint Louis Billikens",
+                "price": -115,
+                "point": 2.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "f16c056da963dd1c536ef628ca9448a1",
+      "commenceTime": "2026-03-20T02:00:00Z",
+      "homeTeam": "Gonzaga Bulldogs",
+      "awayTeam": "Kennesaw St Owls",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Gonzaga Bulldogs",
+                "price": -8000
+              },
+              {
+                "name": "Kennesaw St Owls",
+                "price": 2200
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Gonzaga Bulldogs",
+                "price": -110,
+                "point": -21.5
+              },
+              {
+                "name": "Kennesaw St Owls",
+                "price": -110,
+                "point": 21.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "7d63441e64913cf3dbd54d3e1f511b36",
+      "commenceTime": "2026-03-20T02:10:00Z",
+      "homeTeam": "Houston Cougars",
+      "awayTeam": "Idaho Vandals",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Houston Cougars",
+                "price": -10000
+              },
+              {
+                "name": "Idaho Vandals",
+                "price": 3000
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Houston Cougars",
+                "price": -114,
+                "point": -23.5
+              },
+              {
+                "name": "Idaho Vandals",
+                "price": -106,
+                "point": 23.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "3621f920fa4195ea7b94cad16359eec4",
+      "commenceTime": "2026-03-20T16:15:00Z",
+      "homeTeam": "Kentucky Wildcats",
+      "awayTeam": "Santa Clara Broncos",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Kentucky Wildcats",
+                "price": -156
+              },
+              {
+                "name": "Santa Clara Broncos",
+                "price": 130
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Kentucky Wildcats",
+                "price": -102,
+                "point": -3.5
+              },
+              {
+                "name": "Santa Clara Broncos",
+                "price": -120,
+                "point": 3.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "21efa1de79d7419ff6642b56c3bd7f4e",
+      "commenceTime": "2026-03-20T16:40:00Z",
+      "homeTeam": "Texas Tech Red Raiders",
+      "awayTeam": "Akron Zips",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Akron Zips",
+                "price": 270
+              },
+              {
+                "name": "Texas Tech Red Raiders",
+                "price": -345
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Akron Zips",
+                "price": -108,
+                "point": 7.5
+              },
+              {
+                "name": "Texas Tech Red Raiders",
+                "price": -112,
+                "point": -7.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "3d46d5cd1d0973df199c49b59b0286d5",
+      "commenceTime": "2026-03-20T17:35:00Z",
+      "homeTeam": "Arizona Wildcats",
+      "awayTeam": "LIU Sharks",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Arizona Wildcats",
+                "price": -100000
+              },
+              {
+                "name": "LIU Sharks",
+                "price": 8000
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Arizona Wildcats",
+                "price": -115,
+                "point": -30.5
+              },
+              {
+                "name": "LIU Sharks",
+                "price": -105,
+                "point": 30.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "8cfeb3ec76f8fe79812a18838365b21b",
+      "commenceTime": "2026-03-20T17:50:03Z",
+      "homeTeam": "Virginia Cavaliers",
+      "awayTeam": "Wright St Raiders",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Virginia Cavaliers",
+                "price": -4000
+              },
+              {
+                "name": "Wright St Raiders",
+                "price": 1400
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Virginia Cavaliers",
+                "price": -120,
+                "point": -17.5
+              },
+              {
+                "name": "Wright St Raiders",
+                "price": -102,
+                "point": 17.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "ce1b7df6a9120896f02b2859be04bc9e",
+      "commenceTime": "2026-03-20T18:50:00Z",
+      "homeTeam": "Iowa State Cyclones",
+      "awayTeam": "Tennessee St Tigers",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Iowa State Cyclones",
+                "price": -10000
+              },
+              {
+                "name": "Tennessee St Tigers",
+                "price": 3000
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Iowa State Cyclones",
+                "price": -110,
+                "point": -24.5
+              },
+              {
+                "name": "Tennessee St Tigers",
+                "price": -110,
+                "point": 24.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "971d9d8ad2fe2607f127a619109a8cdf",
+      "commenceTime": "2026-03-20T19:15:56Z",
+      "homeTeam": "Alabama Crimson Tide",
+      "awayTeam": "Hofstra Pride",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Alabama Crimson Tide",
+                "price": -880
+              },
+              {
+                "name": "Hofstra Pride",
+                "price": 580
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Alabama Crimson Tide",
+                "price": -115,
+                "point": -11.5
+              },
+              {
+                "name": "Hofstra Pride",
+                "price": -105,
+                "point": 11.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "6396d6d59de88139cd308d04ccbd362c",
+      "commenceTime": "2026-03-20T20:10:00Z",
+      "homeTeam": "Villanova Wildcats",
+      "awayTeam": "Utah State Aggies",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Utah State Aggies",
+                "price": -122
+              },
+              {
+                "name": "Villanova Wildcats",
+                "price": 102
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Utah State Aggies",
+                "price": -110,
+                "point": -1.5
+              },
+              {
+                "name": "Villanova Wildcats",
+                "price": -110,
+                "point": 1.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "a656b2a076d07acff2b809012a37e667",
+      "commenceTime": "2026-03-20T20:25:38Z",
+      "homeTeam": "Tennessee Volunteers",
+      "awayTeam": "Miami (OH) RedHawks",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Miami (OH) RedHawks",
+                "price": 490
+              },
+              {
+                "name": "Tennessee Volunteers",
+                "price": -710
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Miami (OH) RedHawks",
+                "price": -102,
+                "point": 10.5
+              },
+              {
+                "name": "Tennessee Volunteers",
+                "price": -120,
+                "point": -10.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "99561d434de6bc73f538827ccca64168",
+      "commenceTime": "2026-03-20T22:50:00Z",
+      "homeTeam": "Clemson Tigers",
+      "awayTeam": "Iowa Hawkeyes",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Clemson Tigers",
+                "price": 118
+              },
+              {
+                "name": "Iowa Hawkeyes",
+                "price": -142
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Clemson Tigers",
+                "price": -115,
+                "point": 2.5
+              },
+              {
+                "name": "Iowa Hawkeyes",
+                "price": -105,
+                "point": -2.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "a50e57ea6aa17d46dda91f9a9d33fae8",
+      "commenceTime": "2026-03-20T23:10:00Z",
+      "homeTeam": "St. John's Red Storm",
+      "awayTeam": "Northern Iowa Panthers",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Northern Iowa Panthers",
+                "price": 390
+              },
+              {
+                "name": "St. John's Red Storm",
+                "price": -530
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Northern Iowa Panthers",
+                "price": -104,
+                "point": 9.5
+              },
+              {
+                "name": "St. John's Red Storm",
+                "price": -118,
+                "point": -9.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "73aff5152ee4b2c05eff9ae407e6d65c",
+      "commenceTime": "2026-03-20T23:25:00Z",
+      "homeTeam": "UCLA Bruins",
+      "awayTeam": "UCF Knights",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "UCF Knights",
+                "price": 198
+              },
+              {
+                "name": "UCLA Bruins",
+                "price": -245
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "UCF Knights",
+                "price": -110,
+                "point": 5.5
+              },
+              {
+                "name": "UCLA Bruins",
+                "price": -110,
+                "point": -5.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "db3e72207fdfaed613898c7b4952610f",
+      "commenceTime": "2026-03-20T23:35:00Z",
+      "homeTeam": "Purdue Boilermakers",
+      "awayTeam": "Queens University Royals",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Purdue Boilermakers",
+                "price": -20000
+              },
+              {
+                "name": "Queens University Royals",
+                "price": 3500
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Purdue Boilermakers",
+                "price": -110,
+                "point": -25.5
+              },
+              {
+                "name": "Queens University Royals",
+                "price": -110,
+                "point": 25.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "91d3ab43f9a933f47a205f7597e8e89a",
+      "commenceTime": "2026-03-21T01:25:00Z",
+      "homeTeam": "Florida Gators",
+      "awayTeam": "Prairie View Panthers",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Florida Gators",
+                "price": -100000
+              },
+              {
+                "name": "Prairie View Panthers",
+                "price": 8000
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Florida Gators",
+                "price": -110,
+                "point": -35.5
+              },
+              {
+                "name": "Prairie View Panthers",
+                "price": -110,
+                "point": 35.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "4ed1082ee462d367e6aef5bb3987f09f",
+      "commenceTime": "2026-03-21T01:45:00Z",
+      "homeTeam": "Kansas Jayhawks",
+      "awayTeam": "Cal Baptist Lancers",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Cal Baptist Lancers",
+                "price": 810
+              },
+              {
+                "name": "Kansas Jayhawks",
+                "price": -1700
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Cal Baptist Lancers",
+                "price": -115,
+                "point": 14.5
+              },
+              {
+                "name": "Kansas Jayhawks",
+                "price": -105,
+                "point": -14.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "149f8ce2674cf5d5e2307fcb74cc8a71",
+      "commenceTime": "2026-03-21T02:00:00Z",
+      "homeTeam": "UConn Huskies",
+      "awayTeam": "Furman Paladins",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Furman Paladins",
+                "price": 2000
+              },
+              {
+                "name": "UConn Huskies",
+                "price": -7000
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Furman Paladins",
+                "price": -115,
+                "point": 20.5
+              },
+              {
+                "name": "UConn Huskies",
+                "price": -105,
+                "point": -20.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "e62a91878453459997f36fd803409c88",
+      "commenceTime": "2026-03-21T02:10:00Z",
+      "homeTeam": "Miami Hurricanes",
+      "awayTeam": "Missouri Tigers",
+      "bookmaker": {
+        "key": "fanduel",
+        "title": "FanDuel",
+        "markets": [
+          {
+            "key": "h2h",
+            "outcomes": [
+              {
+                "name": "Miami Hurricanes",
+                "price": -130
+              },
+              {
+                "name": "Missouri Tigers",
+                "price": 108
+              }
+            ]
+          },
+          {
+            "key": "spreads",
+            "outcomes": [
+              {
+                "name": "Miami Hurricanes",
+                "price": -114,
+                "point": -1.5
+              },
+              {
+                "name": "Missouri Tigers",
+                "price": -106,
+                "point": 1.5
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
 }

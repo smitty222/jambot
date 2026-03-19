@@ -16,6 +16,11 @@ import {
   setNowPlayingInfoBlurbTone,
   getNowPlayingInfoBlurbTone
 } from '../utils/announceNowPlaying.js'
+import {
+  enableMarchMadnessUpdates,
+  disableMarchMadnessUpdates,
+  isMarchMadnessUpdatesEnabled
+} from '../scheduler/marchMadnessUpdates.js'
 
 export const VALID_INFO_TONES = ['neutral', 'playful', 'cratedigger', 'hype', 'classy', 'chartbot', 'djtech', 'vibe']
 
@@ -85,7 +90,10 @@ export function createModControlHandlers (deps = {}) {
     disableNowPlayingInfoBlurb: disableInfoImpl = disableNowPlayingInfoBlurb,
     isNowPlayingInfoBlurbEnabled: isInfoEnabled = isNowPlayingInfoBlurbEnabled,
     setNowPlayingInfoBlurbTone: setToneImpl = setNowPlayingInfoBlurbTone,
-    getNowPlayingInfoBlurbTone: getTone = getNowPlayingInfoBlurbTone
+    getNowPlayingInfoBlurbTone: getTone = getNowPlayingInfoBlurbTone,
+    enableMarchMadnessUpdates: enableMadnessUpdatesImpl = enableMarchMadnessUpdates,
+    disableMarchMadnessUpdates: disableMadnessUpdatesImpl = disableMarchMadnessUpdates,
+    isMarchMadnessUpdatesEnabled: isMadnessUpdatesEnabled = isMarchMadnessUpdatesEnabled
   } = deps
 
   async function requireModerator (payload, room, ttlUserToken) {
@@ -105,7 +113,8 @@ export function createModControlHandlers (deps = {}) {
       - Autobop: ${roomBot?.autobop ? 'enabled' : 'disabled'}
       - Song stats: ${readSongStats() ? 'enabled' : 'disabled'}
       - Greet users: ${greetingState.standardEnabled ? 'enabled' : 'disabled'}
-      - Info blurb: ${isInfoEnabled() ? 'enabled' : 'disabled'} (tone: ${getTone()})`
+      - Info blurb: ${isInfoEnabled() ? 'enabled' : 'disabled'} (tone: ${getTone()})
+      - March Madness updates: ${isMadnessUpdatesEnabled() ? 'enabled' : 'disabled'}`
 
       await post({ room, message: statusMessage })
     },
@@ -241,6 +250,29 @@ export function createModControlHandlers (deps = {}) {
 
       setToneImpl(wanted)
       await post({ room, message: `Info blurb tone set to ${wanted}.` })
+    },
+
+    madnessupdates: async ({ payload, room, ttlUserToken }) => {
+      if (!await requireModerator(payload, room, ttlUserToken)) return
+
+      const action = String(payload?.message || '').trim().split(/\s+/)[1]?.toLowerCase() || 'status'
+
+      if (action === 'on' || action === 'enable') {
+        enableMadnessUpdatesImpl()
+        await post({ room, message: 'March Madness live updates enabled.' })
+        return
+      }
+
+      if (action === 'off' || action === 'disable') {
+        disableMadnessUpdatesImpl()
+        await post({ room, message: 'March Madness live updates disabled.' })
+        return
+      }
+
+      await post({
+        room,
+        message: `March Madness live updates are currently ${isMadnessUpdatesEnabled() ? 'enabled' : 'disabled'}.\nUsage: /madnessupdates <on|off|status>`
+      })
     }
   }
 }

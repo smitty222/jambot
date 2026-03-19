@@ -1,6 +1,7 @@
 import cron from 'node-cron'
 import { logger as defaultLogger } from '../utils/logging.js'
 import { resolveCompletedBets } from '../utils/sportsBet.js'
+import { resolveMarchMadnessPicks } from '../database/dbmarchmadness.js'
 
 export const SPORTS_SETTLEMENT_SPORT_KEYS = [
   'baseball_mlb',
@@ -14,29 +15,31 @@ export function createSportsSettlementRunner (deps = {}) {
   const {
     logger = defaultLogger,
     resolveCompletedBets: resolveCompletedBetsImpl = resolveCompletedBets,
-    sportKeys = SPORTS_SETTLEMENT_SPORT_KEYS
+    resolveMarchMadnessPicks: resolveMarchMadnessPicksImpl = resolveMarchMadnessPicks,
+    sportKeys = SPORTS_SETTLEMENT_SPORT_KEYS,
+    state = { running: false },
+    logPrefix = '[sports-settlement-cron]'
   } = deps
 
-  let running = false
-
   return async function runSportsSettlement () {
-    if (running) {
-      logger.info('[sports-settlement-cron] skipped (already running)')
+    if (state.running) {
+      logger.info(`${logPrefix} skipped (already running)`)
       return
     }
 
-    running = true
+    state.running = true
     try {
-      logger.info('[sports-settlement-cron] start')
+      logger.info(`${logPrefix} start`)
       for (const sportKey of sportKeys) {
-        logger.info('[sports-settlement-cron] resolving sport', { sportKey })
+        logger.info(`${logPrefix} resolving sport`, { sportKey })
         await resolveCompletedBetsImpl(sportKey)
       }
-      logger.info('[sports-settlement-cron] finished')
+      await resolveMarchMadnessPicksImpl()
+      logger.info(`${logPrefix} finished`)
     } catch (err) {
-      logger.error('[sports-settlement-cron] failed', { err: err?.message || err })
+      logger.error(`${logPrefix} failed`, { err: err?.message || err })
     } finally {
-      running = false
+      state.running = false
     }
   }
 }
@@ -46,13 +49,28 @@ export function startSportsSettlementCron (deps = {}) {
     cronModule = cron,
     logger = defaultLogger,
     sportsSettlementCron = '0 6 * * *',
+    ncaabSettlementEnabled = true,
+    ncaabSettlementCron = '*/10 * * * *',
     sportsSettlementTz = 'America/New_York',
     sportsSettlementRunOnBoot = false,
-    run = createSportsSettlementRunner({ logger, ...deps })
+    state = { running: false },
+    run = createSportsSettlementRunner({ logger, state, ...deps })
   } = deps
 
   cronModule.schedule(sportsSettlementCron, run, { timezone: sportsSettlementTz })
   logger.info(`[sports-settlement-cron] scheduled "${sportsSettlementCron}" (TZ=${sportsSettlementTz})`)
+
+  if (ncaabSettlementEnabled) {
+    const runNcaab = createSportsSettlementRunner({
+      logger,
+      state,
+      sportKeys: ['basketball_ncaab'],
+      logPrefix: '[ncaab-settlement-cron]',
+      ...deps
+    })
+    cronModule.schedule(ncaabSettlementCron, runNcaab, { timezone: sportsSettlementTz })
+    logger.info(`[ncaab-settlement-cron] scheduled "${ncaabSettlementCron}" (TZ=${sportsSettlementTz})`)
+  }
 
   if (sportsSettlementRunOnBoot) {
     run().catch((err) => {

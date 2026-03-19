@@ -79,12 +79,23 @@ export function normalizeSportsTeamInput (value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '')
 }
 
+function getLeadingShortAbbreviation (teamName) {
+  const rawTokens = String(teamName || '')
+    .split(/[^A-Za-z0-9.&-]+/)
+    .map(token => token.trim())
+    .filter(Boolean)
+
+  const firstToken = rawTokens[0] || ''
+  return /^[A-Z0-9.&-]{2,5}$/.test(firstToken) ? firstToken : ''
+}
+
 function buildCityInitials (tokens) {
   if (tokens.length <= 1) return ''
   return tokens.slice(0, -1).map(token => token[0]).join('')
 }
 
 export function buildGenericTeamAliases (teamName) {
+  const leadingAbbreviation = getLeadingShortAbbreviation(teamName)
   const tokens = String(teamName || '')
     .split(/[^A-Za-z0-9]+/)
     .map(token => token.trim().toLowerCase())
@@ -101,6 +112,7 @@ export function buildGenericTeamAliases (teamName) {
 
   return new Set([
     normalizeSportsTeamInput(teamName),
+    normalizeSportsTeamInput(leadingAbbreviation),
     nickname,
     lastTwoTokens,
     cityJoined,
@@ -116,6 +128,9 @@ export function buildGenericTeamAliases (teamName) {
 export function getGenericDisplayTeamCode (teamName) {
   const mlbAbbr = MLB_TEAM_ABBREVIATIONS[teamName]
   if (mlbAbbr) return mlbAbbr
+
+  const leadingAbbreviation = getLeadingShortAbbreviation(teamName)
+  if (leadingAbbreviation) return leadingAbbreviation
 
   const tokens = String(teamName || '')
     .split(/[^A-Za-z0-9]+/)

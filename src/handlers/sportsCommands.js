@@ -6,7 +6,7 @@ import {
   getNFLScores,
   getNCAABScores
 } from '../utils/API.js'
-import { fetchOddsForSport, formatOddsMessage } from '../utils/sportsBetAPI.js'
+import { fetchOddsForSport, formatOddsMessage, OddsApiError } from '../utils/sportsBetAPI.js'
 import { saveOddsForSport, getOddsForSport } from '../utils/bettingOdds.js'
 import {
   placeSportsBet,
@@ -172,10 +172,13 @@ function formatOpenBetLine (bet, game) {
   const matchup = game?.awayTeam && game?.homeTeam
     ? `${game.awayTeam} @ ${game.homeTeam}`
     : `Game ${Number(bet.gameIndex || 0) + 1}`
+  const spreadLine = String(bet.type || '').toLowerCase() === 'spread' && Number.isFinite(Number(bet.spreadPoint))
+    ? ` ${Number(bet.spreadPoint) > 0 ? '+' : ''}${Number(bet.spreadPoint)}`
+    : ''
 
   return [
     `${formatSportLabel(bet.sport)} · ${matchup}`,
-    `Pick: ${String(bet.team || '').toUpperCase()} ${String(bet.type || '').toUpperCase()} at ${bet.odds > 0 ? `+${bet.odds}` : bet.odds}`,
+    `Pick: ${String(bet.team || '').toUpperCase()} ${String(bet.type || '').toUpperCase()}${spreadLine} at ${bet.odds > 0 ? `+${bet.odds}` : bet.odds}`,
     `Risk: $${Number(bet.amount || 0)}`
   ].join(' | ')
 }
@@ -350,6 +353,7 @@ export function createOddsCommandHandler (deps = {}) {
     postMessage: postMessageImpl = postMessage,
     fetchOddsForSport: fetchOddsForSportImpl = fetchOddsForSport,
     saveOddsForSport: saveOddsForSportImpl = saveOddsForSport,
+    getOddsForSport: getOddsForSportImpl = getOddsForSport,
     formatOddsMessage: formatOddsMessageImpl = formatOddsMessage,
     defaultSportAlias = null
   } = deps
@@ -370,21 +374,46 @@ export function createOddsCommandHandler (deps = {}) {
 
     try {
       const data = await fetchOddsForSportImpl(sport)
-      if (!data) throw new Error('No data returned')
+      if (!Array.isArray(data)) throw new Error('No data returned')
 
       await saveOddsForSportImpl(sport, data)
       oddsMsg = formatOddsMessageImpl(data, sport)
 
       await postMessageImpl({ room, message: oddsMsg })
     } catch (error) {
+      const cachedOdds = await getOddsForSportImpl(sport).catch(() => [])
+
+      if (Array.isArray(cachedOdds) && cachedOdds.length) {
+        oddsMsg = `${formatOddsMessageImpl(cachedOdds, sport)}\n\n⚠️ Live odds refresh failed, so this is the last saved board.`
+        await postMessageImpl({ room, message: oddsMsg })
+        return
+      }
+
       console.error(`Error fetching or posting ${sportAlias.toUpperCase()} odds:`, error)
-      if (oddsMsg) console.log(oddsMsg)
       await postMessageImpl({
         room,
-        message: `Sorry, something went wrong fetching ${sportAlias.toUpperCase()} odds.`
+        message: buildOddsErrorMessage(sportAlias, error)
       })
     }
   }
+}
+
+function buildOddsErrorMessage (sportAlias, error) {
+  const label = String(sportAlias || '').toUpperCase()
+
+  if (error instanceof OddsApiError) {
+    if (error.status === 401) {
+      return `Couldn't refresh ${label} odds because the Odds API rejected the request (401 Unauthorized). Check the \`ODDS_API_KEY\`.`
+    }
+
+    if (error.message === 'ODDS_API_KEY is missing.') {
+      return `Couldn't refresh ${label} odds because \`ODDS_API_KEY\` is not configured.`
+    }
+
+    return `Couldn't refresh ${label} odds right now (${error.message}).`
+  }
+
+  return `Sorry, something went wrong fetching ${label} odds.`
 }
 
 export async function handleSportsBetCommand ({ payload, room }) {
@@ -414,7 +443,7 @@ export function createSportsBetCommandHandler (deps = {}) {
     }
 
     if (!parsed.ok && parsed.reason === 'sport') {
-      await postMessageImpl({ room, message: 'Unsupported sport. Try: mlb, nba, nfl, nhl' })
+      await postMessageImpl({ room, message: 'Unsupported sport. Try: mlb, nba, ncaab, nfl, nhl' })
       return
     }
 

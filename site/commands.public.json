@@ -55,6 +55,12 @@
       "/crapsrecord",
       "/horserace",
       "/horsehelp",
+      "/madness",
+      "/madness games [YYYY-MM-DD]",
+      "/madness pick <gameIndex> <team>",
+      "/madness picks",
+      "/madness leaderboard [count]",
+      "/madness bankroll [count]",
       "/f1 start",
       "/f1help"
     ]

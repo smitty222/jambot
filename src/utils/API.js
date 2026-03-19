@@ -965,25 +965,126 @@ export async function isUserOwner (userUuid, token = cfg.userToken) {
 /* ────────────────────────────────────────────────────────────────
  * ESPN Scores (MLB / NHL / NBA)
  * ──────────────────────────────────────────────────────────────── */
-async function espnScoreboard (sportPath, requestedDate) {
+function isCleanScoreboardAbbreviation (value = '') {
+  return /^[A-Z0-9]{2,4}$/.test(String(value || '').trim().toUpperCase())
+}
+
+export function formatEspnTournamentSeed (competitor = {}) {
+  const candidates = [
+    competitor?.seed,
+    competitor?.tournamentSeed,
+    competitor?.team?.seed,
+    competitor?.team?.tournamentSeed,
+    competitor?.curatedRank?.current
+  ]
+
+  for (const candidate of candidates) {
+    const seed = Number.parseInt(candidate, 10)
+    if (Number.isFinite(seed) && seed > 0 && seed <= 16) {
+      return `(${seed}) `
+    }
+  }
+
+  return ''
+}
+
+function resolveScoreboardStartDate ({ startDate, competitionDate, eventDate } = {}) {
+  return startDate || competitionDate || eventDate || null
+}
+
+export function formatScoreboardLine ({ awayName, awayScore, homeName, homeScore, status, sportPath, startDate, competitionDate, eventDate, period }) {
+  const matchupSeparator = sportPath === 'basketball/mens-college-basketball' ? 'vs' : '@'
+  let statusMsg = String(status || '').trim()
+  const resolvedStartDate = resolveScoreboardStartDate({ startDate, competitionDate, eventDate })
+  const d = resolvedStartDate ? new Date(resolvedStartDate) : null
+  const hasStartTime = d && !isNaN(d)
+  const hasStarted = status === 'In Progress' || status === 'Final'
+
+  if (status === 'In Progress') {
+    const periodLabel = sportPath.includes('baseball')
+      ? 'Inning'
+      : sportPath.includes('hockey')
+        ? 'Period'
+        : 'Q'
+    statusMsg = `🔴 Live • ${periodLabel} ${period || 0}`
+  } else if (status === 'Final') {
+    statusMsg = '✅ Final'
+  } else if (hasStartTime) {
+    statusMsg = `🕒 ${d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+  } else if (status) {
+    statusMsg = `🏟️ ${status}`
+  } else {
+    statusMsg = '🏟️ Update pending'
+  }
+
+  if (!hasStarted && hasStartTime) {
+    return `• ${awayName} ${matchupSeparator} ${homeName} • ${statusMsg}`
+  }
+
+  return `• ${awayName} ${awayScore ?? 0} ${matchupSeparator} ${homeName} ${homeScore ?? 0}\n  ${statusMsg}`
+}
+
+export function formatEspnScoreboardTeamName (team = {}, sportPath = '') {
+  const abbreviation = String(team?.abbreviation || '').trim().toUpperCase()
+  const shortDisplayName = String(team?.shortDisplayName || '').trim()
+  const location = String(team?.location || '').trim()
+  const nickname = String(team?.name || '').trim()
+  const displayName = String(team?.displayName || '').trim()
+
+  if (sportPath === 'basketball/mens-college-basketball') {
+    if (isCleanScoreboardAbbreviation(abbreviation)) return abbreviation
+    if (location) return location
+    if (shortDisplayName) return shortDisplayName.replace(/\s+[A-Z][a-zA-Z'&.-]*$/, '').trim() || shortDisplayName
+  }
+
+  if (abbreviation && abbreviation.length <= 6) return abbreviation
+  if (shortDisplayName) return shortDisplayName
+  if (location && nickname) return `${location} ${nickname}`
+  if (displayName) return displayName
+
+  return 'Unknown Team'
+}
+
+async function espnScoreboard (sportPath, requestedDate, options = {}) {
+  const {
+    liveOnly = false
+  } = options
   const normalizedDate = typeof requestedDate === 'string' && /^\d{8}$/.test(requestedDate)
     ? requestedDate
     : typeof requestedDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)
       ? requestedDate.replaceAll('-', '')
       : null
-  const cacheKey = normalizedDate ? `${sportPath}:${normalizedDate}` : sportPath
+  const cacheKeyBase = normalizedDate ? `${sportPath}:${normalizedDate}` : sportPath
+  const cacheKey = liveOnly ? `${cacheKeyBase}:live` : cacheKeyBase
 
   return getCachedScoreboard(cacheKey, async () => {
     const url = withQuery(`https://site.api.espn.com/apis/site/v2/sports/${sportPath}/scoreboard`, normalizedDate ? { dates: normalizedDate } : undefined)
     const { ok, data } = await makeRequest(url)
     if (!ok) return 'No scores available.\n'
 
-    const games = data?.events || []
+    const events = data?.events || []
+    const games = liveOnly
+      ? events.filter(g => String(g?.status?.type?.description || '').trim() === 'In Progress')
+      : events
     games.sort((a, b) => {
       const pa = a?.competitions?.[0]?.status?.period || 0
       const pb = b?.competitions?.[0]?.status?.period || 0
       return pb - pa
     })
+
+    if (!games.length) {
+      const sportLabelMap = {
+        'baseball/mlb': 'MLB',
+        'hockey/nhl': 'NHL',
+        'basketball/nba': 'NBA',
+        'football/nfl': 'NFL',
+        'basketball/mens-college-basketball': 'NCAAB'
+      }
+      const sportLabel = sportLabelMap[sportPath] || sportPath.toUpperCase()
+      return liveOnly
+        ? `No live ${sportLabel} games right now.\n`
+        : 'No scores available.\n'
+    }
 
     const lines = games.map(g => {
       const comp = g?.competitions?.[0]
@@ -991,27 +1092,40 @@ async function espnScoreboard (sportPath, requestedDate) {
       const away = comp?.competitors?.find(c => c.homeAway === 'away')
       const status = g?.status?.type?.description
 
-      const hName = (home?.team?.displayName || '').split(' ').slice(-1).join(' ')
-      const aName = (away?.team?.displayName || '').split(' ').slice(-1).join(' ')
+      const hSeed = sportPath === 'basketball/mens-college-basketball' ? formatEspnTournamentSeed(home) : ''
+      const aSeed = sportPath === 'basketball/mens-college-basketball' ? formatEspnTournamentSeed(away) : ''
+      const hName = `${hSeed}${formatEspnScoreboardTeamName(home?.team, sportPath)}`.trim()
+      const aName = `${aSeed}${formatEspnScoreboardTeamName(away?.team, sportPath)}`.trim()
 
-      let statusMsg = status || ''
-      if (status === 'In Progress') {
-        const period = comp?.status?.period
-        statusMsg = `${sportPath.includes('baseball') ? 'Inning' : sportPath.includes('hockey') ? 'Period' : 'Quarter'} ${period}`
-      } else if (status === 'Scheduled') {
-        const d = g?.status?.startDate ? new Date(g.status.startDate) : null
-        statusMsg = d && !isNaN(d)
-          ? `Scheduled at ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-          : 'Scheduled'
-      }
-      return `${aName} ${away?.score ?? 0} @ ${hName} ${home?.score ?? 0} (${statusMsg})`
+      return formatScoreboardLine({
+        awayName: aName,
+        awayScore: away?.score,
+        homeName: hName,
+        homeScore: home?.score,
+        status,
+        sportPath,
+        startDate: g?.status?.startDate,
+        competitionDate: comp?.date,
+        eventDate: g?.date,
+        period: comp?.status?.period
+      })
     })
 
-    return `${sportPath.toUpperCase().includes('MLB')
-? 'MLB'
-      : sportPath.toUpperCase().includes('NHL')
-? 'NHL'
-      : 'NBA'} Scores:\n${lines.join('\n')}\n`
+    const sportLabelMap = {
+      'baseball/mlb': 'MLB',
+      'hockey/nhl': 'NHL',
+      'basketball/nba': 'NBA',
+      'football/nfl': 'NFL',
+      'basketball/mens-college-basketball': 'NCAAB'
+    }
+
+    const sportLabel = sportLabelMap[sportPath] || sportPath.toUpperCase()
+
+    const scoreHeader = sportPath === 'basketball/mens-college-basketball'
+      ? `🏀 ${sportLabel} Gameboard`
+      : `📊 ${sportLabel} Scores`
+
+    return `${scoreHeader}\n\n${lines.join('\n')}\n`
   })
 }
 
@@ -1020,6 +1134,7 @@ export async function getNHLScores (requestedDate) { return espnScoreboard('hock
 export async function getNBAScores (requestedDate) { return espnScoreboard('basketball/nba', requestedDate) }
 export async function getNFLScores (requestedDate) { return espnScoreboard('football/nfl', requestedDate) }
 export async function getNCAABScores (requestedDate) { return espnScoreboard('basketball/mens-college-basketball', requestedDate) }
+export async function getNCAABLiveScores (requestedDate) { return espnScoreboard('basketball/mens-college-basketball', requestedDate, { liveOnly: true }) }
 
 /* ────────────────────────────────────────────────────────────────
  * Last.fm helpers

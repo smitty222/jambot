@@ -226,6 +226,30 @@ db.exec(`
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_monthly_leaderboard_type_month ON monthly_leaderboard_snapshots(leaderboardType, monthKey)') } catch (e) { console.warn('⚠️ Could not create idx_monthly_leaderboard_type_month:', e.message) }
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS march_madness_picks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    seasonYear INTEGER NOT NULL,
+    userUUID TEXT NOT NULL,
+    gameId TEXT NOT NULL,
+    gameIndex INTEGER NOT NULL DEFAULT 0,
+    teamName TEXT NOT NULL,
+    teamCode TEXT NOT NULL,
+    awayTeam TEXT NOT NULL,
+    homeTeam TEXT NOT NULL,
+    commenceTime TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    winnerTeam TEXT,
+    pointsAwarded INTEGER NOT NULL DEFAULT 0,
+    createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+    resolvedAt TEXT,
+    UNIQUE(seasonYear, userUUID, gameId)
+  )
+`)
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_march_madness_picks_season_user ON march_madness_picks(seasonYear, userUUID)') } catch (e) { console.warn('⚠️ Could not create idx_march_madness_picks_season_user:', e.message) }
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_march_madness_picks_season_status ON march_madness_picks(seasonYear, status)') } catch (e) { console.warn('⚠️ Could not create idx_march_madness_picks_season_status:', e.message) }
+
+db.exec(`
   CREATE TABLE IF NOT EXISTS dj_streaks (
     userUUID TEXT PRIMARY KEY,
     streakCount INTEGER NOT NULL DEFAULT 0,

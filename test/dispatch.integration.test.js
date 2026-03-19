@@ -20,6 +20,12 @@ import {
   createSportsBetCommandHandler,
   buildSportsInfoMessage
 } from '../src/handlers/sportsCommands.js'
+import { OddsApiError } from '../src/utils/sportsBetAPI.js'
+import {
+  buildMadnessHubMessage,
+  createMadnessCommandHandler,
+  resolveMadnessGamesDateToken
+} from '../src/handlers/marchMadnessCommands.js'
 
 function createRecorder () {
   const calls = []
@@ -145,6 +151,24 @@ test('createNcaabScoresCommandHandler parses and forwards dates for ncaab', asyn
   assert.deepEqual(posted, [{ room: 'room-1', message: 'ncaab:2026-03-18' }])
 })
 
+test('createNcaabScoresCommandHandler posts the college scoreboard response as-is', async () => {
+  const posted = []
+  const handler = createNcaabScoresCommandHandler({
+    postMessage: async (msg) => posted.push(msg),
+    getScores: async () => '🏀 NCAAB Gameboard\n\n• Duke 82 vs UNC 77\n  ✅ Final\n'
+  })
+
+  await handler({
+    payload: { sender: 'user-1', message: '/ncaab' },
+    room: 'room-1'
+  })
+
+  assert.deepEqual(posted, [{
+    room: 'room-1',
+    message: '🏀 NCAAB Gameboard\n\n• Duke 82 vs UNC 77\n  ✅ Final\n'
+  }])
+})
+
 test('createSportsBetCommandHandler posts the bet result without extra wallet debit', async () => {
   const posted = []
   const betCalls = []
@@ -191,6 +215,52 @@ test('createOddsCommandHandler fetches and stores odds for the selected sport', 
   assert.deepEqual(fetched, ['basketball_ncaab'])
   assert.deepEqual(saved, [['basketball_ncaab', [{ id: 'game-1' }]]])
   assert.deepEqual(posted, [{ room: 'room-1', message: 'odds:basketball_ncaab' }])
+})
+
+test('createOddsCommandHandler falls back to saved odds when live refresh fails', async () => {
+  const posted = []
+  const handler = createOddsCommandHandler({
+    postMessage: async (msg) => posted.push(msg),
+    fetchOddsForSport: async () => {
+      throw new OddsApiError('Failed to fetch odds: 401 Unauthorized', { status: 401, sportKey: 'basketball_ncaab' })
+    },
+    getOddsForSport: async () => [{ id: 'cached-game-1' }],
+    saveOddsForSport: async () => {
+      throw new Error('should not save fallback odds')
+    },
+    formatOddsMessage: (games, sport) => `cached:${sport}:${games.length}`
+  })
+
+  await handler({
+    payload: { sender: 'user-1', message: '/odds ncaab' },
+    room: 'room-1'
+  })
+
+  assert.deepEqual(posted, [{
+    room: 'room-1',
+    message: 'cached:basketball_ncaab:1\n\n⚠️ Live odds refresh failed, so this is the last saved board.'
+  }])
+})
+
+test('createOddsCommandHandler explains unauthorized odds API failures clearly', async () => {
+  const posted = []
+  const handler = createOddsCommandHandler({
+    postMessage: async (msg) => posted.push(msg),
+    fetchOddsForSport: async () => {
+      throw new OddsApiError('Failed to fetch odds: 401 Unauthorized', { status: 401, sportKey: 'basketball_ncaab' })
+    },
+    getOddsForSport: async () => []
+  })
+
+  await handler({
+    payload: { sender: 'user-1', message: '/odds ncaab' },
+    room: 'room-1'
+  })
+
+  assert.deepEqual(posted, [{
+    room: 'room-1',
+    message: "Couldn't refresh NCAAB odds because the Odds API rejected the request (401 Unauthorized). Check the `ODDS_API_KEY`."
+  }])
 })
 
 test('createSportsCommandHandler routes score requests through the requested league', async () => {
@@ -347,6 +417,170 @@ test('buildSportsInfoMessage supports focused betting help', () => {
   assert.match(message, /\/sports odds nba/)
   assert.match(message, /\/sports bets <@uid:USER>/)
   assert.match(message, /Shortcuts still work: `\/odds`, `\/sportsbet`, `\/mybets`, `\/openbets`, `\/resolvebets`/)
+})
+
+test('createMadnessCommandHandler shows the hub by default', async () => {
+  const posted = []
+  const handler = createMadnessCommandHandler({
+    postMessage: async (msg) => posted.push(msg),
+    buildMadnessHubMessage: () => 'MADNESS HUB'
+  })
+
+  await handler({
+    payload: { sender: 'user-1', message: '/madness' },
+    room: 'room-1'
+  })
+
+  assert.deepEqual(posted, [{ room: 'room-1', message: 'MADNESS HUB' }])
+})
+
+test('createMadnessCommandHandler routes games through ncaab scores', async () => {
+  const seen = []
+  const handler = createMadnessCommandHandler({
+    postMessage: async () => {},
+    handleNcaabScoresCommand: async ({ payload }) => seen.push(payload.message)
+  })
+
+  await handler({
+    payload: { sender: 'user-1', message: '/madness games 2026-03-19' },
+    room: 'room-1'
+  })
+
+  assert.deepEqual(seen, ['/ncaab 2026-03-19'])
+})
+
+test('createMadnessCommandHandler routes scores through the live madness scoreboard', async () => {
+  const seen = []
+  const handler = createMadnessCommandHandler({
+    postMessage: async () => {},
+    postMadnessLiveScores: async (_room, { args }) => seen.push(args)
+  })
+
+  await handler({
+    payload: { sender: 'user-1', message: '/madness scores' },
+    room: 'room-1'
+  })
+
+  assert.deepEqual(seen, [''])
+})
+
+test('createMadnessCommandHandler defaults games to today', async () => {
+  const seen = []
+  const handler = createMadnessCommandHandler({
+    postMessage: async () => {},
+    handleNcaabScoresCommand: async ({ payload }) => seen.push(payload.message)
+  })
+
+  const realDateNow = Date.now
+  Date.now = () => new Date('2026-03-20T14:00:00-04:00').getTime()
+
+  try {
+    await handler({
+      payload: { sender: 'user-1', message: '/madness games' },
+      room: 'room-1'
+    })
+  } finally {
+    Date.now = realDateNow
+  }
+
+  assert.equal(seen.length, 1)
+  assert.match(seen[0], /^\/ncaab \d{4}-\d{2}-\d{2}$/)
+})
+
+test('createMadnessCommandHandler maps yesterday to an explicit date', async () => {
+  const seen = []
+  const handler = createMadnessCommandHandler({
+    postMessage: async () => {},
+    handleNcaabScoresCommand: async ({ payload }) => seen.push(payload.message)
+  })
+
+  await handler({
+    payload: { sender: 'user-1', message: '/madness games yesterday' },
+    room: 'room-1'
+  })
+
+  assert.equal(seen.length, 1)
+  assert.match(seen[0], /^\/ncaab \d{4}-\d{2}-\d{2}$/)
+})
+
+test('createMadnessCommandHandler routes leaderboard requests', async () => {
+  const seen = []
+  const handler = createMadnessCommandHandler({
+    postMessage: async () => {},
+    postMadnessLeaderboard: async (_room, { args }) => seen.push(args)
+  })
+
+  await handler({
+    payload: { sender: 'user-1', message: '/madness leaderboard 15' },
+    room: 'room-1'
+  })
+
+  assert.deepEqual(seen, ['15'])
+})
+
+test('createMadnessCommandHandler routes bankroll requests', async () => {
+  const seen = []
+  const handler = createMadnessCommandHandler({
+    postMessage: async () => {},
+    postMadnessBankrollLeaderboard: async (_room, { args }) => seen.push(args)
+  })
+
+  await handler({
+    payload: { sender: 'user-1', message: '/madness bankroll 12' },
+    room: 'room-1'
+  })
+
+  assert.deepEqual(seen, ['12'])
+})
+
+test('createMadnessCommandHandler routes pick requests', async () => {
+  const seen = []
+  const handler = createMadnessCommandHandler({
+    postMessage: async () => {},
+    handleMadnessPick: async ({ payload }) => seen.push(payload.message)
+  })
+
+  await handler({
+    payload: { sender: 'user-1', message: '/madness pick 1 duke' },
+    room: 'room-1'
+  })
+
+  assert.deepEqual(seen, ['/madness pick 1 duke'])
+})
+
+test('createMadnessCommandHandler routes picks requests', async () => {
+  const seen = []
+  const handler = createMadnessCommandHandler({
+    postMessage: async () => {},
+    postMadnessPicks: async (_room, { payload }) => seen.push(payload.message)
+  })
+
+  await handler({
+    payload: { sender: 'user-1', message: '/madness picks' },
+    room: 'room-1'
+  })
+
+  assert.deepEqual(seen, ['/madness picks'])
+})
+
+test('buildMadnessHubMessage documents the March Madness flow', () => {
+  const message = buildMadnessHubMessage('2026-03')
+
+  assert.match(message, /March Madness/)
+  assert.match(message, /\/madness games/)
+  assert.match(message, /\/madness pick 1 duke/)
+  assert.match(message, /\/madness leaderboard/)
+  assert.match(message, /\/madness bankroll/)
+})
+
+test('resolveMadnessGamesDateToken maps relative date shortcuts', () => {
+  const base = new Date('2026-03-20T14:00:00-04:00')
+
+  assert.equal(resolveMadnessGamesDateToken('', base), '2026-03-20')
+  assert.equal(resolveMadnessGamesDateToken('today', base), '2026-03-20')
+  assert.equal(resolveMadnessGamesDateToken('yesterday', base), '2026-03-19')
+  assert.equal(resolveMadnessGamesDateToken('tomorrow', base), '2026-03-21')
+  assert.equal(resolveMadnessGamesDateToken('2026-03-22', base), '2026-03-22')
 })
 
 test('dispatchWithRegistry routes /tip through the real tip handler logic', async () => {

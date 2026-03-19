@@ -55,6 +55,12 @@ export const PUBLIC_SITE_COMMAND_GROUPS = [
       '/crapsrecord',
       '/horserace',
       '/horsehelp',
+      '/madness',
+      '/madness games [YYYY-MM-DD]',
+      '/madness pick <gameIndex> <team>',
+      '/madness picks',
+      '/madness leaderboard [count]',
+      '/madness bankroll [count]',
       '/f1 start',
       '/f1help'
     ]
@@ -297,6 +303,7 @@ export const MOD_SITE_COMMAND_GROUPS = [
       '/settheme <name>',
       '/removetheme',
       '/status',
+      '/madnessupdates <on|off|status>',
       '/infoon',
       '/infooff',
       '/infotoggle',

@@ -24,6 +24,7 @@
       "/settheme <name>",
       "/removetheme",
       "/status",
+      "/madnessupdates <on|off|status>",
       "/infoon",
       "/infooff",
       "/infotoggle",

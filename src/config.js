@@ -9,12 +9,33 @@
 // understand how the bot is configured, prevent runtime failures caused by
 // undefined values and enable early validation during startup.
 
+import fs from 'fs'
+import path from 'path'
 import dotenv from 'dotenv'
 
 // Load variables from a local .env file if present.  If no .env file is
 // supplied, dotenv simply does nothing – all variables are expected to be
 // provided by the hosting environment (e.g. Fly.io secrets or the shell).
 dotenv.config()
+loadFlyEnvFallback()
+
+function loadFlyEnvFallback () {
+  if (String(process.env.JAMBOT_DISABLE_FLY_ENV || '') === '1') return
+
+  const flyEnvPath = path.resolve(process.cwd(), 'fly.env')
+  if (!fs.existsSync(flyEnvPath)) return
+
+  try {
+    const parsed = dotenv.parse(fs.readFileSync(flyEnvPath))
+    for (const [key, value] of Object.entries(parsed)) {
+      if (process.env[key] === undefined || process.env[key] === '') {
+        process.env[key] = value
+      }
+    }
+  } catch (error) {
+    console.warn('[config] Failed to load fly.env fallback:', error?.message || error)
+  }
+}
 
 /**
  * Helper for reading environment variables with defaults.
@@ -106,8 +127,14 @@ export const env = {
   publishScript: getEnv('PUBLISH_SCRIPT'),
   publishRunOnBoot: getEnv('PUBLISH_RUN_ON_BOOT'),
   sportsSettlementCron: getEnv('SPORTS_SETTLEMENT_CRON', { defaultValue: '0 6 * * *' }),
+  ncaabSettlementEnabled: getEnv('NCAAB_SETTLEMENT_ENABLED', { defaultValue: '1' }),
+  ncaabSettlementCron: getEnv('NCAAB_SETTLEMENT_CRON', { defaultValue: '*/10 * * * *' }),
   sportsSettlementTz: getEnv('SPORTS_SETTLEMENT_TZ', { defaultValue: 'America/New_York' }),
   sportsSettlementRunOnBoot: getEnv('SPORTS_SETTLEMENT_RUN_ON_BOOT'),
+  marchMadnessUpdatesEnabled: getEnv('MARCH_MADNESS_UPDATES_ENABLED', { defaultValue: '1' }),
+  marchMadnessUpdatesCron: getEnv('MARCH_MADNESS_UPDATES_CRON', { defaultValue: '*/10 * * * *' }),
+  marchMadnessUpdatesTz: getEnv('MARCH_MADNESS_UPDATES_TZ', { defaultValue: 'America/New_York' }),
+  marchMadnessUpdatesRunOnBoot: getEnv('MARCH_MADNESS_UPDATES_RUN_ON_BOOT'),
   publishToken: getEnv('PUBLISH_TOKEN'),
   publishStateFile: getEnv('PUBLISH_STATE_FILE'),
   apiBase: getEnv('API_BASE'),

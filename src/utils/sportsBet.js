@@ -1,14 +1,22 @@
-import { getUserWallet, removeFromUserWallet, addToUserWallet } from '../database/dbwalletmanager.js'
+import {
+  getUserWallet,
+  addToUserWallet,
+  debitGameBet,
+  creditGameWin
+} from '../database/dbwalletmanager.js'
 import { getOddsForSport } from './bettingOdds.js'
 import { promises as fs } from 'fs'
 import { getLatestScoresForSport } from './sportsBetAPI.js'
 import {
-  getMlbTeamAbbreviation,
+  getGenericDisplayTeamCode,
   resolveTeamNameFromInput
 } from './sportsTeams.js'
+import { MARCH_MADNESS_SOURCE } from '../database/dbmarchmadness.js'
 
 const BETS_FILE = 'src/data/bets.json'
 const STALE_BET_GRACE_MS = 36 * 60 * 60 * 1000
+const DAY_MS = 24 * 60 * 60 * 1000
+const MAX_SCORE_LOOKBACK_DAYS = 7
 
 const mlbGamesCache = []
 
@@ -43,7 +51,14 @@ function isLegacyPendingBet (bet) {
 async function refundStaleBet (bet, reason) {
   const amount = Math.max(0, Math.floor(Number(bet?.amount || 0)))
   if (amount > 0) {
-    await addToUserWallet(normalizeUserUuid(bet?.senderUUID), amount)
+    await addToUserWallet(normalizeUserUuid(bet?.senderUUID), amount, null, buildSportsBetMeta({
+      sport: bet?.sport,
+      category: 'refund',
+      teamName: bet?.teamName || null,
+      teamCode: bet?.teamCode || bet?.team || null,
+      amount,
+      gameId: bet?.gameId || null
+    }))
   }
 
   bet.status = 'refunded'
@@ -67,12 +82,121 @@ export async function saveBets (betsObj) {
     console.log('[saveBets] Bets saved.')
   } catch (err) {
     console.error('[saveBets] Failed to write bets.json:', err)
+    throw err
   }
 }
 
 // Converts numeric odds to string with + or - prefix for American odds
 export function formatOdds (price) {
   return price > 0 ? `+${price}` : `${price}`
+}
+
+function getSportsBetSource (sport) {
+  return sport === 'basketball_ncaab' ? MARCH_MADNESS_SOURCE : 'sports'
+}
+
+function buildSportsBetMeta ({ sport, category, teamName, teamCode, amount, gameId }) {
+  return {
+    source: getSportsBetSource(sport),
+    category,
+    note: `${sport}:${teamCode || teamName || gameId || 'game'}`,
+    sport,
+    gameId: gameId || null,
+    teamName: teamName || null,
+    teamCode: teamCode || null,
+    amount: Number(amount || 0)
+  }
+}
+
+function formatSpreadPoint (point) {
+  return Number(point) > 0 ? `+${point}` : `${point}`
+}
+
+function getGameWinnerTeamName (game = {}) {
+  const homeScore = Number(game?.scores?.home)
+  const awayScore = Number(game?.scores?.away)
+
+  if (!Number.isFinite(homeScore) || !Number.isFinite(awayScore) || homeScore === awayScore) {
+    return null
+  }
+
+  return homeScore > awayScore ? game.homeTeam : game.awayTeam
+}
+
+function didSportsBetWin (bet, winnerTeamName, gameTeams = []) {
+  const normalizedWinner = String(winnerTeamName || '').trim().toLowerCase()
+  if (!normalizedWinner) return false
+
+  const winnerCode = String(getGenericDisplayTeamCode(winnerTeamName) || '').trim().toLowerCase()
+  const storedName = String(bet?.teamName || '').trim().toLowerCase()
+  const storedCode = String(bet?.teamCode || bet?.team || '').trim().toLowerCase()
+
+  if (storedName && storedName === normalizedWinner) return true
+  if (storedCode && winnerCode && storedCode === winnerCode) return true
+
+  const resolvedTeamName = resolveTeamNameFromInput(bet?.team, gameTeams)
+  return String(resolvedTeamName || '').trim().toLowerCase() === normalizedWinner
+}
+
+function getSelectedTeamName (bet, game = {}) {
+  return resolveTeamNameFromInput(
+    bet?.teamName || bet?.teamCode || bet?.team,
+    [game.awayTeam, game.homeTeam]
+  ) || bet?.teamName || null
+}
+
+function evaluateMoneylineBet (bet, game) {
+  const winnerTeamName = getGameWinnerTeamName(game)
+  if (!winnerTeamName) return 'push'
+  return didSportsBetWin(bet, winnerTeamName, [game.awayTeam, game.homeTeam]) ? 'win' : 'loss'
+}
+
+function evaluateSpreadBet (bet, game) {
+  const spreadPoint = Number(bet?.spreadPoint)
+  if (!Number.isFinite(spreadPoint)) return 'push'
+
+  const selectedTeamName = getSelectedTeamName(bet, game)
+  if (!selectedTeamName) return 'push'
+  if (selectedTeamName !== game.homeTeam && selectedTeamName !== game.awayTeam) return 'push'
+
+  const homeScore = Number(game?.scores?.home)
+  const awayScore = Number(game?.scores?.away)
+  if (!Number.isFinite(homeScore) || !Number.isFinite(awayScore)) return 'push'
+
+  const isHomeTeam = selectedTeamName === game.homeTeam
+  const selectedScore = isHomeTeam ? homeScore : awayScore
+  const opponentScore = isHomeTeam ? awayScore : homeScore
+  const adjustedMargin = Number((selectedScore + spreadPoint - opponentScore).toFixed(4))
+
+  if (adjustedMargin > 0) return 'win'
+  if (adjustedMargin < 0) return 'loss'
+  return 'push'
+}
+
+function evaluateBetOutcome (bet, game) {
+  if (bet?.type === 'ml') return evaluateMoneylineBet(bet, game)
+  if (bet?.type === 'spread') return evaluateSpreadBet(bet, game)
+  return 'loss'
+}
+
+function getSettlementLookbackDays (bets = {}, sportKey, now = Date.now()) {
+  let oldestPendingTs = Infinity
+
+  for (const gameBets of Object.values(bets)) {
+    for (const bet of gameBets || []) {
+      if (bet?.status !== 'pending' || bet?.sport !== sportKey) continue
+
+      const commenceTs = toTimestamp(bet?.commenceTime)
+      const createdTs = toTimestamp(bet?.createdAt)
+      const candidateTs = Number.isFinite(commenceTs) ? commenceTs : createdTs
+      if (Number.isFinite(candidateTs) && candidateTs < oldestPendingTs) oldestPendingTs = candidateTs
+    }
+  }
+
+  if (!Number.isFinite(oldestPendingTs)) return 1
+
+  const elapsed = Math.max(0, now - oldestPendingTs)
+  return Math.max(1, Math.min(MAX_SCORE_LOOKBACK_DAYS, Math.ceil(elapsed / DAY_MS) + 1))
 }
 
 export async function placeSportsBet (senderUUID, index, team, betTypeInput, amount, sport) {
@@ -93,6 +217,11 @@ export async function placeSportsBet (senderUUID, index, team, betTypeInput, amo
   const fullTeamName = resolveTeamNameFromInput(teamAbbrUpper, [game.awayTeam, game.homeTeam])
 
   if (!fullTeamName) return `Invalid team abbreviation for game ${index + 1}.`
+  const teamCode = getGenericDisplayTeamCode(fullTeamName)
+  const commenceTs = toTimestamp(game.commenceTime)
+  if (Number.isFinite(commenceTs) && Date.now() >= commenceTs) {
+    return `Betting is closed for Game ${index + 1}; it already started.`
+  }
 
   const betType = betTypeInput.toLowerCase()
   let oddsObj
@@ -108,60 +237,100 @@ export async function placeSportsBet (senderUUID, index, team, betTypeInput, amo
   if (!oddsObj) return `Odds not found for ${teamAbbrUpper} (${betType}) in game ${index + 1}.`
 
   const odds = oddsObj.price
+  const spreadPoint = betType === 'spread' ? Number(oddsObj.point) : null
 
   const wallet = await getUserWallet(normalizedSenderUUID)
   if (wallet < amount) return `Insufficient funds. You have $${wallet}.`
 
-  const removeSuccess = await removeFromUserWallet(normalizedSenderUUID, amount)
+  const removeSuccess = debitGameBet(normalizedSenderUUID, amount, buildSportsBetMeta({
+    sport,
+    category: 'bet',
+    teamName: fullTeamName,
+    teamCode,
+    amount,
+    gameId: game.id
+  }))
   if (!removeSuccess) return 'Failed to debit wallet. Try again later.'
 
-  const bets = await loadBets()
-  if (!bets[game.id]) bets[game.id] = []
+  try {
+    const bets = await loadBets()
+    if (!bets[game.id]) bets[game.id] = []
 
-  bets[game.id].push({
-    senderUUID: normalizedSenderUUID,
-    gameIndex: index,
-    gameId: game.id,
-    sport,
-    team: teamAbbrUpper,
-    odds,
-    amount,
-    createdAt: new Date().toISOString(),
-    commenceTime: game.commenceTime || null,
-    status: 'pending',
-    type: betType
-  })
+    bets[game.id].push({
+      senderUUID: normalizedSenderUUID,
+      gameIndex: index,
+      gameId: game.id,
+      sport,
+      teamName: fullTeamName,
+      teamCode,
+      team: teamAbbrUpper,
+      odds,
+      spreadPoint,
+      amount,
+      createdAt: new Date().toISOString(),
+      commenceTime: game.commenceTime || null,
+      status: 'pending',
+      type: betType
+    })
 
-  await saveBets(bets)
+    await saveBets(bets)
+  } catch (err) {
+    await addToUserWallet(normalizedSenderUUID, amount, null, buildSportsBetMeta({
+      sport,
+      category: 'refund',
+      teamName: fullTeamName,
+      teamCode,
+      amount,
+      gameId: game.id
+    }))
+    return 'Failed to record bet. Your wager was refunded.'
+  }
 
-  return `✅ Bet placed! $${amount} on ${teamAbbrUpper} (${betType}) at ${formatOdds(odds)} odds (Game ${index + 1}, ${sport}).`
+  const betLabel = betType === 'spread'
+    ? `${teamCode} (${betType} ${formatSpreadPoint(spreadPoint)})`
+    : `${teamCode} (${betType})`
+
+  return `✅ Bet placed! $${amount} on ${betLabel} at ${formatOdds(odds)} odds (Game ${index + 1}, ${sport}).`
 }
 
 export async function resolveCompletedBets (sportKey) {
   const bets = await loadBets()
-  const completedGames = await getLatestScoresForSport(sportKey)
   const now = Date.now()
+  const scoreLookbackDays = getSettlementLookbackDays(bets, sportKey, now)
+  const completedGames = await getLatestScoresForSport(sportKey, scoreLookbackDays)
   let updated = false
 
   for (const game of completedGames) {
     const { id: gameId, homeTeam, awayTeam, scores } = game
     if (!bets[gameId]) continue
 
-    const homeAbbr = getMlbTeamAbbreviation(homeTeam)
-    const awayAbbr = getMlbTeamAbbreviation(awayTeam)
-
-    const winner = scores.home > scores.away ? homeAbbr : awayAbbr
-
     for (const bet of bets[gameId]) {
       if (bet.status !== 'pending') continue
 
-      const betTeam = bet.team
-      const isWinner = bet.type === 'ml' && betTeam === winner
+      const outcome = evaluateBetOutcome(bet, { homeTeam, awayTeam, scores })
 
-      if (isWinner) {
-        const payout = calculateWinnings(bet.amount, bet.odds)
-        await addToUserWallet(bet.senderUUID, payout)
-        console.log(`✅ Paid out $${payout} to ${bet.senderUUID} (ML win on ${betTeam})`)
+      if (outcome === 'win') {
+        const payout = bet.amount + calculateWinnings(bet.amount, bet.odds)
+        await creditGameWin(bet.senderUUID, payout, null, buildSportsBetMeta({
+          sport: bet.sport,
+          category: 'bet_win',
+          teamName: bet.teamName || getSelectedTeamName(bet, { awayTeam, homeTeam }),
+          teamCode: bet.teamCode || getGenericDisplayTeamCode(getSelectedTeamName(bet, { awayTeam, homeTeam })),
+          amount: payout,
+          gameId
+        }))
+        console.log(`✅ Paid out $${payout} to ${bet.senderUUID} (${String(bet.type || '').toUpperCase()} win on ${bet.teamCode || bet.team})`)
+      } else if (outcome === 'push') {
+        await addToUserWallet(bet.senderUUID, bet.amount, null, buildSportsBetMeta({
+          sport: bet.sport,
+          category: 'refund',
+          teamName: bet.teamName || getSelectedTeamName(bet, { awayTeam, homeTeam }),
+          teamCode: bet.teamCode || getGenericDisplayTeamCode(getSelectedTeamName(bet, { awayTeam, homeTeam })),
+          amount: bet.amount,
+          gameId
+        }))
+        bet.refundedAt = new Date().toISOString()
+        bet.refundReason = bet.type === 'spread' ? 'push_spread' : 'push_ml'
       }
 
       bet.status = 'completed'
@@ -219,4 +388,10 @@ function calculateWinnings (amount, odds) {
     : Math.round((amount * 100) / Math.abs(odds)) // -150 -> win $66.67 on $100
 }
 
-export { mlbGamesCache }
+export {
+  evaluateBetOutcome,
+  formatSpreadPoint,
+  getGameWinnerTeamName,
+  getSettlementLookbackDays,
+  mlbGamesCache
+}

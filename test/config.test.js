@@ -6,7 +6,8 @@ const REQUIRED_KEYS = [
   'CHAT_TOKEN',
   'CHAT_USER_ID',
   'ROOM_UUID',
-  'TTL_USER_TOKEN'
+  'TTL_USER_TOKEN',
+  'JAMBOT_DISABLE_FLY_ENV'
 ]
 
 function snapshotEnv () {
@@ -26,6 +27,7 @@ function restoreEnv (snapshot) {
 test('config import stays safe without required env vars, but validateConfig throws', async () => {
   const snapshot = snapshotEnv()
   for (const key of REQUIRED_KEYS) process.env[key] = ''
+  process.env.JAMBOT_DISABLE_FLY_ENV = '1'
 
   try {
     const mod = await import(`../src/config.js?case=missing-${Date.now()}`)
