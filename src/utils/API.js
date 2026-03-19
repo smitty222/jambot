@@ -1125,6 +1125,25 @@ function resolveScoreboardStartDate ({ startDate, competitionDate, eventDate } =
   return startDate || competitionDate || eventDate || null
 }
 
+function normalizeEspnStatusText (status = '') {
+  return String(status || '').trim().toLowerCase()
+}
+
+function isEspnFinalStatus (status = '') {
+  const normalized = normalizeEspnStatusText(status)
+  return normalized === 'final' || normalized.startsWith('final/')
+}
+
+function isEspnLiveStatus (status = '') {
+  const normalized = normalizeEspnStatusText(status)
+  if (!normalized) return false
+  if (normalized === 'in progress') return true
+  if (normalized.includes('halftime')) return true
+  if (normalized.startsWith('end of')) return true
+  if (/^\d+(st|nd|rd|th)\s/.test(normalized)) return true
+  return false
+}
+
 export function formatScoreboardLine ({ awayName, awayScore, homeName, homeScore, status, sportPath, startDate, competitionDate, eventDate, period }) {
   const matchupSeparator = sportPath === 'basketball/mens-college-basketball' ? 'vs' : '@'
   const displayTimeZone = sportPath === 'basketball/mens-college-basketball'
@@ -1134,7 +1153,9 @@ export function formatScoreboardLine ({ awayName, awayScore, homeName, homeScore
   const resolvedStartDate = resolveScoreboardStartDate({ startDate, competitionDate, eventDate })
   const d = resolvedStartDate ? new Date(resolvedStartDate) : null
   const hasStartTime = d && !isNaN(d)
-  const hasStarted = status === 'In Progress' || status === 'Final'
+  const isLive = isEspnLiveStatus(status)
+  const isFinal = isEspnFinalStatus(status)
+  const hasStarted = isLive || isFinal
 
   if (status === 'In Progress') {
     const periodLabel = sportPath.includes('baseball')
@@ -1143,7 +1164,9 @@ export function formatScoreboardLine ({ awayName, awayScore, homeName, homeScore
         ? 'Period'
         : 'Q'
     statusMsg = `🔴 Live • ${periodLabel} ${period || 0}`
-  } else if (status === 'Final') {
+  } else if (isLive) {
+    statusMsg = `🔴 Live • ${statusMsg || 'In Progress'}`
+  } else if (isFinal) {
     statusMsg = '✅ Final'
   } else if (hasStartTime) {
     statusMsg = `🕒 ${d.toLocaleTimeString([], {
@@ -1197,7 +1220,7 @@ export async function getMarchMadnessGameboardGames (requestedDate, { liveOnly =
   const events = await fetchEspnScoreboardEvents('basketball/mens-college-basketball', requestedDate)
   const filteredEvents = sortEspnScoreboardEvents(
     (liveOnly
-      ? events.filter(g => String(g?.status?.type?.description || '').trim() === 'In Progress')
+      ? events.filter(g => isEspnLiveStatus(g?.status?.type?.description))
       : events
     ).filter(event => isMarchMadnessEvent(event))
   )
@@ -1273,7 +1296,7 @@ async function espnScoreboard (sportPath, requestedDate, options = {}) {
 
     const events = await fetchEspnScoreboardEvents(sportPath, requestedDate)
     const games = liveOnly
-      ? events.filter(g => String(g?.status?.type?.description || '').trim() === 'In Progress')
+      ? events.filter(g => isEspnLiveStatus(g?.status?.type?.description))
       : events
     const filteredGames = tournamentOnly
       ? games.filter(event => isMarchMadnessEvent(event))

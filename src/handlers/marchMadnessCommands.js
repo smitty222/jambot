@@ -9,7 +9,7 @@ import {
   getUserNicknameByUuid
 } from '../utils/API.js'
 import { resolveCompletedBets } from '../utils/sportsBet.js'
-import { getGenericDisplayTeamCode, normalizeSportsTeamInput, resolveTeamNameFromInput } from '../utils/sportsTeams.js'
+import { getGenericDisplayTeamCode, getPreferredGameTeamCode, normalizeSportsTeamInput, resolveTeamNameFromInput } from '../utils/sportsTeams.js'
 import {
   getMarchMadnessBankrollLeaderboard,
   getMarchMadnessPointsLeaderboard,
@@ -239,6 +239,7 @@ async function enrichMadnessPicks (rows = [], {
         : Number.isFinite(savedGameIndex)
           ? savedGameIndex + 1
           : row.gameIndex,
+      teamCode: game ? getPreferredGameTeamCode(row?.teamName, game) : row.teamCode,
       awayTeam: game?.awayTeam || row.awayTeam,
       awaySeed: Number.isFinite(Number(game?.awaySeed)) ? Number(game.awaySeed) : row.awaySeed,
       homeTeam: game?.homeTeam || row.homeTeam,
@@ -457,6 +458,7 @@ export async function handleMadnessPick ({ payload, room }, deps = {}) {
     gameId: game.id,
     gameIndex: rawIndex - 1,
     teamName: pickedTeamName,
+    teamCode: getPreferredGameTeamCode(pickedTeamName, game),
     awayTeam: game.awayTeam,
     awaySeed: game.awaySeed,
     homeTeam: game.homeTeam,
@@ -530,7 +532,7 @@ export async function postMadnessPicks (room, {
   const wrong = rows.filter(row => row.status === 'wrong').length
   const pending = rows.filter(row => row.status === 'pending').length
   const lines = rows.slice(0, 12).map((row) => {
-    const matchup = formatMadnessMatchupLabel(row)
+    const matchup = String(row?.displayMatchup || '').trim() || formatMadnessMatchupLabel(row)
     const status = row.status === 'correct'
       ? '✅ correct'
       : row.status === 'wrong'

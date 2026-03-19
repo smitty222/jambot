@@ -79,6 +79,10 @@ export function normalizeSportsTeamInput (value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '')
 }
 
+function isCompactUpperTeamCode (value) {
+  return /^[A-Z0-9]{2,5}$/.test(String(value || '').trim())
+}
+
 function getLeadingShortAbbreviation (teamName) {
   const rawTokens = String(teamName || '')
     .split(/[^A-Za-z0-9.&-]+/)
@@ -143,6 +147,22 @@ export function getGenericDisplayTeamCode (teamName) {
   const cityInitials = tokens.slice(0, -1).map(token => token[0]).join('').toUpperCase()
   const nicknameInitial = tokens[tokens.length - 1][0]?.toUpperCase() || ''
   return `${cityInitials}${nicknameInitial}` || tokens[tokens.length - 1].slice(0, 3).toUpperCase()
+}
+
+export function getPreferredGameTeamCode (teamName, game = {}) {
+  const normalizedTeam = normalizeSportsTeamInput(teamName)
+
+  if (normalizedTeam) {
+    const normalizedAway = normalizeSportsTeamInput(game?.awayTeam)
+    const normalizedHome = normalizeSportsTeamInput(game?.homeTeam)
+    const awayShortName = String(game?.awayShortName || '').trim().toUpperCase()
+    const homeShortName = String(game?.homeShortName || '').trim().toUpperCase()
+
+    if (normalizedTeam === normalizedAway && isCompactUpperTeamCode(awayShortName)) return awayShortName
+    if (normalizedTeam === normalizedHome && isCompactUpperTeamCode(homeShortName)) return homeShortName
+  }
+
+  return getGenericDisplayTeamCode(teamName)
 }
 
 export function resolveTeamNameFromInput (input, gameTeams = []) {

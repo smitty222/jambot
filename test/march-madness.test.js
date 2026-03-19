@@ -247,6 +247,42 @@ test('handleMadnessPick accepts a date token before the game index', async () =>
   assert.match(messages[0].message, /Pick locked in: DUKE for Game 1/)
 })
 
+test('handleMadnessPick preserves compact board abbreviations like USF', async () => {
+  const messages = []
+  const picks = []
+
+  await handleMadnessPick({
+    payload: {
+      message: '/madness pick 1 USF',
+      sender: 'user-1'
+    },
+    room: 'room-1'
+  }, {
+    now: () => new Date('2026-03-20T11:00:00-04:00'),
+    postMessage: async (payload) => { messages.push(payload) },
+    getMadnessGamesCommandSlate: async () => ([
+      {
+        id: 'game-1',
+        awayTeam: 'South Florida Bulls',
+        homeTeam: 'Louisville Cardinals',
+        awayShortName: 'USF',
+        homeShortName: 'LOU',
+        commenceTime: '2026-03-20T16:15:00.000Z'
+      }
+    ]),
+    upsertMarchMadnessPick: (pick) => {
+      picks.push(pick)
+      return { ok: true, created: false, teamCode: pick.teamCode }
+    },
+    getMarchMadnessSeasonYear: () => 2026
+  })
+
+  assert.equal(picks.length, 1)
+  assert.equal(picks[0].teamName, 'South Florida Bulls')
+  assert.equal(picks[0].teamCode, 'USF')
+  assert.match(messages[0].message, /Pick updated: USF for Game 1/)
+})
+
 test('postMadnessPicks shows the live board index for saved picks', async () => {
   const messages = []
 
@@ -303,7 +339,7 @@ test('postMadnessPicks shows the live board index for saved picks', async () => 
     ])
   })
 
-  assert.match(messages[0].message, /2\. DUKE \| \(1\) NCTH vs \(8\) DBD \| ⏳ pending/)
+  assert.match(messages[0].message, /2\. DUKE \| \(1\) North Carolina vs \(8\) Duke \| ⏳ pending/)
 })
 
 test('postMadnessPicks keeps late-night UTC games on the Eastern board date', async () => {
@@ -356,7 +392,55 @@ test('postMadnessPicks keeps late-night UTC games on the Eastern board date', as
   })
 
   assert.deepEqual(requestedDates, ['2026-03-20'])
-  assert.match(messages[0].message, /1\. DUKE \| \(1\) NCTH vs \(8\) DBD \| ⏳ pending/)
+  assert.match(messages[0].message, /1\. DUKE \| \(1\) North Carolina vs \(8\) Duke \| ⏳ pending/)
+})
+
+test('postMadnessPicks refreshes saved generic codes to compact board abbreviations', async () => {
+  const messages = []
+
+  await postMadnessPicks('room-1', {
+    payload: { sender: 'user-1' },
+    postMessage: async (payload) => { messages.push(payload) },
+    resolveMarchMadnessPicks: async () => {},
+    getMarchMadnessSeasonYear: () => 2026,
+    listMarchMadnessPicksForUser: () => ([
+      {
+        gameId: 'g1',
+        gameIndex: 0,
+        teamCode: 'SFB',
+        teamName: 'South Florida Bulls',
+        awayTeam: 'South Florida Bulls',
+        awaySeed: 11,
+        homeTeam: 'Louisville Cardinals',
+        homeSeed: 6,
+        commenceTime: '2026-03-20T16:15:00.000Z',
+        status: 'pending'
+      }
+    ]),
+    getMarchMadnessTournamentGames: async () => ([
+      {
+        id: 'g1',
+        awayTeam: 'South Florida Bulls',
+        homeTeam: 'Louisville Cardinals',
+        completed: false
+      }
+    ]),
+    getMarchMadnessGameboardGames: async () => ([
+      {
+        id: 'g1',
+        awayTeam: 'South Florida Bulls',
+        homeTeam: 'Louisville Cardinals',
+        awayShortName: 'USF',
+        homeShortName: 'LOU',
+        awaySeed: 11,
+        homeSeed: 6,
+        displayMatchup: '(11) USF vs (6) LOU',
+        commenceTime: '2026-03-20T16:15:00.000Z'
+      }
+    ])
+  })
+
+  assert.match(messages[0].message, /1\. USF \| \(11\) USF vs \(6\) LOU \| ⏳ pending/)
 })
 
 test('isMarchMadnessEvent only accepts seeded tournament matchups', () => {

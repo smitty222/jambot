@@ -74,6 +74,7 @@ export function upsertMarchMadnessPick ({
   gameId,
   gameIndex = 0,
   teamName,
+  teamCode: providedTeamCode,
   awayTeam,
   awaySeed = null,
   homeTeam,
@@ -105,7 +106,7 @@ export function upsertMarchMadnessPick ({
     return { ok: false, reason: 'started' }
   }
 
-  const teamCode = getGenericDisplayTeamCode(teamName)
+  const teamCode = String(providedTeamCode || getGenericDisplayTeamCode(teamName)).trim() || getGenericDisplayTeamCode(teamName)
 
   db.prepare(`
     INSERT INTO march_madness_picks (
