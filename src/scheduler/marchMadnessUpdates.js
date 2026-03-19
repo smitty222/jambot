@@ -122,8 +122,8 @@ export function buildMarchMadnessPickReminderMessage (games = [], now = new Date
   const lines = upcoming.map((game, index) => {
     const tipText = formatTimeUntilTip(game?.commenceTime, now)
     const tipClock = formatTipoffTimeEt(game?.commenceTime, timeZone)
-    const awayCode = getGenericDisplayTeamCode(game?.awayTeam)
-    const homeCode = getGenericDisplayTeamCode(game?.homeTeam)
+    const awayCode = getGenericDisplayTeamCode(game?.canonicalAwayTeam || game?.awayTeam)
+    const homeCode = getGenericDisplayTeamCode(game?.canonicalHomeTeam || game?.homeTeam)
     return `${index + 1}. ${awayCode} vs ${homeCode} • ${tipClock} • starts in ${tipText}`
   })
 

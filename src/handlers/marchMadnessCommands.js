@@ -64,8 +64,8 @@ export function buildMadnessPickBoard (games = [], requestedDate = '', now = new
   if (!entries.length) return ''
 
   const lines = entries.slice(0, 12).map(({ game, gameIndex }) => {
-    const awayCode = getGenericDisplayTeamCode(game?.awayTeam)
-    const homeCode = getGenericDisplayTeamCode(game?.homeTeam)
+    const awayCode = getGenericDisplayTeamCode(game?.canonicalAwayTeam || game?.awayTeam)
+    const homeCode = getGenericDisplayTeamCode(game?.canonicalHomeTeam || game?.homeTeam)
     const tipTs = Date.parse(game?.commenceTime || '')
     const status = Number.isFinite(tipTs) && now.getTime() >= tipTs
       ? '🔒 locked'

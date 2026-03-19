@@ -9,6 +9,7 @@ import {
 import { buildMadnessPickBoard } from '../src/handlers/marchMadnessCommands.js'
 import {
   buildMarchMadnessTournamentMatchups,
+  findMatchingMarchMadnessMatchup,
   filterMarchMadnessOddsGames,
   isMarchMadnessEvent
 } from '../src/utils/marchMadness.js'
@@ -187,4 +188,45 @@ test('filterMarchMadnessOddsGames keeps only games between tournament teams', ()
   ], matchups)
 
   assert.deepEqual(filtered.map(game => game.id), ['g1'])
+})
+
+test('filterMarchMadnessOddsGames preserves canonical tournament team names for display', () => {
+  const matchups = buildMarchMadnessTournamentMatchups([{
+    date: '2026-03-20T18:20:00-04:00',
+    competitions: [{
+      competitors: [
+        {
+          homeAway: 'away',
+          seed: 11,
+          team: {
+            displayName: 'VCU Rams',
+            shortDisplayName: 'VCU Rams',
+            location: 'VCU',
+            abbreviation: 'VCU'
+          }
+        },
+        {
+          homeAway: 'home',
+          seed: 6,
+          team: {
+            displayName: 'Brigham Young Cougars',
+            shortDisplayName: 'BYU Cougars',
+            location: 'BYU',
+            abbreviation: 'BYU'
+          }
+        }
+      ]
+    }]
+  }])
+
+  const filtered = filterMarchMadnessOddsGames([{
+    id: 'g1',
+    awayTeam: 'Virginia Commonwealth Rams',
+    homeTeam: 'Brigham Young Cougars',
+    commenceTime: '2026-03-20T18:20:00-04:00'
+  }], matchups)
+
+  assert.equal(filtered[0].canonicalAwayTeam, 'VCU Rams')
+  assert.equal(filtered[0].canonicalHomeTeam, 'Brigham Young Cougars')
+  assert.equal(findMatchingMarchMadnessMatchup(filtered[0], matchups)?.homeName, 'Brigham Young Cougars')
 })
