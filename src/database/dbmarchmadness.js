@@ -8,6 +8,24 @@ import {
 export const MARCH_MADNESS_SOURCE = 'sports_ncaab_madness'
 export const MARCH_MADNESS_CORRECT_PICK_POINTS = 1
 
+function formatDateInTimeZone (date, timeZone = 'America/New_York') {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date)
+
+  const mapped = Object.fromEntries(parts.map(part => [part.type, part.value]))
+  return `${mapped.year}-${mapped.month}-${mapped.day}`
+}
+
+function getCommenceDateKey (value, timeZone = 'America/New_York') {
+  const parsed = new Date(value || '')
+  if (Number.isNaN(parsed.getTime())) return ''
+  return formatDateInTimeZone(parsed, timeZone)
+}
+
 function normalizeSeasonYear (value) {
   const parsed = Number.parseInt(value, 10)
   return Number.isFinite(parsed) && parsed >= 2020 ? parsed : new Date().getFullYear()
@@ -216,18 +234,19 @@ export function getMarchMadnessBankrollLeaderboard (limit = 10, seasonYear = get
 export async function resolveMarchMadnessPicks (deps = {}) {
   const {
     seasonYear = getMarchMadnessSeasonYear(),
-    getMarchMadnessTournamentGames: getMarchMadnessTournamentGamesImpl = getMarchMadnessTournamentGames
+    getMarchMadnessTournamentGames: getMarchMadnessTournamentGamesImpl = getMarchMadnessTournamentGames,
+    timeZone = 'America/New_York'
   } = deps
 
   const normalizedSeason = normalizeSeasonYear(seasonYear)
   const pendingRows = db.prepare(`
-    SELECT DISTINCT substr(commenceTime, 1, 10) AS gameDate
+    SELECT DISTINCT commenceTime
     FROM march_madness_picks
     WHERE seasonYear = ? AND status = 'pending' AND commenceTime IS NOT NULL
   `).all(normalizedSeason)
 
   const requestedDates = pendingRows
-    .map(row => String(row?.gameDate || '').trim())
+    .map(row => getCommenceDateKey(row?.commenceTime, timeZone))
     .filter(Boolean)
 
   if (!requestedDates.length) {

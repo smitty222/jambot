@@ -6,7 +6,12 @@ import {
   getMarchMadnessSeasonWindow,
   getMarchMadnessWinnerTeam
 } from '../src/database/dbmarchmadness.js'
-import { buildMadnessPickBoard } from '../src/handlers/marchMadnessCommands.js'
+import {
+  buildMadnessBoardEntries,
+  buildMadnessPickBoard,
+  handleMadnessPick,
+  postMadnessPicks
+} from '../src/handlers/marchMadnessCommands.js'
 import {
   buildMarchMadnessTournamentMatchups,
   findMatchingMarchMadnessMatchup,
@@ -133,6 +138,225 @@ test('buildMadnessPickBoard shows numbered games with team codes for picking', (
   assert.match(board, /1\. \(11\) Miami \(OH\) vs \(6\) SMU • 🕒 12:15 PM/)
   assert.match(board, /2\. \(1\) North Carolina vs \(8\) Duke • 🕒 7:10 PM/)
   assert.match(board, /\/madness pick <gameIndex> <teamCode>/)
+})
+
+test('buildMadnessBoardEntries assigns board indices from chronological order', () => {
+  const entries = buildMadnessBoardEntries([
+    {
+      id: 'late',
+      awayTeam: 'North Carolina Tar Heels',
+      homeTeam: 'Duke Blue Devils',
+      commenceTime: '2026-03-20T23:10:00.000Z'
+    },
+    {
+      id: 'early',
+      awayTeam: 'Miami (OH) RedHawks',
+      homeTeam: 'SMU Mustangs',
+      commenceTime: '2026-03-20T16:15:00.000Z'
+    }
+  ], '2026-03-20')
+
+  assert.deepEqual(entries.map(({ gameIndex, game }) => ({ gameIndex, id: game.id })), [
+    { gameIndex: 1, id: 'early' },
+    { gameIndex: 2, id: 'late' }
+  ])
+})
+
+test('handleMadnessPick resolves the selected team from the board ordering', async () => {
+  const messages = []
+  const picks = []
+
+  await handleMadnessPick({
+    payload: {
+      message: '/madness pick 1 SMU',
+      sender: 'user-1'
+    },
+    room: 'room-1'
+  }, {
+    now: () => new Date('2026-03-20T11:00:00-04:00'),
+    postMessage: async (payload) => { messages.push(payload) },
+    getMadnessGamesCommandSlate: async () => ([
+      {
+        id: 'late',
+        awayTeam: 'North Carolina Tar Heels',
+        homeTeam: 'Duke Blue Devils',
+        awayShortName: 'North Carolina',
+        homeShortName: 'Duke',
+        commenceTime: '2026-03-20T23:10:00.000Z'
+      },
+      {
+        id: 'early',
+        awayTeam: 'Miami (OH) RedHawks',
+        homeTeam: 'SMU Mustangs',
+        awayShortName: 'Miami (OH)',
+        homeShortName: 'SMU',
+        commenceTime: '2026-03-20T16:15:00.000Z'
+      }
+    ]),
+    upsertMarchMadnessPick: (pick) => {
+      picks.push(pick)
+      return { ok: true, created: true, teamCode: 'SMU' }
+    },
+    getMarchMadnessSeasonYear: () => 2026
+  })
+
+  assert.equal(picks.length, 1)
+  assert.equal(picks[0].gameId, 'early')
+  assert.equal(picks[0].teamName, 'SMU Mustangs')
+  assert.match(messages[0].message, /Pick locked in: SMU for Game 1/)
+})
+
+test('handleMadnessPick accepts a date token before the game index', async () => {
+  const messages = []
+  const requests = []
+  const picks = []
+
+  await handleMadnessPick({
+    payload: {
+      message: '/madness pick tomorrow 1 DUKE',
+      sender: 'user-1'
+    },
+    room: 'room-1'
+  }, {
+    now: () => new Date('2026-03-20T11:00:00-04:00'),
+    postMessage: async (payload) => { messages.push(payload) },
+    getMadnessGamesCommandSlate: async ({ requestedDate }) => {
+      requests.push(requestedDate)
+      return [
+        {
+          id: 'tomorrow-game',
+          awayTeam: 'North Carolina Tar Heels',
+          homeTeam: 'Duke Blue Devils',
+          awayShortName: 'North Carolina',
+          homeShortName: 'Duke',
+          commenceTime: '2026-03-21T23:10:00.000Z'
+        }
+      ]
+    },
+    upsertMarchMadnessPick: (pick) => {
+      picks.push(pick)
+      return { ok: true, created: true, teamCode: 'DUKE' }
+    },
+    getMarchMadnessSeasonYear: () => 2026
+  })
+
+  assert.deepEqual(requests, ['2026-03-21'])
+  assert.equal(picks.length, 1)
+  assert.equal(picks[0].gameId, 'tomorrow-game')
+  assert.equal(picks[0].teamName, 'Duke Blue Devils')
+  assert.match(messages[0].message, /Pick locked in: DUKE for Game 1/)
+})
+
+test('postMadnessPicks shows the live board index for saved picks', async () => {
+  const messages = []
+
+  await postMadnessPicks('room-1', {
+    payload: { sender: 'user-1' },
+    postMessage: async (payload) => { messages.push(payload) },
+    resolveMarchMadnessPicks: async () => {},
+    getMarchMadnessSeasonYear: () => 2026,
+    listMarchMadnessPicksForUser: () => ([
+      {
+        gameId: 'late',
+        gameIndex: 0,
+        teamCode: 'DUKE',
+        teamName: 'Duke Blue Devils',
+        awayTeam: 'North Carolina Tar Heels',
+        awaySeed: 1,
+        homeTeam: 'Duke Blue Devils',
+        homeSeed: 8,
+        commenceTime: '2026-03-20T23:10:00.000Z',
+        status: 'pending'
+      }
+    ]),
+    getMarchMadnessTournamentGames: async () => ([
+      {
+        id: 'late',
+        awayTeam: 'North Carolina Tar Heels',
+        homeTeam: 'Duke Blue Devils',
+        completed: false
+      }
+    ]),
+    getMarchMadnessGameboardGames: async () => ([
+      {
+        id: 'late',
+        awayTeam: 'North Carolina Tar Heels',
+        homeTeam: 'Duke Blue Devils',
+        awayShortName: 'North Carolina',
+        homeShortName: 'Duke',
+        awaySeed: 1,
+        homeSeed: 8,
+        displayMatchup: '(1) North Carolina vs (8) Duke',
+        commenceTime: '2026-03-20T23:10:00.000Z'
+      },
+      {
+        id: 'early',
+        awayTeam: 'Miami (OH) RedHawks',
+        homeTeam: 'SMU Mustangs',
+        awayShortName: 'Miami (OH)',
+        homeShortName: 'SMU',
+        awaySeed: 11,
+        homeSeed: 6,
+        displayMatchup: '(11) Miami (OH) vs (6) SMU',
+        commenceTime: '2026-03-20T16:15:00.000Z'
+      }
+    ])
+  })
+
+  assert.match(messages[0].message, /2\. DUKE \| \(1\) NCTH vs \(8\) DBD \| ⏳ pending/)
+})
+
+test('postMadnessPicks keeps late-night UTC games on the Eastern board date', async () => {
+  const messages = []
+  const requestedDates = []
+
+  await postMadnessPicks('room-1', {
+    payload: { sender: 'user-1' },
+    postMessage: async (payload) => { messages.push(payload) },
+    resolveMarchMadnessPicks: async () => {},
+    getMarchMadnessSeasonYear: () => 2026,
+    listMarchMadnessPicksForUser: () => ([
+      {
+        gameId: 'late-night',
+        gameIndex: 0,
+        teamCode: 'DUKE',
+        teamName: 'Duke Blue Devils',
+        awayTeam: 'North Carolina Tar Heels',
+        awaySeed: 1,
+        homeTeam: 'Duke Blue Devils',
+        homeSeed: 8,
+        commenceTime: '2026-03-21T00:10:00.000Z',
+        status: 'pending'
+      }
+    ]),
+    getMarchMadnessTournamentGames: async (dates) => {
+      requestedDates.push(...dates)
+      return [
+        {
+          id: 'late-night',
+          awayTeam: 'North Carolina Tar Heels',
+          homeTeam: 'Duke Blue Devils',
+          completed: false
+        }
+      ]
+    },
+    getMarchMadnessGameboardGames: async () => ([
+      {
+        id: 'late-night',
+        awayTeam: 'North Carolina Tar Heels',
+        homeTeam: 'Duke Blue Devils',
+        awayShortName: 'North Carolina',
+        homeShortName: 'Duke',
+        awaySeed: 1,
+        homeSeed: 8,
+        displayMatchup: '(1) North Carolina vs (8) Duke',
+        commenceTime: '2026-03-21T00:10:00.000Z'
+      }
+    ])
+  })
+
+  assert.deepEqual(requestedDates, ['2026-03-20'])
+  assert.match(messages[0].message, /1\. DUKE \| \(1\) NCTH vs \(8\) DBD \| ⏳ pending/)
 })
 
 test('isMarchMadnessEvent only accepts seeded tournament matchups', () => {
