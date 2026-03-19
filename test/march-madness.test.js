@@ -6,6 +6,7 @@ import {
   getMarchMadnessSeasonWindow,
   getMarchMadnessWinnerTeam
 } from '../src/database/dbmarchmadness.js'
+import { buildMadnessPickBoard } from '../src/handlers/marchMadnessCommands.js'
 import {
   formatScoreboardLine,
   formatEspnScoreboardTeamName,
@@ -101,4 +102,26 @@ test('formatScoreboardLine falls back to competition date for tipoff time', () =
   assert.match(line, /\(12\) VCU vs \(5\) BYU • 🕒/)
   assert.doesNotMatch(line, / 0 vs /)
   assert.doesNotMatch(line, /Scheduled/)
+})
+
+test('buildMadnessPickBoard shows numbered games with team codes for picking', () => {
+  const board = buildMadnessPickBoard([
+    {
+      id: 'g2',
+      awayTeam: 'North Carolina Tar Heels',
+      homeTeam: 'Duke Blue Devils',
+      commenceTime: '2026-03-20T19:10:00-04:00'
+    },
+    {
+      id: 'g1',
+      awayTeam: 'Miami (OH) RedHawks',
+      homeTeam: 'SMU Mustangs',
+      commenceTime: '2026-03-20T16:05:00-04:00'
+    }
+  ], '2026-03-20', new Date('2026-03-20T14:00:00-04:00'))
+
+  assert.match(board, /🎯 Pick Board/)
+  assert.match(board, /1\. MOR vs SMU • 🕒/)
+  assert.match(board, /2\. NCTH vs DBD • 🕒/)
+  assert.match(board, /\/madness pick <gameIndex> <teamCode>/)
 })

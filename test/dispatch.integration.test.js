@@ -23,6 +23,7 @@ import {
 import { OddsApiError } from '../src/utils/sportsBetAPI.js'
 import {
   buildMadnessHubMessage,
+  handleMadnessPick,
   createMadnessCommandHandler,
   resolveMadnessGamesDateToken
 } from '../src/handlers/marchMadnessCommands.js'
@@ -434,11 +435,11 @@ test('createMadnessCommandHandler shows the hub by default', async () => {
   assert.deepEqual(posted, [{ room: 'room-1', message: 'MADNESS HUB' }])
 })
 
-test('createMadnessCommandHandler routes games through ncaab scores', async () => {
+test('createMadnessCommandHandler routes games through the madness gameboard helper', async () => {
   const seen = []
   const handler = createMadnessCommandHandler({
     postMessage: async () => {},
-    handleNcaabScoresCommand: async ({ payload }) => seen.push(payload.message)
+    postMadnessGames: async (_room, { args }) => seen.push(args)
   })
 
   await handler({
@@ -446,7 +447,7 @@ test('createMadnessCommandHandler routes games through ncaab scores', async () =
     room: 'room-1'
   })
 
-  assert.deepEqual(seen, ['/ncaab 2026-03-19'])
+  assert.deepEqual(seen, ['2026-03-19'])
 })
 
 test('createMadnessCommandHandler routes scores through the live madness scoreboard', async () => {
@@ -468,7 +469,7 @@ test('createMadnessCommandHandler defaults games to today', async () => {
   const seen = []
   const handler = createMadnessCommandHandler({
     postMessage: async () => {},
-    handleNcaabScoresCommand: async ({ payload }) => seen.push(payload.message)
+    postMadnessGames: async (_room, { args }) => seen.push(args)
   })
 
   const realDateNow = Date.now
@@ -483,15 +484,14 @@ test('createMadnessCommandHandler defaults games to today', async () => {
     Date.now = realDateNow
   }
 
-  assert.equal(seen.length, 1)
-  assert.match(seen[0], /^\/ncaab \d{4}-\d{2}-\d{2}$/)
+  assert.deepEqual(seen, [''])
 })
 
 test('createMadnessCommandHandler maps yesterday to an explicit date', async () => {
   const seen = []
   const handler = createMadnessCommandHandler({
     postMessage: async () => {},
-    handleNcaabScoresCommand: async ({ payload }) => seen.push(payload.message)
+    postMadnessGames: async (_room, { args }) => seen.push(args)
   })
 
   await handler({
@@ -499,8 +499,36 @@ test('createMadnessCommandHandler maps yesterday to an explicit date', async () 
     room: 'room-1'
   })
 
-  assert.equal(seen.length, 1)
-  assert.match(seen[0], /^\/ncaab \d{4}-\d{2}-\d{2}$/)
+  assert.deepEqual(seen, ['yesterday'])
+})
+
+test('handleMadnessPick accepts team abbreviations and confirms with the team code', async () => {
+  const posted = []
+
+  await handleMadnessPick({
+    payload: { sender: 'user-1', message: '/madness pick 1 smu' },
+    room: 'room-1'
+  }, {
+    postMessage: async (msg) => posted.push(msg),
+    ensureMadnessOdds: async () => [{
+      id: 'game-1',
+      awayTeam: 'Miami (OH) RedHawks',
+      homeTeam: 'SMU Mustangs',
+      commenceTime: '2026-03-20T19:10:00-04:00'
+    }],
+    upsertMarchMadnessPick: ({ teamName }) => ({
+      ok: true,
+      created: true,
+      teamName,
+      teamCode: 'SMU'
+    }),
+    getMarchMadnessSeasonYear: () => 2026
+  })
+
+  assert.deepEqual(posted, [{
+    room: 'room-1',
+    message: '✅ Pick locked in: SMU for Game 1.'
+  }])
 })
 
 test('createMadnessCommandHandler routes leaderboard requests', async () => {

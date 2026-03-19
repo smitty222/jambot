@@ -34,7 +34,8 @@ test('dispatchWithRegistry routes /status through the mod control handler', asyn
       - Autobop: enabled
       - Song stats: enabled
       - Greet users: disabled
-      - Info blurb: enabled (tone: vibe)`
+      - Info blurb: enabled (tone: vibe)
+      - March Madness updates: enabled`
   }])
 })
 

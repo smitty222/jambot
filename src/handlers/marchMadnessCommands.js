@@ -1,12 +1,11 @@
 import { postMessage } from '../libs/cometchat.js'
 import { getCurrentMonthKey } from '../database/dbwalletmanager.js'
 import { getCompactEquippedTitleTag } from '../database/dbprestige.js'
-import { getNCAABLiveScores, getUserNicknameByUuid } from '../utils/API.js'
+import { getNCAABLiveScores, getNCAABScores, getUserNicknameByUuid } from '../utils/API.js'
 import { fetchOddsForSport } from '../utils/sportsBetAPI.js'
 import { getOddsForSport, saveOddsForSport } from '../utils/bettingOdds.js'
 import { resolveCompletedBets } from '../utils/sportsBet.js'
-import { resolveTeamNameFromInput } from '../utils/sportsTeams.js'
-import { handleNcaabScoresCommand } from './sportsCommands.js'
+import { getGenericDisplayTeamCode, resolveTeamNameFromInput } from '../utils/sportsTeams.js'
 import {
   getMarchMadnessBankrollLeaderboard,
   getMarchMadnessPointsLeaderboard,
@@ -26,6 +25,53 @@ function formatDateInTimeZone (date, timeZone = 'America/New_York') {
 
   const mapped = Object.fromEntries(parts.map(part => [part.type, part.value]))
   return `${mapped.year}-${mapped.month}-${mapped.day}`
+}
+
+function toTimestamp (value) {
+  const ts = Date.parse(String(value || ''))
+  return Number.isFinite(ts) ? ts : Number.MAX_SAFE_INTEGER
+}
+
+export function sortMadnessGames (games = []) {
+  return [...(Array.isArray(games) ? games : [])].sort((a, b) => {
+    const timeDiff = toTimestamp(a?.commenceTime) - toTimestamp(b?.commenceTime)
+    if (timeDiff !== 0) return timeDiff
+    return String(a?.id || '').localeCompare(String(b?.id || ''))
+  })
+}
+
+function formatMadnessTipoffTime (commenceTime) {
+  const tip = new Date(commenceTime)
+  if (Number.isNaN(tip.getTime())) return 'TBD'
+  return tip.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit'
+  })
+}
+
+export function buildMadnessPickBoard (games = [], requestedDate = '', now = new Date(), timeZone = 'America/New_York') {
+  const entries = sortMadnessGames(games)
+    .map((game, index) => ({ game, gameIndex: index + 1 }))
+    .filter(({ game }) => formatDateInTimeZone(new Date(game?.commenceTime || ''), timeZone) === requestedDate)
+
+  if (!entries.length) return ''
+
+  const lines = entries.slice(0, 12).map(({ game, gameIndex }) => {
+    const awayCode = getGenericDisplayTeamCode(game?.awayTeam)
+    const homeCode = getGenericDisplayTeamCode(game?.homeTeam)
+    const tipTs = Date.parse(game?.commenceTime || '')
+    const status = Number.isFinite(tipTs) && now.getTime() >= tipTs
+      ? '🔒 locked'
+      : `🕒 ${formatMadnessTipoffTime(game?.commenceTime)}`
+    return `${gameIndex}. ${awayCode} vs ${homeCode} • ${status}`
+  })
+
+  return [
+    '🎯 Pick Board',
+    'Use `/madness pick <gameIndex> <teamCode>`.',
+    '',
+    ...lines
+  ].join('\n')
 }
 
 export function resolveMadnessGamesDateToken (rawValue = '', now = new Date(), timeZone = 'America/New_York') {
@@ -87,7 +133,7 @@ async function ensureMadnessOdds ({
   saveOddsForSport: saveOddsForSportImpl = saveOddsForSport
 } = {}) {
   let games = await getOddsForSportImpl('basketball_ncaab')
-  if (Array.isArray(games) && games.length) return games
+  if (Array.isArray(games) && games.length) return sortMadnessGames(games)
 
   const freshGames = await fetchOddsForSportImpl('basketball_ncaab')
   if (Array.isArray(freshGames) && freshGames.length) {
@@ -95,7 +141,7 @@ async function ensureMadnessOdds ({
     games = freshGames
   }
 
-  return Array.isArray(games) ? games : []
+  return Array.isArray(games) ? sortMadnessGames(games) : []
 }
 
 export function buildMadnessHubMessage (monthKey = getCurrentMonthKey()) {
@@ -238,9 +284,11 @@ export async function handleMadnessPick ({ payload, room }, deps = {}) {
 
   const pickedTeamName = resolveTeamNameFromInput(teamInput, [game.awayTeam, game.homeTeam])
   if (!pickedTeamName) {
+    const awayCode = getGenericDisplayTeamCode(game.awayTeam)
+    const homeCode = getGenericDisplayTeamCode(game.homeTeam)
     await postMessageImpl({
       room,
-      message: `Couldn't match "${teamInput}" to this game. Try one of: ${game.awayTeam} or ${game.homeTeam}.`
+      message: `Couldn't match "${teamInput}" to this game. Try one of: ${awayCode} or ${homeCode}.`
     })
     return
   }
@@ -283,8 +331,8 @@ export async function handleMadnessPick ({ payload, room }, deps = {}) {
   await postMessageImpl({
     room,
     message: result.created
-      ? `✅ Pick locked in: ${result.teamName} for Game ${rawIndex}.`
-      : `🔁 Pick updated: ${result.teamName} for Game ${rawIndex}.`
+      ? `✅ Pick locked in: ${result.teamCode} for Game ${rawIndex}.`
+      : `🔁 Pick updated: ${result.teamCode} for Game ${rawIndex}.`
   })
 }
 
@@ -311,13 +359,13 @@ export async function postMadnessPicks (room, {
   const wrong = rows.filter(row => row.status === 'wrong').length
   const pending = rows.filter(row => row.status === 'pending').length
   const lines = rows.slice(0, 12).map((row) => {
-    const matchup = `${row.awayTeam} @ ${row.homeTeam}`
+    const matchup = `${getGenericDisplayTeamCode(row.awayTeam)} vs ${getGenericDisplayTeamCode(row.homeTeam)}`
     const status = row.status === 'correct'
       ? '✅ correct'
       : row.status === 'wrong'
         ? `❌ missed (${row.winnerTeam})`
         : '⏳ pending'
-    return `${row.gameIndex + 1}. ${row.teamName} | ${matchup} | ${status}`
+    return `${row.gameIndex + 1}. ${row.teamCode} | ${matchup} | ${status}`
   })
 
   await postMessageImpl({
@@ -329,6 +377,21 @@ export async function postMadnessPicks (room, {
       ...lines
     ].join('\n')
   })
+}
+
+export async function postMadnessGames (room, {
+  args = '',
+  postMessage: postMessageImpl = postMessage,
+  getNCAABScores: getNCAABScoresImpl = getNCAABScores,
+  ensureMadnessOdds: ensureMadnessOddsImpl = ensureMadnessOdds,
+  now: nowImpl = () => new Date(),
+  timeZone = 'America/New_York'
+} = {}) {
+  const requestedDate = resolveMadnessGamesDateToken(args, nowImpl(), timeZone)
+  const scoreboard = String(await getNCAABScoresImpl(requestedDate) || '').trim()
+  const pickBoard = buildMadnessPickBoard(await ensureMadnessOddsImpl(), requestedDate, nowImpl(), timeZone)
+  const message = pickBoard ? `${scoreboard}\n\n${pickBoard}` : scoreboard
+  await postMessageImpl({ room, message })
 }
 
 export async function postMadnessLiveScores (room, {
@@ -345,7 +408,7 @@ export function createMadnessCommandHandler (deps = {}) {
   const {
     postMessage: postMessageImpl = postMessage,
     buildMadnessHubMessage: buildMadnessHubMessageImpl = buildMadnessHubMessage,
-    handleNcaabScoresCommand: handleNcaabScoresCommandImpl = handleNcaabScoresCommand,
+    postMadnessGames: postMadnessGamesImpl = postMadnessGames,
     postMadnessLiveScores: postMadnessLiveScoresImpl = postMadnessLiveScores,
     postMadnessLeaderboard: postMadnessLeaderboardImpl = postMadnessLeaderboard,
     postMadnessBankrollLeaderboard: postMadnessBankrollLeaderboardImpl = postMadnessBankrollLeaderboard,
@@ -366,11 +429,7 @@ export function createMadnessCommandHandler (deps = {}) {
     }
 
     if (subcommand === 'games') {
-      const requestedDate = ` ${resolveMadnessGamesDateToken(parts[2])}`
-      await handleNcaabScoresCommandImpl({
-        payload: { ...payload, message: `/ncaab${requestedDate}`.trim() },
-        room
-      })
+      await postMadnessGamesImpl(room, { args: parts.slice(2).join(' '), ...deps })
       return
     }
 
