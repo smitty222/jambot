@@ -169,3 +169,41 @@ test('createMarchMadnessUpdateRunner posts picks reminders before tipoff', async
   assert.match(posted[0].message, /March Madness picks reminder/)
   assert.match(posted[0].message, /2\. VCU vs BYU/)
 })
+
+test('createMarchMadnessUpdateRunner scopes pick reminder dedupe by room', async () => {
+  const now = new Date('2026-03-20T18:00:00-04:00')
+  const games = [
+    { id: 'g0', awayTeam: 'Akron', homeTeam: 'Arizona', commenceTime: '2026-03-20T18:10:00-04:00' },
+    { id: 'g1', awayTeam: 'VCU', homeTeam: 'BYU', commenceTime: '2026-03-20T18:20:00-04:00' }
+  ]
+  const roomOnePosts = []
+  const roomTwoPosts = []
+
+  const runRoomOne = createMarchMadnessUpdateRunner({
+    room: 'room-1',
+    logger: { info () {}, error () {} },
+    postMessage: async (msg) => roomOnePosts.push(msg),
+    getMarchMadnessLiveScores: async () => 'No live NCAAB games right now.',
+    loadUpcomingMarchMadnessGames: async () => games,
+    leadMinutes: 30,
+    now: () => now
+  })
+
+  const runRoomTwo = createMarchMadnessUpdateRunner({
+    room: 'room-2',
+    logger: { info () {}, error () {} },
+    postMessage: async (msg) => roomTwoPosts.push(msg),
+    getMarchMadnessLiveScores: async () => 'No live NCAAB games right now.',
+    loadUpcomingMarchMadnessGames: async () => games,
+    leadMinutes: 30,
+    now: () => now
+  })
+
+  await runRoomOne()
+  await runRoomTwo()
+
+  assert.equal(roomOnePosts.length, 1)
+  assert.equal(roomTwoPosts.length, 1)
+  assert.match(roomOnePosts[0].message, /2\. VCU vs BYU/)
+  assert.match(roomTwoPosts[0].message, /2\. VCU vs BYU/)
+})

@@ -132,6 +132,71 @@ function formatMadnessMatchupLabel ({ awayTeam, awaySeed, homeTeam, homeSeed }) 
   return `${awayPrefix}${awayCode} vs ${homePrefix}${homeCode}`
 }
 
+function formatMoney(value) {
+  const numeric = Math.round(Number(value) || 0)
+  return `$${numeric.toLocaleString('en-US')}`
+}
+
+function calculatePotentialWinnings (amount, odds) {
+  const stake = Math.max(0, Math.round(Number(amount) || 0))
+  const price = Number(odds)
+  if (!Number.isFinite(price) || !stake) return 0
+  return price > 0
+    ? Math.round((stake * price) / 100)
+    : Math.round((stake * 100) / Math.abs(price))
+}
+
+function isMadnessGameLive (game = {}, now = new Date()) {
+  if (game?.completed) return false
+
+  const status = String(game?.status || '').trim().toLowerCase()
+  if (status && !['scheduled', 'pre-game', 'final'].includes(status)) return true
+
+  const commenceTs = Date.parse(String(game?.commenceTime || ''))
+  return Number.isFinite(commenceTs) && now.getTime() >= commenceTs
+}
+
+function getMadnessBetOddsDetails (oddsGame = {}, teamName = '', betType = '') {
+  const markets = Array.isArray(oddsGame?.bookmaker?.markets) ? oddsGame.bookmaker.markets : []
+  const marketKey = betType === 'spread' ? 'spreads' : 'h2h'
+  const outcomes = markets.find(market => market.key === marketKey)?.outcomes || []
+  const outcome = outcomes.find(entry => entry.name === teamName)
+
+  return {
+    odds: Number(outcome?.price),
+    spreadPoint: betType === 'spread' ? Number(outcome?.point) : null
+  }
+}
+
+function buildMadnessBetPlacedMessage ({
+  amount,
+  betType,
+  selectedTeamName,
+  odds,
+  spreadPoint,
+  game = {},
+  now = new Date(),
+  timeZone = 'America/New_York'
+} = {}) {
+  const matchup = String(game?.displayMatchup || '').trim() || formatMadnessMatchupLabel(game)
+  const isLive = isMadnessGameLive(game, now)
+  const statusLine = isLive
+    ? 'Status: LIVE'
+    : `Tip-off: ${formatMadnessTipoffTime(game?.commenceTime, timeZone)} ET`
+  const betLabel = betType === 'spread'
+    ? `Spread ${Number(spreadPoint) > 0 ? '+' : ''}${spreadPoint}`
+    : 'Moneyline'
+  const profit = calculatePotentialWinnings(amount, odds)
+  const payout = Math.round(Number(amount) || 0) + profit
+
+  return [
+    `✅ Bet placed: ${formatMoney(amount)} on ${selectedTeamName} ${betLabel}`,
+    `${matchup}`,
+    statusLine,
+    `Payout: ${formatMoney(payout)} total (${formatMoney(profit)} profit) at ${odds > 0 ? '+' : ''}${odds}`
+  ].join('\n')
+}
+
 export function buildMadnessPickBoard (games = [], requestedDate = '', now = new Date(), timeZone = 'America/New_York') {
   const entries = buildMadnessBoardEntries(games, requestedDate, timeZone)
 
@@ -849,6 +914,28 @@ export async function handleMadnessBet ({ payload, room }, deps = {}) {
       preferredTeamCode: getPreferredGameTeamCode(selectedTeamName, selectedEntry?.boardGame || selectedEntry?.oddsGame || {})
     }
   )
+
+  if (typeof result === 'string' && result.startsWith('✅ Bet placed!')) {
+    const { odds, spreadPoint } = getMadnessBetOddsDetails(selectedEntry?.oddsGame, selectedTeamName, parsed.betType)
+    if (!Number.isFinite(odds)) {
+      await postMessageImpl({ room, message: result })
+      return
+    }
+    await postMessageImpl({
+      room,
+      message: buildMadnessBetPlacedMessage({
+        amount: parsed.amount,
+        betType: parsed.betType,
+        selectedTeamName,
+        odds,
+        spreadPoint,
+        game: selectedEntry?.boardGame || selectedEntry?.oddsGame || {},
+        now,
+        timeZone
+      })
+    })
+    return
+  }
 
   await postMessageImpl({ room, message: result })
 }

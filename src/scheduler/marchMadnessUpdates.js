@@ -14,6 +14,11 @@ const NO_LIVE_GAMES_MESSAGE = 'No live NCAAB games right now.'
 const KEY_ENABLED = 'march_madness_updates_enabled'
 const KEY_PICK_REMINDERS = 'march_madness_pick_reminders'
 
+function getPickReminderSettingKey (room = '') {
+  const normalizedRoom = String(room || '').trim()
+  return normalizedRoom ? `${KEY_PICK_REMINDERS}:${normalizedRoom}` : KEY_PICK_REMINDERS
+}
+
 try {
   db.prepare(`
     CREATE TABLE IF NOT EXISTS app_settings (
@@ -257,7 +262,8 @@ export function createMarchMadnessUpdateRunner (deps = {}) {
     try {
       const now = nowImpl()
       const upcomingGames = await loadUpcomingMarchMadnessGamesImpl(deps)
-      const reminderState = readJsonSetting(KEY_PICK_REMINDERS, {})
+      const reminderKey = getPickReminderSettingKey(room)
+      const reminderState = readJsonSetting(reminderKey, {})
       const activeReminderIds = Object.entries(reminderState)
         .filter(([, tipTs]) => Number.isFinite(Number(tipTs)) && Number(tipTs) > now.getTime())
         .map(([gameId]) => gameId)
@@ -271,7 +277,7 @@ export function createMarchMadnessUpdateRunner (deps = {}) {
         for (const game of reminderCandidates) {
           nextState[String(game.id)] = Date.parse(game.commenceTime || '') || now.getTime()
         }
-        writeJsonSetting(KEY_PICK_REMINDERS, nextState)
+        writeJsonSetting(reminderKey, nextState)
         logger.info('[march-madness-updates] posted picks reminder')
       }
 
