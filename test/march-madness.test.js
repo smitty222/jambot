@@ -8,9 +8,11 @@ import {
 } from '../src/database/dbmarchmadness.js'
 import {
   buildMadnessBoardEntries,
+  buildMadnessOddsBoardEntries,
   buildMadnessPickBoard,
   handleMadnessBet,
   handleMadnessPick,
+  postMadnessOdds,
   postMadnessPicks
 } from '../src/handlers/marchMadnessCommands.js'
 import {
@@ -299,6 +301,16 @@ test('handleMadnessBet uses today-only March Madness board ordering', async () =
     postMessage: async (payload) => { messages.push(payload) },
     getSenderNickname: async () => 'Allen',
     getUserWallet: async () => 100,
+    ensureMadnessOdds: async () => ([
+      {
+        id: 'today-game',
+        awayTeam: 'Duke Blue Devils',
+        homeTeam: 'VCU Rams',
+        awayShortName: 'Duke',
+        homeShortName: 'VCU',
+        commenceTime: '2026-03-20T19:00:00.000Z'
+      }
+    ]),
     getOddsForSport: async () => ([
       {
         id: 'tomorrow-game',
@@ -322,6 +334,93 @@ test('handleMadnessBet uses today-only March Madness board ordering', async () =
   assert.equal(placed.length, 1)
   assert.equal(placed[0][1], 1)
   assert.equal(messages[0].message, 'bet placed')
+})
+
+test('buildMadnessOddsBoardEntries keeps board ordering and drops off-board odds games', () => {
+  const entries = buildMadnessOddsBoardEntries([
+    {
+      id: 'late',
+      awayTeam: 'North Carolina Tar Heels',
+      homeTeam: 'Duke Blue Devils',
+      awayShortName: 'North Carolina',
+      homeShortName: 'Duke',
+      commenceTime: '2026-03-20T23:10:00.000Z'
+    },
+    {
+      id: 'early',
+      awayTeam: 'Miami (OH) RedHawks',
+      homeTeam: 'SMU Mustangs',
+      awayShortName: 'Miami (OH)',
+      homeShortName: 'SMU',
+      commenceTime: '2026-03-20T16:15:00.000Z'
+    }
+  ], [
+    {
+      id: 'other-day',
+      awayTeam: 'Houston Cougars',
+      homeTeam: 'Gonzaga Bulldogs',
+      commenceTime: '2026-03-21T19:00:00.000Z'
+    },
+    {
+      id: 'late-odds',
+      awayTeam: 'North Carolina',
+      homeTeam: 'Duke',
+      commenceTime: '2026-03-20T23:10:00.000Z'
+    },
+    {
+      id: 'early-odds',
+      awayTeam: 'Miami (OH)',
+      homeTeam: 'SMU',
+      commenceTime: '2026-03-20T16:15:00.000Z'
+    }
+  ], '2026-03-20')
+
+  assert.deepEqual(entries.map(entry => ({
+    gameIndex: entry.gameIndex,
+    boardId: entry.boardGame.id,
+    oddsId: entry.oddsGame.id,
+    oddsIndex: entry.oddsIndex
+  })), [
+    { gameIndex: 1, boardId: 'early', oddsId: 'early-odds', oddsIndex: 2 },
+    { gameIndex: 2, boardId: 'late', oddsId: 'late-odds', oddsIndex: 1 }
+  ])
+})
+
+test('postMadnessOdds formats only games from today board', async () => {
+  const messages = []
+
+  await postMadnessOdds('room-1', {
+    now: () => new Date('2026-03-20T11:00:00-04:00'),
+    postMessage: async (payload) => { messages.push(payload) },
+    ensureMadnessOdds: async () => ([
+      {
+        id: 'today-game',
+        awayTeam: 'Duke Blue Devils',
+        homeTeam: 'VCU Rams',
+        awayShortName: 'Duke',
+        homeShortName: 'VCU',
+        commenceTime: '2026-03-20T19:00:00.000Z'
+      }
+    ]),
+    fetchOddsForSport: async () => ([
+      {
+        id: 'tomorrow-game',
+        awayTeam: 'Houston Cougars',
+        homeTeam: 'Gonzaga Bulldogs',
+        commenceTime: '2026-03-21T19:00:00.000Z'
+      },
+      {
+        id: 'today-game-odds',
+        awayTeam: 'Duke',
+        homeTeam: 'VCU',
+        commenceTime: '2026-03-20T19:00:00.000Z'
+      }
+    ]),
+    saveOddsForSport: async () => {},
+    formatOddsMessage: (games) => games.map(game => `${game.awayTeam} vs ${game.homeTeam}`).join('\n')
+  })
+
+  assert.equal(messages[0].message, 'Duke vs VCU')
 })
 
 test('postMadnessPicks shows the live board index for saved picks', async () => {
@@ -641,5 +740,45 @@ test('isMarchMadnessOddsGame rejects unrelated school matchups with overlapping 
     awayTeam: 'South Florida Bulls',
     homeTeam: 'Louisville Cardinals',
     commenceTime: '2026-03-20T17:30:00Z'
+  }, matchups), false)
+})
+
+test('isMarchMadnessOddsGame rejects unrelated school matchups with overlapping initials', () => {
+  const matchups = buildMarchMadnessTournamentMatchups([{
+    links: [{
+      rel: ['bracket', 'desktop', 'event'],
+      href: 'https://www.espn.com/mens-college-basketball/bracket/_/season/2026/2026-ncaa-tournament'
+    }],
+    date: '2026-03-20T18:20:00-04:00',
+    competitions: [{
+      competitors: [
+        {
+          homeAway: 'away',
+          seed: 11,
+          team: {
+            displayName: 'Northern Colorado Bears',
+            shortDisplayName: 'Northern Colorado Bears',
+            location: 'Northern Colorado',
+            abbreviation: 'UNCB'
+          }
+        },
+        {
+          homeAway: 'home',
+          seed: 6,
+          team: {
+            displayName: 'Mississippi State Bulldogs',
+            shortDisplayName: 'Mississippi State Bulldogs',
+            location: 'Mississippi State',
+            abbreviation: 'MSST'
+          }
+        }
+      ]
+    }]
+  }])
+
+  assert.equal(isMarchMadnessOddsGame({
+    awayTeam: 'North Carolina Tar Heels',
+    homeTeam: 'Michigan State Spartans',
+    commenceTime: '2026-03-20T18:20:00-04:00'
   }, matchups), false)
 })

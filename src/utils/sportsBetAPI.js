@@ -94,17 +94,19 @@ export function formatOddsMessage (games, sportKey, now = Date.now()) {
   }
 
   return `🎲 Today's ${title} Odds:\n\n` + normalizedGames.slice(0, displayLimit).map((game, i) => {
-    const { bookmaker, homeTeam, awayTeam, commenceTime } = game
+    const { bookmaker, homeTeam, awayTeam, commenceTime, canonicalHomeTeam, canonicalAwayTeam } = game
     const h2h = bookmaker?.markets?.find(m => m.key === 'h2h')?.outcomes || []
     const spreads = bookmaker?.markets?.find(m => m.key === 'spreads')?.outcomes || []
     const liveLabel = isGameLikelyLive(game, now) ? ' 🔴 LIVE' : ''
+    const displayAwayTeam = canonicalAwayTeam || awayTeam
+    const displayHomeTeam = canonicalHomeTeam || homeTeam
 
     // Time formatting
     const timeStr = formatOddsGameTime(commenceTime)
 
     // Labels
-    const awayLabel = formatOddsTeamLabel(awayTeam, sportKey)
-    const homeLabel = formatOddsTeamLabel(homeTeam, sportKey)
+    const awayLabel = formatOddsTeamLabel(displayAwayTeam, sportKey)
+    const homeLabel = formatOddsTeamLabel(displayHomeTeam, sportKey)
 
     // Moneyline
     const oddsMap = Object.fromEntries(h2h.map(o => [o.name, formatOdds(o.price)]))

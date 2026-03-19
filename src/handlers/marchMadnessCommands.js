@@ -20,6 +20,10 @@ import {
 } from '../utils/sportsBetAPI.js'
 import { getSenderNickname } from '../utils/helpers.js'
 import {
+  buildMarchMadnessBoardGameMatchups,
+  findMatchingMarchMadnessMatchup
+} from '../utils/marchMadness.js'
+import {
   getMarchMadnessBankrollLeaderboard,
   getMarchMadnessPointsLeaderboard,
   getMarchMadnessSeasonYear,
@@ -68,6 +72,43 @@ export function buildMadnessBoardEntries (games = [], requestedDate = '', timeZo
 
 export function filterMadnessGamesToDate (games = [], requestedDate = '', timeZone = 'America/New_York') {
   return buildMadnessBoardEntries(games, requestedDate, timeZone).map(({ game }) => game)
+}
+
+export function buildMadnessOddsBoardEntries (
+  boardGames = [],
+  oddsGames = [],
+  requestedDate = '',
+  timeZone = 'America/New_York'
+) {
+  const boardEntries = buildMadnessBoardEntries(boardGames, requestedDate, timeZone)
+  const boardMatchups = buildMarchMadnessBoardGameMatchups(boardEntries.map(({ game }) => game))
+  const usedOddsIndexes = new Set()
+
+  return boardEntries
+    .map(({ game, gameIndex }) => {
+      const oddsIndex = (oddsGames || []).findIndex((oddsGame, index) => {
+        if (usedOddsIndexes.has(index)) return false
+        const matchup = findMatchingMarchMadnessMatchup(oddsGame, boardMatchups)
+        return String(matchup?.id || '') === String(game?.id || '')
+      })
+
+      if (oddsIndex < 0) return null
+
+      usedOddsIndexes.add(oddsIndex)
+      const oddsGame = oddsGames[oddsIndex]
+
+      return {
+        gameIndex,
+        boardGame: game,
+        oddsIndex,
+        oddsGame: {
+          ...oddsGame,
+          canonicalAwayTeam: game?.awayTeam || oddsGame?.canonicalAwayTeam || oddsGame?.awayTeam,
+          canonicalHomeTeam: game?.homeTeam || oddsGame?.canonicalHomeTeam || oddsGame?.homeTeam
+        }
+      }
+    })
+    .filter(Boolean)
 }
 
 function formatMadnessTipoffTime (commenceTime, timeZone = 'America/New_York') {
@@ -678,29 +719,34 @@ export async function postMadnessOdds (room, {
   saveOddsForSport: saveOddsForSportImpl = saveOddsForSport,
   getOddsForSport: getOddsForSportImpl = getOddsForSport,
   formatOddsMessage: formatOddsMessageImpl = formatOddsMessage,
+  ensureMadnessOdds: ensureMadnessOddsImpl = ensureMadnessOdds,
   now: nowImpl = () => new Date(),
   timeZone = 'America/New_York'
 } = {}) {
-  const requestedDate = resolveMadnessGamesDateToken('today', nowImpl(), timeZone)
+  const now = nowImpl()
+  const requestedDate = resolveMadnessGamesDateToken('today', now, timeZone)
+  const boardGames = await ensureMadnessOddsImpl({ requestedDate, now, timeZone })
 
   try {
     const games = await fetchOddsForSportImpl(MARCH_MADNESS_ODDS_SPORT_KEY)
     await saveOddsForSportImpl(MARCH_MADNESS_ODDS_SPORT_KEY, games)
+    const boardOddsEntries = buildMadnessOddsBoardEntries(boardGames, games, requestedDate, timeZone)
     await postMessageImpl({
       room,
       message: formatOddsMessageImpl(
-        filterMadnessGamesToDate(games, requestedDate, timeZone),
+        boardOddsEntries.map(({ oddsGame }) => oddsGame),
         MARCH_MADNESS_ODDS_SPORT_KEY
       )
     })
   } catch (error) {
     const cachedOdds = await getOddsForSportImpl(MARCH_MADNESS_ODDS_SPORT_KEY).catch(() => [])
+    const boardOddsEntries = buildMadnessOddsBoardEntries(boardGames, cachedOdds, requestedDate, timeZone)
 
-    if (Array.isArray(cachedOdds) && cachedOdds.length) {
+    if (boardOddsEntries.length) {
       await postMessageImpl({
         room,
         message: `${formatOddsMessageImpl(
-          filterMadnessGamesToDate(cachedOdds, requestedDate, timeZone),
+          boardOddsEntries.map(({ oddsGame }) => oddsGame),
           MARCH_MADNESS_ODDS_SPORT_KEY
         )}\n\n⚠️ Live odds refresh failed, so this is the last saved board.`
       })
@@ -721,6 +767,7 @@ export async function handleMadnessBet ({ payload, room }, deps = {}) {
     getUserWallet: getUserWalletImpl = getUserWallet,
     getSenderNickname: getSenderNicknameImpl = getSenderNickname,
     placeSportsBet: placeSportsBetImpl = placeSportsBet,
+    ensureMadnessOdds: ensureMadnessOddsImpl = ensureMadnessOdds,
     now: nowImpl = () => new Date(),
     timeZone = 'America/New_York'
   } = deps
@@ -737,20 +784,22 @@ export async function handleMadnessBet ({ payload, room }, deps = {}) {
     return
   }
 
-  const requestedDate = resolveMadnessGamesDateToken('today', nowImpl(), timeZone)
+  const now = nowImpl()
+  const requestedDate = resolveMadnessGamesDateToken('today', now, timeZone)
+  const boardGames = await ensureMadnessOddsImpl({ requestedDate, now, timeZone })
   const oddsData = await getOddsForSportImpl(MARCH_MADNESS_ODDS_SPORT_KEY)
-  const todaysOddsData = filterMadnessGamesToDate(oddsData, requestedDate, timeZone)
+  const boardOddsEntries = buildMadnessOddsBoardEntries(boardGames, oddsData, requestedDate, timeZone)
 
-  if (!todaysOddsData.length || parsed.index < 0 || parsed.index >= todaysOddsData.length) {
+  if (!boardOddsEntries.length || parsed.index < 0 || parsed.index >= boardOddsEntries.length) {
     await postMessageImpl({
       room,
-      message: 'Invalid game index. Use `/madness games` to see today’s men’s March Madness slate.'
+      message: 'Invalid game index. Use `/madness board` or `/madness odds` for today’s March Madness slate.'
     })
     return
   }
 
-  const selectedGame = todaysOddsData[parsed.index]
-  const oddsIndex = (oddsData || []).findIndex(game => game?.id === selectedGame?.id)
+  const selectedEntry = boardOddsEntries[parsed.index]
+  const oddsIndex = Number(selectedEntry?.oddsIndex)
   if (oddsIndex < 0) {
     await postMessageImpl({
       room,

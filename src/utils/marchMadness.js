@@ -40,8 +40,6 @@ function buildStrongTeamAliases (value = '') {
   const leadingAbbreviation = getLeadingShortAbbreviation(raw)
   const cityTokens = tokens.slice(0, -1)
   const cityJoined = cityTokens.join('')
-  const cityInitials = cityTokens.map(token => token[0]).join('')
-  const fullInitials = tokens.map(token => token[0]).join('')
   const lastTwoTokens = tokens.slice(-2).join('')
 
   return new Set([
@@ -49,8 +47,6 @@ function buildStrongTeamAliases (value = '') {
     tokens.join(''),
     leadingAbbreviation,
     cityJoined,
-    cityInitials.length >= 2 ? cityInitials : '',
-    fullInitials.length >= 3 ? fullInitials : '',
     lastTwoTokens.length >= 6 ? lastTwoTokens : ''
   ].filter(Boolean))
 }
@@ -130,6 +126,19 @@ function buildCompetitorAliasSet (competitor = {}) {
   return aliases
 }
 
+function buildNameAliasSet (values = []) {
+  const aliases = new Set()
+
+  for (const value of values) {
+    const trimmed = String(value || '').trim()
+    if (!trimmed) continue
+    aliases.add(normalizeSportsTeamInput(trimmed))
+    for (const alias of buildStrongTeamAliases(trimmed)) aliases.add(alias)
+  }
+
+  return aliases
+}
+
 export function buildMarchMadnessTournamentMatchups (events = []) {
   return (events || [])
     .filter(event => isMarchMadnessEvent(event))
@@ -147,6 +156,19 @@ export function buildMarchMadnessTournamentMatchups (events = []) {
         homeAliases: buildCompetitorAliasSet(home)
       }
     })
+}
+
+export function buildMarchMadnessBoardGameMatchups (games = []) {
+  return (games || [])
+    .map((game) => ({
+      id: String(game?.id || ''),
+      commenceTime: game?.commenceTime || null,
+      awayName: String(game?.awayTeam || game?.awayShortName || '').trim(),
+      homeName: String(game?.homeTeam || game?.homeShortName || '').trim(),
+      awayAliases: buildNameAliasSet([game?.awayTeam, game?.awayShortName, game?.awayDisplayName]),
+      homeAliases: buildNameAliasSet([game?.homeTeam, game?.homeShortName, game?.homeDisplayName])
+    }))
+    .filter(matchup => matchup.id && matchup.awayName && matchup.homeName)
 }
 
 function aliasSetsIntersect (left = new Set(), right = new Set()) {
