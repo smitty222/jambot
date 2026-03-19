@@ -4,7 +4,7 @@ import { logger as defaultLogger } from '../utils/logging.js'
 import { postMessage } from '../libs/cometchat.js'
 import {
   getMarchMadnessLiveScores,
-  getMarchMadnessTournamentAliasSet
+  getMarchMadnessTournamentMatchups
 } from '../utils/API.js'
 import { getGenericDisplayTeamCode } from '../utils/sportsTeams.js'
 import db from '../database/db.js'
@@ -143,11 +143,11 @@ async function loadUpcomingMarchMadnessGames ({
   getOddsForSport: getOddsForSportImpl = getOddsForSport,
   fetchOddsForSport: fetchOddsForSportImpl = fetchOddsForSport,
   saveOddsForSport: saveOddsForSportImpl = saveOddsForSport,
-  getMarchMadnessTournamentAliasSet: getMarchMadnessTournamentAliasSetImpl = getMarchMadnessTournamentAliasSet
+  getMarchMadnessTournamentMatchups: getMarchMadnessTournamentMatchupsImpl = getMarchMadnessTournamentMatchups
 } = {}) {
-  const tournamentAliases = await getMarchMadnessTournamentAliasSetImpl(['yesterday', 'today', 'tomorrow'])
+  const tournamentMatchups = await getMarchMadnessTournamentMatchupsImpl(['yesterday', 'today', 'tomorrow'])
   let games = await getOddsForSportImpl('basketball_ncaab')
-  if (Array.isArray(games) && games.length) return filterMarchMadnessOddsGames(games, tournamentAliases)
+  if (Array.isArray(games) && games.length) return filterMarchMadnessOddsGames(games, tournamentMatchups)
 
   const freshGames = await fetchOddsForSportImpl('basketball_ncaab')
   if (Array.isArray(freshGames) && freshGames.length) {
@@ -155,7 +155,7 @@ async function loadUpcomingMarchMadnessGames ({
     games = freshGames
   }
 
-  return Array.isArray(games) ? filterMarchMadnessOddsGames(games, tournamentAliases) : []
+  return Array.isArray(games) ? filterMarchMadnessOddsGames(games, tournamentMatchups) : []
 }
 
 export function extractMarchMadnessUpsetAlerts (message = '') {

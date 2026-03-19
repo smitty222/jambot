@@ -13,7 +13,7 @@ import {
 } from './sportsTeams.js'
 import { MARCH_MADNESS_SOURCE } from '../database/dbmarchmadness.js'
 import {
-  getMarchMadnessTournamentAliasSet
+  getMarchMadnessTournamentMatchups
 } from './API.js'
 import {
   isMarchMadnessOddsGame
@@ -220,7 +220,7 @@ export async function placeSportsBet (senderUUID, index, team, betTypeInput, amo
   const h2h = bookmaker.markets.find(m => m.key === 'h2h')?.outcomes || []
   const spreads = bookmaker.markets.find(m => m.key === 'spreads')?.outcomes || []
   const ledgerSource = sport === 'basketball_ncaab'
-    ? (isMarchMadnessOddsGame(game, await getMarchMadnessTournamentAliasSet(['yesterday', 'today', 'tomorrow']))
+    ? (isMarchMadnessOddsGame(game, await getMarchMadnessTournamentMatchups(['yesterday', 'today', 'tomorrow']))
         ? MARCH_MADNESS_SOURCE
         : 'sports')
     : 'sports'

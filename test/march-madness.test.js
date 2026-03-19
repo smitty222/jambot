@@ -8,7 +8,7 @@ import {
 } from '../src/database/dbmarchmadness.js'
 import { buildMadnessPickBoard } from '../src/handlers/marchMadnessCommands.js'
 import {
-  buildMarchMadnessTournamentAliasSet,
+  buildMarchMadnessTournamentMatchups,
   filterMarchMadnessOddsGames,
   isMarchMadnessEvent
 } from '../src/utils/marchMadness.js'
@@ -152,7 +152,8 @@ test('isMarchMadnessEvent only accepts seeded tournament matchups', () => {
 })
 
 test('filterMarchMadnessOddsGames keeps only games between tournament teams', () => {
-  const aliases = buildMarchMadnessTournamentAliasSet([{
+  const matchups = buildMarchMadnessTournamentMatchups([{
+    date: '2026-03-20T18:20:00-04:00',
     competitions: [{
       competitors: [
         {
@@ -180,9 +181,10 @@ test('filterMarchMadnessOddsGames keeps only games between tournament teams', ()
   }])
 
   const filtered = filterMarchMadnessOddsGames([
-    { id: 'g1', awayTeam: 'Drake Bulldogs', homeTeam: 'Missouri Tigers' },
-    { id: 'g2', awayTeam: 'Bradley Braves', homeTeam: 'Loyola Ramblers' }
-  ], aliases)
+    { id: 'g1', awayTeam: 'Drake Bulldogs', homeTeam: 'Missouri Tigers', commenceTime: '2026-03-20T18:20:00-04:00' },
+    { id: 'g2', awayTeam: 'Drake Bulldogs', homeTeam: 'Missouri Tigers', commenceTime: '2026-03-22T18:20:00-04:00' },
+    { id: 'g3', awayTeam: 'Bradley Braves', homeTeam: 'Loyola Ramblers', commenceTime: '2026-03-20T18:20:00-04:00' }
+  ], matchups)
 
   assert.deepEqual(filtered.map(game => game.id), ['g1'])
 })

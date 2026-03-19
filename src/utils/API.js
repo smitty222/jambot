@@ -6,6 +6,7 @@ import { env } from '../config.js'
 import { logger } from './logging.js'
 import {
   buildMarchMadnessTournamentAliasSet,
+  buildMarchMadnessTournamentMatchups,
   isMarchMadnessEvent
 } from './marchMadness.js'
 
@@ -182,6 +183,21 @@ export async function getMarchMadnessTournamentAliasSet (requestedDates = []) {
     .filter(event => isMarchMadnessEvent(event))
 
   return buildMarchMadnessTournamentAliasSet(tournamentEvents)
+}
+
+export async function getMarchMadnessTournamentMatchups (requestedDates = []) {
+  const dates = [...new Set((requestedDates || []).map(date => normalizeRequestedDateForEspn(date)).filter(Boolean))]
+  if (!dates.length) return []
+
+  const eventGroups = await Promise.all(
+    dates.map(date => fetchEspnScoreboardEvents('basketball/mens-college-basketball', date))
+  )
+
+  const tournamentEvents = eventGroups
+    .flat()
+    .filter(event => isMarchMadnessEvent(event))
+
+  return buildMarchMadnessTournamentMatchups(tournamentEvents)
 }
 
 /* ────────────────────────────────────────────────────────────────

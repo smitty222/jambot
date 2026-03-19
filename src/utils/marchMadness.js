@@ -3,6 +3,11 @@ import {
   normalizeSportsTeamInput
 } from './sportsTeams.js'
 
+function toTimestamp (value) {
+  const ts = Date.parse(String(value || ''))
+  return Number.isFinite(ts) ? ts : NaN
+}
+
 function collectTeamCandidateValues (team = {}) {
   return [
     team?.displayName,
@@ -61,19 +66,67 @@ export function buildMarchMadnessTournamentAliasSet (events = []) {
   return aliases
 }
 
-export function isMarchMadnessOddsGame (game = {}, tournamentAliases = new Set()) {
-  const aliasSet = tournamentAliases instanceof Set ? tournamentAliases : new Set(tournamentAliases || [])
-  if (!aliasSet.size) return false
+function buildCompetitorAliasSet (competitor = {}) {
+  const aliases = new Set()
+
+  for (const value of collectTeamCandidateValues(competitor?.team)) {
+    aliases.add(normalizeSportsTeamInput(value))
+    for (const alias of buildGenericTeamAliases(value)) aliases.add(alias)
+  }
+
+  return aliases
+}
+
+export function buildMarchMadnessTournamentMatchups (events = []) {
+  return (events || [])
+    .filter(event => isMarchMadnessEvent(event))
+    .map((event) => {
+      const competitors = event?.competitions?.[0]?.competitors || []
+      const away = competitors.find(c => c?.homeAway === 'away') || competitors[0]
+      const home = competitors.find(c => c?.homeAway === 'home') || competitors[1]
+
+      return {
+        id: String(event?.id || ''),
+        commenceTime: event?.date || event?.competitions?.[0]?.date || null,
+        awayAliases: buildCompetitorAliasSet(away),
+        homeAliases: buildCompetitorAliasSet(home)
+      }
+    })
+}
+
+function aliasSetsIntersect (left = new Set(), right = new Set()) {
+  for (const alias of left) {
+    if (right.has(alias)) return true
+  }
+  return false
+}
+
+export function isMarchMadnessOddsGame (game = {}, tournamentMatchups = [], timeWindowHours = 16) {
+  const matchups = Array.isArray(tournamentMatchups) ? tournamentMatchups : []
+  if (!matchups.length) return false
 
   const awayAliases = buildGenericTeamAliases(game?.awayTeam)
   const homeAliases = buildGenericTeamAliases(game?.homeTeam)
+  const gameTs = toTimestamp(game?.commenceTime)
+  const maxDiffMs = Math.max(1, Number(timeWindowHours || 16)) * 60 * 60 * 1000
 
-  const awayMatch = [...awayAliases].some(alias => aliasSet.has(alias))
-  const homeMatch = [...homeAliases].some(alias => aliasSet.has(alias))
+  return matchups.some((matchup) => {
+    const matchupTs = toTimestamp(matchup?.commenceTime)
+    const withinWindow = !Number.isFinite(gameTs) || !Number.isFinite(matchupTs)
+      ? true
+      : Math.abs(gameTs - matchupTs) <= maxDiffMs
 
-  return awayMatch && homeMatch
+    if (!withinWindow) return false
+
+    const directMatch = aliasSetsIntersect(awayAliases, matchup?.awayAliases) &&
+      aliasSetsIntersect(homeAliases, matchup?.homeAliases)
+    const swappedMatch = aliasSetsIntersect(awayAliases, matchup?.homeAliases) &&
+      aliasSetsIntersect(homeAliases, matchup?.awayAliases)
+
+    return directMatch || swappedMatch
+  })
 }
 
-export function filterMarchMadnessOddsGames (games = [], tournamentAliases = new Set()) {
-  return (games || []).filter(game => isMarchMadnessOddsGame(game, tournamentAliases))
+export function filterMarchMadnessOddsGames (games = [], tournamentMatchups = [], timeWindowHours = 16) {
+  return (games || []).filter(game => isMarchMadnessOddsGame(game, tournamentMatchups, timeWindowHours))
 }

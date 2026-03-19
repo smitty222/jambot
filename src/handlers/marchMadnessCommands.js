@@ -4,7 +4,7 @@ import { getCompactEquippedTitleTag } from '../database/dbprestige.js'
 import {
   getMarchMadnessLiveScores,
   getMarchMadnessScores,
-  getMarchMadnessTournamentAliasSet,
+  getMarchMadnessTournamentMatchups,
   getUserNicknameByUuid
 } from '../utils/API.js'
 import { fetchOddsForSport } from '../utils/sportsBetAPI.js'
@@ -138,12 +138,12 @@ async function ensureMadnessOdds ({
   getOddsForSport: getOddsForSportImpl = getOddsForSport,
   fetchOddsForSport: fetchOddsForSportImpl = fetchOddsForSport,
   saveOddsForSport: saveOddsForSportImpl = saveOddsForSport,
-  getMarchMadnessTournamentAliasSet: getMarchMadnessTournamentAliasSetImpl = getMarchMadnessTournamentAliasSet
+  getMarchMadnessTournamentMatchups: getMarchMadnessTournamentMatchupsImpl = getMarchMadnessTournamentMatchups
 } = {}) {
-  const tournamentAliases = await getMarchMadnessTournamentAliasSetImpl(['yesterday', 'today', 'tomorrow'])
+  const tournamentMatchups = await getMarchMadnessTournamentMatchupsImpl(['yesterday', 'today', 'tomorrow'])
   let games = await getOddsForSportImpl('basketball_ncaab')
   if (Array.isArray(games) && games.length) {
-    return sortMadnessGames(filterMarchMadnessOddsGames(games, tournamentAliases))
+    return sortMadnessGames(filterMarchMadnessOddsGames(games, tournamentMatchups))
   }
 
   const freshGames = await fetchOddsForSportImpl('basketball_ncaab')
@@ -153,7 +153,7 @@ async function ensureMadnessOdds ({
   }
 
   return Array.isArray(games)
-    ? sortMadnessGames(filterMarchMadnessOddsGames(games, tournamentAliases))
+    ? sortMadnessGames(filterMarchMadnessOddsGames(games, tournamentMatchups))
     : []
 }
 
