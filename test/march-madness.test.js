@@ -78,11 +78,11 @@ test('formatScoreboardLine prefers tipoff time for pregame matchups', () => {
     homeScore: 0,
     status: 'Status TBD',
     sportPath: 'basketball/mens-college-basketball',
-    startDate: '2026-03-20T19:10:00-04:00',
+    startDate: '2026-03-20T23:10:00.000Z',
     period: 0
   })
 
-  assert.match(line, /\(11\) Miami \(OH\) vs \(6\) SMU • 🕒/)
+  assert.match(line, /\(11\) Miami \(OH\) vs \(6\) SMU • 🕒 7:10 PM/)
   assert.doesNotMatch(line, / 0 vs /)
   assert.doesNotMatch(line, /Status TBD/)
 })
@@ -95,11 +95,11 @@ test('formatScoreboardLine falls back to competition date for tipoff time', () =
     homeScore: 0,
     status: 'Scheduled',
     sportPath: 'basketball/mens-college-basketball',
-    competitionDate: '2026-03-20T16:05:00-04:00',
+    competitionDate: '2026-03-20T16:15:00.000Z',
     period: 0
   })
 
-  assert.match(line, /\(12\) VCU vs \(5\) BYU • 🕒/)
+  assert.match(line, /\(12\) VCU vs \(5\) BYU • 🕒 12:15 PM/)
   assert.doesNotMatch(line, / 0 vs /)
   assert.doesNotMatch(line, /Scheduled/)
 })

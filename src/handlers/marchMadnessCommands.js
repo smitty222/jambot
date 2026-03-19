@@ -149,21 +149,25 @@ export function buildMadnessHubMessage (monthKey = getCurrentMonthKey()) {
   return [
     '🏀 March Madness',
     '',
-    `Tournament hub for ${monthKey}.`,
+    `Tournament hub for ${monthKey}. Follow the games, make picks, and track the leaderboard.`,
     '',
-    'Try:',
-    '- `/madness games`',
-    '- `/madness board`',
-    '- `/madness games 2026-03-19`',
-    '- `/madness pick 1 duke`',
-    '- `/madness picks` (your picks)',
-    '- `/madness leaderboard`',
-    '- `/madness bankroll`',
+    '━━ Games ━━',
+    '- `/madness games` — today’s March Madness slate',
+    '- `/madness scores` — live games only',
+    '- `/madness board` — numbered pick board with team codes',
     '',
-    'Betting shortcuts:',
-    '- `/sports odds ncaab`',
-    '- `/sports bet ncaab 1 duke ml 25`',
-    '- `/sports bets`'
+    '━━ Pick’em ━━',
+    '- `/madness pick <gameIndex> <teamCode>` — submit or update a pick',
+    '- `/madness picks` — show your saved picks',
+    '',
+    '━━ Standings ━━',
+    '- `/madness leaderboard` — pick’em points leaderboard',
+    '- `/madness bankroll` — March Madness betting leaderboard',
+    '',
+    '━━ Betting ━━',
+    '- `/sports odds ncaab` — current NCAAB betting board',
+    '- `/sports bet ncaab <gameIndex> <teamCode> ml <amount>` — place a bet',
+    '- `/sports bets` — show your open sports bets'
   ].join('\n')
 }
 

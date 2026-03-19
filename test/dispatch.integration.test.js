@@ -610,12 +610,19 @@ test('buildMadnessHubMessage documents the March Madness flow', () => {
   const message = buildMadnessHubMessage('2026-03')
 
   assert.match(message, /March Madness/)
+  assert.match(message, /Follow the games, make picks, and track the leaderboard/)
+  assert.match(message, /Games/)
   assert.match(message, /\/madness games/)
+  assert.match(message, /\/madness scores/)
   assert.match(message, /\/madness board/)
-  assert.match(message, /\/madness pick 1 duke/)
+  assert.match(message, /Pick’em/)
+  assert.match(message, /\/madness pick <gameIndex> <teamCode>/)
   assert.match(message, /\/madness picks/)
+  assert.match(message, /Standings/)
   assert.match(message, /\/madness leaderboard/)
   assert.match(message, /\/madness bankroll/)
+  assert.match(message, /Betting/)
+  assert.match(message, /\/sports odds ncaab/)
 })
 
 test('resolveMadnessGamesDateToken maps relative date shortcuts', () => {

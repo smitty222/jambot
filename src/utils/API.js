@@ -994,6 +994,9 @@ function resolveScoreboardStartDate ({ startDate, competitionDate, eventDate } =
 
 export function formatScoreboardLine ({ awayName, awayScore, homeName, homeScore, status, sportPath, startDate, competitionDate, eventDate, period }) {
   const matchupSeparator = sportPath === 'basketball/mens-college-basketball' ? 'vs' : '@'
+  const displayTimeZone = sportPath === 'basketball/mens-college-basketball'
+    ? 'America/New_York'
+    : undefined
   let statusMsg = String(status || '').trim()
   const resolvedStartDate = resolveScoreboardStartDate({ startDate, competitionDate, eventDate })
   const d = resolvedStartDate ? new Date(resolvedStartDate) : null
@@ -1010,7 +1013,11 @@ export function formatScoreboardLine ({ awayName, awayScore, homeName, homeScore
   } else if (status === 'Final') {
     statusMsg = '✅ Final'
   } else if (hasStartTime) {
-    statusMsg = `🕒 ${d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+    statusMsg = `🕒 ${d.toLocaleTimeString([], {
+      timeZone: displayTimeZone,
+      hour: 'numeric',
+      minute: '2-digit'
+    })}`
   } else if (status) {
     statusMsg = `🏟️ ${status}`
   } else {
