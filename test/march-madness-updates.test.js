@@ -27,7 +27,7 @@ test('createMarchMadnessUpdateRunner posts live updates and suppresses duplicate
       error: (...args) => logs.push(['error', ...args])
     },
     postMessage: async (msg) => posted.push(msg),
-    getNCAABLiveScores: async () => responses.shift(),
+    getMarchMadnessLiveScores: async () => responses.shift(),
     loadUpcomingMarchMadnessGames: async () => []
   })
 
@@ -78,7 +78,7 @@ test('createMarchMadnessUpdateRunner skips posting when disabled', async () => {
       error: (...args) => logs.push(['error', ...args])
     },
     postMessage: async (msg) => posted.push(msg),
-    getNCAABLiveScores: async () => '🏀 NCAAB Gameboard\n\n• Test vs Test\n  🔴 Live • Q 1',
+    getMarchMadnessLiveScores: async () => '🏀 NCAAB Gameboard\n\n• Test vs Test\n  🔴 Live • Q 1',
     loadUpcomingMarchMadnessGames: async () => [],
     isMarchMadnessUpdatesEnabled: () => false
   })
@@ -139,7 +139,7 @@ test('createMarchMadnessUpdateRunner posts picks reminders before tipoff', async
     room: 'room-1',
     logger: { info () {}, error () {} },
     postMessage: async (msg) => posted.push(msg),
-    getNCAABLiveScores: async () => 'No live NCAAB games right now.',
+    getMarchMadnessLiveScores: async () => 'No live NCAAB games right now.',
     loadUpcomingMarchMadnessGames: async () => [
       { id: 'g1', awayTeam: 'VCU', homeTeam: 'BYU', commenceTime: '2026-03-20T18:20:00-04:00' }
     ],

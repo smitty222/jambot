@@ -4,6 +4,10 @@ import { addOrUpdateUser } from '../database/dbwalletmanager.js'
 import db from '../database/db.js'
 import { env } from '../config.js'
 import { logger } from './logging.js'
+import {
+  buildMarchMadnessTournamentAliasSet,
+  isMarchMadnessEvent
+} from './marchMadness.js'
 
 const MENTION_RE = /^<@uid:[^>]+>$/
 
@@ -95,6 +99,18 @@ function withQuery (url, q) {
   return u.toString()
 }
 
+function formatDateInTimeZone (date, timeZone = 'America/New_York') {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date)
+
+  const mapped = Object.fromEntries(parts.map(part => [part.type, part.value]))
+  return `${mapped.year}-${mapped.month}-${mapped.day}`
+}
+
 /* ────────────────────────────────────────────────────────────────
  * Generic caches for non‑Spotify APIs
  * ──────────────────────────────────────────────────────────────── */
@@ -119,6 +135,53 @@ async function getCachedScoreboard (sportPath, fn) {
   const result = await fn()
   if (result) scoreboardCache.set(sportPath, result)
   return result
+}
+
+function normalizeRequestedDateForEspn (requestedDate) {
+  const raw = String(requestedDate || '').trim().toLowerCase()
+  if (!raw) return null
+  if (/^\d{8}$/.test(raw)) return raw
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw.replaceAll('-', '')
+
+  const base = new Date()
+  if (raw === 'today' || raw === 'tonight') return formatDateInTimeZone(base).replaceAll('-', '')
+  if (raw === 'yesterday') {
+    base.setDate(base.getDate() - 1)
+    return formatDateInTimeZone(base).replaceAll('-', '')
+  }
+  if (raw === 'tomorrow') {
+    base.setDate(base.getDate() + 1)
+    return formatDateInTimeZone(base).replaceAll('-', '')
+  }
+
+  return null
+}
+
+async function fetchEspnScoreboardEvents (sportPath, requestedDate) {
+  const normalizedDate = normalizeRequestedDateForEspn(requestedDate)
+  const cacheKey = normalizedDate ? `${sportPath}:${normalizedDate}:raw` : `${sportPath}:raw`
+
+  return getCachedScoreboard(cacheKey, async () => {
+    const url = withQuery(`https://site.api.espn.com/apis/site/v2/sports/${sportPath}/scoreboard`, normalizedDate ? { dates: normalizedDate } : undefined)
+    const { ok, data } = await makeRequest(url)
+    if (!ok) return []
+    return Array.isArray(data?.events) ? data.events : []
+  })
+}
+
+export async function getMarchMadnessTournamentAliasSet (requestedDates = []) {
+  const dates = [...new Set((requestedDates || []).map(date => normalizeRequestedDateForEspn(date)).filter(Boolean))]
+  if (!dates.length) return new Set()
+
+  const eventGroups = await Promise.all(
+    dates.map(date => fetchEspnScoreboardEvents('basketball/mens-college-basketball', date))
+  )
+
+  const tournamentEvents = eventGroups
+    .flat()
+    .filter(event => isMarchMadnessEvent(event))
+
+  return buildMarchMadnessTournamentAliasSet(tournamentEvents)
 }
 
 /* ────────────────────────────────────────────────────────────────
@@ -1054,32 +1117,32 @@ export function formatEspnScoreboardTeamName (team = {}, sportPath = '') {
 
 async function espnScoreboard (sportPath, requestedDate, options = {}) {
   const {
-    liveOnly = false
+    liveOnly = false,
+    tournamentOnly = false
   } = options
-  const normalizedDate = typeof requestedDate === 'string' && /^\d{8}$/.test(requestedDate)
-    ? requestedDate
-    : typeof requestedDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)
-      ? requestedDate.replaceAll('-', '')
-      : null
+  const normalizedDate = normalizeRequestedDateForEspn(requestedDate)
   const cacheKeyBase = normalizedDate ? `${sportPath}:${normalizedDate}` : sportPath
-  const cacheKey = liveOnly ? `${cacheKeyBase}:live` : cacheKeyBase
+  const cacheKey = tournamentOnly
+    ? `${cacheKeyBase}:${liveOnly ? 'live:' : ''}tournament`
+    : liveOnly
+      ? `${cacheKeyBase}:live`
+      : cacheKeyBase
 
   return getCachedScoreboard(cacheKey, async () => {
-    const url = withQuery(`https://site.api.espn.com/apis/site/v2/sports/${sportPath}/scoreboard`, normalizedDate ? { dates: normalizedDate } : undefined)
-    const { ok, data } = await makeRequest(url)
-    if (!ok) return 'No scores available.\n'
-
-    const events = data?.events || []
+    const events = await fetchEspnScoreboardEvents(sportPath, requestedDate)
     const games = liveOnly
       ? events.filter(g => String(g?.status?.type?.description || '').trim() === 'In Progress')
       : events
-    games.sort((a, b) => {
+    const filteredGames = tournamentOnly
+      ? games.filter(event => isMarchMadnessEvent(event))
+      : games
+    filteredGames.sort((a, b) => {
       const pa = a?.competitions?.[0]?.status?.period || 0
       const pb = b?.competitions?.[0]?.status?.period || 0
       return pb - pa
     })
 
-    if (!games.length) {
+    if (!filteredGames.length) {
       const sportLabelMap = {
         'baseball/mlb': 'MLB',
         'hockey/nhl': 'NHL',
@@ -1088,12 +1151,15 @@ async function espnScoreboard (sportPath, requestedDate, options = {}) {
         'basketball/mens-college-basketball': 'NCAAB'
       }
       const sportLabel = sportLabelMap[sportPath] || sportPath.toUpperCase()
+      const noGamesMessage = tournamentOnly && sportPath === 'basketball/mens-college-basketball'
+        ? 'No March Madness games available right now.\n'
+        : 'No scores available.\n'
       return liveOnly
         ? `No live ${sportLabel} games right now.\n`
-        : 'No scores available.\n'
+        : noGamesMessage
     }
 
-    const lines = games.map(g => {
+    const lines = filteredGames.map(g => {
       const comp = g?.competitions?.[0]
       const home = comp?.competitors?.find(c => c.homeAway === 'home')
       const away = comp?.competitors?.find(c => c.homeAway === 'away')
@@ -1142,6 +1208,8 @@ export async function getNBAScores (requestedDate) { return espnScoreboard('bask
 export async function getNFLScores (requestedDate) { return espnScoreboard('football/nfl', requestedDate) }
 export async function getNCAABScores (requestedDate) { return espnScoreboard('basketball/mens-college-basketball', requestedDate) }
 export async function getNCAABLiveScores (requestedDate) { return espnScoreboard('basketball/mens-college-basketball', requestedDate, { liveOnly: true }) }
+export async function getMarchMadnessScores (requestedDate) { return espnScoreboard('basketball/mens-college-basketball', requestedDate, { tournamentOnly: true }) }
+export async function getMarchMadnessLiveScores (requestedDate) { return espnScoreboard('basketball/mens-college-basketball', requestedDate, { liveOnly: true, tournamentOnly: true }) }
 
 /* ────────────────────────────────────────────────────────────────
  * Last.fm helpers

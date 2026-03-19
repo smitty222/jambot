@@ -2,11 +2,15 @@ import cron from 'node-cron'
 import { env } from '../config.js'
 import { logger as defaultLogger } from '../utils/logging.js'
 import { postMessage } from '../libs/cometchat.js'
-import { getNCAABLiveScores } from '../utils/API.js'
+import {
+  getMarchMadnessLiveScores,
+  getMarchMadnessTournamentAliasSet
+} from '../utils/API.js'
 import { getGenericDisplayTeamCode } from '../utils/sportsTeams.js'
 import db from '../database/db.js'
 import { getOddsForSport, saveOddsForSport } from '../utils/bettingOdds.js'
 import { fetchOddsForSport } from '../utils/sportsBetAPI.js'
+import { filterMarchMadnessOddsGames } from '../utils/marchMadness.js'
 
 const NO_LIVE_GAMES_MESSAGE = 'No live NCAAB games right now.'
 const KEY_ENABLED = 'march_madness_updates_enabled'
@@ -138,10 +142,12 @@ export function buildMarchMadnessPickReminderMessage (games = [], now = new Date
 async function loadUpcomingMarchMadnessGames ({
   getOddsForSport: getOddsForSportImpl = getOddsForSport,
   fetchOddsForSport: fetchOddsForSportImpl = fetchOddsForSport,
-  saveOddsForSport: saveOddsForSportImpl = saveOddsForSport
+  saveOddsForSport: saveOddsForSportImpl = saveOddsForSport,
+  getMarchMadnessTournamentAliasSet: getMarchMadnessTournamentAliasSetImpl = getMarchMadnessTournamentAliasSet
 } = {}) {
+  const tournamentAliases = await getMarchMadnessTournamentAliasSetImpl(['yesterday', 'today', 'tomorrow'])
   let games = await getOddsForSportImpl('basketball_ncaab')
-  if (Array.isArray(games) && games.length) return games
+  if (Array.isArray(games) && games.length) return filterMarchMadnessOddsGames(games, tournamentAliases)
 
   const freshGames = await fetchOddsForSportImpl('basketball_ncaab')
   if (Array.isArray(freshGames) && freshGames.length) {
@@ -149,7 +155,7 @@ async function loadUpcomingMarchMadnessGames ({
     games = freshGames
   }
 
-  return Array.isArray(games) ? games : []
+  return Array.isArray(games) ? filterMarchMadnessOddsGames(games, tournamentAliases) : []
 }
 
 export function extractMarchMadnessUpsetAlerts (message = '') {
@@ -196,7 +202,7 @@ export function createMarchMadnessUpdateRunner (deps = {}) {
     logger = defaultLogger,
     room = env.roomUuid,
     postMessage: postMessageImpl = postMessage,
-    getNCAABLiveScores: getNCAABLiveScoresImpl = getNCAABLiveScores,
+    getMarchMadnessLiveScores: getMarchMadnessLiveScoresImpl = getMarchMadnessLiveScores,
     isMarchMadnessUpdatesEnabled: isMarchMadnessUpdatesEnabledImpl = isMarchMadnessUpdatesEnabled,
     loadUpcomingMarchMadnessGames: loadUpcomingMarchMadnessGamesImpl = loadUpcomingMarchMadnessGames,
     leadMinutes = 30,
@@ -243,7 +249,7 @@ export function createMarchMadnessUpdateRunner (deps = {}) {
         logger.info('[march-madness-updates] posted picks reminder')
       }
 
-      const rawMessage = String(await getNCAABLiveScoresImpl('today') || '').trim()
+      const rawMessage = String(await getMarchMadnessLiveScoresImpl('today') || '').trim()
       if (!rawMessage || rawMessage === NO_LIVE_GAMES_MESSAGE) {
         lastPostedSnapshot = ''
         logger.info('[march-madness-updates] no live games')

@@ -12,6 +12,12 @@ import {
   resolveTeamNameFromInput
 } from './sportsTeams.js'
 import { MARCH_MADNESS_SOURCE } from '../database/dbmarchmadness.js'
+import {
+  getMarchMadnessTournamentAliasSet
+} from './API.js'
+import {
+  isMarchMadnessOddsGame
+} from './marchMadness.js'
 
 const BETS_FILE = 'src/data/bets.json'
 const STALE_BET_GRACE_MS = 36 * 60 * 60 * 1000
@@ -91,13 +97,14 @@ export function formatOdds (price) {
   return price > 0 ? `+${price}` : `${price}`
 }
 
-function getSportsBetSource (sport) {
+function getSportsBetSource (sport, ledgerSource = null) {
+  if (ledgerSource) return ledgerSource
   return sport === 'basketball_ncaab' ? MARCH_MADNESS_SOURCE : 'sports'
 }
 
-function buildSportsBetMeta ({ sport, category, teamName, teamCode, amount, gameId }) {
+function buildSportsBetMeta ({ sport, category, teamName, teamCode, amount, gameId, source = null }) {
   return {
-    source: getSportsBetSource(sport),
+    source: getSportsBetSource(sport, source),
     category,
     note: `${sport}:${teamCode || teamName || gameId || 'game'}`,
     sport,
@@ -212,6 +219,11 @@ export async function placeSportsBet (senderUUID, index, team, betTypeInput, amo
 
   const h2h = bookmaker.markets.find(m => m.key === 'h2h')?.outcomes || []
   const spreads = bookmaker.markets.find(m => m.key === 'spreads')?.outcomes || []
+  const ledgerSource = sport === 'basketball_ncaab'
+    ? (isMarchMadnessOddsGame(game, await getMarchMadnessTournamentAliasSet(['yesterday', 'today', 'tomorrow']))
+        ? MARCH_MADNESS_SOURCE
+        : 'sports')
+    : 'sports'
 
   const teamAbbrUpper = team.toUpperCase()
   const fullTeamName = resolveTeamNameFromInput(teamAbbrUpper, [game.awayTeam, game.homeTeam])
@@ -244,6 +256,7 @@ export async function placeSportsBet (senderUUID, index, team, betTypeInput, amo
 
   const removeSuccess = debitGameBet(normalizedSenderUUID, amount, buildSportsBetMeta({
     sport,
+    source: ledgerSource,
     category: 'bet',
     teamName: fullTeamName,
     teamCode,
@@ -261,6 +274,7 @@ export async function placeSportsBet (senderUUID, index, team, betTypeInput, amo
       gameIndex: index,
       gameId: game.id,
       sport,
+      ledgerSource,
       teamName: fullTeamName,
       teamCode,
       team: teamAbbrUpper,
@@ -278,6 +292,7 @@ export async function placeSportsBet (senderUUID, index, team, betTypeInput, amo
     await addToUserWallet(normalizedSenderUUID, amount, null, buildSportsBetMeta({
       sport,
       category: 'refund',
+      source: ledgerSource,
       teamName: fullTeamName,
       teamCode,
       amount,
@@ -313,6 +328,7 @@ export async function resolveCompletedBets (sportKey) {
         const payout = bet.amount + calculateWinnings(bet.amount, bet.odds)
         await creditGameWin(bet.senderUUID, payout, null, buildSportsBetMeta({
           sport: bet.sport,
+          source: bet.ledgerSource || null,
           category: 'bet_win',
           teamName: bet.teamName || getSelectedTeamName(bet, { awayTeam, homeTeam }),
           teamCode: bet.teamCode || getGenericDisplayTeamCode(getSelectedTeamName(bet, { awayTeam, homeTeam })),
@@ -323,6 +339,7 @@ export async function resolveCompletedBets (sportKey) {
       } else if (outcome === 'push') {
         await addToUserWallet(bet.senderUUID, bet.amount, null, buildSportsBetMeta({
           sport: bet.sport,
+          source: bet.ledgerSource || null,
           category: 'refund',
           teamName: bet.teamName || getSelectedTeamName(bet, { awayTeam, homeTeam }),
           teamCode: bet.teamCode || getGenericDisplayTeamCode(getSelectedTeamName(bet, { awayTeam, homeTeam })),

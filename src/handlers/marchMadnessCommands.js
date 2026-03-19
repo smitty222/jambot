@@ -1,11 +1,17 @@
 import { postMessage } from '../libs/cometchat.js'
 import { getCurrentMonthKey } from '../database/dbwalletmanager.js'
 import { getCompactEquippedTitleTag } from '../database/dbprestige.js'
-import { getNCAABLiveScores, getNCAABScores, getUserNicknameByUuid } from '../utils/API.js'
+import {
+  getMarchMadnessLiveScores,
+  getMarchMadnessScores,
+  getMarchMadnessTournamentAliasSet,
+  getUserNicknameByUuid
+} from '../utils/API.js'
 import { fetchOddsForSport } from '../utils/sportsBetAPI.js'
 import { getOddsForSport, saveOddsForSport } from '../utils/bettingOdds.js'
 import { resolveCompletedBets } from '../utils/sportsBet.js'
 import { getGenericDisplayTeamCode, resolveTeamNameFromInput } from '../utils/sportsTeams.js'
+import { filterMarchMadnessOddsGames } from '../utils/marchMadness.js'
 import {
   getMarchMadnessBankrollLeaderboard,
   getMarchMadnessPointsLeaderboard,
@@ -131,10 +137,14 @@ async function getDisplayNames (rows = [], getUserNicknameByUuidImpl = getUserNi
 async function ensureMadnessOdds ({
   getOddsForSport: getOddsForSportImpl = getOddsForSport,
   fetchOddsForSport: fetchOddsForSportImpl = fetchOddsForSport,
-  saveOddsForSport: saveOddsForSportImpl = saveOddsForSport
+  saveOddsForSport: saveOddsForSportImpl = saveOddsForSport,
+  getMarchMadnessTournamentAliasSet: getMarchMadnessTournamentAliasSetImpl = getMarchMadnessTournamentAliasSet
 } = {}) {
+  const tournamentAliases = await getMarchMadnessTournamentAliasSetImpl(['yesterday', 'today', 'tomorrow'])
   let games = await getOddsForSportImpl('basketball_ncaab')
-  if (Array.isArray(games) && games.length) return sortMadnessGames(games)
+  if (Array.isArray(games) && games.length) {
+    return sortMadnessGames(filterMarchMadnessOddsGames(games, tournamentAliases))
+  }
 
   const freshGames = await fetchOddsForSportImpl('basketball_ncaab')
   if (Array.isArray(freshGames) && freshGames.length) {
@@ -142,7 +152,9 @@ async function ensureMadnessOdds ({
     games = freshGames
   }
 
-  return Array.isArray(games) ? sortMadnessGames(games) : []
+  return Array.isArray(games)
+    ? sortMadnessGames(filterMarchMadnessOddsGames(games, tournamentAliases))
+    : []
 }
 
 export function buildMadnessHubMessage (monthKey = getCurrentMonthKey()) {
@@ -388,10 +400,10 @@ export async function postMadnessPicks (room, {
 export async function postMadnessGames (room, {
   args = '',
   postMessage: postMessageImpl = postMessage,
-  getNCAABScores: getNCAABScoresImpl = getNCAABScores
+  getMarchMadnessScores: getMarchMadnessScoresImpl = getMarchMadnessScores
 } = {}) {
   const requestedDate = resolveMadnessGamesDateToken(args)
-  const scoreboard = String(await getNCAABScoresImpl(requestedDate) || '').trim()
+  const scoreboard = String(await getMarchMadnessScoresImpl(requestedDate) || '').trim()
   await postMessageImpl({ room, message: scoreboard })
 }
 
@@ -414,10 +426,10 @@ export async function postMadnessPickBoard (room, {
 export async function postMadnessLiveScores (room, {
   args = '',
   postMessage: postMessageImpl = postMessage,
-  getNCAABLiveScores: getNCAABLiveScoresImpl = getNCAABLiveScores
+  getMarchMadnessLiveScores: getMarchMadnessLiveScoresImpl = getMarchMadnessLiveScores
 } = {}) {
   const requestedDate = resolveMadnessGamesDateToken(args)
-  const message = await getNCAABLiveScoresImpl(requestedDate)
+  const message = await getMarchMadnessLiveScoresImpl(requestedDate)
   await postMessageImpl({ room, message })
 }
 

@@ -8,6 +8,11 @@ import {
 } from '../src/database/dbmarchmadness.js'
 import { buildMadnessPickBoard } from '../src/handlers/marchMadnessCommands.js'
 import {
+  buildMarchMadnessTournamentAliasSet,
+  filterMarchMadnessOddsGames,
+  isMarchMadnessEvent
+} from '../src/utils/marchMadness.js'
+import {
   formatScoreboardLine,
   formatEspnScoreboardTeamName,
   formatEspnTournamentSeed
@@ -124,4 +129,60 @@ test('buildMadnessPickBoard shows numbered games with team codes for picking', (
   assert.match(board, /1\. MOR vs SMU • 🕒 12:15 PM/)
   assert.match(board, /2\. NCTH vs DBD • 🕒 7:10 PM/)
   assert.match(board, /\/madness pick <gameIndex> <teamCode>/)
+})
+
+test('isMarchMadnessEvent only accepts seeded tournament matchups', () => {
+  assert.equal(isMarchMadnessEvent({
+    competitions: [{
+      competitors: [
+        { homeAway: 'away', seed: 12, team: { displayName: 'VCU Rams' } },
+        { homeAway: 'home', seed: 5, team: { displayName: 'BYU Cougars' } }
+      ]
+    }]
+  }), true)
+
+  assert.equal(isMarchMadnessEvent({
+    competitions: [{
+      competitors: [
+        { homeAway: 'away', team: { displayName: 'Loyola Ramblers' } },
+        { homeAway: 'home', team: { displayName: 'Bradley Braves' } }
+      ]
+    }]
+  }), false)
+})
+
+test('filterMarchMadnessOddsGames keeps only games between tournament teams', () => {
+  const aliases = buildMarchMadnessTournamentAliasSet([{
+    competitions: [{
+      competitors: [
+        {
+          homeAway: 'away',
+          seed: 11,
+          team: {
+            displayName: 'Drake Bulldogs',
+            shortDisplayName: 'Drake Bulldogs',
+            location: 'Drake',
+            abbreviation: 'DRKE'
+          }
+        },
+        {
+          homeAway: 'home',
+          seed: 6,
+          team: {
+            displayName: 'Missouri Tigers',
+            shortDisplayName: 'Missouri Tigers',
+            location: 'Missouri',
+            abbreviation: 'MIZ'
+          }
+        }
+      ]
+    }]
+  }])
+
+  const filtered = filterMarchMadnessOddsGames([
+    { id: 'g1', awayTeam: 'Drake Bulldogs', homeTeam: 'Missouri Tigers' },
+    { id: 'g2', awayTeam: 'Bradley Braves', homeTeam: 'Loyola Ramblers' }
+  ], aliases)
+
+  assert.deepEqual(filtered.map(game => game.id), ['g1'])
 })
