@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
+import db from '../src/database/db.js'
 import {
   attachMarchMadnessReminderGameIndices,
   buildMarchMadnessPickReminderMessage,
@@ -10,6 +11,14 @@ import {
   selectMarchMadnessPickReminderGames,
   startMarchMadnessUpdatesCron
 } from '../src/scheduler/marchMadnessUpdates.js'
+
+function clearMarchMadnessReminderState () {
+  db.prepare("DELETE FROM app_settings WHERE key LIKE 'march_madness_pick_reminders%'").run()
+}
+
+test.beforeEach(() => {
+  clearMarchMadnessReminderState()
+})
 
 test('createMarchMadnessUpdateRunner posts live updates and suppresses duplicates', async () => {
   const posted = []

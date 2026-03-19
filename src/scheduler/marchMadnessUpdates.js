@@ -7,7 +7,7 @@ import {
   getMarchMadnessTournamentGames
 } from '../utils/API.js'
 import { getGenericDisplayTeamCode } from '../utils/sportsTeams.js'
-import { buildMadnessBoardEntries } from '../handlers/marchMadnessCommands.js'
+import { buildMadnessBoardEntries, getMadnessBoardMatchupText } from '../handlers/marchMadnessCommands.js'
 import db from '../database/db.js'
 
 const NO_LIVE_GAMES_MESSAGE = 'No live NCAAB games right now.'
@@ -163,10 +163,13 @@ export function buildMarchMadnessPickReminderMessage (games = [], now = new Date
   const lines = upcoming.map((game, index) => {
     const tipText = formatTimeUntilTip(game?.commenceTime, now)
     const tipClock = formatTipoffTimeEt(game?.commenceTime, timeZone)
-    const awayCode = getGenericDisplayTeamCode(game?.canonicalAwayTeam || game?.awayTeam)
-    const homeCode = getGenericDisplayTeamCode(game?.canonicalHomeTeam || game?.homeTeam)
+    const matchup = getMadnessBoardMatchupText({
+      ...game,
+      awayShortName: game?.awayShortName || getGenericDisplayTeamCode(game?.canonicalAwayTeam || game?.awayTeam),
+      homeShortName: game?.homeShortName || getGenericDisplayTeamCode(game?.canonicalHomeTeam || game?.homeTeam)
+    })
     const displayIndex = Number.isFinite(Number(game?.gameIndex)) ? Number(game.gameIndex) : index + 1
-    return `${displayIndex}. ${awayCode} vs ${homeCode} • ${tipClock} • starts in ${tipText}`
+    return `${displayIndex}. ${matchup} • ${tipClock} • starts in ${tipText}`
   })
 
   const moreCount = Math.max(0, (games?.length || 0) - upcoming.length)

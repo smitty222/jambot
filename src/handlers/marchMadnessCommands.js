@@ -132,6 +132,11 @@ function formatMadnessMatchupLabel ({ awayTeam, awaySeed, homeTeam, homeSeed }) 
   return `${awayPrefix}${awayCode} vs ${homePrefix}${homeCode}`
 }
 
+export function getMadnessBoardMatchupText (game = {}) {
+  return String(game?.displayMatchup || '').trim() ||
+    `${game?.awayShortName || game?.awayTeam} vs ${game?.homeShortName || game?.homeTeam}`
+}
+
 function formatMoney(value) {
   const numeric = Math.round(Number(value) || 0)
   return `$${numeric.toLocaleString('en-US')}`
@@ -207,7 +212,7 @@ export function buildMadnessPickBoard (games = [], requestedDate = '', now = new
     const status = Number.isFinite(tipTs) && now.getTime() >= tipTs
       ? '🔒 locked'
       : `🕒 ${formatMadnessTipoffTime(game?.commenceTime, timeZone)}`
-    const matchup = String(game?.displayMatchup || '').trim() || `${game?.awayShortName || game?.awayTeam} vs ${game?.homeShortName || game?.homeTeam}`
+    const matchup = getMadnessBoardMatchupText(game)
     return `${gameIndex}. ${matchup} • ${status}`
   })
 
