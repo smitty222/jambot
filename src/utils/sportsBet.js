@@ -240,10 +240,6 @@ export async function placeSportsBet (senderUUID, index, team, betTypeInput, amo
 
   if (!fullTeamName) return `Invalid team abbreviation for game ${index + 1}.`
   const teamCode = forcedPreferredTeamCode || getGenericDisplayTeamCode(fullTeamName)
-  const commenceTs = toTimestamp(game.commenceTime)
-  if (Number.isFinite(commenceTs) && Date.now() >= commenceTs) {
-    return `Betting is closed for Game ${index + 1}; it already started.`
-  }
 
   const betType = betTypeInput.toLowerCase()
   let oddsObj
