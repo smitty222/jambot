@@ -64,6 +64,64 @@ test('formatOddsMessage formats NCAAB odds with readable team labels and sorted 
 
   assert.equal(lines[2].startsWith('1. MOR vs SMU'), true)
   assert.equal(lines[6].startsWith('2. NCTH vs DBD'), true)
+  assert.match(lines[2], /3:10 PM ET/)
+  assert.match(lines[6], /5:30 PM ET/)
   assert.match(message, /ML — MOR: \+180 \| SMU: -220/)
   assert.match(message, /Spread — NCTH: \+4.5 \(-110\) \| DBD: -4.5 \(-110\)/)
+})
+
+test('formatOddsMessage marks already-started games as live when odds are still posted', () => {
+  const message = formatOddsMessage([
+    {
+      commenceTime: '2026-03-19T19:10:00.000Z',
+      awayTeam: 'Miami (OH) RedHawks',
+      homeTeam: 'SMU Mustangs',
+      bookmaker: {
+        markets: [
+          {
+            key: 'h2h',
+            outcomes: [
+              { name: 'Miami (OH) RedHawks', price: 180 },
+              { name: 'SMU Mustangs', price: -220 }
+            ]
+          },
+          {
+            key: 'spreads',
+            outcomes: [
+              { name: 'Miami (OH) RedHawks', point: 5.5, price: -105 },
+              { name: 'SMU Mustangs', point: -5.5, price: -115 }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      commenceTime: '2026-03-19T21:30:00.000Z',
+      awayTeam: 'North Carolina Tar Heels',
+      homeTeam: 'Duke Blue Devils',
+      bookmaker: {
+        markets: [
+          {
+            key: 'h2h',
+            outcomes: [
+              { name: 'North Carolina Tar Heels', price: 155 },
+              { name: 'Duke Blue Devils', price: -190 }
+            ]
+          },
+          {
+            key: 'spreads',
+            outcomes: [
+              { name: 'North Carolina Tar Heels', point: 4.5, price: -110 },
+              { name: 'Duke Blue Devils', point: -4.5, price: -110 }
+            ]
+          }
+        ]
+      }
+    }
+  ], 'basketball_ncaab', Date.parse('2026-03-19T20:00:00.000Z'))
+
+  const lines = message.split('\n')
+
+  assert.match(lines[2], /3:10 PM ET 🔴 LIVE/)
+  assert.doesNotMatch(lines[6], /LIVE/)
 })

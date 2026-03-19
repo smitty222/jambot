@@ -6,7 +6,12 @@ import {
   getNFLScores,
   getNCAABScores
 } from '../utils/API.js'
-import { fetchOddsForSport, formatOddsMessage, OddsApiError } from '../utils/sportsBetAPI.js'
+import {
+  fetchOddsForSport,
+  formatOddsMessage,
+  formatSportsEventTime,
+  OddsApiError
+} from '../utils/sportsBetAPI.js'
 import { saveOddsForSport, getOddsForSport } from '../utils/bettingOdds.js'
 import {
   placeSportsBet,
@@ -172,15 +177,20 @@ function formatOpenBetLine (bet, game) {
   const matchup = game?.awayTeam && game?.homeTeam
     ? `${game.awayTeam} @ ${game.homeTeam}`
     : `Game ${Number(bet.gameIndex || 0) + 1}`
+  const commenceTime = game?.commenceTime || bet?.commenceTime || null
   const spreadLine = String(bet.type || '').toLowerCase() === 'spread' && Number.isFinite(Number(bet.spreadPoint))
     ? ` ${Number(bet.spreadPoint) > 0 ? '+' : ''}${Number(bet.spreadPoint)}`
     : ''
+  const startLabel = commenceTime
+    ? `Start: ${formatSportsEventTime(commenceTime, { includeDate: true })}`
+    : null
 
   return [
     `${formatSportLabel(bet.sport)} · ${matchup}`,
     `Pick: ${String(bet.team || '').toUpperCase()} ${String(bet.type || '').toUpperCase()}${spreadLine} at ${bet.odds > 0 ? `+${bet.odds}` : bet.odds}`,
-    `Risk: $${Number(bet.amount || 0)}`
-  ].join(' | ')
+    `Risk: $${Number(bet.amount || 0)}`,
+    startLabel
+  ].filter(Boolean).join(' | ')
 }
 
 export async function handleMlbScoresCommand ({ payload, room }) {

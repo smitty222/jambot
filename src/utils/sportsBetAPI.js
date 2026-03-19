@@ -2,6 +2,9 @@ import fetch from 'node-fetch'
 import { formatOdds } from './sportsBet.js'
 import { getGenericDisplayTeamCode } from './sportsTeams.js'
 
+const SPORTS_TIME_ZONE = 'America/New_York'
+const SPORTS_TIME_ZONE_LABEL = 'ET'
+
 /// /////////////////////////////// Odds API ////////////////////////////////////////////
 export class OddsApiError extends Error {
   constructor (message, { status = null, sportKey = '', body = '' } = {}) {
@@ -63,7 +66,7 @@ function filterFanDuelOnly (games) {
     .filter(Boolean) // Remove nulls
 }
 
-export function formatOddsMessage (games, sportKey) {
+export function formatOddsMessage (games, sportKey, now = Date.now()) {
   const title = formatSportTitle(sportKey)
   const normalizedGames = Array.isArray(games)
     ? [...games].sort((a, b) => toTimestamp(a?.commenceTime) - toTimestamp(b?.commenceTime))
@@ -77,6 +80,7 @@ export function formatOddsMessage (games, sportKey) {
     const { bookmaker, homeTeam, awayTeam, commenceTime } = game
     const h2h = bookmaker?.markets?.find(m => m.key === 'h2h')?.outcomes || []
     const spreads = bookmaker?.markets?.find(m => m.key === 'spreads')?.outcomes || []
+    const liveLabel = isGameLikelyLive(game, now) ? ' 🔴 LIVE' : ''
 
     // Time formatting
     const timeStr = formatOddsGameTime(commenceTime)
@@ -96,7 +100,7 @@ export function formatOddsMessage (games, sportKey) {
     const homeSpread = spreadMap[homeTeam] ? `${formatSpread(spreadMap[homeTeam].point)} (${spreadMap[homeTeam].price})` : 'N/A'
 
     const separator = sportKey === 'basketball_ncaab' ? 'vs' : '@'
-    return `${i + 1}. ${awayLabel} ${separator} ${homeLabel} • 🕒 ${timeStr}\n` +
+    return `${i + 1}. ${awayLabel} ${separator} ${homeLabel} • 🕒 ${timeStr}${liveLabel}\n` +
              `🧢 ML — ${awayLabel}: ${awayML} | ${homeLabel}: ${homeML}\n` +
              `📏 Spread — ${awayLabel}: ${awaySpread} | ${homeLabel}: ${homeSpread}`
   }).join('\n\n')
@@ -124,14 +128,35 @@ function toTimestamp (value) {
   return Number.isFinite(ts) ? ts : Number.MAX_SAFE_INTEGER
 }
 
-function formatOddsGameTime (commenceTime) {
+function isGameLikelyLive (game, now = Date.now()) {
+  const commenceTs = toTimestamp(game?.commenceTime)
+  if (!Number.isFinite(commenceTs) || commenceTs === Number.MAX_SAFE_INTEGER) return false
+  return now >= commenceTs
+}
+
+export function formatSportsEventTime (commenceTime, { includeDate = false } = {}) {
   const gameTime = new Date(commenceTime)
   if (Number.isNaN(gameTime.getTime())) return 'TBD'
 
-  return gameTime.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit'
-  })
+  const options = includeDate
+    ? {
+        timeZone: SPORTS_TIME_ZONE,
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+      }
+    : {
+        timeZone: SPORTS_TIME_ZONE,
+        hour: 'numeric',
+        minute: '2-digit'
+      }
+
+  return `${gameTime.toLocaleString('en-US', options)} ${SPORTS_TIME_ZONE_LABEL}`
+}
+
+function formatOddsGameTime (commenceTime) {
+  return formatSportsEventTime(commenceTime)
 }
 
 function formatOddsTeamLabel (teamName, sportKey) {

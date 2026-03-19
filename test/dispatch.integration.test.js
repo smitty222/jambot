@@ -357,10 +357,12 @@ test('createOpenBetsCommandHandler shows the caller open bets by default', async
       team: 'LAL',
       type: 'ml',
       odds: 120,
-      amount: 25
+      amount: 25,
+      commenceTime: '2026-03-19T21:30:00.000Z'
     }],
     getOddsForSport: async () => [{
       id: 'game-1',
+      commenceTime: '2026-03-19T21:30:00.000Z',
       awayTeam: 'Boston Celtics',
       homeTeam: 'Los Angeles Lakers'
     }]
@@ -374,7 +376,7 @@ test('createOpenBetsCommandHandler shows the caller open bets by default', async
 
   assert.deepEqual(posted, [{
     room: 'room-1',
-    message: '🎟️ Your Open Bets\n\n- NBA · Boston Celtics @ Los Angeles Lakers | Pick: LAL ML at +120 | Risk: $25'
+    message: '🎟️ Your Open Bets\n\n- NBA · Boston Celtics @ Los Angeles Lakers | Pick: LAL ML at +120 | Risk: $25 | Start: Mar 19, 5:30 PM ET'
   }])
 })
 
