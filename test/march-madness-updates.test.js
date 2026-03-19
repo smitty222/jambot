@@ -122,14 +122,14 @@ test('selectMarchMadnessPickReminderGames chooses games tipping soon and skips r
 test('buildMarchMadnessPickReminderMessage formats a concise reminder', () => {
   const now = new Date('2026-03-20T18:00:00-04:00')
   const message = buildMarchMadnessPickReminderMessage([
-    { id: 'g1', awayTeam: 'VCU', homeTeam: 'BYU', commenceTime: '2026-03-20T18:20:00-04:00' },
-    { id: 'g2', awayTeam: 'Drake', homeTeam: 'Missouri', commenceTime: '2026-03-20T18:25:00-04:00' }
+    { id: 'g1', awayTeam: 'Virginia Commonwealth Rams', homeTeam: 'Brigham Young Cougars', commenceTime: '2026-03-20T22:20:00.000Z' },
+    { id: 'g2', awayTeam: 'Drake Bulldogs', homeTeam: 'Missouri Tigers', commenceTime: '2026-03-20T22:25:00.000Z' }
   ], now)
 
   assert.match(message, /March Madness picks reminder/)
-  assert.match(message, /VCU vs BYU • starts in 20 min/)
-  assert.match(message, /Drake vs Missouri • starts in 25 min/)
-  assert.match(message, /\/madness pick <gameIndex> <team>/)
+  assert.match(message, /VCR vs BYC • 6:20 PM ET • starts in 20 min/)
+  assert.match(message, /DB vs MT • 6:25 PM ET • starts in 25 min/)
+  assert.match(message, /\/madness pick <gameIndex> <teamCode>/)
 })
 
 test('createMarchMadnessUpdateRunner posts picks reminders before tipoff', async () => {

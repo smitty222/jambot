@@ -40,10 +40,11 @@ export function sortMadnessGames (games = []) {
   })
 }
 
-function formatMadnessTipoffTime (commenceTime) {
+function formatMadnessTipoffTime (commenceTime, timeZone = 'America/New_York') {
   const tip = new Date(commenceTime)
   if (Number.isNaN(tip.getTime())) return 'TBD'
   return tip.toLocaleTimeString('en-US', {
+    timeZone,
     hour: 'numeric',
     minute: '2-digit'
   })
@@ -62,7 +63,7 @@ export function buildMadnessPickBoard (games = [], requestedDate = '', now = new
     const tipTs = Date.parse(game?.commenceTime || '')
     const status = Number.isFinite(tipTs) && now.getTime() >= tipTs
       ? '🔒 locked'
-      : `🕒 ${formatMadnessTipoffTime(game?.commenceTime)}`
+      : `🕒 ${formatMadnessTipoffTime(game?.commenceTime, timeZone)}`
     return `${gameIndex}. ${awayCode} vs ${homeCode} • ${status}`
   })
 
@@ -152,9 +153,10 @@ export function buildMadnessHubMessage (monthKey = getCurrentMonthKey()) {
     '',
     'Try:',
     '- `/madness games`',
+    '- `/madness board`',
     '- `/madness games 2026-03-19`',
     '- `/madness pick 1 duke`',
-    '- `/madness picks`',
+    '- `/madness picks` (your picks)',
     '- `/madness leaderboard`',
     '- `/madness bankroll`',
     '',
@@ -382,16 +384,27 @@ export async function postMadnessPicks (room, {
 export async function postMadnessGames (room, {
   args = '',
   postMessage: postMessageImpl = postMessage,
-  getNCAABScores: getNCAABScoresImpl = getNCAABScores,
+  getNCAABScores: getNCAABScoresImpl = getNCAABScores
+} = {}) {
+  const requestedDate = resolveMadnessGamesDateToken(args)
+  const scoreboard = String(await getNCAABScoresImpl(requestedDate) || '').trim()
+  await postMessageImpl({ room, message: scoreboard })
+}
+
+export async function postMadnessPickBoard (room, {
+  args = '',
+  postMessage: postMessageImpl = postMessage,
   ensureMadnessOdds: ensureMadnessOddsImpl = ensureMadnessOdds,
   now: nowImpl = () => new Date(),
   timeZone = 'America/New_York'
 } = {}) {
   const requestedDate = resolveMadnessGamesDateToken(args, nowImpl(), timeZone)
-  const scoreboard = String(await getNCAABScoresImpl(requestedDate) || '').trim()
   const pickBoard = buildMadnessPickBoard(await ensureMadnessOddsImpl(), requestedDate, nowImpl(), timeZone)
-  const message = pickBoard ? `${scoreboard}\n\n${pickBoard}` : scoreboard
-  await postMessageImpl({ room, message })
+
+  await postMessageImpl({
+    room,
+    message: pickBoard || 'No pickable March Madness games are on the board for that date right now.'
+  })
 }
 
 export async function postMadnessLiveScores (room, {
@@ -409,6 +422,7 @@ export function createMadnessCommandHandler (deps = {}) {
     postMessage: postMessageImpl = postMessage,
     buildMadnessHubMessage: buildMadnessHubMessageImpl = buildMadnessHubMessage,
     postMadnessGames: postMadnessGamesImpl = postMadnessGames,
+    postMadnessPickBoard: postMadnessPickBoardImpl = postMadnessPickBoard,
     postMadnessLiveScores: postMadnessLiveScoresImpl = postMadnessLiveScores,
     postMadnessLeaderboard: postMadnessLeaderboardImpl = postMadnessLeaderboard,
     postMadnessBankrollLeaderboard: postMadnessBankrollLeaderboardImpl = postMadnessBankrollLeaderboard,
@@ -430,6 +444,11 @@ export function createMadnessCommandHandler (deps = {}) {
 
     if (subcommand === 'games') {
       await postMadnessGamesImpl(room, { args: parts.slice(2).join(' '), ...deps })
+      return
+    }
+
+    if (subcommand === 'board' || subcommand === 'pickboard' || subcommand === 'pickgames') {
+      await postMadnessPickBoardImpl(room, { args: parts.slice(2).join(' '), ...deps })
       return
     }
 

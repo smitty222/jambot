@@ -3,6 +3,7 @@ import { env } from '../config.js'
 import { logger as defaultLogger } from '../utils/logging.js'
 import { postMessage } from '../libs/cometchat.js'
 import { getNCAABLiveScores } from '../utils/API.js'
+import { getGenericDisplayTeamCode } from '../utils/sportsTeams.js'
 import db from '../database/db.js'
 import { getOddsForSport, saveOddsForSport } from '../utils/bettingOdds.js'
 import { fetchOddsForSport } from '../utils/sportsBetAPI.js'
@@ -82,6 +83,16 @@ function formatTimeUntilTip (commenceTime, now = new Date()) {
   return rem === 0 ? `${hours} hr` : `${hours} hr ${rem} min`
 }
 
+function formatTipoffTimeEt (commenceTime, timeZone = 'America/New_York') {
+  const tip = new Date(commenceTime || '')
+  if (Number.isNaN(tip.getTime())) return 'TBD ET'
+  return `${tip.toLocaleTimeString('en-US', {
+    timeZone,
+    hour: 'numeric',
+    minute: '2-digit'
+  })} ET`
+}
+
 export function selectMarchMadnessPickReminderGames (games = [], now = new Date(), leadMinutes = 30, remindedGameIds = []) {
   const nowTs = now.getTime()
   const leadMs = Math.max(1, Math.floor(Number(leadMinutes || 30))) * 60 * 1000
@@ -100,13 +111,16 @@ export function selectMarchMadnessPickReminderGames (games = [], now = new Date(
     .sort((a, b) => Date.parse(a?.commenceTime || '') - Date.parse(b?.commenceTime || ''))
 }
 
-export function buildMarchMadnessPickReminderMessage (games = [], now = new Date()) {
+export function buildMarchMadnessPickReminderMessage (games = [], now = new Date(), timeZone = 'America/New_York') {
   const upcoming = (games || []).slice(0, 3)
   if (!upcoming.length) return ''
 
   const lines = upcoming.map((game, index) => {
     const tipText = formatTimeUntilTip(game?.commenceTime, now)
-    return `${index + 1}. ${game?.awayTeam || 'Away'} vs ${game?.homeTeam || 'Home'} • starts in ${tipText}`
+    const tipClock = formatTipoffTimeEt(game?.commenceTime, timeZone)
+    const awayCode = getGenericDisplayTeamCode(game?.awayTeam)
+    const homeCode = getGenericDisplayTeamCode(game?.homeTeam)
+    return `${index + 1}. ${awayCode} vs ${homeCode} • ${tipClock} • starts in ${tipText}`
   })
 
   const moreCount = Math.max(0, (games?.length || 0) - upcoming.length)
@@ -114,7 +128,7 @@ export function buildMarchMadnessPickReminderMessage (games = [], now = new Date
 
   return [
     '📝 March Madness picks reminder',
-    'Games are about to tip. Get your winners in with `/madness pick <gameIndex> <team>`.',
+    'Games are about to tip. Get your winners in with `/madness pick <gameIndex> <teamCode>`.',
     '',
     ...lines,
     ...(moreLine ? ['', moreLine] : [])

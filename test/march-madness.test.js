@@ -110,18 +110,18 @@ test('buildMadnessPickBoard shows numbered games with team codes for picking', (
       id: 'g2',
       awayTeam: 'North Carolina Tar Heels',
       homeTeam: 'Duke Blue Devils',
-      commenceTime: '2026-03-20T19:10:00-04:00'
+      commenceTime: '2026-03-20T23:10:00.000Z'
     },
     {
       id: 'g1',
       awayTeam: 'Miami (OH) RedHawks',
       homeTeam: 'SMU Mustangs',
-      commenceTime: '2026-03-20T16:05:00-04:00'
+      commenceTime: '2026-03-20T16:15:00.000Z'
     }
-  ], '2026-03-20', new Date('2026-03-20T14:00:00-04:00'))
+  ], '2026-03-20', new Date('2026-03-20T11:00:00-04:00'))
 
   assert.match(board, /🎯 Pick Board/)
-  assert.match(board, /1\. MOR vs SMU • 🕒/)
-  assert.match(board, /2\. NCTH vs DBD • 🕒/)
+  assert.match(board, /1\. MOR vs SMU • 🕒 12:15 PM/)
+  assert.match(board, /2\. NCTH vs DBD • 🕒 7:10 PM/)
   assert.match(board, /\/madness pick <gameIndex> <teamCode>/)
 })

@@ -57,6 +57,7 @@ export const PUBLIC_SITE_COMMAND_GROUPS = [
       '/horsehelp',
       '/madness',
       '/madness games [YYYY-MM-DD]',
+      '/madness board [YYYY-MM-DD]',
       '/madness pick <gameIndex> <team>',
       '/madness picks',
       '/madness leaderboard [count]',

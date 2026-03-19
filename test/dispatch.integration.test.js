@@ -450,6 +450,21 @@ test('createMadnessCommandHandler routes games through the madness gameboard hel
   assert.deepEqual(seen, ['2026-03-19'])
 })
 
+test('createMadnessCommandHandler routes board through the pick board helper', async () => {
+  const seen = []
+  const handler = createMadnessCommandHandler({
+    postMessage: async () => {},
+    postMadnessPickBoard: async (_room, { args }) => seen.push(args)
+  })
+
+  await handler({
+    payload: { sender: 'user-1', message: '/madness board tomorrow' },
+    room: 'room-1'
+  })
+
+  assert.deepEqual(seen, ['tomorrow'])
+})
+
 test('createMadnessCommandHandler routes scores through the live madness scoreboard', async () => {
   const seen = []
   const handler = createMadnessCommandHandler({
@@ -596,7 +611,9 @@ test('buildMadnessHubMessage documents the March Madness flow', () => {
 
   assert.match(message, /March Madness/)
   assert.match(message, /\/madness games/)
+  assert.match(message, /\/madness board/)
   assert.match(message, /\/madness pick 1 duke/)
+  assert.match(message, /\/madness picks/)
   assert.match(message, /\/madness leaderboard/)
   assert.match(message, /\/madness bankroll/)
 })
