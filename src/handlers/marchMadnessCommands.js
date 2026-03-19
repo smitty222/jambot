@@ -53,6 +53,17 @@ function formatMadnessTipoffTime (commenceTime, timeZone = 'America/New_York') {
   })
 }
 
+function formatMadnessSeed (value) {
+  const seed = Number.parseInt(value, 10)
+  return Number.isFinite(seed) && seed > 0 ? `(${seed}) ` : ''
+}
+
+function formatMadnessMatchupLabel ({ awayTeam, awaySeed, homeTeam, homeSeed }) {
+  const awayCode = getGenericDisplayTeamCode(awayTeam)
+  const homeCode = getGenericDisplayTeamCode(homeTeam)
+  return `${formatMadnessSeed(awaySeed)}${awayCode} vs ${formatMadnessSeed(homeSeed)}${homeCode}`
+}
+
 export function buildMadnessPickBoard (games = [], requestedDate = '', now = new Date(), timeZone = 'America/New_York') {
   const entries = sortMadnessGames(games)
     .map((game, index) => ({ game, gameIndex: index + 1 }))
@@ -60,7 +71,7 @@ export function buildMadnessPickBoard (games = [], requestedDate = '', now = new
 
   if (!entries.length) return ''
 
-  const lines = entries.slice(0, 12).map(({ game, gameIndex }) => {
+  const lines = entries.map(({ game, gameIndex }) => {
     const awayCode = getGenericDisplayTeamCode(game?.canonicalAwayTeam || game?.awayTeam)
     const homeCode = getGenericDisplayTeamCode(game?.canonicalHomeTeam || game?.homeTeam)
     const tipTs = Date.parse(game?.commenceTime || '')
@@ -132,10 +143,59 @@ async function getDisplayNames (rows = [], getUserNicknameByUuidImpl = getUserNi
 }
 
 async function ensureMadnessOdds ({
+  requestedDate = 'today',
+  now = new Date(),
+  timeZone = 'America/New_York',
   getMarchMadnessTournamentGames: getMarchMadnessTournamentGamesImpl = getMarchMadnessTournamentGames
 } = {}) {
-  const games = await getMarchMadnessTournamentGamesImpl(['yesterday', 'today', 'tomorrow'])
+  const resolvedDate = resolveMadnessGamesDateToken(requestedDate, now, timeZone)
+  const games = await getMarchMadnessTournamentGamesImpl([resolvedDate])
   return Array.isArray(games) ? sortMadnessGames(games) : []
+}
+
+async function enrichMadnessPicks (rows = [], {
+  getMarchMadnessTournamentGames: getMarchMadnessTournamentGamesImpl = getMarchMadnessTournamentGames
+} = {}) {
+  if (!Array.isArray(rows) || !rows.length) return []
+
+  const requestedDates = [...new Set(
+    rows
+      .map(row => String(row?.commenceTime || '').slice(0, 10).trim())
+      .filter(Boolean)
+  )]
+
+  if (!requestedDates.length) return rows
+
+  const liveGames = await getMarchMadnessTournamentGamesImpl(requestedDates)
+  const gamesById = new Map()
+  const indexById = new Map()
+
+  for (const games of Object.values((liveGames || []).reduce((acc, game) => {
+    const gameDate = formatDateInTimeZone(new Date(game?.commenceTime || ''))
+    if (!acc[gameDate]) acc[gameDate] = []
+    acc[gameDate].push(game)
+    return acc
+  }, {}))) {
+    const sortedGames = sortMadnessGames(games)
+    sortedGames.forEach((game, index) => {
+      gamesById.set(String(game?.id || ''), game)
+      indexById.set(String(game?.id || ''), index)
+    })
+  }
+
+  return rows.map((row) => {
+    const game = gamesById.get(String(row?.gameId || ''))
+    const liveIndex = indexById.get(String(row?.gameId || ''))
+
+    return {
+      ...row,
+      gameIndex: Number.isFinite(liveIndex) ? liveIndex : row.gameIndex,
+      awayTeam: game?.awayTeam || row.awayTeam,
+      awaySeed: Number.isFinite(Number(game?.awaySeed)) ? Number(game.awaySeed) : row.awaySeed,
+      homeTeam: game?.homeTeam || row.homeTeam,
+      homeSeed: Number.isFinite(Number(game?.homeSeed)) ? Number(game.homeSeed) : row.homeSeed
+    }
+  })
 }
 
 export function buildMadnessHubMessage (monthKey = getCurrentMonthKey()) {
@@ -256,7 +316,9 @@ export async function handleMadnessPick ({ payload, room }, deps = {}) {
     postMessage: postMessageImpl = postMessage,
     ensureMadnessOdds: ensureMadnessOddsImpl = ensureMadnessOdds,
     upsertMarchMadnessPick: upsertMarchMadnessPickImpl = upsertMarchMadnessPick,
-    getMarchMadnessSeasonYear: getMarchMadnessSeasonYearImpl = getMarchMadnessSeasonYear
+    getMarchMadnessSeasonYear: getMarchMadnessSeasonYearImpl = getMarchMadnessSeasonYear,
+    now: nowImpl = () => new Date(),
+    timeZone = 'America/New_York'
   } = deps
 
   const parts = String(payload?.message || '').trim().split(/\s+/)
@@ -271,7 +333,13 @@ export async function handleMadnessPick ({ payload, room }, deps = {}) {
     return
   }
 
-  const games = await ensureMadnessOddsImpl(deps)
+  const now = nowImpl()
+  const games = await ensureMadnessOddsImpl({
+    requestedDate: resolveMadnessGamesDateToken('', now, timeZone),
+    now,
+    timeZone,
+    ...deps
+  })
   const game = games[rawIndex - 1]
   if (!game) {
     await postMessageImpl({
@@ -299,7 +367,9 @@ export async function handleMadnessPick ({ payload, room }, deps = {}) {
     gameIndex: rawIndex - 1,
     teamName: pickedTeamName,
     awayTeam: game.awayTeam,
+    awaySeed: game.awaySeed,
     homeTeam: game.homeTeam,
+    homeSeed: game.homeSeed,
     commenceTime: game.commenceTime || null
   })
 
@@ -340,11 +410,15 @@ export async function postMadnessPicks (room, {
   postMessage: postMessageImpl = postMessage,
   listMarchMadnessPicksForUser: listMarchMadnessPicksForUserImpl = listMarchMadnessPicksForUser,
   resolveMarchMadnessPicks: resolveMarchMadnessPicksImpl = resolveMarchMadnessPicks,
-  getMarchMadnessSeasonYear: getMarchMadnessSeasonYearImpl = getMarchMadnessSeasonYear
+  getMarchMadnessSeasonYear: getMarchMadnessSeasonYearImpl = getMarchMadnessSeasonYear,
+  getMarchMadnessTournamentGames: getMarchMadnessTournamentGamesImpl = getMarchMadnessTournamentGames
 } = {}) {
   const seasonYear = getMarchMadnessSeasonYearImpl()
   await resolveMarchMadnessPicksImpl({ seasonYear })
-  const rows = listMarchMadnessPicksForUserImpl(payload?.sender, seasonYear)
+  const savedRows = listMarchMadnessPicksForUserImpl(payload?.sender, seasonYear)
+  const rows = await enrichMadnessPicks(savedRows, {
+    getMarchMadnessTournamentGames: getMarchMadnessTournamentGamesImpl
+  })
 
   if (!rows.length) {
     await postMessageImpl({
@@ -358,7 +432,7 @@ export async function postMadnessPicks (room, {
   const wrong = rows.filter(row => row.status === 'wrong').length
   const pending = rows.filter(row => row.status === 'pending').length
   const lines = rows.slice(0, 12).map((row) => {
-    const matchup = `${getGenericDisplayTeamCode(row.awayTeam)} vs ${getGenericDisplayTeamCode(row.homeTeam)}`
+    const matchup = formatMadnessMatchupLabel(row)
     const status = row.status === 'correct'
       ? '✅ correct'
       : row.status === 'wrong'
@@ -395,8 +469,10 @@ export async function postMadnessPickBoard (room, {
   now: nowImpl = () => new Date(),
   timeZone = 'America/New_York'
 } = {}) {
-  const requestedDate = resolveMadnessGamesDateToken(args, nowImpl(), timeZone)
-  const pickBoard = buildMadnessPickBoard(await ensureMadnessOddsImpl(), requestedDate, nowImpl(), timeZone)
+  const now = nowImpl()
+  const requestedDate = resolveMadnessGamesDateToken(args, now, timeZone)
+  const games = await ensureMadnessOddsImpl({ requestedDate, now, timeZone })
+  const pickBoard = buildMadnessPickBoard(games, requestedDate, now, timeZone)
 
   await postMessageImpl({
     room,

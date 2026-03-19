@@ -25,6 +25,7 @@ import {
   buildMadnessHubMessage,
   handleMadnessPick,
   createMadnessCommandHandler,
+  postMadnessPicks,
   resolveMadnessGamesDateToken
 } from '../src/handlers/marchMadnessCommands.js'
 
@@ -544,6 +545,50 @@ test('handleMadnessPick accepts team abbreviations and confirms with the team co
     room: 'room-1',
     message: '✅ Pick locked in: SMU for Game 1.'
   }])
+})
+
+test('postMadnessPicks refreshes matchup seeds and game indexes from the live slate', async () => {
+  const posted = []
+
+  await postMadnessPicks('room-1', {
+    payload: { sender: 'user-1' },
+    postMessage: async (msg) => posted.push(msg),
+    resolveMarchMadnessPicks: async () => {},
+    getMarchMadnessSeasonYear: () => 2026,
+    listMarchMadnessPicksForUser: () => [{
+      gameId: 'game-2',
+      gameIndex: 7,
+      teamCode: 'DUKE',
+      awayTeam: 'Old Away',
+      awaySeed: null,
+      homeTeam: 'Old Home',
+      homeSeed: null,
+      commenceTime: '2026-03-20T23:10:00.000Z',
+      status: 'pending'
+    }],
+    getMarchMadnessTournamentGames: async () => [
+      {
+        id: 'game-1',
+        awayTeam: 'Miami (OH) RedHawks',
+        awaySeed: 11,
+        homeTeam: 'SMU Mustangs',
+        homeSeed: 6,
+        commenceTime: '2026-03-20T16:15:00.000Z'
+      },
+      {
+        id: 'game-2',
+        awayTeam: 'North Carolina Tar Heels',
+        awaySeed: 1,
+        homeTeam: 'Duke Blue Devils',
+        homeSeed: 8,
+        commenceTime: '2026-03-20T23:10:00.000Z'
+      }
+    ]
+  })
+
+  assert.equal(posted.length, 1)
+  assert.match(posted[0].message, /🧾 \*\*Your March Madness Picks\*\* \(2026\)/)
+  assert.match(posted[0].message, /2\. DUKE \| \(1\) NCTH vs \(8\) DBD \| ⏳ pending/)
 })
 
 test('createMadnessCommandHandler routes leaderboard requests', async () => {

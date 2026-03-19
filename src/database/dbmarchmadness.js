@@ -57,7 +57,9 @@ export function upsertMarchMadnessPick ({
   gameIndex = 0,
   teamName,
   awayTeam,
+  awaySeed = null,
   homeTeam,
+  homeSeed = null,
   commenceTime = null
 } = {}) {
   if (!userUUID || !gameId || !teamName || !awayTeam || !homeTeam) {
@@ -90,16 +92,18 @@ export function upsertMarchMadnessPick ({
   db.prepare(`
     INSERT INTO march_madness_picks (
       seasonYear, userUUID, gameId, gameIndex, teamName, teamCode,
-      awayTeam, homeTeam, commenceTime, status, winnerTeam, pointsAwarded,
+      awayTeam, awaySeed, homeTeam, homeSeed, commenceTime, status, winnerTeam, pointsAwarded,
       createdAt, updatedAt, resolvedAt
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL)
     ON CONFLICT(seasonYear, userUUID, gameId) DO UPDATE SET
       gameIndex = excluded.gameIndex,
       teamName = excluded.teamName,
       teamCode = excluded.teamCode,
       awayTeam = excluded.awayTeam,
+      awaySeed = excluded.awaySeed,
       homeTeam = excluded.homeTeam,
+      homeSeed = excluded.homeSeed,
       commenceTime = excluded.commenceTime,
       updatedAt = CURRENT_TIMESTAMP
   `).run(
@@ -110,7 +114,9 @@ export function upsertMarchMadnessPick ({
     String(teamName),
     String(teamCode),
     String(awayTeam),
+    Number.isFinite(Number(awaySeed)) ? Number.parseInt(awaySeed, 10) : null,
     String(homeTeam),
+    Number.isFinite(Number(homeSeed)) ? Number.parseInt(homeSeed, 10) : null,
     commenceTime || null
   )
 
@@ -132,7 +138,9 @@ export function listMarchMadnessPicksForUser (userUUID, seasonYear = getMarchMad
       teamName,
       teamCode,
       awayTeam,
+      awaySeed,
       homeTeam,
+      homeSeed,
       commenceTime,
       status,
       winnerTeam,
@@ -146,6 +154,8 @@ export function listMarchMadnessPicksForUser (userUUID, seasonYear = getMarchMad
   `).all(normalizeSeasonYear(seasonYear), String(userUUID)).map(row => ({
     ...row,
     gameIndex: Number(row.gameIndex || 0),
+    awaySeed: Number.isFinite(Number(row.awaySeed)) ? Number(row.awaySeed) : null,
+    homeSeed: Number.isFinite(Number(row.homeSeed)) ? Number(row.homeSeed) : null,
     pointsAwarded: Number(row.pointsAwarded || 0)
   }))
 }

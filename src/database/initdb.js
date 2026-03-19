@@ -235,7 +235,9 @@ db.exec(`
     teamName TEXT NOT NULL,
     teamCode TEXT NOT NULL,
     awayTeam TEXT NOT NULL,
+    awaySeed INTEGER,
     homeTeam TEXT NOT NULL,
+    homeSeed INTEGER,
     commenceTime TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
     winnerTeam TEXT,
@@ -377,6 +379,13 @@ function hasColumn (table, name) {
 }
 
 // room_stats.averageReview
+try {
+  if (!hasColumn('march_madness_picks', 'awaySeed')) db.exec('ALTER TABLE march_madness_picks ADD COLUMN awaySeed INTEGER')
+  if (!hasColumn('march_madness_picks', 'homeSeed')) db.exec('ALTER TABLE march_madness_picks ADD COLUMN homeSeed INTEGER')
+} catch (e) {
+  console.warn('⚠️ Could not add March Madness seed columns:', e.message)
+}
+
 try {
   if (!hasColumn('room_stats', 'averageReview')) {
     db.exec('ALTER TABLE room_stats ADD COLUMN averageReview REAL;')
