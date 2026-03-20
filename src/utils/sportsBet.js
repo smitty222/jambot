@@ -77,6 +77,7 @@ async function refundStaleBet (bet, reason) {
   if (amount > 0) {
     await addToUserWallet(normalizeUserUuid(bet?.senderUUID), amount, null, buildSportsBetMeta({
       sport: bet?.sport,
+      source: bet?.ledgerSource || null,
       category: 'refund',
       teamName: bet?.teamName || null,
       teamCode: bet?.teamCode || bet?.team || null,
@@ -119,7 +120,7 @@ export function formatOdds (price) {
 
 function getSportsBetSource (sport, ledgerSource = null) {
   if (ledgerSource) return ledgerSource
-  return sport === 'basketball_ncaab' ? MARCH_MADNESS_SOURCE : 'sports'
+  return 'sports'
 }
 
 function buildSportsBetMeta ({ sport, category, teamName, teamCode, amount, gameId, source = null }) {
@@ -346,7 +347,7 @@ export async function resolveCompletedBets (sportKey) {
     if (!bets[gameId]) continue
 
     for (const bet of bets[gameId]) {
-      if (bet.status !== 'pending') continue
+      if (bet.status !== 'pending' || bet?.sport !== sportKey) continue
 
       const outcome = evaluateBetOutcome(bet, { homeTeam, awayTeam, scores })
       const settledAt = new Date().toISOString()

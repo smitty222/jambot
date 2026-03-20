@@ -137,7 +137,7 @@ export function getMadnessBoardMatchupText (game = {}) {
     `${game?.awayShortName || game?.awayTeam} vs ${game?.homeShortName || game?.homeTeam}`
 }
 
-function formatMoney(value) {
+function formatMoney (value) {
   const numeric = Math.round(Number(value) || 0)
   return `$${numeric.toLocaleString('en-US')}`
 }
@@ -480,6 +480,13 @@ function buildMadnessOddsErrorMessage (error) {
   }
 
   return 'Sorry, something went wrong fetching March Madness odds.'
+}
+
+function buildMadnessOddsMessage (message = '') {
+  const trimmed = String(message || '').trim()
+  return trimmed
+    ? `Example: \`/madness bet 1 DUKE ml 25\`\n\n${trimmed}`
+    : 'Example: `/madness bet 1 DUKE ml 25`'
 }
 
 function parseUidFromMentionOrRaw (value = '') {
@@ -836,12 +843,12 @@ export async function postMadnessOdds (room, {
     const boardOddsEntries = buildMadnessOddsBoardEntries(boardGames, games, requestedDate, timeZone)
     await postMessageImpl({
       room,
-      message: formatOddsMessageImpl(
+      message: buildMadnessOddsMessage(formatOddsMessageImpl(
         boardOddsEntries.map(({ oddsGame }) => oddsGame),
         MARCH_MADNESS_ODDS_SPORT_KEY,
         Date.now(),
         { preserveOrder: true }
-      )
+      ))
     })
   } catch (error) {
     const cachedOdds = await getOddsForSportImpl(MARCH_MADNESS_ODDS_SPORT_KEY).catch(() => [])
@@ -850,12 +857,12 @@ export async function postMadnessOdds (room, {
     if (boardOddsEntries.length) {
       await postMessageImpl({
         room,
-        message: `${formatOddsMessageImpl(
+        message: `${buildMadnessOddsMessage(formatOddsMessageImpl(
           boardOddsEntries.map(({ oddsGame }) => oddsGame),
           MARCH_MADNESS_ODDS_SPORT_KEY,
           Date.now(),
           { preserveOrder: true }
-        )}\n\n⚠️ Live odds refresh failed, so this is the last saved board.`
+        ))}\n\n⚠️ Live odds refresh failed, so this is the last saved board.`
       })
       return
     }
@@ -944,6 +951,7 @@ export async function handleMadnessBet ({ payload, room }, deps = {}) {
     parsed.amount,
     'basketball_ncaab',
     {
+      ledgerSource: MARCH_MADNESS_SOURCE,
       oddsSportKey: MARCH_MADNESS_ODDS_SPORT_KEY,
       resolvedTeamName: selectedTeamName,
       preferredTeamCode: getPreferredGameTeamCode(selectedTeamName, selectedEntry?.boardGame || selectedEntry?.oddsGame || {})

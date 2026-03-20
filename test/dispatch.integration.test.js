@@ -26,6 +26,7 @@ import {
   handleMadnessPick,
   createMadnessCommandHandler,
   postMadnessOpenBets,
+  postMadnessOdds,
   postMadnessPicks,
   resolveMadnessGamesDateToken
 } from '../src/handlers/marchMadnessCommands.js'
@@ -567,6 +568,33 @@ test('postMadnessOpenBets shows open and recent resolved March Madness bets', as
   assert.deepEqual(posted, [{
     room: 'room-1',
     message: '🎟️ Your March Madness Bets\n\nOpen:\n- BB vs DBD | Pick: DUKE ML at +125 | Risk: $25 | Start: Mar 20, 7:15 PM ET\n\nRecent resolved:\n- FG vs UH | ✅ Won | FLA SPREAD -4.5 at -110 | Risk: $10 | Settled: Mar 19, 11:00 PM ET'
+  }])
+})
+
+test('postMadnessOdds adds a bet command example above the odds board', async () => {
+  const posted = []
+
+  await postMadnessOdds('room-1', {
+    postMessage: async (msg) => posted.push(msg),
+    ensureMadnessOdds: async () => [{
+      id: 'board-game-1',
+      commenceTime: '2026-03-20T23:15:00.000Z',
+      awayTeam: 'Baylor Bears',
+      homeTeam: 'Duke Blue Devils'
+    }],
+    fetchOddsForSport: async () => [{
+      id: 'odds-game-1',
+      commenceTime: '2026-03-20T23:15:00.000Z',
+      awayTeam: 'Baylor Bears',
+      homeTeam: 'Duke Blue Devils'
+    }],
+    saveOddsForSport: async () => {},
+    formatOddsMessage: () => 'MADNESS ODDS BOARD'
+  })
+
+  assert.deepEqual(posted, [{
+    room: 'room-1',
+    message: 'Example: `/madness bet 1 DUKE ml 25`\n\nMADNESS ODDS BOARD'
   }])
 })
 
