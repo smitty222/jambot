@@ -8,7 +8,7 @@ import {
   getMarchMadnessTournamentGames,
   getUserNicknameByUuid
 } from '../utils/API.js'
-import { getOpenBetsForUser, placeSportsBet, resolveCompletedBets } from '../utils/sportsBet.js'
+import { getBetsForUser, getOpenBetsForUser, placeSportsBet, resolveCompletedBets } from '../utils/sportsBet.js'
 import { getGenericDisplayTeamCode, getPreferredGameTeamCode, normalizeSportsTeamInput, resolveTeamNameFromInput } from '../utils/sportsTeams.js'
 import { getOddsForSport, saveOddsForSport } from '../utils/bettingOdds.js'
 import {
@@ -508,6 +508,36 @@ function formatMadnessOpenBetLine (bet, game) {
   ].filter(Boolean).join(' | ')
 }
 
+function formatMadnessResolvedStatus (bet) {
+  const outcome = String(bet?.settlementOutcome || '').trim().toLowerCase()
+  if (outcome === 'win') return '✅ Won'
+  if (outcome === 'loss') return '❌ Lost'
+  if (outcome === 'push') return '➖ Push'
+  if (outcome === 'refund') return '↩️ Refunded'
+  if (bet?.status === 'refunded') return '↩️ Refunded'
+  return '📌 Resolved'
+}
+
+function formatMadnessResolvedBetLine (bet, game) {
+  const matchup = game?.awayTeam && game?.homeTeam
+    ? `${getGenericDisplayTeamCode(game.awayTeam)} vs ${getGenericDisplayTeamCode(game.homeTeam)}`
+    : `Game ${Number(bet.gameIndex || 0) + 1}`
+  const spreadLine = String(bet.type || '').toLowerCase() === 'spread' && Number.isFinite(Number(bet.spreadPoint))
+    ? ` ${Number(bet.spreadPoint) > 0 ? '+' : ''}${Number(bet.spreadPoint)}`
+    : ''
+  const settledAt = bet?.settledAt || bet?.resolvedAt || bet?.refundedAt || null
+  const settledLabel = settledAt
+    ? `Settled: ${formatSportsEventTime(settledAt, { includeDate: true })}`
+    : null
+
+  return [
+    matchup,
+    `${formatMadnessResolvedStatus(bet)} | ${String(bet.teamCode || bet.team || '').toUpperCase()} ${String(bet.type || '').toUpperCase()}${spreadLine} at ${bet.odds > 0 ? `+${bet.odds}` : bet.odds}`,
+    `Risk: $${Number(bet.amount || 0)}`,
+    settledLabel
+  ].filter(Boolean).join(' | ')
+}
+
 export async function postMadnessLeaderboard (room, {
   args = '',
   postMessage: postMessageImpl = postMessage,
@@ -949,16 +979,23 @@ export async function postMadnessOpenBets (room, {
   payload,
   postMessage: postMessageImpl = postMessage,
   getSenderNickname: getSenderNicknameImpl = getSenderNickname,
+  getBetsForUser: getBetsForUserImpl = getBetsForUser,
   getOpenBetsForUser: getOpenBetsForUserImpl = getOpenBetsForUser,
-  getOddsForSport: getOddsForSportImpl = getOddsForSport
+  getOddsForSport: getOddsForSportImpl = getOddsForSport,
+  resolveCompletedBets: resolveCompletedBetsImpl = resolveCompletedBets
 } = {}) {
   const senderUUID = payload?.sender
   const parts = String(payload?.message || '').trim().split(/\s+/)
   const targetUUID = parseUidFromMentionOrRaw(parts[2]) || senderUUID
+  await resolveCompletedBetsImpl('basketball_ncaab')
   const openBets = (await getOpenBetsForUserImpl(targetUUID))
     .filter(bet => String(bet?.ledgerSource || '') === MARCH_MADNESS_SOURCE)
+  const resolvedBets = (await getBetsForUserImpl(targetUUID))
+    .filter((bet) => String(bet?.ledgerSource || '') === MARCH_MADNESS_SOURCE)
+    .filter((bet) => bet?.status === 'completed' || bet?.status === 'refunded')
+    .slice(0, 10)
 
-  if (!openBets.length) {
+  if (!openBets.length && !resolvedBets.length) {
     const nick = targetUUID === senderUUID
       ? 'You'
       : await getSenderNicknameImpl(targetUUID).catch(() => `<@uid:${targetUUID}>`)
@@ -972,18 +1009,39 @@ export async function postMadnessOpenBets (room, {
   }
 
   const games = await getOddsForSportImpl(MARCH_MADNESS_ODDS_SPORT_KEY).catch(() => [])
-  const lines = openBets.map((bet) => {
+  const openLines = openBets.map((bet) => {
     const game = (games || []).find(entry => entry.id === bet.gameId) || null
     return `- ${formatMadnessOpenBetLine(bet, game)}`
+  })
+  const resolvedLines = resolvedBets.map((bet) => {
+    const game = (games || []).find(entry => entry.id === bet.gameId) || null
+    return `- ${formatMadnessResolvedBetLine(bet, game)}`
   })
 
   const headerName = targetUUID === senderUUID
     ? 'Your'
     : `${await getSenderNicknameImpl(targetUUID).catch(() => `<@uid:${targetUUID}>`)}'s`
 
+  const sections = [`🎟️ ${headerName} March Madness Bets`, '']
+  if (openLines.length) {
+    sections.push('Open:')
+    sections.push(...openLines)
+  } else {
+    sections.push('Open:')
+    sections.push('- None')
+  }
+
+  sections.push('')
+  sections.push('Recent resolved:')
+  if (resolvedLines.length) {
+    sections.push(...resolvedLines)
+  } else {
+    sections.push('- None')
+  }
+
   await postMessageImpl({
     room,
-    message: [`🎟️ ${headerName} March Madness Bets`, '', ...lines].join('\n')
+    message: sections.join('\n')
   })
 }
 

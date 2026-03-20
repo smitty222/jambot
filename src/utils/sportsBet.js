@@ -54,6 +54,24 @@ function isLegacyPendingBet (bet) {
   return bet?.status === 'pending' && !Number.isFinite(toTimestamp(bet?.commenceTime)) && !Number.isFinite(toTimestamp(bet?.createdAt))
 }
 
+function getBetSettledTimestamp (bet) {
+  return (
+    toTimestamp(bet?.settledAt) ||
+    toTimestamp(bet?.resolvedAt) ||
+    toTimestamp(bet?.refundedAt) ||
+    NaN
+  )
+}
+
+function getStoredSettlementOutcome (bet) {
+  const stored = String(bet?.settlementOutcome || '').trim().toLowerCase()
+  if (['win', 'loss', 'push', 'refund'].includes(stored)) return stored
+
+  if (String(bet?.refundReason || '').trim().toLowerCase().startsWith('push_')) return 'push'
+  if (bet?.status === 'refunded') return 'refund'
+  return ''
+}
+
 async function refundStaleBet (bet, reason) {
   const amount = Math.max(0, Math.floor(Number(bet?.amount || 0)))
   if (amount > 0) {
@@ -70,6 +88,8 @@ async function refundStaleBet (bet, reason) {
   bet.status = 'refunded'
   bet.refundedAt = new Date().toISOString()
   bet.refundReason = reason
+  bet.settlementOutcome = 'refund'
+  bet.settledAt = bet.refundedAt
 }
 
 export async function loadBets () {
@@ -329,6 +349,7 @@ export async function resolveCompletedBets (sportKey) {
       if (bet.status !== 'pending') continue
 
       const outcome = evaluateBetOutcome(bet, { homeTeam, awayTeam, scores })
+      const settledAt = new Date().toISOString()
 
       if (outcome === 'win') {
         const payout = bet.amount + calculateWinnings(bet.amount, bet.odds)
@@ -352,11 +373,13 @@ export async function resolveCompletedBets (sportKey) {
           amount: bet.amount,
           gameId
         }))
-        bet.refundedAt = new Date().toISOString()
+        bet.refundedAt = settledAt
         bet.refundReason = bet.type === 'spread' ? 'push_spread' : 'push_ml'
       }
 
       bet.status = 'completed'
+      bet.settlementOutcome = outcome
+      bet.settledAt = settledAt
       updated = true
     }
   }
@@ -402,6 +425,82 @@ export async function getOpenBetsForUser (userUUID) {
     const sportCompare = String(a.sport || '').localeCompare(String(b.sport || ''))
     if (sportCompare !== 0) return sportCompare
     return Number(a.gameIndex || 0) - Number(b.gameIndex || 0)
+  })
+}
+
+export async function getBetsForUser (userUUID) {
+  const normalizedUserUUID = normalizeUserUuid(userUUID)
+  const bets = await loadBets()
+  const rows = []
+  const unresolvedBySport = new Map()
+
+  for (const [gameId, gameBets] of Object.entries(bets)) {
+    for (const bet of gameBets || []) {
+      if (normalizeUserUuid(bet?.senderUUID) !== normalizedUserUUID) continue
+
+      const row = {
+        ...bet,
+        gameId,
+        settlementOutcome: getStoredSettlementOutcome(bet) || null,
+        settledAt: Number.isFinite(getBetSettledTimestamp(bet))
+          ? new Date(getBetSettledTimestamp(bet)).toISOString()
+          : null
+      }
+
+      rows.push(row)
+
+      if (
+        row.status === 'completed' &&
+        !row.settlementOutcome &&
+        row.sport &&
+        !unresolvedBySport.has(row.sport)
+      ) {
+        unresolvedBySport.set(row.sport, null)
+      }
+    }
+  }
+
+  for (const sport of unresolvedBySport.keys()) {
+    try {
+      const scores = await getLatestScoresForSport(sport, MAX_SCORE_LOOKBACK_DAYS)
+      unresolvedBySport.set(
+        sport,
+        new Map((scores || []).map(game => [String(game?.id || ''), game]))
+      )
+    } catch {
+      unresolvedBySport.set(sport, new Map())
+    }
+  }
+
+  return rows.map((bet) => {
+    if (bet.settlementOutcome || bet.status !== 'completed') return bet
+
+    const scoreMap = unresolvedBySport.get(bet.sport)
+    const game = scoreMap?.get(String(bet.gameId || ''))
+    if (!game) return bet
+
+    return {
+      ...bet,
+      settlementOutcome: evaluateBetOutcome(bet, game)
+    }
+  }).sort((a, b) => {
+    const aSettled = getBetSettledTimestamp(a)
+    const bSettled = getBetSettledTimestamp(b)
+    if (Number.isFinite(aSettled) || Number.isFinite(bSettled)) {
+      if (!Number.isFinite(aSettled)) return 1
+      if (!Number.isFinite(bSettled)) return -1
+      return bSettled - aSettled
+    }
+
+    const aCreated = toTimestamp(a?.createdAt)
+    const bCreated = toTimestamp(b?.createdAt)
+    if (Number.isFinite(aCreated) || Number.isFinite(bCreated)) {
+      if (!Number.isFinite(aCreated)) return 1
+      if (!Number.isFinite(bCreated)) return -1
+      return bCreated - aCreated
+    }
+
+    return String(a.gameId || '').localeCompare(String(b.gameId || ''))
   })
 }
 

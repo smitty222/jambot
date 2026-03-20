@@ -25,6 +25,7 @@ import {
   buildMadnessHubMessage,
   handleMadnessPick,
   createMadnessCommandHandler,
+  postMadnessOpenBets,
   postMadnessPicks,
   resolveMadnessGamesDateToken
 } from '../src/handlers/marchMadnessCommands.js'
@@ -518,6 +519,55 @@ test('createMadnessCommandHandler maps yesterday to an explicit date', async () 
   })
 
   assert.deepEqual(seen, ['yesterday'])
+})
+
+test('postMadnessOpenBets shows open and recent resolved March Madness bets', async () => {
+  const posted = []
+  const resolvedSports = []
+
+  await postMadnessOpenBets('room-1', {
+    payload: { sender: 'user-1', message: '/madness bets' },
+    postMessage: async (msg) => posted.push(msg),
+    resolveCompletedBets: async (sportKey) => resolvedSports.push(sportKey),
+    getOpenBetsForUser: async () => [{
+      ledgerSource: 'sports_ncaab_madness',
+      gameId: 'game-open',
+      gameIndex: 0,
+      teamCode: 'DUKE',
+      type: 'ml',
+      odds: 125,
+      amount: 25,
+      commenceTime: '2026-03-20T23:15:00.000Z'
+    }],
+    getBetsForUser: async () => [{
+      ledgerSource: 'sports_ncaab_madness',
+      status: 'completed',
+      settlementOutcome: 'win',
+      settledAt: '2026-03-20T03:00:00.000Z',
+      gameId: 'game-resolved',
+      gameIndex: 1,
+      teamCode: 'FLA',
+      type: 'spread',
+      spreadPoint: -4.5,
+      odds: -110,
+      amount: 10
+    }],
+    getOddsForSport: async () => [{
+      id: 'game-open',
+      awayTeam: 'Baylor Bears',
+      homeTeam: 'Duke Blue Devils'
+    }, {
+      id: 'game-resolved',
+      awayTeam: 'Florida Gators',
+      homeTeam: 'UConn Huskies'
+    }]
+  })
+
+  assert.deepEqual(resolvedSports, ['basketball_ncaab'])
+  assert.deepEqual(posted, [{
+    room: 'room-1',
+    message: '🎟️ Your March Madness Bets\n\nOpen:\n- BB vs DBD | Pick: DUKE ML at +125 | Risk: $25 | Start: Mar 20, 7:15 PM ET\n\nRecent resolved:\n- FG vs UH | ✅ Won | FLA SPREAD -4.5 at -110 | Risk: $10 | Settled: Mar 19, 11:00 PM ET'
+  }])
 })
 
 test('handleMadnessPick accepts team abbreviations and confirms with the team code', async () => {
