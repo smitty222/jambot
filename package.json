@@ -48,6 +48,7 @@
     "@cometchat-pro/chat": "^3.0.13",
     "@cometchat/chat-sdk-javascript": "^4.0.10",
     "@google/generative-ai": "^0.22.0",
+    "@sentry/node": "^10.45.0",
     "bard-ai": "^2.0.3",
     "bard-api-node": "^2.1.0",
     "better-sqlite3": "^12.2.0",

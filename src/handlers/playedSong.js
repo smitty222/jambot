@@ -1,7 +1,7 @@
 import { postMessage } from '../libs/cometchat.js'
 import { roomBot } from '../runtime/roomBot.js'
 import { getAlbumTracks, spotifyTrackInfo } from '../utils/API.js'
-import { roomThemes } from '../utils/roomThemes.js'
+import * as themeManager from '../utils/themeManager.js'
 import { getCurrentDJUUIDs } from '../libs/bot.js'
 import { getUserNickname } from '../utils/nickname.js'
 import { QueueManager } from '../utils/queueManager.js'
@@ -12,13 +12,10 @@ import { logger } from '../utils/logging.js'
 // theme, we'll remove it from the saved list if present.
 import { removeAlbum } from '../utils/albumlistManager.js'
 
-// DB handles
-import db from '../database/db.js'
 
 const queueManager = new QueueManager(getUserNickname)
 const logInfo = (message, meta = {}) => logger.info(message, meta)
 const logDebug = (message, meta = {}) => logger.debug(message, meta)
-const logWarn = (message, meta = {}) => logger.warn(message, meta)
 const logError = (message, meta = {}) => logger.error(message, meta)
 
 const stageLock = { locked: false, userUuid: null, timeout: null }
@@ -33,25 +30,10 @@ const parseDuration = (durationStr) => {
   return (minutes * 60 + seconds) * 1000
 }
 
-// ---- DB-first theme lookup (mirror bot.js) ----
-function getThemeViaBetterSqlite (room) {
-  try {
-    const row = db.prepare('SELECT theme FROM themes WHERE roomId = ?').get(room)
-    if (row?.theme) return { theme: String(row.theme), source: 'better-sqlite3' }
-  } catch (e) {
-    logWarn('[AlbumTheme] better-sqlite3 lookup error', { err: e?.message || e })
-  }
-  return null
-}
-async function getRoomTheme (room) {
-  const b = getThemeViaBetterSqlite(room)
-  if (b) {
-    logDebug('[AlbumTheme] theme loaded from db', { source: b.source, theme: b.theme })
-    return b.theme
-  }
-  const t = roomThemes[room] || ''
-  logDebug('[AlbumTheme] theme fallback used', { theme: t })
-  return t
+function getRoomTheme (room) {
+  const theme = themeManager.getTheme(room)
+  logDebug('[AlbumTheme] theme loaded', { theme })
+  return theme
 }
 function isAlbumWord (t) {
   return /\balbums?\b|^album day$|^album monday$/i.test(t || '')
@@ -60,7 +42,7 @@ function isAlbumWord (t) {
 const handleAlbumTheme = async (_payload) => {
   const room = env.roomUuid
 
-  const rawTheme = await getRoomTheme(room)
+  const rawTheme = getRoomTheme(room)
   const albumActive = isAlbumWord(rawTheme)
   logInfo('[AlbumTheme] theme evaluated', { resolvedTheme: (rawTheme || '').toLowerCase(), albumActive })
   if (!albumActive) return

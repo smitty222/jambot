@@ -469,7 +469,7 @@ test('postMadnessOdds formats only games from today board', async () => {
     formatOddsMessage: (games) => games.map(game => `${game.awayTeam} vs ${game.homeTeam}`).join('\n')
   })
 
-  assert.equal(messages[0].message, 'Duke vs VCU')
+  assert.equal(messages[0].message, 'Example: `/madness bet 1 DUKE ml 25`\n\nDuke vs VCU')
 })
 
 test('postMadnessOdds preserves the /madness games slate order and times', async () => {
@@ -516,7 +516,7 @@ test('postMadnessOdds preserves the /madness games slate order and times', async
 
   assert.equal(
     messages[0].message,
-    'Miami (OH) vs SMU @ 2026-03-20T16:15:00.000Z\nDuke vs VCU @ 2026-03-20T19:00:00.000Z'
+    'Example: `/madness bet 1 DUKE ml 25`\n\nMiami (OH) vs SMU @ 2026-03-20T16:15:00.000Z\nDuke vs VCU @ 2026-03-20T19:00:00.000Z'
   )
 })
 
@@ -550,7 +550,7 @@ test('postMadnessOdds uses the same board display labels as /madness games', asy
     formatOddsMessage: (games) => `${games[0].awayDisplayName} vs ${games[0].homeDisplayName}`
   })
 
-  assert.equal(messages[0].message, '(1) North Carolina vs (8) Duke')
+  assert.equal(messages[0].message, 'Example: `/madness bet 1 DUKE ml 25`\n\n(1) North Carolina vs (8) Duke')
 })
 
 test('postMadnessPicks shows the live board index for saved picks', async () => {

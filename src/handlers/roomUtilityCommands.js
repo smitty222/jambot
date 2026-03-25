@@ -7,53 +7,47 @@ export function buildModSheet () {
   return [
     '🛠️ Moderator Commands',
 
-    '--- Room Look ---',
-    '- /room classic',
-    '- /room ferry',
-    '- /room barn',
-    '- /room yacht',
-    '- /room festival',
-    '- /room stadium',
-    '- /room theater',
+    '--- Room Design ---',
+    '- /room <classic|ferry|barn|yacht|festival|stadium|theater>',
 
     '--- Room Theme ---',
     '- /settheme <Albums|Covers|Rock|Country|Rap|...>',
     '- /removetheme',
 
     '--- Bot DJ Lineup ---',
-    '- /addDJ   (Bot DJs from the default playlist)',
-    '- /addDJ auto (Bot DJs from AI recommendations)',
-    '- /addDJ discover (Bot DJs from discover playlists)',
+    '- /addDJ   (default playlist)',
+    '- /addDJ auto  (AI recommendations)',
+    '- /addDJ discover  (curated playlists)',
     '- /removeDJ',
 
     '--- Bot Toggles ---',
     '- /status',
     '- /bopon | /bopoff',
-    '- /autodjon | /autodjoff',
     '- /songstatson | /songstatsoff',
     '- /greeton | /greetoff',
     '- /infoon | /infooff | /infotoggle',
     '- /infotone <neutral|playful|cratedigger|hype|classy|chartbot|djtech|vibe>',
+    '- /madnessupdates <on|off|status>',
 
-    '--- Avatars ---',
-    'Bot:',
-    '- /bot1',
-    '- /botduck',
-    '- /botdino',
-    '- /botpenguin',
-    '- /botwalrus',
-    '- /botalien1',
-    '- /botalien2',
-    '- /botrandom',
-    'User:',
-    '- /randomavatar',
-    '- /walrus',
-    '- /dino',
-    '- /spacebear',
-    '- /duck',
-    '- /cyber',
-    '- /vibesguy',
-    '- /faces'
+    '--- Room Actions ---',
+    '- /dislike  (mod-only: bot votes against current song)',
+    '- /spotlight  (remove DJ after current song)',
+    '- /blacklist+  (remove song from playlists)',
+    '- /addmoney <@user> <amount>  (admin only)',
+
+    '--- Bot Avatars ---',
+    '- /botrandom | /bot1 | /bot2 | /bot3',
+    '- /botdino | /botduck | /botpenguin',
+    '- /botwalrus | /botalien | /botalien2',
+    '- /botspooky | /botstaff | /botwinter',
+
+    '--- Custom Avatars ---',
+    '- /addavatar ...',
+    '- /removeavatar ...',
+
+    '--- Links ---',
+    '- /site  (bot hub)',
+    '- /store  (novelty shop)'
   ].join('\n')
 }
 
@@ -91,8 +85,9 @@ export const COMMAND_GUIDES = {
     '- `/albumlist`',
     '- `/albumadd <spotifyAlbumId>`',
     '- `/albumremove <spotifyAlbumId>`',
-    '- `/addsong [beach]`',
-    '- `/removesong [beach]`'
+    '- `/addsong` — Add current song to the default playlist',
+    '- `/addsong beach` — Add to the beach playlist instead',
+    '- `/removesong` — Remove current song from the default playlist'
   ].join('\n'),
   trivia: [
     '🧠 Trivia Commands',
@@ -113,7 +108,7 @@ export const COMMAND_GUIDES = {
     '',
     'Room actions',
     '- `/jump`',
-    '- `/like`',
+    '- `/like` `/dislike` (mod-only)',
     '- `/dive`',
     '- `/escortme`',
     '- `/djbeer` `/djbeers` `/getdjdrunk`',
@@ -223,8 +218,10 @@ export const COMMAND_GUIDES = {
   avatars: [
     '🧑‍🎤 Avatar Commands',
     '',
+    'These commands change your avatar in the room. Type any of them to switch instantly.',
+    '',
     'User avatars',
-    '- `/randomavatar`',
+    '- `/randomavatar` — Pick a random avatar',
     '- `/dino` `/duck` `/spacebear` `/walrus`',
     '- `/vibesguy` `/faces` `/dodo` `/dumdum` `/flowerpower`',
     '- `/teacup` `/alien` `/alien2` `/roy` `/spooky` `/bouncer`',
@@ -233,7 +230,7 @@ export const COMMAND_GUIDES = {
     '- `/bearparty` `/winter` `/tvguy` `/pinkblanket`',
     '- `/gaycam` `/gayian` `/gayalex` `/pajama`',
     '',
-    'Bot avatars (mod-only)',
+    'Bot avatars (mod-only) — changes the bot\'s appearance',
     '- `/botrandom`',
     '- `/bot1` `/bot2` `/bot3`',
     '- `/botdino` `/botduck` `/botalien` `/botalien2`',
@@ -243,25 +240,31 @@ export const COMMAND_GUIDES = {
   mod: [
     '🛠️ Moderator Commands',
     '',
-    '- `/status`',
-    '- `/bopon` `/bopoff`',
-    '- `/autodjon` `/autodjoff`',
-    '- `/songstatson` `/songstatsoff`',
-    '- `/greeton` `/greetoff`',
-    '- `/infoon` `/infooff` `/infotoggle`',
-    '- `/infotone <tone>`',
+    'Room',
     '- `/room <classic|ferry|barn|yacht|festival|stadium|theater>`',
-    '- `/settheme <name>`',
-    '- `/removetheme`',
-    '- `/addDJ [auto|discover]`',
-    '- `/removeDJ`',
-    '- `/spotlight`',
-    '- `/addavatar ...`',
-    '- `/removeavatar ...`',
-    '- `/blacklist+ ...`',
-    '- `/site`',
-    '- `/store`',
-    '- `/mod` (DM full moderator sheet)'
+    '- `/settheme <name>` | `/removetheme`',
+    '',
+    'Bot DJ',
+    '- `/addDJ [auto|discover]` | `/removeDJ`',
+    '',
+    'Toggles',
+    '- `/status`',
+    '- `/bopon` | `/bopoff`',
+    '- `/songstatson` | `/songstatsoff`',
+    '- `/greeton` | `/greetoff`',
+    '- `/infoon` | `/infooff` | `/infotoggle`',
+    '- `/infotone <neutral|playful|cratedigger|hype|classy|chartbot|djtech|vibe>`',
+    '- `/madnessupdates <on|off|status>`',
+    '',
+    'Actions',
+    '- `/dislike` — bot votes against current song',
+    '- `/spotlight` — remove DJ after current song',
+    '- `/blacklist+` — remove song from playlists',
+    '',
+    'Admin',
+    '- `/addavatar ...` | `/removeavatar ...`',
+    '- `/addmoney <@user> <amount>`',
+    '- `/mod` — full sheet via DM'
   ].join('\n')
 }
 
@@ -319,65 +322,45 @@ export function createRoomUtilityHandlers (deps = {}) {
       }
 
       const sections = []
-      sections.push([
-        '— Essentials —',
-        '- `/theme` — Show current room theme',
-        '- `/games` — List game commands',
-        '- `/music` — Music, queue, and review commands',
-        '- `/wallet` — Wallet and betting commands',
-        '- `/commands sports` — Sports scores, odds, and betting',
-        '- `/commands crypto` — Crypto portfolio game commands',
-        '- `/gifs` — GIF and fun commands',
-        '- `/avatars` — Avatar commands'
-      ].join('\n'))
 
       sections.push([
-        '— Popular —',
+        '— Quick Picks —',
         '- `/album` — Album info for current song',
         '- `/score` — Spotify popularity score',
-        '- `/reviewhelp` — How to review songs',
+        '- `/review <1-10>` — Rate the current song',
+        '- `/balance` — Your wallet balance',
         '- `/bankroll` — Wallet leaderboard',
-        '- `/badges` — See your unlocked badges',
         '- `/monthly` — Monthly leaderboard',
+        '- `/badges` — Your unlocked badges',
         '- `/suggestsongs` — Song suggestions',
-        '- `/store` — Buyable novelty commands'
+        '- `/store` — Novelty shop',
+        '- `/8ball <question>` — Magic 8 ball'
       ].join('\n'))
 
       sections.push([
-        '— Prestige & Leaderboards —',
-        '- `/commands wallet` or `/wallet` — Wallet, leaderboards, badges, and titles',
-        '- `/monthly` `/monthlydj` `/monthlyf1` `/monthlygamblers` — Monthly boards',
-        '- `/bankroll` `/topnetworth` — Top money boards',
-        '- `/djstreak` `/badges` `/titles` `/profile` — Prestige progress',
-        '- `/title equip <key>` — Equip a title you own'
+        '— Explore by Category —',
+        '- `/games` — Lottery, slots, roulette, blackjack & more',
+        '- `/music` — Reviews, stats, now playing info',
+        '- `/wallet` — Wallet, leaderboards, prestige & titles',
+        '- `/commands sports` — Scores, odds & betting',
+        '- `/commands crypto` — Crypto portfolio game',
+        '- `/gifs` — GIF reactions & fun commands',
+        '- `/avatars` — Change your avatar',
+        '- `/commands trivia` — Trivia game',
+        '- `/commands queue` — Queue & playlist tools'
       ].join('\n'))
 
       sections.push([
-        '— Command Hubs —',
-        '- `/commands games` or `/games`',
-        '- `/commands music` or `/music`',
-        '- `/commands queue`',
-        '- `/commands wallet` or `/wallet`',
-        '- `/commands sports`',
-        '- `/commands crypto`',
-        '- `/commands fun` or `/gifs`',
-        '- `/commands trivia`',
-        '- `/commands avatars` or `/avatars`'
-      ].join('\n'))
-
-      sections.push([
-        '— Standalone Helpers —',
-        '- `/theme` — Current room theme',
-        '- `/reviewhelp` — Review instructions',
+        '— Reference —',
+        '- `/reviewhelp` — Rating scale',
         '- `/sportsinfo` — Sports commands',
-        '- `/store` — Shop items and priced novelty commands',
         '- `/site` — Bot hub link'
       ].join('\n'))
 
       if (isMod) {
-        sections.push('- `/commands mod` — Moderator command list')
+        sections.push('Mods: `/commands mod` or `/mod` for moderator commands')
       } else {
-        sections.push('- Mods can use `/commands mod` or `/mod`')
+        sections.push('Mods: `/commands mod` or `/mod`')
       }
 
       await post({ room, message: ['📖 Commands', ...sections].join('\n\n') })

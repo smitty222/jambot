@@ -1,3 +1,5 @@
+import { captureException } from '../utils/errorReporter.js'
+
 export async function dispatchWithRegistry ({
   txt,
   payload,
@@ -34,6 +36,7 @@ export async function dispatchWithRegistry ({
     await handler({ payload, room, args: resolved.args, ...context })
   } catch (err) {
     logger?.error?.(`[Dispatcher] Error executing /${resolved.cmd}:`, err?.message || err)
+    captureException(err, { command: resolved.cmd, room })
     try {
       await postMessage({ room, message: `⚠️ Error processing /${resolved.cmd}.` })
     } catch {

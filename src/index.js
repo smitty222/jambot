@@ -24,6 +24,9 @@ async function main () {
   validateNodeVersion()
   validateConfig()
 
+  const { initErrorReporter, captureException } = await import('./utils/errorReporter.js')
+  await initErrorReporter()
+
   const [
     { logger },
     expressModule,
@@ -33,8 +36,6 @@ async function main () {
     { Bot, getCurrentDJUUIDs },
     { updateCurrentUsers },
     { fetchCurrentUsers },
-    themeStorage,
-    { setThemes },
     { setRoomBot },
     { getHealthStatus },
     { startSportsSettlementCron },
@@ -48,8 +49,6 @@ async function main () {
     import('./libs/bot.js'),
     import('./utils/currentUsers.js'),
     import('./utils/API.js'),
-    import('./utils/themeManager.js'),
-    import('./utils/roomThemes.js'),
     import('./runtime/roomBot.js'),
     import('./runtime/health.js'),
     import('./scheduler/sportsSettlement.js'),
@@ -162,9 +161,6 @@ async function main () {
     }
   })()
 
-  const savedThemes = themeStorage.loadThemes()
-  setThemes(savedThemes)
-
   const BASE_MS = env.pollBaseMs
   const STEP_MS = env.pollBackoffStepMs
   const MAX_BACKOFF_STEPS = env.pollMaxBackoffSteps
@@ -187,6 +183,7 @@ async function main () {
       await roomBot.processNewMessages()
     } catch (e) {
       logger.error('[bot] pollLoop error:', e)
+      captureException(e, { context: 'pollLoop' })
       botConnected = false
     } finally {
       const empty = roomBot._emptyPolls || 0

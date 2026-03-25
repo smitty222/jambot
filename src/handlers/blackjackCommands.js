@@ -88,7 +88,10 @@ export function createBlackjackHandlers(deps = {}) {
 
   const handleJoinShortcut = async ({ payload, room }) => {
     const ctx = buildCtx(room)
-    if (phaseOf(ctx) !== 'join') return
+    if (phaseOf(ctx) !== 'join') {
+      await post({ room, message: 'No blackjack table is open for joining right now. Type `/blackjack` to start a new game.' })
+      return
+    }
 
     const userUUID = payload.sender
     const nickname = await getNicknameForUser(getNickname, userUUID)
@@ -97,7 +100,10 @@ export function createBlackjackHandlers(deps = {}) {
 
   const handleBetShortcut = async ({ payload, room, args }) => {
     const ctx = buildCtx(room)
-    if (phaseOf(ctx) !== 'betting') return
+    if (phaseOf(ctx) !== 'betting') {
+      await post({ room, message: 'Betting is not open right now. Bets are placed at the start of each round.' })
+      return
+    }
 
     const userUUID = payload.sender
     const nickname = await getNicknameForUser(getNickname, userUUID)
@@ -107,7 +113,10 @@ export function createBlackjackHandlers(deps = {}) {
 
   const handleActionShortcut = async ({ payload, room, action }) => {
     const ctx = buildCtx(room)
-    if (phaseOf(ctx) !== 'acting') return
+    if (phaseOf(ctx) !== 'acting') {
+      await post({ room, message: 'No active hand right now. Join a game with `/blackjack` or wait for the next round.' })
+      return
+    }
 
     const userUUID = payload.sender
     const nickname = await getNicknameForUser(getNickname, userUUID)

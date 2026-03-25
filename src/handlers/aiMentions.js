@@ -171,8 +171,17 @@ export async function handleAIMention ({
       maxChars
     })
 
-    const result = await askQuestion(prompt, { maxTokens, temperature })
-    const text = clampRoast(result?.text, maxChars)
+    let text = null
+    try {
+      const roastTimeoutMs = Number(process.env.AI_TIMEOUT_MS ?? 45_000)
+      const result = await Promise.race([
+        askQuestion(prompt, { maxTokens, temperature }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('AI_TIMEOUT')), roastTimeoutMs))
+      ])
+      text = clampRoast(result?.text, maxChars)
+    } catch (err) {
+      logger.warn('[AI][roast] timeout or error', { err: err?.message || err })
+    }
 
     await postMessage({
       room,
@@ -295,19 +304,8 @@ export async function handleAIMention ({
 
   // --- default: TEXT-ONLY (image generation disabled in ai.js) ------------
   try {
-    const result = await Promise.race([
-      askQuestion(question),
-      new Promise((_resolve, reject) => setTimeout(() => reject(new Error('AI_TIMEOUT')), Number(process.env.AI_TIMEOUT_MS ?? 45_000)))
-    ])
-
-    const text = (typeof result?.text === 'string' ? result.text.trim() : '')
-
-    if (text) {
-      await postMessage({ room, message: text })
-      return true
-    }
-
-    await postMessage({ room, message: 'I’m not sure yet—could you rephrase that?' })
+    const text = await safeAskQuestion(question, askQuestion, logger)
+    await postMessage({ room, message: text || "I\u2019m not sure yet\u2014could you rephrase that?" })
     return true
   } catch (err) {
     logger.error('[AI][default] Error', { err: err?.message || err })

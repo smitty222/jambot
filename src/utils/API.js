@@ -1146,9 +1146,7 @@ function isEspnLiveStatus (status = '') {
 
 export function formatScoreboardLine ({ awayName, awayScore, homeName, homeScore, status, sportPath, startDate, competitionDate, eventDate, period }) {
   const matchupSeparator = sportPath === 'basketball/mens-college-basketball' ? 'vs' : '@'
-  const displayTimeZone = sportPath === 'basketball/mens-college-basketball'
-    ? 'America/New_York'
-    : undefined
+  const displayTimeZone = 'America/New_York'
   let statusMsg = String(status || '').trim()
   const resolvedStartDate = resolveScoreboardStartDate({ startDate, competitionDate, eventDate })
   const d = resolvedStartDate ? new Date(resolvedStartDate) : null

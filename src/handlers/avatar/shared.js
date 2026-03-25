@@ -2,6 +2,7 @@ import { env } from '../../config.js'
 import { getAvatarsBySlugs } from '../../database/dbavatars.js'
 import { updateUserAvatar } from '../../utils/API.js'
 import { logger } from '../../utils/logging.js'
+import { setChatIdentity } from '../../libs/cometchat.js'
 
 export const userTokenMap = {
   '072b0bb3-518e-4422-97fd-13dc53e8ae7e': env.ianUserToken,
@@ -213,5 +214,115 @@ export async function runStaticBotAvatarCommand ({
       await onError(error)
     }
     await postMessage({ room, message: failureMessage })
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Generic pool runners — used by the config-driven command factories
+// ---------------------------------------------------------------------------
+
+/**
+ * Run a user avatar command that picks a random avatar from a themed slug pool.
+ * @param {object} cfg  Entry from USER_POOL_CONFIGS in avatarConfig.js
+ */
+export async function runUserPoolCommand (cfg, senderUuid, room, postMessage) {
+  const userToken = await getAuthorizedUserToken(senderUuid, room, postMessage, cfg.unauthorizedMessage)
+  if (!userToken) return
+
+  let slug
+  if (cfg.directPick) {
+    if (!cfg.allowedSlugs.length) {
+      await postMessage({ room, message: cfg.emptyMessage })
+      return
+    }
+    slug = cfg.allowedSlugs[Math.floor(Math.random() * cfg.allowedSlugs.length)]
+  } else {
+    slug = await pickRandomAvatarBySlug({
+      allowedSlugs: cfg.allowedSlugs,
+      warnLabel: cfg.warnLabel,
+      emptyMessage: cfg.emptyMessage,
+      missingSlugMessage: cfg.missingSlugMessage,
+      room,
+      postMessage
+    })
+    if (!slug) return
+  }
+
+  const color = cfg.colorBySlug
+    ? (cfg.colorBySlug[slug] ?? cfg.fallbackColors[Math.floor(Math.random() * cfg.fallbackColors.length)])
+    : cfg.fallbackColors[Math.floor(Math.random() * cfg.fallbackColors.length)]
+
+  const line = cfg.lines
+    ? (cfg.lines[slug] ?? cfg.defaultLine(slug))
+    : cfg.defaultLine(slug)
+
+  logger.info(`[${cfg.key}] attempt`, { senderUuid, slug, color, title: slugToTitle(slug) })
+
+  try {
+    await updateUserAvatar(userToken, slug, color)
+    logger.info(`[${cfg.key}] success`, { senderUuid, slug, color })
+    await postMessage({ room, message: line })
+  } catch (error) {
+    logger.error(`[${cfg.errorLabel}] update failed`, {
+      senderUuid,
+      slugTried: slug,
+      colorTried: color,
+      error: error?.message || String(error),
+      stack: error?.stack
+    })
+    await postMessage({ room, message: cfg.failureMessage })
+  }
+}
+
+/**
+ * Run a bot avatar command that picks a random avatar from a themed slug pool.
+ * Requires moderator auth; updates bot identity after equip.
+ * @param {object} cfg  Entry from BOT_POOL_CONFIGS in avatarConfig.js
+ */
+export async function runBotPoolCommand (cfg, room, postMessage, isUserAuthorized, senderUuid, ttlUserToken) {
+  const isMod = await requireModerator({
+    senderUuid,
+    ttlUserToken,
+    isUserAuthorized,
+    room,
+    postMessage,
+    unauthorizedMessage: cfg.unauthorizedMessage
+  })
+  if (!isMod) return
+
+  const slug = await pickRandomAvatarBySlug({
+    allowedSlugs: cfg.allowedSlugs,
+    warnLabel: cfg.warnLabel,
+    emptyMessage: cfg.emptyMessage,
+    missingSlugMessage: cfg.missingSlugMessage,
+    room,
+    postMessage
+  })
+  if (!slug) return
+
+  const color = cfg.colorBySlug
+    ? (cfg.colorBySlug[slug] ?? cfg.fallbackColors[Math.floor(Math.random() * cfg.fallbackColors.length)])
+    : cfg.fallbackColors[Math.floor(Math.random() * cfg.fallbackColors.length)]
+
+  const line = cfg.lines
+    ? (cfg.lines[slug] ?? cfg.defaultLine(slug))
+    : cfg.successMessage
+
+  logger.info(`[${cfg.key}] attempt`, { senderUuid, slug, color, title: slugToTitle(slug) })
+
+  try {
+    await updateUserAvatar(ttlUserToken, slug, color)
+    setChatIdentity({ avatarId: slug, color })
+    logger.info(`[${cfg.key}] success`, { senderUuid, slug, color })
+    await postMessage({ room, message: line, identity: { avatarId: slug, color } })
+  } catch (error) {
+    logger.error(`[${cfg.errorLabel}] update failed`, {
+      senderUuid,
+      slugTried: slug,
+      colorTried: color,
+      error: error?.message || String(error),
+      stack: error?.stack
+    })
+    await postMessage({ room, message: cfg.failureMessage })
   }
 }

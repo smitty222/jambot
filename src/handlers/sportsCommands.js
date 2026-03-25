@@ -447,7 +447,7 @@ export function createSportsBetCommandHandler (deps = {}) {
     if (!parsed.ok && parsed.reason === 'usage') {
       await postMessageImpl({
         room,
-        message: 'Usage: /sportsbet SPORT INDEX TEAM TYPE AMOUNT\nExample: /sportsbet mlb 2 NYY ml 50'
+        message: 'Usage: /sportsbet SPORT INDEX TEAM TYPE AMOUNT\nExample: /sportsbet mlb 2 NYY ml 50\n\nINDEX is the game number shown in `/odds mlb`. TYPE is `ml` (moneyline) or `spread`.'
       })
       return
     }
@@ -460,7 +460,7 @@ export function createSportsBetCommandHandler (deps = {}) {
     if (!parsed.ok) {
       await postMessageImpl({
         room,
-        message: 'Please enter a valid command: /sportsbet SPORT INDEX TEAM TYPE AMOUNT\nExample: /sportsbet mlb 2 NYY ml 50'
+        message: 'Please enter a valid command: /sportsbet SPORT INDEX TEAM TYPE AMOUNT\nExample: /sportsbet mlb 2 NYY ml 50\n\nINDEX is the game number shown in `/odds mlb`. TYPE is `ml` (moneyline) or `spread`.'
       })
       return
     }

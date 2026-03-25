@@ -206,7 +206,10 @@ export const env = {
   // Misc features
   allUsersIds: getEnv('ALLEN_USER_IDS'),
   dmAllowList: getEnv('DM_ALLOW_LIST'),
-  themeForce: getEnv('FORCE_ALBUM_THEME')
+  themeForce: getEnv('FORCE_ALBUM_THEME'),
+
+  // Error reporting
+  sentryDsn: getEnv('SENTRY_DSN', { defaultValue: null })
 }
 
 const REQUIRED_ENV_VARS = [

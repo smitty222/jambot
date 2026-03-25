@@ -20,7 +20,6 @@ import {
   getUserNicknameByUuid
 } from '../utils/API.js'
 import { postVoteCountsForLastSong } from '../utils/voteCounts.js'
-import { roomThemes } from '../utils/roomThemes.js'
 import { escortUserFromDJStand } from '../utils/escortDJ.js'
 import handleUserJoinedWithStatePatch from '../handlers/userJoined.js'
 import { handleAlbumTheme } from '../handlers/playedSong.js'
@@ -57,31 +56,12 @@ const STARTUP_BACKLOG_GRACE_S = env.botStartupGraceS
 const startTimeStamp = Math.floor(Date.now() / 1000)
 
 // ───────────────────────────────────────────────────────────
-// Theme resolution (DB-first) + album predicate
+// Theme resolution (DB-first via themeManager) + album predicate
 // ───────────────────────────────────────────────────────────
 const ALBUM_THEMES = new Set(['album monday', 'albums', 'album day', 'album'])
 
-function getThemeFromDB (roomUUID) {
-  try {
-    const row = db.prepare('SELECT theme FROM themes WHERE roomId = ?').get(roomUUID)
-    if (row?.theme) return String(row.theme)
-  } catch (e) {
-    logger.error('[Theme][DB] lookup error:', e?.message || e)
-  }
-  return null
-}
-
 function resolveRoomTheme (roomUUID) {
-  const dbTheme = getThemeFromDB(roomUUID)
-  if (dbTheme) return dbTheme
-
-  const tm = themeManager.getTheme(roomUUID)
-  if (tm) return tm
-
-  const rt = roomThemes[roomUUID]
-  if (rt) return rt
-
-  return ''
+  return themeManager.getTheme(roomUUID)
 }
 
 export function isAlbumThemeActive (roomUUID) {
