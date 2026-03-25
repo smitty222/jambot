@@ -3,7 +3,6 @@ export const PUBLIC_SITE_COMMAND_GROUPS = [
     group: 'Command Hubs',
     items: [
       '/commands',
-      '/help',
       '/commands games',
       '/commands music',
       '/commands queue',
@@ -119,9 +118,8 @@ export const PUBLIC_SITE_COMMAND_GROUPS = [
       '/albumlist',
       '/albumadd <spotifyAlbumId>',
       '/albumremove <spotifyAlbumId>',
-      '/addsong',
-      '/addsong beach',
-      '/removesong'
+      '/addsong [beach]',
+      '/removesong [beach]'
     ]
   },
   {
@@ -148,6 +146,23 @@ export const PUBLIC_SITE_COMMAND_GROUPS = [
       '/title clear',
       '/checkbalance <@user>',
       '/tip <@user> <amount>'
+    ]
+  },
+  {
+    group: 'Prestige',
+    items: [
+      '/djstreak',
+      '/badges',
+      '/titles',
+      '/title equip <key>',
+      '/title clear',
+      '/profile',
+      '/monthly [count]',
+      '/monthlydj [count]',
+      '/monthlyf1 [count]',
+      '/monthlygamblers [count]',
+      '/bankroll',
+      '/topnetworth'
     ]
   },
   {
@@ -308,6 +323,8 @@ export const MOD_SITE_COMMAND_GROUPS = [
       '/removeDJ',
       '/bopon',
       '/bopoff',
+      '/autodjon',
+      '/autodjoff',
       '/songstatson',
       '/songstatsoff',
       '/greeton',

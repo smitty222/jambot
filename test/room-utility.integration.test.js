@@ -125,15 +125,15 @@ test('default /commands response exposes all major command hubs', async () => {
   })
 
   assert.equal(posted.length, 1)
-  assert.match(posted[0].message, /\/commands games/)
-  assert.match(posted[0].message, /\/commands music/)
+  assert.match(posted[0].message, /\/games/)
+  assert.match(posted[0].message, /\/music/)
   assert.match(posted[0].message, /\/commands queue/)
-  assert.match(posted[0].message, /\/commands wallet/)
+  assert.match(posted[0].message, /\/wallet/)
   assert.match(posted[0].message, /\/commands sports/)
   assert.match(posted[0].message, /\/commands crypto/)
-  assert.match(posted[0].message, /\/commands fun/)
+  assert.match(posted[0].message, /\/gifs/)
   assert.match(posted[0].message, /\/commands trivia/)
-  assert.match(posted[0].message, /\/commands avatars/)
+  assert.match(posted[0].message, /\/avatars/)
 })
 
 test('dispatchWithRegistry routes /room through the room utility handler', async () => {
