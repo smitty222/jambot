@@ -498,14 +498,17 @@ async function applyDjStreakReward ({ userUUID, likes = 0, playedAt = null } = {
     })
   }
 
-  if (qualified) maybeAwardDjPrestige(userUUID, streakCount)
+  const newPrestige = qualified
+    ? maybeAwardDjPrestige(userUUID, streakCount)
+    : { badges: [], titles: [] }
 
   return {
     streakCount,
     bestStreak,
     bonusAwarded,
     streakQualified: qualified,
-    milestone: milestone?.streak || null
+    milestone: milestone?.streak || null,
+    newPrestige
   }
 }
 

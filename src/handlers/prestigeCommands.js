@@ -63,7 +63,19 @@ export function createPrestigeHandlers () {
       const userUUID = payload?.sender
       const badges = getUserBadges(userUUID)
       if (!badges.length) {
-        await postMessage({ room, message: 'No badges yet. Earn DJ streaks or monthly wins to start your collection.' })
+        await postMessage({
+          room,
+          message: [
+            'No badges yet. Here\'s how to earn them:',
+            '🎚️ DJ a song with 3+ likes (streak badges at 3, 5, 8, 12 songs)',
+            '💸 Finish #1 on a monthly leaderboard',
+            '💎 Trigger a jackpot bonus in slots',
+            '🏇 Own a winning racehorse',
+            '🂡 Hit a natural blackjack',
+            '🎱 Win the lottery',
+            'Use `/badges` to check your collection anytime.'
+          ].join('\n')
+        })
         return
       }
       await postMessage({
@@ -135,6 +147,10 @@ export function createPrestigeHandlers () {
       const balance = getUserWallet(userUUID)
       const lifetimeNet = getLifetimeNet(userUUID)
 
+      const badgeDisplay = badges.length
+        ? `${badges.map(b => b.emoji || '•').join(' ')} (${badges.length})`
+        : 'none'
+
       await postMessage({
         room,
         message: [
@@ -143,7 +159,7 @@ export function createPrestigeHandlers () {
           `Cash: ${formatMoneyLine(balance)} \u00B7 Net Worth: ${formatMoneyLine(netWorth?.totalNetWorth || 0)}`,
           `Lifetime Net: ${formatMoneyLine(lifetimeNet)}`,
           `DJ Streak: ${streak.streakCount} current / ${streak.bestStreak} best`,
-          `Badges: ${badges.length}`
+          `Badges: ${badgeDisplay}`
         ].join('\n')
       })
     }

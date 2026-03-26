@@ -1,6 +1,6 @@
 // src/games/blackjack/blackJack.js
 import { getUserWallet, debitGameBet, creditGameWin } from '../../database/dbwalletmanager.js'
-import { syncBlackjackPrestige } from '../../database/dbprestige.js'
+import { syncBlackjackPrestige, formatPrestigeUnlockLines } from '../../database/dbprestige.js'
 import { postMessage } from '../../libs/cometchat.js'
 import { getUserNickname } from '../../utils/nickname.js'
 
@@ -1198,12 +1198,19 @@ async function settleRound (ctx) {
       await walletPayout(turn.uuid, Math.round(returned))
     }
 
-    syncBlackjackPrestige({
+    const bjPrestige = syncBlackjackPrestige({
       userUUID: turn.uuid,
       isNaturalBlackjack: outcome === 'BLACKJACK',
       doubledWin: Boolean(h.doubled && outcome === 'WIN'),
       profit
     })
+    const bjPrestigeLines = formatPrestigeUnlockLines(bjPrestige)
+    if (bjPrestigeLines.length) {
+      await postMessage({
+        room: ctx.room,
+        message: `<@uid:${turn.uuid}>\n${bjPrestigeLines.join('\n')}`
+      })
+    }
 
     const nm = nameInBlock(st, turn.uuid)
     const handTag = (p.hands.length > 1) ? `H${turn.hand + 1}` : '  '

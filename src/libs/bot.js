@@ -24,6 +24,7 @@ import { escortUserFromDJStand } from '../utils/escortDJ.js'
 import handleUserJoinedWithStatePatch from '../handlers/userJoined.js'
 import { handleAlbumTheme } from '../handlers/playedSong.js'
 import { songPayment, addOrUpdateUser } from '../database/dbwalletmanager.js'
+import { formatPrestigeUnlockLines } from '../database/dbprestige.js'
 import { updateRecentSongs } from '../database/dbrecentsongsmanager.js'
 import { getPopularSpotifyTrackID } from '../utils/autoDJ.js'
 import { getMarkedUser, unmarkUser } from '../utils/removalQueue.js'
@@ -1081,6 +1082,15 @@ export class Bot {
             room: this.roomUUID,
             message: `🎧 <@uid:${songReward.userUUID}> hit a DJ streak of ${songReward.streakCount} and earned **$${songReward.bonusAwarded}**.`
           })
+        }
+        if (this.roomUUID && songReward?.newPrestige) {
+          const unlockLines = formatPrestigeUnlockLines(songReward.newPrestige)
+          if (unlockLines.length) {
+            await postMessage({
+              room: this.roomUUID,
+              message: `<@uid:${songReward.userUUID}>\n${unlockLines.join('\n')}`
+            })
+          }
         }
         sendHeartbeat().catch(() => {})
 

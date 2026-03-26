@@ -73,7 +73,7 @@ export function awardBadge (userUUID, badgeKey, { source = null, meta = null, ex
   const def = getBadgeDefinition(badgeKey)
   if (!userUUID || !def) return false
 
-  db.prepare(`
+  const result = db.prepare(`
     INSERT OR IGNORE INTO prestige_badges (userUUID, badgeKey, source, meta, expiresAt)
     VALUES (?, ?, ?, ?, ?)
   `).run(
@@ -84,14 +84,14 @@ export function awardBadge (userUUID, badgeKey, { source = null, meta = null, ex
     expiresAt
   )
 
-  return true
+  return result.changes > 0 ? 'new' : 'existing'
 }
 
 export function awardTitle (userUUID, titleKey, { source = null, meta = null, expiresAt = null } = {}) {
   const def = getTitleDefinition(titleKey)
   if (!userUUID || !def) return false
 
-  db.prepare(`
+  const result = db.prepare(`
     INSERT OR IGNORE INTO prestige_titles (userUUID, titleKey, source, meta, expiresAt)
     VALUES (?, ?, ?, ?, ?)
   `).run(
@@ -102,7 +102,14 @@ export function awardTitle (userUUID, titleKey, { source = null, meta = null, ex
     expiresAt
   )
 
-  return true
+  if (result.changes > 0) {
+    const profile = db.prepare('SELECT equippedTitleKey FROM prestige_profiles WHERE userUUID = ?').get(String(userUUID))
+    if (!profile?.equippedTitleKey) {
+      equipTitle(String(userUUID), String(titleKey))
+    }
+  }
+
+  return result.changes > 0 ? 'new' : 'existing'
 }
 
 export function equipTitle (userUUID, titleKey = null) {
@@ -217,29 +224,29 @@ export function getUserTitles (userUUID) {
 
 export function maybeAwardDjPrestige (userUUID, streakCount) {
   const streak = Math.max(0, Math.floor(Number(streakCount || 0)))
-  if (!userUUID || streak <= 0) return []
+  if (!userUUID || streak <= 0) return { badges: [], titles: [] }
 
-  const awarded = []
-  if (streak >= 3) awarded.push('dj_streak_3')
-  if (streak >= 5) awarded.push('dj_streak_5')
-  if (streak >= 8) awarded.push('dj_streak_8')
-  if (streak >= 12) awarded.push('dj_streak_12')
+  const newBadges = []
+  const candidates = []
+  if (streak >= 3) candidates.push('dj_streak_3')
+  if (streak >= 5) candidates.push('dj_streak_5')
+  if (streak >= 8) candidates.push('dj_streak_8')
+  if (streak >= 12) candidates.push('dj_streak_12')
 
-  for (const badgeKey of awarded) {
-    awardBadge(userUUID, badgeKey, {
-      source: 'dj_streak',
-      meta: { streak }
-    })
+  for (const badgeKey of candidates) {
+    if (awardBadge(userUUID, badgeKey, { source: 'dj_streak', meta: { streak } }) === 'new') {
+      newBadges.push(badgeKey)
+    }
   }
 
+  const newTitles = []
   if (streak >= 12) {
-    awardTitle(userUUID, 'crate_legend', {
-      source: 'dj_streak',
-      meta: { streak }
-    })
+    if (awardTitle(userUUID, 'crate_legend', { source: 'dj_streak', meta: { streak } }) === 'new') {
+      newTitles.push('crate_legend')
+    }
   }
 
-  return awarded
+  return { badges: newBadges, titles: newTitles }
 }
 
 export function syncMonthlyPrestigeAwards (leaderboardType, rows = [], monthKey = getCurrentMonthKey()) {
@@ -250,18 +257,18 @@ export function syncMonthlyPrestigeAwards (leaderboardType, rows = [], monthKey 
   if (!winner?.uuid) return []
 
   const expiresAt = nextMonthIso(monthKey)
-  awardBadge(winner.uuid, config.badgeKey, {
-    source: 'monthly',
-    meta: { leaderboardType, monthKey, rank: 1, amount: winner.amount },
-    expiresAt
-  })
-  awardTitle(winner.uuid, config.titleKey, {
-    source: 'monthly',
-    meta: { leaderboardType, monthKey, rank: 1, amount: winner.amount },
-    expiresAt
-  })
+  const meta = { leaderboardType, monthKey, rank: 1, amount: winner.amount }
+  const newBadges = []
+  const newTitles = []
 
-  return [config.badgeKey, config.titleKey]
+  if (awardBadge(winner.uuid, config.badgeKey, { source: 'monthly', meta, expiresAt }) === 'new') {
+    newBadges.push(config.badgeKey)
+  }
+  if (awardTitle(winner.uuid, config.titleKey, { source: 'monthly', meta, expiresAt }) === 'new') {
+    newTitles.push(config.titleKey)
+  }
+
+  return { badges: newBadges, titles: newTitles }
 }
 
 function getHorseOwnerWinCount (ownerId) {
@@ -285,79 +292,90 @@ function getLotteryWinCount (userUUID) {
 }
 
 export function syncSlotsPrestige ({ userUUID, bonusTriggered = false, featureTriggered = false, jackpotWon = 0, collectionRewardTotal = 0 } = {}) {
-  if (!userUUID) return []
-  const awarded = []
+  if (!userUUID) return { badges: [], titles: [] }
+  const candidates = []
 
-  if (bonusTriggered) awarded.push('slots_bonus_hunter')
-  if (featureTriggered) awarded.push('slots_feature_hunter')
-  if (Number(jackpotWon || 0) > 0) awarded.push('slots_jackpot_bite')
-  if (Number(collectionRewardTotal || 0) > 0) awarded.push('slots_collector')
+  if (bonusTriggered) candidates.push('slots_bonus_hunter')
+  if (featureTriggered) candidates.push('slots_feature_hunter')
+  if (Number(jackpotWon || 0) > 0) candidates.push('slots_jackpot_bite')
+  if (Number(collectionRewardTotal || 0) > 0) candidates.push('slots_collector')
 
-  for (const badgeKey of awarded) {
-    awardBadge(userUUID, badgeKey, { source: 'slots' })
+  const newBadges = []
+  for (const badgeKey of candidates) {
+    if (awardBadge(userUUID, badgeKey, { source: 'slots' }) === 'new') {
+      newBadges.push(badgeKey)
+    }
   }
 
-  return awarded
+  return { badges: newBadges, titles: [] }
 }
 
 export function syncHorsePrestige ({ ownerId = null, payoutEntries = [] } = {}) {
-  const awarded = []
+  const newBadges = []
 
   if (ownerId) {
     const totalWins = getHorseOwnerWinCount(ownerId)
-    if (totalWins >= 1) {
-      awardBadge(ownerId, 'horse_first_winner', { source: 'horse_race', meta: { totalWins } })
-      awarded.push('horse_first_winner')
+    if (totalWins >= 1 && awardBadge(ownerId, 'horse_first_winner', { source: 'horse_race', meta: { totalWins } }) === 'new') {
+      newBadges.push({ userUUID: ownerId, key: 'horse_first_winner' })
     }
-    if (totalWins >= 5) {
-      awardBadge(ownerId, 'horse_stable_star', { source: 'horse_race', meta: { totalWins } })
-      awarded.push('horse_stable_star')
+    if (totalWins >= 5 && awardBadge(ownerId, 'horse_stable_star', { source: 'horse_race', meta: { totalWins } }) === 'new') {
+      newBadges.push({ userUUID: ownerId, key: 'horse_stable_star' })
     }
   }
 
   for (const entry of Array.isArray(payoutEntries) ? payoutEntries : []) {
     const userUUID = entry?.userUUID
     const amount = Number(entry?.amount || 0)
-    if (userUUID && amount >= 1000) {
-      awardBadge(userUUID, 'horse_cash_ticket', {
-        source: 'horse_race',
-        meta: { payout: amount }
-      })
-      awarded.push('horse_cash_ticket')
+    if (userUUID && amount >= 1000 && awardBadge(userUUID, 'horse_cash_ticket', { source: 'horse_race', meta: { payout: amount } }) === 'new') {
+      newBadges.push({ userUUID, key: 'horse_cash_ticket' })
     }
   }
 
-  return awarded
+  return { badges: newBadges, titles: [] }
 }
 
 export function syncBlackjackPrestige ({ userUUID, isNaturalBlackjack = false, doubledWin = false, profit = 0 } = {}) {
-  if (!userUUID) return []
-  const awarded = []
+  if (!userUUID) return { badges: [], titles: [] }
+  const candidates = []
 
-  if (isNaturalBlackjack) awarded.push('bj_first_blackjack')
-  if (doubledWin) awarded.push('bj_double_down')
-  if (Number(profit || 0) >= 500) awarded.push('bj_big_hand')
+  if (isNaturalBlackjack) candidates.push('bj_first_blackjack')
+  if (doubledWin) candidates.push('bj_double_down')
+  if (Number(profit || 0) >= 500) candidates.push('bj_big_hand')
 
-  for (const badgeKey of awarded) {
-    awardBadge(userUUID, badgeKey, { source: 'blackjack', meta: { profit: Number(profit || 0) } })
+  const newBadges = []
+  for (const badgeKey of candidates) {
+    if (awardBadge(userUUID, badgeKey, { source: 'blackjack', meta: { profit: Number(profit || 0) } }) === 'new') {
+      newBadges.push(badgeKey)
+    }
   }
 
-  return awarded
+  return { badges: newBadges, titles: [] }
 }
 
 export function syncLotteryPrestige ({ userUUID } = {}) {
-  if (!userUUID) return []
+  if (!userUUID) return { badges: [], titles: [] }
   const totalWins = getLotteryWinCount(userUUID)
-  const awarded = []
+  const newBadges = []
 
-  if (totalWins >= 1) {
-    awardBadge(userUUID, 'lottery_first_hit', { source: 'lottery', meta: { totalWins } })
-    awarded.push('lottery_first_hit')
+  if (totalWins >= 1 && awardBadge(userUUID, 'lottery_first_hit', { source: 'lottery', meta: { totalWins } }) === 'new') {
+    newBadges.push('lottery_first_hit')
   }
-  if (totalWins >= 3) {
-    awardBadge(userUUID, 'lottery_repeat_winner', { source: 'lottery', meta: { totalWins } })
-    awarded.push('lottery_repeat_winner')
+  if (totalWins >= 3 && awardBadge(userUUID, 'lottery_repeat_winner', { source: 'lottery', meta: { totalWins } }) === 'new') {
+    newBadges.push('lottery_repeat_winner')
   }
 
-  return awarded
+  return { badges: newBadges, titles: [] }
+}
+
+export function formatPrestigeUnlockLines ({ badges = [], titles = [] } = {}) {
+  const lines = []
+  for (const key of badges) {
+    const def = getBadgeDefinition(key)
+    if (def) lines.push(`${def.emoji} **Badge Unlocked: ${def.label}** — ${def.description}`)
+  }
+  for (const key of titles) {
+    const def = getTitleDefinition(key)
+    if (def) lines.push(`${def.emoji} **Title Earned: ${def.label}** — use \`/titles\` to equip`)
+  }
+  return lines
 }

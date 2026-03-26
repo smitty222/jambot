@@ -4,7 +4,7 @@ import {
   syncWalletBalanceFromDb
 } from '../database/dbwalletmanager.js'
 import db from '../database/db.js'
-import { syncSlotsPrestige } from '../database/dbprestige.js'
+import { syncSlotsPrestige, formatPrestigeUnlockLines } from '../database/dbprestige.js'
 import { createSlotsPersistence } from './slotsPersistence.js'
 import { createSlotsStateHelpers } from './slotsState.js'
 import { logger } from '../utils/logging.js'
@@ -366,7 +366,9 @@ async function spinBonusOnce (userUUID) {
   lines.push(`🪙 BALANCE: $${formatBalance(balance)}`)
   lines.push(`💰 JACKPOT NOW: $${formatMoney(newJackpot)}`)
 
-  syncSlotsPrestige({ userUUID, jackpotWon })
+  const jackpotPrestige = syncSlotsPrestige({ userUUID, jackpotWon })
+  const jackpotPrestigeLines = formatPrestigeUnlockLines(jackpotPrestige)
+  if (jackpotPrestigeLines.length) lines.push(...jackpotPrestigeLines)
 
   return lines.join('\n')
 }
@@ -531,14 +533,16 @@ async function spinFeatureOnce (userUUID) {
   }
 
   if (triggeredBonusFromFeature) {
-    syncSlotsPrestige({ userUUID, bonusTriggered: true })
+    const featureBonusPrestige = syncSlotsPrestige({ userUUID, bonusTriggered: true })
+    const featureBonusPrestigeLines = formatPrestigeUnlockLines(featureBonusPrestige)
     return [
       renderSlot(result[0], result[1], result[2], `🎟️ FREE SPIN ${spinNumber}/${spinsTotal}`),
       '\n🚨 💎💎💎 JACKPOT BONUS TRIGGERED (FROM FREE SPINS) 💎💎💎 🚨',
       `🎁 BONUS SPINS: ${spinsTotalBonus}`,
       `💰 Locked Jackpot: $${formatMoney(lockedJackpot)}`,
       `👉 Type '/slots bonus' to start (Spin 1/${spinsTotalBonus}).`,
-      '⏸️ Your FREE SPINS session is paused — resume with \'/slots free\' after the bonus.'
+      '⏸️ Your FREE SPINS session is paused — resume with \'/slots free\' after the bonus.',
+      ...featureBonusPrestigeLines
     ].join('\n')
   }
 
@@ -800,12 +804,13 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
 
     settleSpinTx()
     balance = syncWalletBalanceFromDb(userUUID)
-    syncSlotsPrestige({
+    const spinPrestige = syncSlotsPrestige({
       userUUID,
       bonusTriggered: bonusTriggeredThisPlay,
       featureTriggered: featureTriggeredThisPlay,
       collectionRewardTotal: collection.rewardTotal
     })
+    const spinPrestigeLines = formatPrestigeUnlockLines(spinPrestige)
 
     const didWin = totalWinnings > 0
     const resultLine = didWin
@@ -834,6 +839,7 @@ async function playSlots (userUUID, betSize = DEFAULT_BET) {
       bonusTriggerMessage,
       featureTriggerMessage,
       collectionLines,
+      ...spinPrestigeLines,
       ' ', // spacer line (survives filter(Boolean))
       jackpotLine // jackpot at very bottom
     ].filter(Boolean).join('\n')

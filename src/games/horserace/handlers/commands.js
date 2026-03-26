@@ -2,7 +2,7 @@
 
 import { postMessage } from '../../../libs/cometchat.js'
 import { getUserWallet, debitGameBet } from '../../../database/dbwalletmanager.js'
-import { syncHorsePrestige } from '../../../database/dbprestige.js'
+import { syncHorsePrestige, getBadgeDefinition } from '../../../database/dbprestige.js'
 import { getUserNickname } from '../../../utils/nickname.js'
 import { getAllHorses, getUserHorses, setHorseImageUrl } from '../../../database/dbhorses.js'
 import { fetchCurrentUsers } from '../../../utils/API.js'
@@ -765,13 +765,19 @@ if (!globalThis[LISTENER_GUARD_KEY]) {
         ? Object.entries(payouts).filter(([, amount]) => Number(amount) > 0)
         : []
 
-      syncHorsePrestige({
+      const horsePrestige = syncHorsePrestige({
         ownerId: winnerHorse?.ownerId || null,
         payoutEntries: payoutEntries.map(([userUUID, amount]) => ({
           userUUID,
           amount: Number(amount || 0)
         }))
       })
+      for (const { userUUID, key } of horsePrestige.badges) {
+        const def = getBadgeDefinition(key)
+        if (def) {
+          await safeCall(postMessage, [{ room: ROOM, message: `<@uid:${userUUID}>\n${def.emoji} **Badge Unlocked: ${def.label}** — ${def.description}` }])
+        }
+      }
 
       if (payoutEntries.length > 0) {
         await DELAY(RESULTS_PACING.payoutLineBeatMs)
