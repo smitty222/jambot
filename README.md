@@ -1,10 +1,10 @@
 # Jambot
 
-Jambot is a feature-rich chat bot for [Turntable Live](https://hang.fm/) rooms. It grew out of a simple "artist fan bot" and now powers a full suite of interactive games, queue management, AI chat blurbs, theme and avatar controls, sports betting, and even publishes its own stats website. If you're looking for a lively companion to hang out with your community, Jambot might be what you need.
+Jambot is a feature-rich chat bot for [Turntable Live](https://hang.fm/) rooms. It grew out of a simple "artist fan bot" and now powers a full suite of interactive games, queue management, AI chat blurbs, theme controls, sports betting, and even publishes its own stats website. If you're looking for a lively companion to hang out with your community, Jambot might be what you need.
 
 Unlike the early prototypes that shipped a single artist-focused flow, this repository contains the modern code base used by the bot running in production. It's powered by Node 20, SQLite, Redis (optional) and various third-party APIs such as Spotify, CometChat and Google's Gemini. The bot listens to room events over the Turntable Live socket, reacts to slash commands, stores state in a local database and periodically publishes data for a simple stat site.
 
-> **Heads-up:** Runtime database files (e.g. `app.db`, `.publish-state.json`, `jackpot.json`) are *not* tracked in git. The schema is created on the fly from `src/database/initdb.js` and seeded by `src/database/seedavatars.js`. See [Database & runtime data](#database--runtime-data) for details.
+> **Heads-up:** Runtime database files (e.g. `app.db`, `.publish-state.json`, `jackpot.json`) are *not* tracked in git. The schema is created on the fly from `src/database/initdb.js`. See [Database & runtime data](#database--runtime-data) for details.
 
 ## Features
 
@@ -23,7 +23,6 @@ Jambot packs a lot of functionality. Here's a non-exhaustive overview:
   - **Song Chain** — guess artist names in a chain from song clues
 - **Queue management:** Users can join or leave the DJ queue, advance when the current DJ leaves and view their position. The queue persists across restarts in the `dj_queue` table.
 - **Theme & room design:** Moderators can set themes (e.g. Albums, Covers, Rock, Country, Rap, Name Game) that influence which songs are allowed. Commands also swap room backdrops between classic, ferry, barn, theater, festival, stadium and yacht designs.
-- **Avatar commands:** A large catalogue of avatars are available for both the bot and users. Slash commands allow switching between dinos, ducks, aliens, penguins, walruses, cosmic characters and more. Random avatars keep things fresh.
 - **Now-playing blurbs:** The bot can announce the currently playing song with varying tones (neutral, playful, crate digger, hype, classy, chart bot, DJ tech, vibe). These blurbs can be toggled on/off and configured by mods.
 - **Tips & wallets:** A simple wallet system lets users tip one another, place bets on games, accrue winnings and check their balances. Winnings are persisted and can be transferred via `/tip` commands. A prestige system rewards long-term players with unlockable bonuses.
 - **Sports betting:** Users can bet on live sporting events via the Odds API, with automated settlement via a cron job. March Madness (NCAA tournament) is supported with full bracket tracking, bet management and cron-driven score updates.
@@ -90,7 +89,7 @@ The full list of commands is generated at runtime and can be published to your s
 
 ## Database & runtime data
 
-Jambot persists state in a SQLite database (`app.db`) and a handful of JSON snapshot files. These files are **not** version controlled — they are listed in `.gitignore` so you don't accidentally commit your production wallets or jackpots. When the bot starts it runs migrations defined in `src/database/initdb.js` to create all tables, then seeds avatars via `src/database/seedavatars.js`.
+Jambot persists state in a SQLite database (`app.db`) and a handful of JSON snapshot files. These files are **not** version controlled — they are listed in `.gitignore` so you don't accidentally commit your production wallets or jackpots. When the bot starts it runs migrations defined in `src/database/initdb.js` to create all tables.
 
 Key tables include:
 
@@ -99,13 +98,24 @@ Key tables include:
 | `users` | User profiles, balances, lifetime net |
 | `dj_queue` | DJ queue state (persists across restarts) |
 | `themes` | Room theme preferences |
-| `avatars` | Avatar catalogue |
 | `lottery_winners`, `recent_songs`, `room_stats`, `song_reviews`, `song_plays`, `album_stats`, `album_reviews` | Music tracking and ratings |
 | `horses`, `horse_hof` | Horse racing ownership and Hall of Fame |
 | `cars`, `f1_results`, `teams` | F1 car ownership, race results, team data |
 | `march_madness_*` | NCAA bracket and bet tables |
 
 When deploying to Docker or Fly.io you should mount a persistent volume at `/data` to ensure the database and publish state survive restarts. See `fly.toml` for an example.
+
+## hang.fm API
+
+The bot integrates with hang.fm's backend services via the API gateway at `https://gateway.prod.tt.fm`. Swagger documentation for each service is available at:
+
+| Service | URL |
+| --- | --- |
+| User Service (auth tokens, user profiles) | https://gateway.prod.tt.fm/api/user-service/api/# |
+| Playlist Service | https://gateway.prod.tt.fm/api/playlist-service/api/# |
+| Room Service | https://gateway.prod.tt.fm/api/room-service/api/# |
+
+The user service is where you obtain auth tokens for your bot account. Set the resulting JWT as `TTL_USER_TOKEN` in your `.env`.
 
 ## Contributing & maintenance
 

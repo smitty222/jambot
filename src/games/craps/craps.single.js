@@ -475,18 +475,31 @@ function outcomeLabel ({ phase, total, point }) {
 
 const DIE = { 1: '1️⃣', 2: '2️⃣', 3: '3️⃣', 4: '4️⃣', 5: '5️⃣', 6: '6️⃣' }
 
-function formatRollCard ({ rollCount, d1, d2, total, point, phase }) {
+function formatDiceCard ({ rollCount, d1, d2, total, point }) {
   const pointStr = point ? `POINT ${point}` : 'COME-OUT'
-  const label = outcomeLabel({ phase, total, point })
-
   return [
-    `🎲 ROLL #${rollCount} • ${pointStr}`,
+    `🎲 ROLL #${rollCount}  •  ${pointStr}`,
     '━━━━━━━━━━━━━━━━━━━━━━',
-    `🎯 TOTAL: ${total}     (${d1} + ${d2})`,
-    `🎲 DICE:  ${DIE[d1] || d1} + ${DIE[d2] || d2}`,
-    '━━━━━━━━━━━━━━━━━━━━━━',
-    `🔥 ${label}`
+    `   ${DIE[d1] || d1}  +  ${DIE[d2] || d2}`,
+    `         = ${total}`,
+    '━━━━━━━━━━━━━━━━━━━━━━'
   ].join('\n')
+}
+
+function dramaticOutcome ({ phase, total, point }) {
+  if (phase === PHASES.COME_OUT) {
+    if (total === 7)  return { msg: `🍀 **SEVEN! Natural** — Pass wins!`, delay: 750 }
+    if (total === 11) return { msg: `🍀 **YO-LEVEN! Natural** — Pass wins!`, delay: 750 }
+    if (total === 2)  return { msg: `💀 **SNAKE EYES!** Craps — Pass loses.`, delay: 750 }
+    if (total === 3)  return { msg: `💀 **CRAPS THREE!** Pass loses.`, delay: 700 }
+    if (total === 12) return { msg: `🎰 **BOXCARS!** Pass loses, Don't Pass pushes.`, delay: 750 }
+    return { msg: `📍 **Point is ${total}** — hit it again!`, delay: 500 }
+  }
+  if (phase === PHASES.POINT) {
+    if (total === 7)        return { msg: `💥 **SEVEN OUT!!** The hand is over.`, delay: 950 }
+    if (total === point)    return { msg: `🎯 **${total} — POINT MADE!!** Shooter stays hot!`, delay: 900 }
+  }
+  return { msg: `— **${total}** — no decision`, delay: 400 }
 }
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
@@ -1245,14 +1258,21 @@ async function shooterRoll (user, room) {
   const [d1, d2, total] = dice()
   st.rollCount++
 
-  await sayCode(room, '', formatRollCard({
+  // Build suspense — dice reveal, then outcome
+  await say(room, `🎲 *Dice in the air...*`)
+  await sleep(650)
+
+  await sayCode(room, '', formatDiceCard({
     rollCount: st.rollCount,
     d1,
     d2,
     total,
-    point: st.point,
-    phase: st.phase
+    point: st.point
   }))
+
+  const { msg: outcomeMsg, delay: outcomeDelay } = dramaticOutcome({ phase: st.phase, total, point: st.point })
+  await sleep(outcomeDelay)
+  await say(room, outcomeMsg)
 
   // COME-OUT phase
   if (st.phase === PHASES.COME_OUT) {
@@ -1377,8 +1397,6 @@ async function shooterRoll (user, room) {
     return
   }
 
-  const workingBoard = await buildWorkingBoard(st)
-  if (workingBoard) await sayCode(room, 'WORKING BETS', workingBoard)
   await shooterTurnPrompt(room, st, `POINT (${st.point})`, { minimal: true })
   startRollTimer(room, PHASES.POINT)
 }
@@ -1827,35 +1845,81 @@ async function userBetsView (room, uuid) {
 
 function payoutsView () {
   return `\`\`\`
-CRAPS PAYOUTS
------------------------
-PASS / DON'T PASS     1:1
-PLACE 4 / 10          9:5
-PLACE 5 / 9           7:5
-PLACE 6 / 8           7:6
-PASS ODDS 4 / 10      2:1
-PASS ODDS 5 / 9       3:2
-PASS ODDS 6 / 8       6:5
-LAY ODDS 4 / 10       1:2
-LAY ODDS 5 / 9        2:3
-LAY ODDS 6 / 8        5:6
+CRAPS BET GUIDE
+══════════════════════════════════════════
 
-FIELD BET (wins 2,3,4,9,10,11,12)
-FIELD 3/4/9/10/11    1:1
-FIELD 2              2:1
-FIELD 12             3:1
-Loses on 5, 6, 7, 8
+LINE BETS  — place during the betting window before come-out
+─────────────────────────────────────────
+PASS        Bet the shooter makes their point.
+            Come-out: win on 7 or 11, lose on 2/3/12.
+            Point phase: win if point hits again before a 7.
+            Pays 1:1.  Command: /pass <amt>
 
-CHAT COMMANDS
-/odds pass <amt>
-/odds dontpass <amt>
-/odds come <num> <amt>
-/odds dontcome <num> <amt>
-/working on|off
-/press <num> <amt>
-/take <num> <amt>
-/field <amt>
-/removefield
+DON'T PASS  Opposite of Pass. The "dark side."
+            Come-out: win on 2/3, push on 12, lose on 7/11.
+            Point phase: win if 7 comes before the point.
+            Pays 1:1.  Command: /dontpass <amt>
+
+──────────────────────────────────────────
+ODDS  — add behind a live Pass/Don't Pass once a point is set
+        True odds bets — zero house edge
+─────────────────────────────────────────
+PASS ODDS   Backs your Pass. Pays true odds on the point.
+            4 or 10 → 2:1   5 or 9 → 3:2   6 or 8 → 6:5
+            Command: /odds pass <amt>
+
+DON'T ODDS  Backs your Don't Pass. You lay true odds.
+            4 or 10 → 1:2   5 or 9 → 2:3   6 or 8 → 5:6
+            Command: /odds dontpass <amt>
+
+──────────────────────────────────────────
+COME / DON'T COME  — point phase only; works like a mini Pass/DP
+─────────────────────────────────────────
+COME        Like Pass but starts fresh from the current roll.
+            Win on 7/11, lose on 2/3 (push 12), then tracks
+            its own point number.  Pays 1:1.
+            Command: /come <amt>
+
+DON'T COME  Like Don't Pass mid-hand.
+            Win on 2/3, push on 12, lose on 7/11, then wins
+            if 7 appears before its point.  Pays 1:1.
+            Command: /dontcome <amt>
+
+COME ODDS   Add odds behind a live Come point.
+            Command: /odds come <point-num> <amt>
+
+DONT ODDS   Add lay odds behind a Don't Come point.
+            Command: /odds dontcome <point-num> <amt>
+
+──────────────────────────────────────────
+PLACE BETS  — point phase; bet a number hits before 7
+─────────────────────────────────────────
+Numbers: 4, 5, 6, 8, 9, 10
+Your stake stays on the table; only profit is paid each hit.
+  4 or 10 → 9:5   5 or 9 → 7:5   6 or 8 → 7:6
+Commands:
+  /place <num> <amt>        place the bet
+  /press <num> <amt>        add more to an existing bet
+  /take <num> <amt>         pull back part of a bet
+  /removeplace <num>        pull the whole bet down
+
+──────────────────────────────────────────
+FIELD BET  — any active phase; resolves on every single roll
+─────────────────────────────────────────
+Stays on the table after a win; removed automatically on a loss.
+  WINS:  3, 4, 9, 10, 11 → 1:1
+         2 → 2:1 (double)
+         12 → 3:1 (triple)
+  LOSES: 5, 6, 7, 8
+Commands: /field <amt>   /removefield
+
+──────────────────────────────────────────
+WORKING FLAG  — controls come-out behavior
+─────────────────────────────────────────
+Default: OFF
+Place bets and odds are asleep on come-out rolls (so a
+lucky 7 doesn't wipe them out). Come bets still resolve normally.
+Toggle: /working on   or   /working off
 \`\`\``
 }
 
@@ -1997,6 +2061,8 @@ async function routeCrapsMessageUnlocked (payload) {
       return true
 
     case 'payouts':
+    case 'guide':
+    case 'betguide':
       await postMessage({ room, message: payoutsView() })
       return true
 
@@ -2061,7 +2127,8 @@ COMMANDS
 /removefield       remove your field bet
 /working on|off    place+odds working on come-out
 /bets              show your bets
-/payouts           show pay tables
+/payouts           full bet guide (what each bet does + payouts)
+/craps guide       same as /payouts
 
 TIMEOUTS
 - If shooter fails to roll:
