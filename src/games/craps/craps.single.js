@@ -196,6 +196,7 @@ function freshState () {
     dontComePoint: [],
 
     place: { 4: {}, 5: {}, 6: {}, 8: {}, 9: {}, 10: {} },
+    field: Object.create(null),
     workingOnComeOut: Object.create(null),
     rules: {
       autoRestart: true,
@@ -204,6 +205,8 @@ function freshState () {
     },
     hotShooterBonusTier: 0,
     nextBetId: 1,
+    sessionTotals: Object.create(null),
+    sessionHandCount: 0,
 
     nameCache: Object.create(null),
 
@@ -304,6 +307,7 @@ function resetAllBets (st) {
   st.comePoint = []
   st.dontComePoint = []
   st.place = { 4: {}, 5: {}, 6: {}, 8: {}, 9: {}, 10: {} }
+  st.field = Object.create(null)
 }
 
 function hasAnyBets (st) {
@@ -318,7 +322,8 @@ function hasAnyBets (st) {
     st.dontComeWaiting.length > 0 ||
     st.comePoint.length > 0 ||
     st.dontComePoint.length > 0 ||
-    hasPlace
+    hasPlace ||
+    hasObj(st.field)
   )
 }
 
@@ -343,6 +348,8 @@ async function refundAllBets (st) {
   for (const n of PLACES) {
     for (const [u, amt] of Object.entries(st.place[n] || {})) await creditGameWin(u, amt)
   }
+
+  for (const [u, amt] of Object.entries(st.field || {})) await creditGameWin(u, amt)
 
   resetAllBets(st)
 }
@@ -389,6 +396,11 @@ async function refundUserBets (st, user) {
       await creditGameWin(user, amt)
       delete st.place[n][user]
     }
+  }
+
+  if (st.field[user]) {
+    await creditGameWin(user, st.field[user])
+    delete st.field[user]
   }
 }
 
@@ -582,6 +594,8 @@ async function openJoinWindow (room, starterUuid) {
   st.rollCount = 0
   st.roundResults = Object.create(null)
   st.nameCache = Object.create(null)
+  st.sessionTotals = Object.create(null)
+  st.sessionHandCount = 0
   resetAllBets(st)
 
   // Starter auto-seated
@@ -1037,6 +1051,54 @@ async function setWorkingFlag (user, value, room) {
   await say(room, `⚙️ ${mention(user)} set place/odds on the come-out to **${value ? 'WORKING' : 'OFF'}**.`)
 }
 
+async function placeFieldBet (user, amount, room) {
+  const st = S(room)
+  const amt = Number(amount || 0)
+
+  if (!st.tableUsers.includes(user)) {
+    await say(room, `${mention(user)} you must join the table to bet.`)
+    return
+  }
+  if (![PHASES.BETTING, PHASES.COME_OUT, PHASES.POINT].includes(st.phase)) {
+    await say(room, `${mention(user)} field bets can only be placed while a hand is active.`)
+    return
+  }
+  if (!Number.isFinite(amt) || amt < MIN_BET || amt > MAX_BET) {
+    await say(room, `${mention(user)} invalid amount. Min ${fmtMoney(MIN_BET)}, Max ${fmtMoney(MAX_BET)}.`)
+    return
+  }
+  if (st.field[user]) {
+    await say(room, `${mention(user)} you already have a field bet of ${fmtMoney(st.field[user])}. Use /removefield first.`)
+    return
+  }
+
+  const bal = await getUserWallet(user)
+  if (Number(bal) < amt) {
+    await say(room, `${mention(user)} insufficient funds. Balance ${fmtMoney(bal)}.`)
+    return
+  }
+
+  const ok = await debitGameBet(user, amt)
+  if (!ok) { await say(room, `${mention(user)} wallet error. Bet not placed.`); return }
+
+  st.field[user] = amt
+  await say(room, `✅ ${mention(user)} placed **FIELD** ${fmtMoney(amt)} (wins on 2,3,4,9,10,11,12 — 2:1 on 2, 3:1 on 12).`)
+}
+
+async function removeFieldBet (user, room) {
+  const st = S(room)
+
+  if (!st.field[user]) {
+    await say(room, `${mention(user)} you have no field bet.`)
+    return
+  }
+
+  const amt = st.field[user]
+  delete st.field[user]
+  await creditGameWin(user, amt)
+  await say(room, `↩️ ${mention(user)} removed field bet, returned ${fmtMoney(amt)}.`)
+}
+
 async function removeUserFromTable (user, room) {
   const st = S(room)
   if (!st.tableUsers.includes(user)) {
@@ -1071,6 +1133,14 @@ function placeProfit (num, amt) {
   if (num === 5 || num === 9) return roundMoney(amt * (7 / 5))
   if (num === 6 || num === 8) return roundMoney(amt * (7 / 6))
   return 0
+}
+
+const FIELD_WINNERS = new Set([2, 3, 4, 9, 10, 11, 12])
+
+function fieldProfit (total, amt) {
+  if (total === 2) return roundMoney(amt * 1)    // 2:1 pays 1x profit
+  if (total === 12) return roundMoney(amt * 2)   // 3:1 pays 2x profit
+  return roundMoney(amt * 1)                      // 1:1 all others
 }
 
 /* ───────────────────────── Rolling + recap board ───────────────────────── */
@@ -1126,6 +1196,10 @@ async function buildWorkingBoard (st) {
       rows.push(`${name.padEnd(18)} PLACE ${n} ${fmtMoney(amt)}${work}`)
     }
   }
+  for (const [u, amt] of Object.entries(st.field || {})) {
+    const name = await getDisplayName(st, u)
+    rows.push(`${name.padEnd(18)} FIELD ${fmtMoney(amt)}`)
+  }
 
   if (!rows.length) return null
   return rows.join('\n')
@@ -1135,6 +1209,13 @@ function hotShooterMilestone (pointsMade) {
   if (pointsMade >= 7) return { tier: 3, bonus: 150, label: 'Inferno shooter' }
   if (pointsMade >= 5) return { tier: 2, bonus: 75, label: 'Fire shooter' }
   if (pointsMade >= 3) return { tier: 1, bonus: 25, label: 'Hot shooter' }
+  return null
+}
+
+function nextHotShooterGoal (pointsMade) {
+  if (pointsMade < 3) return { needed: 3 - pointsMade, label: 'Hot Shooter 🔥', bonus: 25 }
+  if (pointsMade < 5) return { needed: 5 - pointsMade, label: 'Fire Shooter 🔥🔥', bonus: 75 }
+  if (pointsMade < 7) return { needed: 7 - pointsMade, label: 'Inferno Shooter 🔥🔥🔥', bonus: 150 }
   return null
 }
 
@@ -1177,9 +1258,10 @@ async function shooterRoll (user, room) {
   if (st.phase === PHASES.COME_OUT) {
     const comePointLines = await resolveComePoints(total, st, { onComeOut: true })
     const placeLines = await resolvePlace(total, st, { onComeOut: true })
+    const fieldLines = await resolveField(total, st)
 
     const otherBoard = await buildResolutionsBoard(st, [
-      { title: 'OTHER BETS', lines: [...comePointLines, ...placeLines] }
+      { title: 'OTHER BETS', lines: [...comePointLines, ...placeLines, ...fieldLines] }
     ])
     if (otherBoard) await sayCode(room, '', otherBoard)
 
@@ -1238,9 +1320,10 @@ async function shooterRoll (user, room) {
   const movedLines = await resolveComeWaiting(total, st)
   const comePointLines = await resolveComePoints(total, st)
   const placeLines = await resolvePlace(total, st)
+  const fieldLines = await resolveField(total, st)
 
   const board = await buildResolutionsBoard(st, [
-    { title: 'RESOLUTIONS', lines: [...movedLines, ...comePointLines, ...placeLines] }
+    { title: 'RESOLUTIONS', lines: [...movedLines, ...comePointLines, ...placeLines, ...fieldLines] }
   ])
   if (board) await sayCode(room, '', board)
 
@@ -1262,6 +1345,11 @@ async function shooterRoll (user, room) {
     ])
     if (lineBoard) await sayCode(room, '', lineBoard)
     await maybeAwardHotShooterBonus(room, st)
+
+    const nextGoal = nextHotShooterGoal(st.pointsMade)
+    if (nextGoal) {
+      await say(room, `🎯 Shooter: **${st.pointsMade}** point(s) made — ${nextGoal.needed} more for ${nextGoal.label} (+${fmtMoney(nextGoal.bonus)})`)
+    }
 
     st.point = null
     await openComeOutBetting(room, '✅ Point made! **Same shooter** — come-out is next.')
@@ -1551,6 +1639,29 @@ async function resolvePlace (total, st, { onComeOut = false } = {}) {
   return lines
 }
 
+async function resolveField (total, st) {
+  const lines = []
+  const entries = Object.entries(st.field || {})
+
+  for (const [u, amt] of entries) {
+    const name = await getDisplayName(st, u)
+    if (FIELD_WINNERS.has(total)) {
+      const profit = fieldProfit(total, amt)
+      await creditGameWin(u, profit)
+      addRoundResult(st, u, profit)
+      const multiplier = total === 2 ? '2:1' : total === 12 ? '3:1' : '1:1'
+      lines.push(`${POS} ${name.padEnd(18)} FIELD(${total}) +${fmtMoney(profit)} (${multiplier})`)
+      // bet stays on table after a win
+    } else {
+      addRoundResult(st, u, -amt)
+      lines.push(`${NEG} ${name.padEnd(18)} FIELD -${fmtMoney(amt)}`)
+      delete st.field[u]
+    }
+  }
+
+  return lines
+}
+
 /* ───────────────────────── Hand End ───────────────────────── */
 
 function nextShooter (st) {
@@ -1600,6 +1711,29 @@ async function endHand (room, reason) {
     st.record = { rolls: st.rollCount, shooter: shooter || null }
     await say(room, `🏆 New record: ${st.record.rolls} roll(s) by ${shooter ? mention(shooter) : '—'}`)
     if (shooter) await persistRecord(room, st.record.rolls, shooter)
+  }
+
+  // Accumulate session totals before resetting round results
+  st.sessionHandCount = (st.sessionHandCount || 0) + 1
+  for (const [u, amt] of Object.entries(st.roundResults || {})) {
+    if (Number.isFinite(amt) && amt !== 0) {
+      st.sessionTotals[u] = (st.sessionTotals[u] || 0) + amt
+    }
+  }
+  if (st.sessionHandCount >= 2) {
+    const sessKeys = Object.keys(st.sessionTotals || {})
+    if (sessKeys.length) {
+      sessKeys.sort((a, b) => Number(st.sessionTotals[b] || 0) - Number(st.sessionTotals[a] || 0))
+      const sessLines = []
+      for (const u of sessKeys) {
+        const name = await getDisplayName(st, u)
+        const amt = Number(st.sessionTotals[u] || 0)
+        const chip = amt > 0 ? '🟢' : (amt < 0 ? '🔴' : '⚪')
+        const sign = amt > 0 ? '+' : (amt < 0 ? '-' : '±')
+        sessLines.push(`${chip} ${name.padEnd(18)} ${sign}${fmtMoney(Math.abs(amt))}`)
+      }
+      await sayCode(room, `SESSION TOTALS (hand ${st.sessionHandCount})`, sessLines.join('\n'))
+    }
   }
 
   // Reset hand state
@@ -1684,6 +1818,7 @@ async function userBetsView (room, uuid) {
     if (amt) places.push(`${n}:${fmtMoney(amt)}`)
   }
   if (places.length) lines.push(`PLACE           ${places.join('  ')}`)
+  if (st.field[uuid]) lines.push(`FIELD           ${fmtMoney(st.field[uuid])}`)
 
   if (!lines.length) return `No active bets for ${mention(uuid)}. Come-out working is **${getWorkingFlag(st, uuid) ? 'ON' : 'OFF'}**.`
   lines.push(`WORK COME-OUT   ${getWorkingFlag(st, uuid) ? 'ON' : 'OFF'}`)
@@ -1705,6 +1840,12 @@ LAY ODDS 4 / 10       1:2
 LAY ODDS 5 / 9        2:3
 LAY ODDS 6 / 8        5:6
 
+FIELD BET (wins 2,3,4,9,10,11,12)
+FIELD 3/4/9/10/11    1:1
+FIELD 2              2:1
+FIELD 12             3:1
+Loses on 5, 6, 7, 8
+
 CHAT COMMANDS
 /odds pass <amt>
 /odds dontpass <amt>
@@ -1713,6 +1854,8 @@ CHAT COMMANDS
 /working on|off
 /press <num> <amt>
 /take <num> <amt>
+/field <amt>
+/removefield
 \`\`\``
 }
 
@@ -1753,7 +1896,7 @@ async function routeCrapsMessageUnlocked (payload) {
   }
 
   // Top-level bet/roll aliases
-  const alias = low.match(/^\/(pass|dontpass|come|dontcome|place|removeplace|roll|odds|layodds|working|press|take)\b/)
+  const alias = low.match(/^\/(pass|dontpass|come|dontcome|place|removeplace|field|removefield|roll|odds|layodds|working|press|take)\b/)
   if (alias) {
     const cmd = alias[1]
     const parts = raw.split(/\s+/)
@@ -1811,6 +1954,12 @@ async function routeCrapsMessageUnlocked (payload) {
         await setWorkingFlag(uuid, flag === 'on', room)
         return true
       }
+      case 'field': {
+        if (!parts[0]) { await postMessage({ room, message: 'Usage: /field <amount>' }); return true }
+        await placeFieldBet(uuid, parts[0], room)
+        return true
+      }
+      case 'removefield': await removeFieldBet(uuid, room); return true
       case 'roll': await shooterRoll(uuid, room); return true
     }
   }
@@ -1908,6 +2057,8 @@ COMMANDS
 /take <num> <amt>  reduce a place bet
 /removeplace <num> remove a place bet
 /odds ...          add odds to line / come bets
+/field <amt>       FIELD bet (wins 2,3,4,9,10,11,12)
+/removefield       remove your field bet
 /working on|off    place+odds working on come-out
 /bets              show your bets
 /payouts           show pay tables
