@@ -319,7 +319,6 @@ export const MOD_SITE_COMMAND_GROUPS = [
     items: [
       '/addDJ',
       '/addDJ auto',
-      '/addDJ discover',
       '/removeDJ',
       '/bopon',
       '/bopoff',
@@ -355,6 +354,8 @@ export const MOD_SITE_COMMAND_GROUPS = [
   {
     group: 'Playlist & Admin Tools',
     items: [
+      '/playlistcreate <name>',
+      '/playlistcreate private <name>',
       '/addmoney <@user> <amount>',
       '/blacklist+',
       '/site',

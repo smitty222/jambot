@@ -21,5 +21,5 @@ test('site command JSON matches the moderator catalog source', () => {
 
   assert.deepEqual(json, MOD_SITE_COMMAND_GROUPS)
   assert.match(JSON.stringify(json), /\/commands mod/)
-  assert.match(JSON.stringify(json), /\/addDJ discover/)
+  assert.doesNotMatch(JSON.stringify(json), /\/addDJ discover/)
 })

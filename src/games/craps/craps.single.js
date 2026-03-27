@@ -480,8 +480,7 @@ function formatDiceCard ({ rollCount, d1, d2, total, point }) {
   return [
     `🎲 ROLL #${rollCount}  •  ${pointStr}`,
     '━━━━━━━━━━━━━━━━━━━━━━',
-    `   ${DIE[d1] || d1}  +  ${DIE[d2] || d2}`,
-    `         = ${total}`,
+    `   ${DIE[d1] || d1}  +  ${DIE[d2] || d2}  =  ${total}`,
     '━━━━━━━━━━━━━━━━━━━━━━'
   ].join('\n')
 }
@@ -691,7 +690,7 @@ async function openComeOutBetting (room, reasonLine = '') {
 
   // Ensure CTA lands at the bottom
   await sleep(80)
-  await say(room, `✅ Betting open — type ${bold('/pass <amt>')} or ${bold('/dontpass <amt>')} (⏱️ ${BET_SECS}s)`)
+  await say(room, `✅ Betting open — type ${bold('/pass <amt>')} or ${bold('/dontpass <amt>')} (⏱️ ${BET_SECS}s) • New players: **/craps join**`)
 
   st.timers.bet = setTimeout(async () => {
     await withCrapsRoomLock(room, async () => {
@@ -1801,15 +1800,28 @@ async function endHand (room, reason) {
 
 async function joinTable (user, room) {
   const st = S(room)
-  if (!st.tableUsers.includes(user)) {
-    st.tableUsers.push(user)
-    await say(room, `🪑 ${mention(user)} joined`)
+  if (st.tableUsers.includes(user)) {
+    await say(room, `${mention(user)} you're already at the table.`)
+    return
   }
+
+  st.tableUsers.push(user)
 
   // If this user was next in line last hand, make them the shooter now.
   if (st.pendingNextShooter && st.pendingNextShooter === user) {
     st.shooterIdx = st.tableUsers.indexOf(user)
   }
+
+  let hint = ''
+  if (st.phase === PHASES.BETTING) {
+    hint = ' — betting is open, place your **/pass** or **/dontpass** now!'
+  } else if (st.phase === PHASES.COME_OUT) {
+    hint = ' — come-out in progress, you\'re in for the next betting window.'
+  } else if (st.phase === PHASES.POINT) {
+    hint = ` — point is **${st.point}**, you can **/come**, **/place**, or **/field** right now.`
+  }
+
+  await say(room, `🪑 ${mention(user)} joined the table.${hint}`)
 }
 
 async function userBetsView (room, uuid) {
@@ -1841,6 +1853,74 @@ async function userBetsView (room, uuid) {
   if (!lines.length) return `No active bets for ${mention(uuid)}. Come-out working is **${getWorkingFlag(st, uuid) ? 'ON' : 'OFF'}**.`
   lines.push(`WORK COME-OUT   ${getWorkingFlag(st, uuid) ? 'ON' : 'OFF'}`)
   return `\`\`\`\nYOUR BETS: ${name}\n-----------------------\n${lines.join('\n')}\n\`\`\``
+}
+
+async function tableView (room) {
+  const st = S(room)
+
+  if (st.phase === PHASES.IDLE) return 'No game running.'
+
+  const rows = []
+  const phaseLabel = st.phase === PHASES.BETTING ? 'BETTING'
+    : st.phase === PHASES.COME_OUT ? 'COME-OUT'
+    : st.phase === PHASES.POINT ? `POINT ${st.point}`
+    : st.phase.toUpperCase()
+
+  rows.push(`Phase: ${phaseLabel}  •  Shooter: ${shooterUuid(st) ? (st.nameCache[shooterUuid(st)] || shooterUuid(st)) : '—'}`)
+  rows.push('─────────────────────────────')
+
+  let anyBets = false
+
+  for (const [u, amt] of Object.entries(st.pass)) {
+    const name = await getDisplayName(st, u)
+    const odds = st.passOdds[u] ? ` + odds ${fmtMoney(st.passOdds[u])}` : ''
+    rows.push(`${name.padEnd(16)} PASS        ${fmtMoney(amt)}${odds}`)
+    anyBets = true
+  }
+  for (const [u, amt] of Object.entries(st.dontPass)) {
+    const name = await getDisplayName(st, u)
+    const odds = st.dontPassOdds[u] ? ` + odds ${fmtMoney(st.dontPassOdds[u])}` : ''
+    rows.push(`${name.padEnd(16)} DON'T PASS  ${fmtMoney(amt)}${odds}`)
+    anyBets = true
+  }
+  for (const bet of st.comeWaiting) {
+    const name = await getDisplayName(st, bet.user)
+    rows.push(`${name.padEnd(16)} COME(wait)  ${fmtMoney(bet.amt)}`)
+    anyBets = true
+  }
+  for (const bet of st.dontComeWaiting) {
+    const name = await getDisplayName(st, bet.user)
+    rows.push(`${name.padEnd(16)} DC(wait)    ${fmtMoney(bet.amt)}`)
+    anyBets = true
+  }
+  for (const bet of st.comePoint) {
+    const name = await getDisplayName(st, bet.user)
+    const odds = bet.odds ? ` + odds ${fmtMoney(bet.odds)}` : ''
+    rows.push(`${name.padEnd(16)} COME(${bet.num})    ${fmtMoney(bet.amt)}${odds}`)
+    anyBets = true
+  }
+  for (const bet of st.dontComePoint) {
+    const name = await getDisplayName(st, bet.user)
+    const odds = bet.odds ? ` + odds ${fmtMoney(bet.odds)}` : ''
+    rows.push(`${name.padEnd(16)} DONT(${bet.num})    ${fmtMoney(bet.amt)}${odds}`)
+    anyBets = true
+  }
+  for (const n of PLACES) {
+    for (const [u, amt] of Object.entries(st.place[n] || {})) {
+      const name = await getDisplayName(st, u)
+      rows.push(`${name.padEnd(16)} PLACE ${n}     ${fmtMoney(amt)}`)
+      anyBets = true
+    }
+  }
+  for (const [u, amt] of Object.entries(st.field || {})) {
+    const name = await getDisplayName(st, u)
+    rows.push(`${name.padEnd(16)} FIELD       ${fmtMoney(amt)}`)
+    anyBets = true
+  }
+
+  if (!anyBets) rows.push('(no bets on the table)')
+
+  return `\`\`\`\nTABLE BETS\n${rows.join('\n')}\n\`\`\``
 }
 
 function payoutsView () {
@@ -1942,9 +2022,14 @@ async function routeCrapsMessageUnlocked (payload) {
   const uuid = sender?.uuid || sender?.uid || sender?.id || sender
   const low = raw.toLowerCase()
 
-  // Top-level /bets
-  if (/^\/bets\b/i.test(low)) {
+  // Top-level /bets and /mybets — show caller's own bets
+  if (/^\/(bets|mybets)\b/i.test(low)) {
     await postMessage({ room, message: await userBetsView(room, uuid) })
+    return true
+  }
+  // Top-level /table — show all bets on the table
+  if (/^\/table\b/i.test(low)) {
+    await postMessage({ room, message: await tableView(room) })
     return true
   }
   if (/^\/payouts\b/i.test(low)) {
@@ -1952,9 +2037,9 @@ async function routeCrapsMessageUnlocked (payload) {
     return true
   }
 
-  // Allow "/join craps|cr" during JOIN window
+  // Allow "/join craps|cr" anytime the game is active
   if (/^\/join\s+(craps|cr)\b/i.test(low)) {
-    if (S(room).phase !== PHASES.JOIN) { await postMessage({ room, message: 'You can only join during the join window.' }); return true }
+    if (S(room).phase === PHASES.IDLE) { await postMessage({ room, message: 'No game running. Type **/craps** to start one.' }); return true }
     await joinTable(uuid, room)
     return true
   }
@@ -2038,7 +2123,7 @@ async function routeCrapsMessageUnlocked (payload) {
       if (S(room).phase === PHASES.IDLE) {
         await openJoinWindow(room, uuid)
       } else {
-        await postMessage({ room, message: 'Craps is running. Use **/craps join** during join windows, or **/bets** to see your bets.' })
+        await postMessage({ room, message: 'Craps is running — type **/craps join** to sit down anytime, or **/bets** to check your bets.' })
       }
       return true
     }
@@ -2048,12 +2133,17 @@ async function routeCrapsMessageUnlocked (payload) {
       return true
 
     case 'join':
-      if (S(room).phase !== PHASES.JOIN) { await postMessage({ room, message: 'You can only join during the join window.' }); return true }
+      if (S(room).phase === PHASES.IDLE) { await postMessage({ room, message: 'No game running. Type **/craps** to start one.' }); return true }
       await joinTable(uuid, room)
       return true
 
     case 'bets':
+    case 'mybets':
       await postMessage({ room, message: await userBetsView(room, uuid) })
+      return true
+
+    case 'table':
+      await postMessage({ room, message: await tableView(room) })
       return true
 
     case 'leave':
@@ -2109,7 +2199,7 @@ join → line betting → come-out → (point betting → roll) → ...
 COMMANDS
 /craps             start if idle (starter auto-seated)
 /craps start       reset & open join
-/craps join        sit during join window
+/craps join        sit at the table anytime (mid-game ok)
 /craps leave       stand up and refund your live bets
 /craps rules       show room toggles
 /craps rule ...    update room toggles
@@ -2126,7 +2216,9 @@ COMMANDS
 /field <amt>       FIELD bet (wins 2,3,4,9,10,11,12)
 /removefield       remove your field bet
 /working on|off    place+odds working on come-out
-/bets              show your bets
+/bets              show your own bets
+/mybets            same as /bets
+/table             show all bets on the table (everyone)
 /payouts           full bet guide (what each bet does + payouts)
 /craps guide       same as /payouts
 

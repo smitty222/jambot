@@ -161,33 +161,3 @@ test('dispatchWithRegistry routes /room through the room utility handler', async
   assert.deepEqual(updates, [{ design: 'THEATER' }])
   assert.deepEqual(posted, [{ room: 'room-1', message: 'Room design updated to: THEATER' }])
 })
-
-test('dispatchWithRegistry routes /addDJ discover through the room utility handler', async () => {
-  const posted = []
-  const calls = []
-  const handlers = createRoomUtilityHandlers({
-    postMessage: async (msg) => posted.push(msg)
-  })
-  const roomBot = {
-    lastCommandText: '/addDJ discover',
-    enableDiscoverDJ: async (ids) => calls.push(['enableDiscoverDJ', ids]),
-    addDJ: async () => calls.push(['addDJ'])
-  }
-
-  const handled = await dispatchWithRegistry({
-    txt: '/addDJ discover',
-    payload: { sender: 'mod-1', message: '/addDJ discover' },
-    room: 'room-1',
-    context: { roomBot },
-    registry: { adddj: handlers.adddj },
-    resolveDispatchCommand: (txt) => resolveDispatchCommand(txt, new Set(['adddj'])),
-    handleRouletteBet: async () => {},
-    postMessage: async (msg) => posted.push(msg),
-    logger: { error () {} }
-  })
-
-  assert.equal(handled, true)
-  assert.equal(calls[0][0], 'enableDiscoverDJ')
-  assert.deepEqual(calls[1], ['addDJ'])
-  assert.equal(posted[0].message.includes('Discover DJ added'), true)
-})

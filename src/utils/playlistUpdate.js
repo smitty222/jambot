@@ -8,14 +8,14 @@ const clientSecret = env.spotifyClientSecret
 let accessToken = env.spotifyAccessToken
 const refreshToken = env.spotifyRefreshToken
 
-async function refreshAccessToken () {
+async function refreshSpotifyAccessTokenWithRefreshToken (refreshTokenValue) {
   const authOptions = {
     method: 'POST',
     headers: {
       Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
       'Content-Type': 'application/x-www-form-urlencoded'
     },
-    body: `grant_type=refresh_token&refresh_token=${refreshToken}`
+    body: `grant_type=refresh_token&refresh_token=${refreshTokenValue}`
   }
 
   try {
@@ -26,16 +26,110 @@ async function refreshAccessToken () {
     }
 
     const data = await response.json()
-    accessToken = data.access_token // Update the access token
-    return accessToken
+    const expiresIn = Number(data.expires_in) || 3600
+    return {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token || refreshTokenValue,
+      expiresAt: Date.now() + (expiresIn * 1000) - 60_000,
+      expiresIn
+    }
   } catch (error) {
     logger.error('[playlistUpdate] error refreshing access token', { err: error })
     throw error
   }
 }
 
+async function refreshAccessToken () {
+  const refreshed = await refreshSpotifyAccessTokenWithRefreshToken(refreshToken)
+  accessToken = refreshed.accessToken
+  return accessToken
+}
+
 function getAccessToken () {
   return accessToken
+}
+
+async function requestCreateSpotifyPlaylist (bearerToken, name, options = {}) {
+  const trimmedName = String(name || '').trim()
+  if (!trimmedName) {
+    throw new Error('Playlist name is required.')
+  }
+
+  const url = 'https://api.spotify.com/v1/me/playlists'
+  const headers = {
+    Authorization: `Bearer ${bearerToken}`,
+    'Content-Type': 'application/json'
+  }
+
+  const body = {
+    name: trimmedName,
+    public: options.public !== false
+  }
+
+  const description = String(options.description || '').trim()
+  if (description) body.description = description
+
+  if (typeof options.collaborative === 'boolean') {
+    body.collaborative = options.collaborative
+  }
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body)
+  })
+
+  if (!response.ok) {
+    throw new Error(`HTTP error! Status: ${response.status}`)
+  }
+
+  return await response.json()
+}
+
+async function createSpotifyPlaylist (name, options = {}) {
+  try {
+    try {
+      return await requestCreateSpotifyPlaylist(getAccessToken(), name, options)
+    } catch (error) {
+      if (!/Status:\s*401\b/.test(String(error?.message || ''))) throw error
+      const newToken = await refreshAccessToken()
+      return await requestCreateSpotifyPlaylist(newToken, name, options)
+    }
+  } catch (error) {
+    logger.error('[playlistUpdate] error creating playlist', { name: String(name || '').trim(), err: error })
+    throw error
+  }
+}
+
+async function createSpotifyPlaylistForRefreshToken (refreshTokenValue, name, options = {}, tokenState = {}) {
+  if (!refreshTokenValue) throw new Error('refreshToken is required')
+
+  let token = String(tokenState.accessToken || '').trim()
+  const expiresAt = Number(tokenState.expiresAt || 0)
+  const isExpired = !token || !Number.isFinite(expiresAt) || expiresAt <= Date.now()
+  let refreshed = null
+
+  if (isExpired) {
+    refreshed = await refreshSpotifyAccessTokenWithRefreshToken(refreshTokenValue)
+    token = refreshed.accessToken
+  }
+
+  try {
+    const playlist = await requestCreateSpotifyPlaylist(token, name, options)
+    return {
+      playlist,
+      auth: refreshed || {
+        accessToken: token,
+        refreshToken: refreshTokenValue,
+        expiresAt
+      }
+    }
+  } catch (error) {
+    if (!/Status:\s*401\b/.test(String(error?.message || ''))) throw error
+    refreshed = await refreshSpotifyAccessTokenWithRefreshToken(refreshTokenValue)
+    const playlist = await requestCreateSpotifyPlaylist(refreshed.accessToken, name, options)
+    return { playlist, auth: refreshed }
+  }
 }
 
 async function addTracksToPlaylist (playlistId, trackUris, position = null) {
@@ -53,7 +147,7 @@ async function addTracksToPlaylist (playlistId, trackUris, position = null) {
     return null // No new tracks to add
   }
 
-  const url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks`
+  const url = `https://api.spotify.com/v1/playlists/${playlistId}/items`
   const headers = {
     Authorization: `Bearer ${getAccessToken()}`,
     'Content-Type': 'application/json'
@@ -101,7 +195,7 @@ async function addTracksToPlaylist (playlistId, trackUris, position = null) {
 }
 
 async function removeTrackFromPlaylist (playlistId, trackUri) {
-  const url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks`
+  const url = `https://api.spotify.com/v1/playlists/${playlistId}/items`
   const headers = {
     Authorization: `Bearer ${getAccessToken()}`,
     'Content-Type': 'application/json'
@@ -113,7 +207,7 @@ async function removeTrackFromPlaylist (playlistId, trackUri) {
   }
 
   const body = {
-    tracks: [{ uri: trackUri }]
+    items: [{ uri: trackUri }]
   }
 
   logger.debug('[playlistUpdate] removing track from playlist', {
@@ -155,4 +249,10 @@ async function removeTrackFromPlaylist (playlistId, trackUri) {
   }
 }
 
-export { addTracksToPlaylist, removeTrackFromPlaylist }
+export {
+  addTracksToPlaylist,
+  removeTrackFromPlaylist,
+  createSpotifyPlaylist,
+  createSpotifyPlaylistForRefreshToken,
+  refreshSpotifyAccessTokenWithRefreshToken
+}

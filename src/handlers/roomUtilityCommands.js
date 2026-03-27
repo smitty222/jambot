@@ -17,7 +17,6 @@ export function buildModSheet () {
     '--- Bot DJ Lineup ---',
     '- /addDJ   (default playlist)',
     '- /addDJ auto  (AI recommendations)',
-    '- /addDJ discover  (curated playlists)',
     '- /removeDJ',
 
     '--- Bot Toggles ---',
@@ -32,6 +31,7 @@ export function buildModSheet () {
     '--- Room Actions ---',
     '- /dislike  (mod-only: bot votes against current song)',
     '- /spotlight  (remove DJ after current song)',
+    '- /playlistcreate <name>  (create a Spotify playlist)',
     '- /blacklist+  (remove song from playlists)',
     '- /addmoney <@user> <amount>  (admin only)',
 
@@ -245,7 +245,7 @@ export const COMMAND_GUIDES = {
     '- `/settheme <name>` | `/removetheme`',
     '',
     'Bot DJ',
-    '- `/addDJ [auto|discover]` | `/removeDJ`',
+    '- `/addDJ [auto]` | `/removeDJ`',
     '',
     'Toggles',
     '- `/status`',
@@ -449,27 +449,6 @@ export function createRoomUtilityHandlers (deps = {}) {
         await post({
           room: env.roomUuid,
           message: '🎵 *Auto DJ added!*\n\nThe bot will now play AI-recommended songs.'
-        })
-        return
-      }
-
-      if (option === 'discover') {
-        const discoverIdsEnv = env.discoverPlaylistIds || ''
-        let discoverIds = discoverIdsEnv.split(',').map((s) => s.trim()).filter(Boolean)
-        if (discoverIds.length === 0) {
-          discoverIds = [
-            '37i9dQZF1DX4JAvHpjipBk',
-            '37i9dQZF1DX5trt9i14X7j',
-            '37i9dQZF1DWVqfgj8NZEp1'
-          ]
-        }
-        if (typeof roomBot.enableDiscoverDJ === 'function') {
-          await roomBot.enableDiscoverDJ(discoverIds)
-        }
-        await roomBot.addDJ()
-        await post({
-          room: env.roomUuid,
-          message: `🎶 *Discover DJ added!*\n\nThe bot will now play tracks from ${discoverIds.length} curated playlist(s) and avoid repeats.`
         })
         return
       }

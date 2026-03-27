@@ -13,6 +13,7 @@
     "lint": "standard",
     "lint:fix": "standard --fix",
     "sqlite:doctor": "node tools/setup-better-sqlite3.mjs",
+    "spotify:link-user": "node tools/link-spotify-user.mjs",
     "test": "node --test --test-concurrency=1",
     "test:portable": "node --test test/command-routing.test.js test/dispatch.integration.test.js test/helpers.test.js",
     "test:db": "node --test test/economy.invariants.test.js test/slots.feature.atomicity.test.js"

@@ -212,20 +212,6 @@ export async function handleAIMention ({
 
     if (ql.includes('dj with us') || ql.includes('dj with me')) {
       await postMessage({ room, message: "Let's get it" })
-
-      const discoverIdsEnv = process.env.DISCOVER_PLAYLIST_IDS || ''
-      let discoverIds = discoverIdsEnv.split(',').map(s => s.trim()).filter(Boolean)
-      if (discoverIds.length === 0) {
-        discoverIds = [
-          '37i9dQZF1DX4JAvHpjipBk',
-          '37i9dQZF1DX5trt9i14X7j',
-          '37i9dQZF1DWVqfgj8NZEp1'
-        ]
-      }
-
-      if (typeof roomBot.enableDiscoverDJ === 'function') {
-        await roomBot.enableDiscoverDJ(discoverIds)
-      }
       await roomBot.addDJ()
       return true
     }

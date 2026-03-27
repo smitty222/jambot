@@ -606,7 +606,7 @@ export async function fetchSpotifyPlaylistTracks (playlistId) {
   const pid = playlistId || cfg.defaultPlaylistId
   if (!pid) return []
 
-  let url = withQuery(`https://api.spotify.com/v1/playlists/${pid}/tracks`, {
+  let url = withQuery(`https://api.spotify.com/v1/playlists/${pid}/items`, {
     limit: 100,
     additional_types: 'track'
   })

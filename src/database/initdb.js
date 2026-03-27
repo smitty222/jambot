@@ -687,3 +687,17 @@ try {
 } catch (e) {
   // non-fatal
 }
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS spotify_user_auth (
+    userUuid TEXT PRIMARY KEY,
+    spotifyUserId TEXT,
+    accessToken TEXT,
+    refreshToken TEXT NOT NULL,
+    expiresAt INTEGER,
+    scopes TEXT,
+    createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+  )
+`)
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_spotify_user_auth_spotifyUserId ON spotify_user_auth(spotifyUserId)') } catch (e) {}
