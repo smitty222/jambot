@@ -10,8 +10,8 @@
   "scripts": {
     "dev": "bash tools/dev.sh",
     "start": "node src/index.js",
-    "lint": "standard --no-cache",
-    "lint:fix": "standard --fix --no-cache",
+    "lint": "XDG_CACHE_HOME=/tmp standard --no-cache",
+    "lint:fix": "XDG_CACHE_HOME=/tmp standard --fix --no-cache",
     "sqlite:doctor": "node tools/setup-better-sqlite3.mjs",
     "spotify:link-user": "node tools/link-spotify-user.mjs",
     "test": "node --test --test-concurrency=1",
