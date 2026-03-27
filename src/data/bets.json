@@ -26,8 +26,12 @@
       "amount": 2,
       "createdAt": "2026-03-19T14:56:13.654Z",
       "commenceTime": "2026-03-19T16:15:00Z",
-      "status": "pending",
-      "type": "ml"
+      "status": "refunded",
+      "type": "ml",
+      "refundedAt": "2026-03-27T19:00:00.356Z",
+      "refundReason": "stale_unresolved",
+      "settlementOutcome": "refund",
+      "settledAt": "2026-03-27T19:00:00.356Z"
     }
   ],
   "9957c1ba3bbf4571f8ae879f4c5f8191": [
@@ -45,8 +49,12 @@
       "amount": 1,
       "createdAt": "2026-03-19T18:55:48.147Z",
       "commenceTime": "2026-03-19T19:15:00Z",
-      "status": "pending",
-      "type": "ml"
+      "status": "refunded",
+      "type": "ml",
+      "refundedAt": "2026-03-27T19:00:00.356Z",
+      "refundReason": "stale_unresolved",
+      "settlementOutcome": "refund",
+      "settledAt": "2026-03-27T19:00:00.356Z"
     }
   ]
 }

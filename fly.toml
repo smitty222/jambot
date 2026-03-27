@@ -13,9 +13,10 @@ primary_region = "iad"
   PUBLISH_CRON = "0 9,13,17 * * *"
   PUBLISH_RUN_ON_BOOT = "1"
   PUBLISH_SCRIPT = "tools/publish-site-data.mjs"
+  JAMBOT_DISABLE_FLY_ENV = "1"
 
   # Worker API for publishing site data
-  API_BASE = "API_BASE=https://jamflow-site-api-dev.jamflowbot.workers.dev"
+  API_BASE = "https://jamflow-site-api-dev.jamflowbot.workers.dev"
 
   # ── Persistent data paths (lives on the attached volume) ─
   DB_PATH = "/data/app.db"
