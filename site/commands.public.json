@@ -113,6 +113,7 @@
       "/searchalbum <artist>",
       "/newalbums [countryCode]",
       "/searchplaylist",
+      "/save",
       "/qplaylist <spotifyPlaylistId>",
       "/qalbum <spotifyAlbumId|url|uri>",
       "/albumlist",

@@ -613,8 +613,11 @@ export async function fetchSpotifyPlaylistTracks (playlistId) {
 
   const tracks = []
   while (url) {
-    const { ok, data } = await spotifyRequest(url)
-    if (!ok) return []
+    const { ok, data, status } = await spotifyRequest(url)
+    if (!ok) {
+      logger.warn('[fetchSpotifyPlaylistTracks] Spotify API error', { playlistId: pid, status, error: data?.error })
+      return []
+    }
     const items = data?.items || []
     if (items.length) tracks.push(...items)
     url = data?.next || null

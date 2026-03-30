@@ -5,7 +5,7 @@
 
 import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
 import { logger } from '../utils/logging.js'
-import { createSpotifyPlaylist, createSpotifyPlaylistForRefreshToken } from '../utils/playlistUpdate.js'
+import { createSpotifyPlaylist, createSpotifyPlaylistForRefreshToken, saveToSpotifyLikedSongs } from '../utils/playlistUpdate.js'
 import { getSpotifyUserAuth, updateSpotifyUserAuthTokens } from '../database/dbspotifyauth.js'
 import {
   getAlbumsByArtist,
@@ -28,6 +28,16 @@ function extractSpotifyAlbumId (input) {
   const m1 = s.match(/open\.spotify\.com\/album\/([A-Za-z0-9]{15,30})/i)
   if (m1?.[1]) return m1[1]
   const m2 = s.match(/spotify:album:([A-Za-z0-9]{15,30})/i)
+  if (m2?.[1]) return m2[1]
+  return null
+}
+
+function extractSpotifyPlaylistId (input) {
+  const s = String(input || '').trim()
+  if (/^[A-Za-z0-9]{15,30}$/.test(s)) return s
+  const m1 = s.match(/open\.spotify\.com\/playlist\/([A-Za-z0-9]{15,30})/i)
+  if (m1?.[1]) return m1[1]
+  const m2 = s.match(/spotify:playlist:([A-Za-z0-9]{15,30})/i)
   if (m2?.[1]) return m2[1]
   return null
 }
@@ -56,7 +66,8 @@ export function createSpotifyQueueHandlers (deps = {}) {
     createSpotifyPlaylistForRefreshToken: createPlaylistForToken = createSpotifyPlaylistForRefreshToken,
     getSpotifyUserAuth: getUserSpotifyAuth = getSpotifyUserAuth,
     updateSpotifyUserAuthTokens: saveUserSpotifyTokens = updateSpotifyUserAuthTokens,
-    isUserAuthorized: isAuthorized = isUserAuthorized
+    isUserAuthorized: isAuthorized = isUserAuthorized,
+    saveToSpotifyLikedSongs: saveLikedSong = saveToSpotifyLikedSongs
   } = deps
 
   const handlePlaylistCreate = async ({ payload, room, args, ttlUserToken }) => {
@@ -196,7 +207,7 @@ ${spotifyUrl ? `🔗 ${spotifyUrl}\n` : ''}🆔 \`${playlist.id}\``
     createplaylist: handlePlaylistCreate,
 
     qplaylist: async ({ payload, room, args }) => {
-      const playlistId = (args || '').trim().split(/\s+/)[0]
+      const playlistId = extractSpotifyPlaylistId((args || '').trim().split(/\s+/)[0])
       if (!playlistId) {
         await post({
           room,
@@ -371,6 +382,45 @@ Please refresh your page for the queue to update`
           room,
           message: '\u274C *Something went wrong while queuing your album.* Please check the album ID and try again.'
         })
+      }
+    },
+
+    save: async ({ payload, room, roomBot }) => {
+      const spotifyTrackId = roomBot?.currentSong?.spotifyTrackId
+      if (!spotifyTrackId) {
+        await post({ room, message: '\u274C No track is currently playing or track ID is unavailable.' })
+        return
+      }
+
+      const userAuth = getUserSpotifyAuth(payload.sender)
+      if (!userAuth?.refreshToken) {
+        await post({
+          room,
+          message: '\uD83D\uDD10 *Spotify account not linked*\n\nYou need a linked Spotify account to save liked songs.\nPlease contact an admin to link your account.'
+        })
+        return
+      }
+
+      try {
+        const authResult = await saveLikedSong(
+          userAuth.refreshToken,
+          spotifyTrackId,
+          { accessToken: userAuth.accessToken, expiresAt: userAuth.expiresAt }
+        )
+        if (authResult?.accessToken) {
+          saveUserSpotifyTokens(payload.sender, {
+            accessToken: authResult.accessToken,
+            refreshToken: authResult.refreshToken || userAuth.refreshToken,
+            expiresAt: authResult.expiresAt
+          })
+        }
+        const trackName = roomBot.currentSong?.trackName || 'the current track'
+        const artistName = roomBot.currentSong?.artistName
+        const label = artistName ? `*${trackName}* by *${artistName}*` : `*${trackName}*`
+        await post({ room, message: `\u2764\uFE0F Saved ${label} to your Spotify Liked Songs!` })
+      } catch (error) {
+        logger.error('[save] error saving to liked songs', { spotifyTrackId, err: error })
+        await post({ room, message: '\u274C *Something went wrong while saving the track.* Please try again.' })
       }
     },
 
