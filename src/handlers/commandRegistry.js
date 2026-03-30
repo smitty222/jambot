@@ -463,11 +463,20 @@ extendCommandRegistry({
     await queuePlaylistHandlers['q-']({ payload, room, queueManager })
   },
   q: async ({ room, queueManager }) => { await queuePlaylistHandlers.q({ room, queueManager }) },
-  addsong: async ({ payload, room, roomBot }) => {
-    await queuePlaylistHandlers.addsong({ payload, room, roomBot })
+  addsong: async ({ payload, room, roomBot, args }) => {
+    await queuePlaylistHandlers.addsong({ payload, room, roomBot, args })
   },
-  removesong: async ({ payload, room, roomBot, ttlUserToken }) => {
-    await queuePlaylistHandlers.removesong({ payload, room, roomBot, ttlUserToken, isUserAuthorized })
+  removesong: async ({ payload, room, roomBot, args }) => {
+    await queuePlaylistHandlers.removesong({ payload, room, roomBot, args })
+  },
+  favplaylist: async ({ payload, room, args }) => {
+    await queuePlaylistHandlers.favplaylist({ payload, room, args })
+  },
+  favplaylists: async ({ payload, room }) => {
+    await queuePlaylistHandlers.favplaylists({ payload, room })
+  },
+  unfavplaylist: async ({ payload, room, args }) => {
+    await queuePlaylistHandlers.unfavplaylist({ payload, room, args })
   },
   'blacklist+': async ({ room, roomBot }) => {
     await queuePlaylistHandlers['blacklist+']({ room, roomBot })

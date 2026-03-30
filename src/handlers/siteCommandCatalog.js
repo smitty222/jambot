@@ -112,14 +112,21 @@ export const PUBLIC_SITE_COMMAND_GROUPS = [
       '/q-',
       '/searchalbum <artist>',
       '/newalbums [countryCode]',
-      '/searchplaylist',
+      '/searchplaylist [filter]',
+      '/searchplaylists [filter]',
+      '/save',
+      '/spotifylink',
+      '/spotify link',
+      '/favplaylist <1-9> <playlistId|url>',
+      '/favplaylists',
+      '/unfavplaylist <1-9>',
       '/qplaylist <spotifyPlaylistId>',
       '/qalbum <spotifyAlbumId|url|uri>',
       '/albumlist',
       '/albumadd <spotifyAlbumId>',
       '/albumremove <spotifyAlbumId>',
-      '/addsong [beach]',
-      '/removesong [beach]'
+      '/addsong <1-9>',
+      '/removesong <1-9>'
     ]
   },
   {

@@ -701,3 +701,15 @@ db.exec(`
   )
 `)
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_spotify_user_auth_spotifyUserId ON spotify_user_auth(spotifyUserId)') } catch (e) {}
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS user_playlist_favorites (
+    userUuid TEXT NOT NULL,
+    slot INTEGER NOT NULL CHECK(slot >= 1 AND slot <= 9),
+    playlistId TEXT NOT NULL,
+    playlistName TEXT NOT NULL DEFAULT '',
+    createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (userUuid, slot)
+  )
+`)

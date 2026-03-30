@@ -286,11 +286,85 @@ async function saveToSpotifyLikedSongs (refreshTokenValue, trackId, tokenState =
   return refreshed || { accessToken: token, refreshToken: refreshTokenValue, expiresAt }
 }
 
+async function addTrackToPlaylistForUser (refreshTokenValue, playlistId, trackUri, tokenState = {}) {
+  if (!refreshTokenValue) throw new Error('refreshToken is required')
+
+  let token = String(tokenState.accessToken || '').trim()
+  const expiresAt = Number(tokenState.expiresAt || 0)
+  const isExpired = !token || !Number.isFinite(expiresAt) || expiresAt <= Date.now()
+  let refreshed = null
+
+  if (isExpired) {
+    refreshed = await refreshSpotifyAccessTokenWithRefreshToken(refreshTokenValue)
+    token = refreshed.accessToken
+  }
+
+  const doAdd = async (bearerToken) => {
+    const res = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${bearerToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uris: [trackUri] })
+    })
+    if (!res.ok) throw new Error(`HTTP error! Status: ${res.status}`)
+    const data = await res.json()
+    return data.snapshot_id
+  }
+
+  let snapshotId
+  try {
+    snapshotId = await doAdd(token)
+  } catch (err) {
+    if (!/Status:\s*401\b/.test(String(err?.message || ''))) throw err
+    refreshed = await refreshSpotifyAccessTokenWithRefreshToken(refreshTokenValue)
+    snapshotId = await doAdd(refreshed.accessToken)
+  }
+
+  return { snapshotId, auth: refreshed || { accessToken: token, refreshToken: refreshTokenValue, expiresAt } }
+}
+
+async function removeTrackFromPlaylistForUser (refreshTokenValue, playlistId, trackUri, tokenState = {}) {
+  if (!refreshTokenValue) throw new Error('refreshToken is required')
+
+  let token = String(tokenState.accessToken || '').trim()
+  const expiresAt = Number(tokenState.expiresAt || 0)
+  const isExpired = !token || !Number.isFinite(expiresAt) || expiresAt <= Date.now()
+  let refreshed = null
+
+  if (isExpired) {
+    refreshed = await refreshSpotifyAccessTokenWithRefreshToken(refreshTokenValue)
+    token = refreshed.accessToken
+  }
+
+  const doRemove = async (bearerToken) => {
+    const res = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${bearerToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tracks: [{ uri: trackUri }] })
+    })
+    if (!res.ok) throw new Error(`HTTP error! Status: ${res.status}`)
+    const data = await res.json()
+    return data.snapshot_id
+  }
+
+  let snapshotId
+  try {
+    snapshotId = await doRemove(token)
+  } catch (err) {
+    if (!/Status:\s*401\b/.test(String(err?.message || ''))) throw err
+    refreshed = await refreshSpotifyAccessTokenWithRefreshToken(refreshTokenValue)
+    snapshotId = await doRemove(refreshed.accessToken)
+  }
+
+  return { snapshotId, auth: refreshed || { accessToken: token, refreshToken: refreshTokenValue, expiresAt } }
+}
+
 export {
   addTracksToPlaylist,
   removeTrackFromPlaylist,
   createSpotifyPlaylist,
   createSpotifyPlaylistForRefreshToken,
   refreshSpotifyAccessTokenWithRefreshToken,
-  saveToSpotifyLikedSongs
+  saveToSpotifyLikedSongs,
+  addTrackToPlaylistForUser,
+  removeTrackFromPlaylistForUser
 }

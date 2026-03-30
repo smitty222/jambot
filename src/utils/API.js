@@ -1750,6 +1750,22 @@ export async function getUserPlaylists (spotifyUserId) {
   return playlists
 }
 
+export async function getMyPlaylists (accessToken) {
+  if (!accessToken) return []
+  const playlists = []
+  let url = 'https://api.spotify.com/v1/me/playlists?limit=50'
+  while (url) {
+    const { ok, data } = await makeRequest(url, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    })
+    if (!ok) break
+    const items = data?.items || []
+    if (items.length) playlists.push(...items)
+    url = data?.next || null
+  }
+  return playlists
+}
+
 /**
  * Retrieve all tracks from a given Spotify playlist.  The Spotify API
  * returns playlist items that wrap the track object; this helper

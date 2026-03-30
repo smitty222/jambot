@@ -6,8 +6,9 @@
 import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
 import { logger } from '../utils/logging.js'
 import { env } from '../config.js'
-import { createSpotifyPlaylist, createSpotifyPlaylistForRefreshToken, saveToSpotifyLikedSongs } from '../utils/playlistUpdate.js'
+import { createSpotifyPlaylist, createSpotifyPlaylistForRefreshToken, saveToSpotifyLikedSongs, refreshSpotifyAccessTokenWithRefreshToken } from '../utils/playlistUpdate.js'
 import { getSpotifyUserAuth, updateSpotifyUserAuthTokens } from '../database/dbspotifyauth.js'
+import { extractSpotifyAlbumId, extractSpotifyPlaylistId } from '../utils/spotifyHelpers.js'
 import {
   getAlbumsByArtist,
   getAlbumTracks,
@@ -17,31 +18,13 @@ import {
   getUserQueueCrateId,
   getSpotifyUserId,
   getUserPlaylists,
+  getMyPlaylists,
   getPlaylistTracks,
   isUserAuthorized,
   getSpotifyNewAlbumsViaSearch,
   getSpotifyAlbumInfo
 } from '../utils/API.js'
 
-function extractSpotifyAlbumId (input) {
-  const s = String(input || '').trim()
-  if (/^[A-Za-z0-9]{15,30}$/.test(s)) return s
-  const m1 = s.match(/open\.spotify\.com\/album\/([A-Za-z0-9]{15,30})/i)
-  if (m1?.[1]) return m1[1]
-  const m2 = s.match(/spotify:album:([A-Za-z0-9]{15,30})/i)
-  if (m2?.[1]) return m2[1]
-  return null
-}
-
-function extractSpotifyPlaylistId (input) {
-  const s = String(input || '').trim()
-  if (/^[A-Za-z0-9]{15,30}$/.test(s)) return s
-  const m1 = s.match(/open\.spotify\.com\/playlist\/([A-Za-z0-9]{15,30})/i)
-  if (m1?.[1]) return m1[1]
-  const m2 = s.match(/spotify:playlist:([A-Za-z0-9]{15,30})/i)
-  if (m2?.[1]) return m2[1]
-  return null
-}
 
 function parsePlaylistCreateArgs (input) {
   const raw = String(input || '').trim()
@@ -146,8 +129,10 @@ ${spotifyUrl ? `🔗 ${spotifyUrl}\n` : ''}🆔 \`${playlist.id}\``
     const user = payload.sender
     const filter = (args || '').trim().toLowerCase()
 
-    const spotifyUserId = getSpotifyUserId(user) || getUserSpotifyAuth(user)?.spotifyUserId
-    if (!spotifyUserId) {
+    const userAuth = getUserSpotifyAuth(user)
+    const spotifyUserId = getSpotifyUserId(user) || userAuth?.spotifyUserId
+
+    if (!userAuth?.refreshToken && !spotifyUserId) {
       await post({
         room,
         message: '\uD83D\uDD0D *Spotify account not linked*\n\nUse `/spotifylink` to connect your Spotify account first.'
@@ -156,7 +141,29 @@ ${spotifyUrl ? `🔗 ${spotifyUrl}\n` : ''}🆔 \`${playlist.id}\``
     }
 
     try {
-      const playlists = await getUserPlaylists(spotifyUserId)
+      let playlists = []
+
+      if (userAuth?.refreshToken) {
+        // Use the user's OAuth token to get /me/playlists — includes Spotify-curated playlists
+        // (Discover Weekly, Daily Mixes, Release Radar, etc.)
+        let token = userAuth.accessToken
+        const isExpired = !token || !userAuth.expiresAt || userAuth.expiresAt <= Date.now()
+
+        if (isExpired) {
+          const refreshed = await refreshSpotifyAccessTokenWithRefreshToken(userAuth.refreshToken)
+          token = refreshed.accessToken
+          saveUserSpotifyTokens(user, {
+            accessToken: refreshed.accessToken,
+            refreshToken: refreshed.refreshToken || userAuth.refreshToken,
+            expiresAt: refreshed.expiresAt
+          })
+        }
+
+        playlists = await getMyPlaylists(token)
+      } else {
+        playlists = await getUserPlaylists(spotifyUserId)
+      }
+
       if (!playlists || playlists.length === 0) {
         await post({ room, message: '\u274C *No playlists found on your Spotify account.*' })
         return
