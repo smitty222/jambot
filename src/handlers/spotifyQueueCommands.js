@@ -142,6 +142,52 @@ ${spotifyUrl ? `🔗 ${spotifyUrl}\n` : ''}🆔 \`${playlist.id}\``
     }
   }
 
+  const handleSearchPlaylist = async ({ payload, room, args }) => {
+    const user = payload.sender
+    const filter = (args || '').trim().toLowerCase()
+
+    const spotifyUserId = getSpotifyUserId(user) || getUserSpotifyAuth(user)?.spotifyUserId
+    if (!spotifyUserId) {
+      await post({
+        room,
+        message: '\uD83D\uDD0D *Spotify account not linked*\n\nUse `/spotifylink` to connect your Spotify account first.'
+      })
+      return
+    }
+
+    try {
+      const playlists = await getUserPlaylists(spotifyUserId)
+      if (!playlists || playlists.length === 0) {
+        await post({ room, message: '\u274C *No playlists found on your Spotify account.*' })
+        return
+      }
+
+      const matched = filter
+        ? playlists.filter(pl => pl.name?.toLowerCase().includes(filter))
+        : playlists
+
+      if (matched.length === 0) {
+        await post({ room, message: `\u274C *No playlists found matching "${filter}".*` })
+        return
+      }
+
+      const playlistList = matched.map((pl, index) => {
+        const count = pl.tracks?.total != null ? ` (${pl.tracks.total} tracks)` : ''
+        return `\`${index + 1}.\` *${pl.name}*${count}\n\uD83C\uDD86 \`${pl.id}\``
+      }).join('\n\n')
+
+      const header = filter
+        ? `\uD83D\uDCF3 *Playlists matching "${filter}"* (${matched.length}):\n\n`
+        : `\uD83D\uDCF3 *Your Spotify Playlists* (${matched.length}):\n\n`
+
+      await sendDm(user, `${header}${playlistList}\n\n\u25B6\uFE0F Queue one with \`/qplaylist <id>\``)
+      await post({ room, message: `<@uid:${user}> Check your DMs for your playlist list!` })
+    } catch (error) {
+      logger.error('[searchplaylist] error fetching playlists', { err: error })
+      await post({ room, message: '\u274C *Failed to fetch your playlists.* Please try again.' })
+    }
+  }
+
   return {
     searchalbum: async ({ payload, room, args }) => {
       const artistName = (args || '').trim()
@@ -168,41 +214,8 @@ ${spotifyUrl ? `🔗 ${spotifyUrl}\n` : ''}🆔 \`${playlist.id}\``
       await post({ room, message: `<@uid:${payload.sender}> I sent you a private message` })
     },
 
-    searchplaylist: async ({ payload, room }) => {
-      const user = payload.sender
-      const spotifyUserId = getSpotifyUserId(user)
-      if (!spotifyUserId) {
-        await post({
-          room,
-          message: "\uD83D\uDD0D *Spotify user ID not found*\n\nWe don't have a Spotify user ID associated with your account.  Ask an admin to update the mapping for your TT.fm UUID so you can use /searchplaylist."
-        })
-        return
-      }
-
-      try {
-        const playlists = await getUserPlaylists(spotifyUserId)
-        if (!playlists || playlists.length === 0) {
-          await post({
-            room,
-            message: `\u274C *No playlists found for your Spotify account \`${spotifyUserId}\`.*`
-          })
-          return
-        }
-
-        const playlistList = playlists.map((pl, index) => {
-          return `\`${index + 1}.\` *${pl.name}* \u2014 \`ID: ${pl.id}\``
-        }).join('\n')
-
-        await sendDm(user, `\uD83D\uDCF3 Playlists for your Spotify account:\n${playlistList}`)
-        await post({ room, message: `<@uid:${user}> I sent you a private message` })
-      } catch (error) {
-        logger.error('Error fetching user playlists', { err: error })
-        await post({
-          room,
-          message: '\u274C *Failed to fetch your playlists.* Please try again or ask an admin to check the Spotify connection.'
-        })
-      }
-    },
+    searchplaylist: handleSearchPlaylist,
+    searchplaylists: handleSearchPlaylist,
 
     playlistcreate: handlePlaylistCreate,
     createplaylist: handlePlaylistCreate,
