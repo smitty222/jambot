@@ -242,7 +242,7 @@ async function main () {
       client_id: env.spotifyClientId,
       response_type: 'code',
       redirect_uri: env.redirectUri,
-      scope: 'playlist-modify-public playlist-modify-private',
+      scope: 'playlist-modify-public playlist-modify-private user-library-modify',
       state: userUuid
     })
     res.redirect(`https://accounts.spotify.com/authorize?${params}`)

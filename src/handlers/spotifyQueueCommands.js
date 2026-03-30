@@ -5,6 +5,7 @@
 
 import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
 import { logger } from '../utils/logging.js'
+import { env } from '../config.js'
 import { createSpotifyPlaylist, createSpotifyPlaylistForRefreshToken, saveToSpotifyLikedSongs } from '../utils/playlistUpdate.js'
 import { getSpotifyUserAuth, updateSpotifyUserAuthTokens } from '../database/dbspotifyauth.js'
 import {
@@ -421,6 +422,31 @@ Please refresh your page for the queue to update`
       } catch (error) {
         logger.error('[save] error saving to liked songs', { spotifyTrackId, err: error })
         await post({ room, message: '\u274C *Something went wrong while saving the track.* Please try again.' })
+      }
+    },
+
+    spotifylink: async ({ payload, room, ttlUserToken }) => {
+      const ok = await isAuthorized(payload.sender, ttlUserToken)
+      if (!ok) {
+        await post({ room, message: '\u26D4 You need to be a moderator to use this command.' })
+        return
+      }
+
+      if (!env.redirectUri) {
+        await post({ room, message: '\u274C Spotify auth is not configured on this bot.' })
+        return
+      }
+
+      try {
+        const authUrl = new URL('/auth/spotify', env.redirectUri)
+        authUrl.searchParams.set('user', payload.sender)
+        await sendDm(payload.sender,
+          `\uD83D\uDD17 *Link your Spotify account*\n\nClick the link below to connect your Spotify account to the bot:\n${authUrl.href}\n\n_This will allow you to use commands like \`/save\`, \`/qplaylist\`, and \`/playlistcreate\`._`
+        )
+        await post({ room, message: `\u2705 <@uid:${payload.sender}> Check your DMs for your Spotify link!` })
+      } catch (err) {
+        logger.error('[spotifylink] error sending auth link', { sender: payload.sender, err })
+        await post({ room, message: '\u274C Failed to send the Spotify link. Please try again.' })
       }
     },
 

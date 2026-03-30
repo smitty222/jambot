@@ -297,6 +297,16 @@ extendCommandRegistry({
   // Spotify search & queue
   ...createSpotifyQueueHandlers(),
 
+  // /spotify link — alias for /spotifylink
+  spotify: async ({ payload, room, args, ttlUserToken }) => {
+    const sub = (args || '').trim().toLowerCase()
+    if (sub === 'link') {
+      await commandRegistry.spotifylink({ payload, room, ttlUserToken })
+    } else {
+      await postMessage({ room, message: 'Usage: `/spotify link` — send yourself a Spotify account link.' })
+    }
+  },
+
   // Prestige / profile
   ...createPrestigeHandlers(),
 

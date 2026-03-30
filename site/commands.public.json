@@ -114,6 +114,8 @@
       "/newalbums [countryCode]",
       "/searchplaylist",
       "/save",
+      "/spotifylink",
+      "/spotify link",
       "/qplaylist <spotifyPlaylistId>",
       "/qalbum <spotifyAlbumId|url|uri>",
       "/albumlist",
