@@ -158,16 +158,8 @@ export function createQueuePlaylistHandlers (deps = {}) {
       if (!auth) return
 
       try {
-        // Fetch the playlist name so the favorites list is readable
-        const { getUserPlaylists, getSpotifyUserId } = await import('../utils/API.js')
-        const spotifyUserId = getSpotifyUserId(user) || auth.spotifyUserId
-        let playlistName = playlistId
-
-        if (spotifyUserId) {
-          const playlists = await getUserPlaylists(spotifyUserId)
-          const match = playlists.find(pl => pl.id === playlistId)
-          if (match?.name) playlistName = match.name
-        }
+        const { getSpotifyPlaylistName } = await import('../utils/API.js')
+        const playlistName = await getSpotifyPlaylistName(playlistId, auth.accessToken) || playlistId
 
         setFavorite(user, slot, playlistId, playlistName)
         await post({

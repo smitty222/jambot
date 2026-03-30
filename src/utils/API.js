@@ -1750,6 +1750,14 @@ export async function getUserPlaylists (spotifyUserId) {
   return playlists
 }
 
+export async function getSpotifyPlaylistName (playlistId, accessToken) {
+  if (!playlistId) return null
+  const { ok, data } = await makeRequest(`https://api.spotify.com/v1/playlists/${playlistId}?fields=name`, {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  })
+  return ok ? (data?.name || null) : null
+}
+
 export async function getMyPlaylists (accessToken) {
   if (!accessToken) return []
   const playlists = []
