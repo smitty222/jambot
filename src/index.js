@@ -55,6 +55,8 @@ async function main () {
     import('./scheduler/marchMadnessUpdates.js')
   ])
 
+  const { upsertSpotifyUserAuth } = await import('./database/dbspotifyauth.js')
+
   const express = expressModule.default
   const cron = cronModule.default
   const { spawn } = childProcessModule
@@ -228,6 +230,78 @@ async function main () {
 
   app.get('/heartbeat', (req, res) => {
     res.status(200).send('beat')
+  })
+
+  app.get('/auth/spotify', (req, res) => {
+    const userUuid = String(req.query.user || '').trim()
+    if (!userUuid) {
+      res.status(400).send('Missing ?user= parameter')
+      return
+    }
+    const params = new URLSearchParams({
+      client_id: env.spotifyClientId,
+      response_type: 'code',
+      redirect_uri: env.redirectUri,
+      scope: 'playlist-modify-public playlist-modify-private',
+      state: userUuid
+    })
+    res.redirect(`https://accounts.spotify.com/authorize?${params}`)
+  })
+
+  app.get('/auth/spotify/callback', async (req, res) => {
+    const code = String(req.query.code || '').trim()
+    const userUuid = String(req.query.state || '').trim()
+    const error = req.query.error
+
+    if (error) {
+      res.status(400).send(`Spotify authorization denied: ${error}`)
+      return
+    }
+    if (!code || !userUuid) {
+      res.status(400).send('Missing code or state')
+      return
+    }
+
+    try {
+      const tokenRes = await fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${Buffer.from(`${env.spotifyClientId}:${env.spotifyClientSecret}`).toString('base64')}`,
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: new URLSearchParams({
+          grant_type: 'authorization_code',
+          code,
+          redirect_uri: env.redirectUri
+        }).toString()
+      })
+
+      if (!tokenRes.ok) throw new Error(`Token exchange failed: ${tokenRes.status}`)
+      const tokenData = await tokenRes.json()
+
+      const profileRes = await fetch('https://api.spotify.com/v1/me', {
+        headers: { Authorization: `Bearer ${tokenData.access_token}` }
+      })
+      if (!profileRes.ok) throw new Error(`Profile fetch failed: ${profileRes.status}`)
+      const profile = await profileRes.json()
+
+      const expiresAt = Date.now() + (Number(tokenData.expires_in) || 3600) * 1000 - 60_000
+
+      upsertSpotifyUserAuth({
+        userUuid,
+        spotifyUserId: profile.id,
+        accessToken: tokenData.access_token,
+        refreshToken: tokenData.refresh_token,
+        expiresAt,
+        scopes: tokenData.scope || ''
+      })
+
+      logger.info('[spotify-auth] user linked', { userUuid, spotifyUserId: profile.id })
+      res.send(`✅ Spotify connected! ${profile.display_name || profile.id} is now linked. You can close this tab.`)
+    } catch (err) {
+      logger.error('[spotify-auth] callback error', { err })
+      res.status(500).send('Failed to connect Spotify. Please try again.')
+    }
   })
 
   const port = env.port
