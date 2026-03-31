@@ -470,6 +470,65 @@ Please refresh your page for the queue to update`
       }
     },
 
+    spotifyhelp: async ({ payload, room }) => {
+      const user = payload.sender
+      const help = `\uD83C\uDFB5 *Spotify Commands Guide*
+
+\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+\uD83D\uDD10 *Account Setup* _(mod only)_
+\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+\`/spotifylink\` or \`/spotify link\`
+Link your Spotify account. Sends you a DM with your personal auth URL. Required before using any other Spotify commands.
+
+\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+\u2764\uFE0F *Favorite Playlists*
+\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+\`/favplaylist <1-9> <playlistId|url>\`
+Save a playlist to a slot (1–9). Accepts a Spotify ID or full URL. Overwrites the slot if already set.
+
+\`/favplaylists\`
+View all your saved playlist slots with names and IDs.
+
+\`/unfavplaylist <1-9>\`
+Clear a slot.
+
+\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+\uD83C\uDFB5 *Current Song*
+\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+\`/addsong <1-9>\`
+Add the currently playing track to the playlist in that slot.
+
+\`/removesong <1-9>\`
+Remove the currently playing track from the playlist in that slot.
+
+\`/save\`
+Save the currently playing track to your Spotify Liked Songs.
+
+\`/playlist?\`
+Check which of your favorite playlist slots already contain the current track.
+
+\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+\uD83D\uDD0D *Search & Queue*
+\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+\`/searchplaylist [filter]\` or \`/searchplaylists [filter]\`
+DMs you a list of your Spotify playlists. Optionally filter by name, e.g. \`/searchplaylist chill\`.
+
+\`/qplaylist <id|url>\`
+Load all tracks from a Spotify playlist into your queue.
+
+\`/qalbum <id|url>\`
+Load all tracks from a Spotify album into your queue.
+
+\`/searchalbum <artist>\`
+DMs you a list of albums by an artist with their IDs.
+
+\`/newalbums [countryCode]\`
+Show recent album releases. Defaults to US.`
+
+      await sendDm(user, help)
+      await post({ room, message: `<@uid:${user}> Check your DMs for the Spotify commands guide!` })
+    },
+
     newalbums: async ({ payload, room, args }) => {
       const country = ((args || '').trim().split(/\s+/)[0] || 'US').toUpperCase()
       logger.info('[newalbums] command received', { message: payload.message, country })

@@ -238,6 +238,22 @@ export async function handleAIMention ({
     }
   }
 
+  // --- spotify help intent ------------------------------------------------
+  {
+    const ql = question.toLowerCase()
+    if (
+      /\b(add|save|remove|delete)\b.{0,30}\b(song|track|music)\b/.test(ql) ||
+      /\b(song|track|music)\b.{0,30}\b(add|save|remove|delete)\b/.test(ql) ||
+      /\b(playlist|queue|favorite|fav)\b.{0,30}\b(how|command|work|use)\b/.test(ql) ||
+      /\b(how|what).{0,30}\b(playlist|queue|favorite|fav|spotify)\b/.test(ql) ||
+      /\bspotify\b.{0,30}\b(command|help|how|work|use)\b/.test(ql) ||
+      /\b(spotify help|music commands?|playlist commands?)\b/.test(ql)
+    ) {
+      await postMessage({ room, message: 'For all Spotify and playlist commands, type `/spotifyhelp` \u2014 it\u2019ll DM you the full guide \uD83C\uDFB5' })
+      return true
+    }
+  }
+
   // --- lottery intent -----------------------------------------------------
   if (isLotteryQuestion(question.toLowerCase())) {
     const userInput = extractUserFromText(question.toLowerCase())

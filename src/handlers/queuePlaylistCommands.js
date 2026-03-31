@@ -5,6 +5,7 @@ import { getSpotifyUserAuth, updateSpotifyUserAuthTokens } from '../database/dbs
 import { getFavorite, getFavorites, setFavorite, removeFavorite } from '../database/dbplaylistfavorites.js'
 import { addTrackToPlaylistForUser, removeTrackFromPlaylistForUser } from '../utils/playlistUpdate.js'
 import { extractSpotifyPlaylistId } from '../utils/spotifyHelpers.js'
+import { getPlaylistTrackIds } from '../utils/API.js'
 
 export function createQueuePlaylistHandlers (deps = {}) {
   const {
@@ -302,6 +303,67 @@ export function createQueuePlaylistHandlers (deps = {}) {
       } catch (err) {
         logger.error('[removesong] error removing track', { user, slot, playlistId: favorite.playlistId, err })
         await post({ room, message: '\u274C Failed to remove the track. Please try again.' })
+      }
+    },
+
+    // /playlist? — check which favorite slots contain the current song
+    'playlist?': async ({ payload, room, roomBot }) => {
+      const user = payload.sender
+
+      const spotifyTrackId = roomBot?.currentSong?.spotifyTrackId
+      if (!spotifyTrackId) {
+        await post({ room, message: '\u274C No track is currently playing or track ID is unavailable.' })
+        return
+      }
+
+      const favorites = getFavorites(user)
+      if (!favorites.length) {
+        await post({
+          room,
+          message: '\uD83D\uDCCB *No favorites set yet.*\n\nUse `/favplaylist <1-9> <playlistId>` to save playlists to slots first.'
+        })
+        return
+      }
+
+      const auth = await requireLinkedAccount(user, room)
+      if (!auth) return
+
+      const trackName = roomBot.currentSong?.trackName || 'This track'
+      const artistName = roomBot.currentSong?.artistName
+      const label = artistName ? `*${trackName}* by *${artistName}*` : `*${trackName}*`
+
+      await post({ room, message: `\uD83D\uDD0D Checking your playlists for ${label}...` })
+
+      try {
+        const results = await Promise.all(
+          favorites.map(async (fav) => {
+            const ids = await getPlaylistTrackIds(fav.playlistId, auth.accessToken)
+            return { fav, found: ids.has(spotifyTrackId) }
+          })
+        )
+
+        const inPlaylists = results.filter(r => r.found)
+        const notInPlaylists = results.filter(r => !r.found)
+
+        const inLines = inPlaylists.length
+          ? inPlaylists.map(r => `\u2705 *${r.fav.slot}.* ${r.fav.playlistName}`).join('\n')
+          : '_Not in any of your favorites_'
+
+        const notInLines = notInPlaylists.length
+          ? notInPlaylists.map(r => `\u274C *${r.fav.slot}.* ${r.fav.playlistName}`).join('\n')
+          : ''
+
+        const message = [
+          `\uD83C\uDFB5 ${label}`,
+          '',
+          inLines,
+          notInLines ? `\n${notInLines}` : ''
+        ].join('\n').trim()
+
+        await post({ room, message })
+      } catch (err) {
+        logger.error('[playlist?] error checking playlists', { user, spotifyTrackId, err })
+        await post({ room, message: '\u274C Something went wrong while checking your playlists. Please try again.' })
       }
     },
 

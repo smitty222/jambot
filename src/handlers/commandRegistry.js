@@ -478,6 +478,9 @@ extendCommandRegistry({
   unfavplaylist: async ({ payload, room, args }) => {
     await queuePlaylistHandlers.unfavplaylist({ payload, room, args })
   },
+  'playlist?': async ({ payload, room, roomBot }) => {
+    await queuePlaylistHandlers['playlist?']({ payload, room, roomBot })
+  },
   'blacklist+': async ({ room, roomBot }) => {
     await queuePlaylistHandlers['blacklist+']({ room, roomBot })
   },

@@ -1750,6 +1750,23 @@ export async function getUserPlaylists (spotifyUserId) {
   return playlists
 }
 
+export async function getPlaylistTrackIds (playlistId, accessToken) {
+  if (!playlistId || !accessToken) return new Set()
+  const ids = new Set()
+  let url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?fields=items(track(id)),next&limit=100`
+  while (url) {
+    const { ok, data } = await makeRequest(url, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    })
+    if (!ok) break
+    for (const item of (data?.items || [])) {
+      if (item?.track?.id) ids.add(item.track.id)
+    }
+    url = data?.next || null
+  }
+  return ids
+}
+
 export async function getSpotifyPlaylistName (playlistId, accessToken) {
   if (!playlistId) return null
   const { ok, data } = await makeRequest(`https://api.spotify.com/v1/playlists/${playlistId}?fields=name`, {

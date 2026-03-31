@@ -114,6 +114,7 @@
       "/newalbums [countryCode]",
       "/searchplaylist [filter]",
       "/searchplaylists [filter]",
+      "/spotifyhelp",
       "/save",
       "/spotifylink",
       "/spotify link",
@@ -126,7 +127,8 @@
       "/albumadd <spotifyAlbumId>",
       "/albumremove <spotifyAlbumId>",
       "/addsong <1-9>",
-      "/removesong <1-9>"
+      "/removesong <1-9>",
+      "/playlist?"
     ]
   },
   {
