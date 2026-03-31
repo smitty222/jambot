@@ -160,7 +160,17 @@ export function createQueuePlaylistHandlers (deps = {}) {
 
       try {
         const { getSpotifyPlaylistName } = await import('../utils/API.js')
-        const playlistName = await getSpotifyPlaylistName(playlistId, auth.accessToken) || playlistId
+        const { refreshSpotifyAccessTokenWithRefreshToken } = await import('../utils/playlistUpdate.js')
+
+        let token = auth.accessToken
+        const isExpired = !token || !auth.expiresAt || auth.expiresAt <= Date.now()
+        if (isExpired) {
+          const refreshed = await refreshSpotifyAccessTokenWithRefreshToken(auth.refreshToken)
+          token = refreshed.accessToken
+          saveTokens(user, refreshed, auth)
+        }
+
+        const playlistName = await getSpotifyPlaylistName(playlistId, token) || playlistId
 
         setFavorite(user, slot, playlistId, playlistName)
         await post({

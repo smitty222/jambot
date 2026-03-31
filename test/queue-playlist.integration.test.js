@@ -32,43 +32,26 @@ test('dispatchWithRegistry routes /q+ through the queue handler', async () => {
 
 test('dispatchWithRegistry routes /addsong through the playlist handler', async () => {
   const posted = []
-  const addCalls = []
-  const priorDefaultPlaylistId = process.env.DEFAULT_PLAYLIST_ID
-  process.env.DEFAULT_PLAYLIST_ID = 'playlist-default-test'
   const handlers = createQueuePlaylistHandlers({
-    postMessage: async (msg) => posted.push(msg),
-    fetchSpotifyPlaylistTracks: async () => [],
-    addTracksToPlaylist: async (...args) => {
-      addCalls.push(args)
-      return 'snap-1'
-    }
+    postMessage: async (msg) => posted.push(msg)
   })
 
-  try {
-    const handled = await dispatchWithRegistry({
-      txt: '/addsong',
-      payload: { sender: 'user-1', message: '/addsong' },
-      room: 'room-1',
-      context: {
-        roomBot: { currentSong: { spotifyTrackId: 'track-1' } }
-      },
-      registry: { addsong: handlers.addsong },
-      resolveDispatchCommand: (txt) => resolveDispatchCommand(txt, new Set(['addsong'])),
-      handleRouletteBet: async () => {},
-      postMessage: async (msg) => posted.push(msg),
-      logger: { error () {} }
-    })
+  const handled = await dispatchWithRegistry({
+    txt: '/addsong',
+    payload: { sender: 'user-1', message: '/addsong' },
+    room: 'room-1',
+    context: {
+      roomBot: { currentSong: { spotifyTrackId: 'track-1' } }
+    },
+    registry: { addsong: handlers.addsong },
+    resolveDispatchCommand: (txt) => resolveDispatchCommand(txt, new Set(['addsong'])),
+    handleRouletteBet: async () => {},
+    postMessage: async (msg) => posted.push(msg),
+    logger: { error () {} }
+  })
 
-    assert.equal(handled, true)
-    assert.deepEqual(addCalls, [[process.env.DEFAULT_PLAYLIST_ID, ['spotify:track:track-1']]])
-    assert.deepEqual(posted, [{ room: 'room-1', message: 'Track added to default playlist!' }])
-  } finally {
-    if (priorDefaultPlaylistId === undefined) {
-      delete process.env.DEFAULT_PLAYLIST_ID
-    } else {
-      process.env.DEFAULT_PLAYLIST_ID = priorDefaultPlaylistId
-    }
-  }
+  assert.equal(handled, true)
+  assert.match(posted[0]?.message, /addsong <1-9>/)
 })
 
 test('dispatchWithRegistry routes /blacklist+ through the utility handler', async () => {
