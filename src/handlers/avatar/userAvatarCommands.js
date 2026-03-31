@@ -158,6 +158,10 @@ export async function handleGhostCommand (senderUuid, room, postMessage) {
   return runUserStaticCommand(USER_STATIC_CONFIGS.ghost, senderUuid, room, postMessage)
 }
 
+export async function handleGoblinCommand (senderUuid, room, postMessage) {
+  return runUserStaticCommand(USER_STATIC_CONFIGS.goblin, senderUuid, room, postMessage)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Standalone — full random (all avatars, not a themed pool)
 // ─────────────────────────────────────────────────────────────────────────────

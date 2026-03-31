@@ -50,7 +50,8 @@ import {
   handleRandomAvatarCommand,
   handleRandomCyberCommand,
   handleRandomCosmicCommand,
-  handleRandomLovableCommand
+  handleRandomLovableCommand,
+  handleGoblinCommand
 } from './avatar/userAvatarCommands.js'
 import { handleAddAvatarCommand } from './addAvatar.js'
 import { handleRemoveAvatarCommand } from './removeAvatar.js'
@@ -187,6 +188,9 @@ export const avatarCommandRegistry = {
   },
   ghost: async ({ payload, room }) => {
     await handleGhostCommand(payload?.sender, room, postMessage)
+  },
+  goblin: async ({ payload, room }) => {
+    await handleGoblinCommand(payload?.sender, room, postMessage)
   },
   randomcosmic: async ({ payload, room }) => {
     await handleRandomCosmicCommand(payload?.sender, room, postMessage)

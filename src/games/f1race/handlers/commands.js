@@ -1732,9 +1732,10 @@ async function postBetSettlementBreakdown ({
     const raceRow = placements.find((row) => String(row.userId) === String(userId))
     const entryFee = Math.max(0, Math.floor(Number(raceRow?.entryFee || 0)))
     const racePayout = Math.max(0, Math.floor(Number(raceRow?.creditedAmount || 0)))
-    const bet = betSettlements?.[userId] || { returned: 0, net: 0 }
+    const bet = betSettlements?.[userId] || { returned: 0, staked: 0, net: 0 }
     const betReturned = Math.max(0, Math.floor(Number(bet.returned || 0)))
-    const totalNet = racePayout + betReturned - entryFee
+    const betNet = Math.floor(Number(bet.net || 0))
+    const totalNet = racePayout + betNet - entryFee
     const totalNetLabel = `${totalNet >= 0 ? '+' : '-'}${fmtMoney(Math.abs(totalNet))}`
     rows.push(`${tag} · Entry fee ${fmtMoney(entryFee)} · Race payout ${fmtMoney(racePayout)} · Bet return ${fmtMoney(betReturned)} · Net ${totalNetLabel}`)
   }

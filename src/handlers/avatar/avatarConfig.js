@@ -569,6 +569,14 @@ export const USER_STATIC_CONFIGS = {
     color: '#ffffffff',
     successMessage: "Boo!",
     failureMessage: "Something went wrong transforming you into a ghost"
+  },
+  goblin: {
+    logged: false,
+    unauthorizedMessage: "Sorry, this command is only available to people i like",
+    avatarId: 'ttfm-green-goblin-1',
+    color: '#3cb043ff',
+    successMessage: "Goblin mode activated 👺",
+    failureMessage: "Something went wrong transforming you into a goblin"
   }
 }
 
