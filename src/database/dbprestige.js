@@ -1,4 +1,5 @@
 import db from './db.js'
+import { getCurrentMonthKey } from '../utils/monthKey.js'
 
 const BADGE_DEFS = {
   dj_streak_3: { label: 'Needle Drop', description: 'Hit a 3-song DJ streak.', emoji: '🎚️' },
@@ -9,9 +10,17 @@ const BADGE_DEFS = {
   monthly_dj_1: { label: 'Headliner', description: 'Finished #1 in monthly DJ earnings.', emoji: '🎤' },
   monthly_f1_1: { label: 'Pole King', description: 'Finished #1 in monthly F1 net.', emoji: '🏎️' },
   monthly_gambler_1: { label: 'Table Tyrant', description: 'Finished #1 in monthly gambling net.', emoji: '🎲' },
-  slots_bonus_hunter: { label: 'Bonus Hunter', description: 'Triggered a slots jackpot bonus round.', emoji: '💎' },
+  high_roller: { label: 'High Roller', description: 'Reached a cash wallet balance of $1,000,000.', emoji: '🏦' },
+  round_buyer: { label: 'Round Buyer', description: 'Tipped the DJ 5 times.', emoji: '🍺' },
+  big_tipper: { label: 'Big Tipper', description: 'Tipped $50,000 or more in a single tip.', emoji: '🤑' },
+  pride: { label: 'Pride', description: 'Used a gay avatar command.', emoji: '🌈' },
+  room_favorite_badge: { label: 'Room Favorite', description: 'Every person in a room of 6+ liked your song.', emoji: '🌟' },
+  album_10: { label: 'Wax Collector', description: 'Played 10 albums.', emoji: '📀' },
+  f1_legendary_win: { label: 'Legendary', description: 'Finished P1 in a Legendary Grand Prix.', emoji: '🏁' },
+  broke: { label: 'Broke', description: 'Hit a $0 wallet balance.', emoji: '💀' },
+  slots_bonus_hunter: { label: 'Bonus Hunter', description: 'Triggered a slots jackpot bonus round.', emoji: '💰' },
   slots_feature_hunter: { label: 'Feature Hunter', description: 'Unlocked slots free spins.', emoji: '🎟️' },
-  slots_jackpot_bite: { label: 'Jackpot Bite', description: 'Collected a slice of the slots jackpot.', emoji: '💰' },
+  slots_jackpot_bite: { label: 'Jackpot Bite', description: 'Collected a slice of the slots jackpot.', emoji: '💎' },
   slots_collector: { label: 'Reel Collector', description: 'Completed a slots collection reward.', emoji: '🧰' },
   horse_first_winner: { label: 'First Across', description: 'Owned a horse that won a race.', emoji: '🏇' },
   horse_stable_star: { label: 'Stable Star', description: 'Reached 5 career wins across your horses.', emoji: '🌟' },
@@ -38,13 +47,6 @@ const MONTHLY_PRESTIGE = {
   monthlygamblers: { badgeKey: 'monthly_gambler_1', titleKey: 'high_roller' }
 }
 
-function getCurrentMonthKey (date = new Date()) {
-  const d = date instanceof Date ? date : new Date(date)
-  const year = d.getUTCFullYear()
-  const month = String(d.getUTCMonth() + 1).padStart(2, '0')
-  return `${year}-${month}`
-}
-
 function nextMonthIso (monthKey = getCurrentMonthKey()) {
   const [yearRaw, monthRaw] = String(monthKey || '').split('-')
   const year = Number.parseInt(yearRaw, 10)
@@ -63,6 +65,10 @@ function parseJson (value, fallback = null) {
 
 export function getBadgeDefinition (badgeKey) {
   return BADGE_DEFS[String(badgeKey || '').trim()] || null
+}
+
+export function getAllBadgeDefinitions () {
+  return Object.entries(BADGE_DEFS).map(([key, def]) => ({ key, ...def }))
 }
 
 export function getTitleDefinition (titleKey) {
@@ -409,6 +415,98 @@ export function syncLotteryPrestige ({ userUUID } = {}) {
     newBadges.push('lottery_repeat_winner')
   }
 
+  return { badges: newBadges, titles: [] }
+}
+
+export function incrementAlbumPlays (userUUID) {
+  if (!userUUID) return 0
+  db.prepare(`
+    INSERT INTO prestige_album_plays (userUUID, count, updatedAt)
+    VALUES (?, 1, CURRENT_TIMESTAMP)
+    ON CONFLICT (userUUID) DO UPDATE SET count = count + 1, updatedAt = CURRENT_TIMESTAMP
+  `).run(String(userUUID))
+  const row = db.prepare('SELECT count FROM prestige_album_plays WHERE userUUID = ?').get(String(userUUID))
+  return row?.count ?? 0
+}
+
+export function syncF1LegendaryPrestige (userUUID) {
+  if (!userUUID) return { badges: [], titles: [] }
+  const newBadges = []
+  if (awardBadge(userUUID, 'f1_legendary_win', { source: 'f1', meta: { tier: 'legendary' } }) === 'new') {
+    newBadges.push('f1_legendary_win')
+  }
+  return { badges: newBadges, titles: [] }
+}
+
+export function syncAlbumPlaysPrestige (userUUID) {
+  if (!userUUID) return { badges: [], titles: [] }
+  const count = incrementAlbumPlays(userUUID)
+  const newBadges = []
+  if (count >= 10 && awardBadge(userUUID, 'album_10', { source: 'album', meta: { count } }) === 'new') {
+    newBadges.push('album_10')
+  }
+  return { badges: newBadges, titles: [] }
+}
+
+export function syncBrokePrestige (userUUID, balance) {
+  if (!userUUID || Number(balance) > 0) return { badges: [], titles: [] }
+  const newBadges = []
+  if (awardBadge(userUUID, 'broke', { source: 'wallet', meta: { balance: Number(balance) } }) === 'new') {
+    newBadges.push('broke')
+  }
+  return { badges: newBadges, titles: [] }
+}
+
+export function syncRoomFavoritePrestige (djUuid, likes, totalUsersInRoom) {
+  if (!djUuid || !likes || totalUsersInRoom <= 5) return { badges: [], titles: [] }
+  const eligibleVoters = totalUsersInRoom - 1 // exclude the DJ
+  if (likes < eligibleVoters) return { badges: [], titles: [] }
+  const newBadges = []
+  if (awardBadge(djUuid, 'room_favorite_badge', { source: 'song', meta: { likes, totalUsersInRoom } }) === 'new') {
+    newBadges.push('room_favorite_badge')
+  }
+  return { badges: newBadges, titles: [] }
+}
+
+export function syncPridePrestige (userUUID) {
+  if (!userUUID) return { badges: [], titles: [] }
+  const newBadges = []
+  if (awardBadge(userUUID, 'pride', { source: 'avatar' }) === 'new') {
+    newBadges.push('pride')
+  }
+  return { badges: newBadges, titles: [] }
+}
+
+export function syncBigTipperPrestige (userUUID, amount) {
+  if (!userUUID || Number(amount) < 50000) return { badges: [], titles: [] }
+  const newBadges = []
+  if (awardBadge(userUUID, 'big_tipper', { source: 'tip', meta: { amount: Number(amount) } }) === 'new') {
+    newBadges.push('big_tipper')
+  }
+  return { badges: newBadges, titles: [] }
+}
+
+export function syncRoundBuyerPrestige (userUUID) {
+  if (!userUUID) return { badges: [], titles: [] }
+  const row = db.prepare(`
+    SELECT COUNT(*) AS tipCount FROM economy_events
+    WHERE userUUID = ? AND source = 'tip' AND category = 'transfer_out'
+  `).get(String(userUUID))
+  const newBadges = []
+  if ((row?.tipCount ?? 0) >= 5) {
+    if (awardBadge(userUUID, 'round_buyer', { source: 'tip', meta: { tipCount: row.tipCount } }) === 'new') {
+      newBadges.push('round_buyer')
+    }
+  }
+  return { badges: newBadges, titles: [] }
+}
+
+export function syncHighRollerPrestige (userUUID, balance) {
+  if (!userUUID || Number(balance) < 1_000_000) return { badges: [], titles: [] }
+  const newBadges = []
+  if (awardBadge(userUUID, 'high_roller', { source: 'wallet', meta: { balance: Number(balance) } }) === 'new') {
+    newBadges.push('high_roller')
+  }
   return { badges: newBadges, titles: [] }
 }
 

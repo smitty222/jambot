@@ -13,10 +13,10 @@ import {
   equipTitle,
   equipBadge,
   getCompactEquippedTitleTag,
-  decoratedMention
+  decoratedMention,
+  getAllBadgeDefinitions
 } from '../database/dbprestige.js'
 import { getNetWorthForUser, getLifetimeNet } from '../database/dbwalletmanager.js'
-import { getDisplayName } from '../utils/names.js'
 
 function formatWholeDollars (value) {
   return Math.round(Number(value) || 0).toLocaleString('en-US')
@@ -89,9 +89,66 @@ export function createPrestigeHandlers () {
           `🏅 **Your Badges** (${badges.length})`,
           equippedBadge ? `Equipped: ${equippedBadge.emoji || ''} ${equippedBadge.label}`.trim() : 'Equipped: none',
           '',
-          ...badges.map((badge) => `${badge.emoji || '•'} **${badge.label}** \`${badge.key}\` — ${badge.description}${equippedBadge?.key === badge.key ? ' [equipped]' : ''}`)
+          ...badges.map((badge, i) => `${i + 1}. ${badge.emoji || '•'} **${badge.label}** \`${badge.key}\` — ${badge.description}${equippedBadge?.key === badge.key ? ' [equipped]' : ''}`)
         ].join('\n')
       })
+    },
+
+    allbadges: async ({ room }) => {
+      const all = getAllBadgeDefinitions()
+
+      const groups = [
+        {
+          label: '🎚️ DJ Streaks',
+          keys: ['dj_streak_3', 'dj_streak_5', 'dj_streak_8', 'dj_streak_12']
+        },
+        {
+          label: '🏆 Monthly Leaderboards *(resets monthly)*',
+          keys: ['monthly_earner_1', 'monthly_dj_1', 'monthly_f1_1', 'monthly_gambler_1']
+        },
+        {
+          label: '🎰 Slots',
+          keys: ['slots_bonus_hunter', 'slots_feature_hunter', 'slots_jackpot_bite', 'slots_collector']
+        },
+        {
+          label: '🏇 Horse Racing',
+          keys: ['horse_first_winner', 'horse_stable_star', 'horse_cash_ticket']
+        },
+        {
+          label: '🂡 Blackjack',
+          keys: ['bj_first_blackjack', 'bj_double_down', 'bj_big_hand']
+        },
+        {
+          label: '🎱 Lottery',
+          keys: ['lottery_first_hit', 'lottery_repeat_winner']
+        },
+        {
+          label: '💰 Wallet & Social',
+          keys: ['high_roller', 'broke', 'round_buyer', 'big_tipper', 'pride']
+        },
+        {
+          label: '🏎️ F1 Racing',
+          keys: ['f1_legendary_win']
+        },
+        {
+          label: '🎵 Music',
+          keys: ['room_favorite_badge', 'album_10']
+        }
+      ]
+
+      const byKey = Object.fromEntries(all.map(b => [b.key, b]))
+      const lines = ['🏅 **All Badges**', '']
+
+      for (const group of groups) {
+        lines.push(`**${group.label}**`)
+        for (const key of group.keys) {
+          const b = byKey[key]
+          if (b) lines.push(`${b.emoji || '•'} **${b.label}** — ${b.description}`)
+        }
+        lines.push('')
+      }
+
+      await postMessage({ room, message: lines.join('\n') })
     },
 
     titles: async ({ payload, room }) => {
@@ -108,7 +165,7 @@ export function createPrestigeHandlers () {
           '\uD83C\uDF96\uFE0F **Your Titles**',
           equipped ? `Equipped: ${equipped.emoji || ''} ${equipped.label}`.trim() : 'Equipped: none',
           '',
-          ...titles.map((title) => `${title.emoji || '\u2022'} ${title.label} \`${title.key}\`${equipped?.key === title.key ? ' [equipped]' : ''}`)
+          ...titles.map((title, i) => `${i + 1}. ${title.emoji || '\u2022'} ${title.label} \`${title.key}\`${equipped?.key === title.key ? ' [equipped]' : ''}`)
         ].join('\n')
       })
     },
@@ -120,9 +177,9 @@ export function createPrestigeHandlers () {
         await postMessage({
           room,
           message: [
-            'To equip a badge: `/badge equip <key>`',
+            'To equip a badge: `/badge equip <#>` or `/badge equip <key>`',
             'To remove your badge: `/badge clear`',
-            'The key is the `code` shown next to each badge in `/badges`.'
+            'Use `/badges` to see your list with numbers.'
           ].join('\n')
         })
         return
@@ -134,19 +191,29 @@ export function createPrestigeHandlers () {
         return
       }
 
-      const match = trimmed.match(/^equip\s+([a-z0-9_]+)$/i)
+      const match = trimmed.match(/^equip\s+(\S+)$/i)
       if (!match) {
         await postMessage({
           room,
           message: [
-            'Usage: `/badge equip <key>` or `/badge clear`',
-            'The key is the `code` shown next to each badge in `/badges`.'
+            'Usage: `/badge equip <#>` or `/badge equip <key>`, or `/badge clear`',
+            'Use `/badges` to see your list with numbers.'
           ].join('\n')
         })
         return
       }
 
-      const key = match[1]
+      let key = match[1]
+      if (/^\d+$/.test(key)) {
+        const userBadges = getUserBadges(userUUID)
+        const idx = parseInt(key, 10) - 1
+        if (idx < 0 || idx >= userBadges.length) {
+          await postMessage({ room, message: `No badge #${key}. Use \`/badges\` to see your list.` })
+          return
+        }
+        key = userBadges[idx].key
+      }
+
       const ok = equipBadge(userUUID, key)
       if (!ok) {
         const badges = getUserBadges(userUUID)
@@ -179,9 +246,9 @@ export function createPrestigeHandlers () {
         await postMessage({
           room,
           message: [
-            'To equip a title: `/title equip <key>`',
+            'To equip a title: `/title equip <#>` or `/title equip <key>`',
             'To remove your title: `/title clear`',
-            'The key is the `code` shown next to each title in `/titles`.'
+            'Use `/titles` to see your list with numbers.'
           ].join('\n')
         })
         return
@@ -193,19 +260,29 @@ export function createPrestigeHandlers () {
         return
       }
 
-      const match = trimmed.match(/^equip\s+([a-z0-9_]+)$/i)
+      const match = trimmed.match(/^equip\s+(\S+)$/i)
       if (!match) {
         await postMessage({
           room,
           message: [
-            'Usage: `/title equip <key>` or `/title clear`',
-            'The key is the `code` shown next to each title in `/titles`.'
+            'Usage: `/title equip <#>` or `/title equip <key>`, or `/title clear`',
+            'Use `/titles` to see your list with numbers.'
           ].join('\n')
         })
         return
       }
 
-      const key = match[1]
+      let key = match[1]
+      if (/^\d+$/.test(key)) {
+        const userTitles = getUserTitles(userUUID)
+        const idx = parseInt(key, 10) - 1
+        if (idx < 0 || idx >= userTitles.length) {
+          await postMessage({ room, message: `No title #${key}. Use \`/titles\` to see your list.` })
+          return
+        }
+        key = userTitles[idx].key
+      }
+
       const ok = equipTitle(userUUID, key)
       if (!ok) {
         const titles = getUserTitles(userUUID)
@@ -233,7 +310,6 @@ export function createPrestigeHandlers () {
 
     profile: async ({ payload, room }) => {
       const userUUID = payload?.sender
-      const username = getDisplayName(userUUID)
       const title = titlePrefixForUser(userUUID)
       const badges = getUserBadges(userUUID)
       const netWorth = await getNetWorthForUser(userUUID)
@@ -249,7 +325,7 @@ export function createPrestigeHandlers () {
       await postMessage({
         room,
         message: [
-          `\uD83E\uDEAA **${username}'s Profile**`,
+          `\uD83E\uDEAA **${decoratedMention(userUUID)}'s Profile**`,
           title ? `Title: ${title}` : 'Title: none',
           equippedBadge ? `Badge: ${equippedBadge.emoji || ''} ${equippedBadge.label}`.trim() : 'Badge: none',
           `Cash: ${formatMoneyLine(balance)} \u00B7 Net Worth: ${formatMoneyLine(netWorth?.totalNetWorth || 0)}`,

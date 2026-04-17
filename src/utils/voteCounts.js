@@ -1,8 +1,9 @@
 // votecounts.js
 
 import { postMessage } from '../libs/cometchat.js'
-import { fetchRecentSongs, fetchUserData } from './API.js'
+import { fetchRecentSongs, fetchUserData, fetchCurrentUsers } from './API.js'
 import db from '../database/db.js'
+import { syncRoomFavoritePrestige, formatPrestigeUnlockLines } from '../database/dbprestige.js'
 
 // Unified room stats manager helpers
 // We import logCurrentSong and updateLastPlayed so that voteCounts
@@ -14,6 +15,7 @@ import {
   logCurrentSong,
   updateLastPlayed
 } from '../database/dbroomstatsmanager.js'
+import { logger } from './logging.js'
 
 let songStatsEnabled = false
 
@@ -88,13 +90,25 @@ export async function postVoteCountsForLastSong (room) {
     ensureRoomStatsSchema()
 
     const recentSongs = await fetchRecentSongs()
-    if (!recentSongs?.length) return console.log('No recent songs found.')
+    if (!recentSongs?.length) return logger.info('[voteCounts] No recent songs found.')
 
     const { song, voteCounts, djUuid } = recentSongs[0]
-    if (!song) return console.log('No song found.')
+    if (!song) return logger.info('[voteCounts] No song found in recent songs response.')
 
     const { trackName, artistName, songId } = song
     const { likes = 0, dislikes = 0, stars = 0 } = voteCounts
+
+    // Check for Room Favorite badge — every non-DJ user liked the song in a room of 6+
+    try {
+      const roomUsers = await fetchCurrentUsers()
+      const prestige = syncRoomFavoritePrestige(djUuid, likes, roomUsers.length)
+      if (prestige.badges.length) {
+        const lines = formatPrestigeUnlockLines(prestige)
+        if (lines.length) await postMessage({ room, message: lines.join('\n') })
+      }
+    } catch (e) {
+      logger.error('[voteCounts] RoomFavorite prestige check failed', { err: e?.message || e })
+    }
 
     // Use the unified room stats manager to update play count and reactions.
     // This populates canonSongKey and normalisation fields if missing.
@@ -103,10 +117,10 @@ export async function postVoteCountsForLastSong (room) {
       // Also update the last played timestamp for this song
       updateLastPlayed(song)
     } catch (e) {
-      console.error('Error updating room stats via logCurrentSong:', e)
+      logger.error('[voteCounts] Failed to log room stats via logCurrentSong', { err: e?.message || e })
     }
 
-    console.log(`Logged stats for ${trackName} by ${artistName}:  ${likes}, ${dislikes}, ❤️ ${stars}`)
+    logger.info(`[voteCounts] Logged stats for ${trackName} by ${artistName}: 👍 ${likes}, 👎 ${dislikes}, ❤️ ${stars}`)
 
     if (!songStatsEnabled) return
 
@@ -117,7 +131,9 @@ export async function postVoteCountsForLastSong (room) {
     try {
       const [user] = await fetchUserData([djUuid])
       djNickname = user?.userProfile?.nickname || djNickname
-    } catch {}
+    } catch (e) {
+      logger.warn('[voteCounts] Failed to fetch DJ nickname', { djUuid, err: e?.message || e })
+    }
 
     message += `\n Played by: **${djNickname}**\n ${likes}    ${dislikes}   ❤️ ${stars}`
 
@@ -134,7 +150,7 @@ export async function postVoteCountsForLastSong (room) {
 
     await postMessage({ room, message })
   } catch (error) {
-    console.error('Error in postVoteCountsForLastSong:', error)
+    logger.error('[voteCounts] Error in postVoteCountsForLastSong', { err: error?.message || error })
   }
 }
 
@@ -180,7 +196,7 @@ export async function saveSongReview ({ currentSong, rating, userId }) {
     if (err?.code === 'SQLITE_CONSTRAINT' || /UNIQUE/i.test(msg)) {
       return { success: false, reason: 'duplicate' }
     }
-    console.error('Error in saveSongReview:', err)
+    logger.error('[voteCounts] Error in saveSongReview', { err: err?.message || err })
     return { success: false, reason: 'db_error' }
   }
 }
@@ -201,7 +217,7 @@ export async function getAverageRating (currentSong) {
       count: result.count
     }
   } catch (e) {
-    console.error('Error in getAverageRating:', e)
+    logger.error('[voteCounts] Error in getAverageRating', { err: e?.message || e })
     return { found: false }
   }
 }

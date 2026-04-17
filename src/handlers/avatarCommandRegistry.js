@@ -1,4 +1,5 @@
 import { env } from '../config.js'
+import { syncPridePrestige, formatPrestigeUnlockLines } from '../database/dbprestige.js'
 import { postMessage } from '../libs/cometchat.js'
 import { isUserAuthorized } from '../utils/API.js'
 import { logger } from '../utils/logging.js'
@@ -227,12 +228,27 @@ export const avatarCommandRegistry = {
   },
   gaycam: async ({ payload, room }) => {
     await handleGayCamCommand(payload?.sender, room, postMessage)
+    const prestige = syncPridePrestige(payload?.sender)
+    if (prestige.badges.length) {
+      const lines = formatPrestigeUnlockLines(prestige)
+      if (lines.length) await postMessage({ room, message: lines.join('\n') })
+    }
   },
   gayian: async ({ payload, room }) => {
     await handleGayIanCommand(payload?.sender, room, postMessage)
+    const prestige = syncPridePrestige(payload?.sender)
+    if (prestige.badges.length) {
+      const lines = formatPrestigeUnlockLines(prestige)
+      if (lines.length) await postMessage({ room, message: lines.join('\n') })
+    }
   },
   gayalex: async ({ payload, room }) => {
     await handleGayAlexCommand(payload?.sender, room, postMessage)
+    const prestige = syncPridePrestige(payload?.sender)
+    if (prestige.badges.length) {
+      const lines = formatPrestigeUnlockLines(prestige)
+      if (lines.length) await postMessage({ room, message: lines.join('\n') })
+    }
   },
   pajama: async ({ payload, room }) => {
     await handleRandomPajamaCommand(payload?.sender, room, postMessage)

@@ -7,6 +7,8 @@
 // details on how to update game modules to use these helpers.
 
 import db from './db.js'
+import { getCurrentMonthKey } from '../utils/monthKey.js'
+export { getCurrentMonthKey } from '../utils/monthKey.js'
 // Helpers for working with mentions and nicknames. We avoid storing
 // mention strings (e.g. `<@uid:abcd>`) in the users table. Instead we
 // keep the human‑friendly nickname when available and compute the
@@ -14,7 +16,7 @@ import db from './db.js'
 import { sanitizeNickname } from '../utils/names.js'
 import { fetchRecentSongs } from '../utils/API.js'
 import { getCryptoPrice } from '../utils/cryptoPrice.js'
-import { maybeAwardDjPrestige, syncMonthlyPrestigeAwards } from './dbprestige.js'
+import { maybeAwardDjPrestige, syncMonthlyPrestigeAwards, syncHighRollerPrestige, syncRoundBuyerPrestige, syncBrokePrestige, syncBigTipperPrestige } from './dbprestige.js'
 
 // ───────────────────────────────────────────────────────────
 // Structured logging
@@ -40,6 +42,8 @@ const netWorthCache = {
 // transferTip() calls could read stale balances from the cache. This
 // promise queue ensures that transfers execute one after the other.
 let _transferQueue = Promise.resolve()
+let _transferQueueDepth = 0
+const TRANSFER_MAX_QUEUE = 50
 
 // Lazy-load all wallets into the cache on first access. This avoids
 // scanning the DB multiple times and keeps the cache in sync until
@@ -148,13 +152,6 @@ export function getProgressiveWealthFee ({ balance, baseAmount, source = 'defaul
     effectiveRate,
     source: normalizedSource
   }
-}
-
-export function getCurrentMonthKey (date = new Date()) {
-  const d = date instanceof Date ? date : new Date(date)
-  const year = d.getUTCFullYear()
-  const month = String(d.getUTCMonth() + 1).padStart(2, '0')
-  return `${year}-${month}`
 }
 
 function getMonthBounds (monthKey = getCurrentMonthKey()) {
@@ -318,6 +315,11 @@ export function transferTip ({ fromUuid, toUuid, amount }) {
     if (!fromUuid || !toUuid || !Number.isFinite(amount) || amount <= 0) {
       return reject(new Error('INVALID_TRANSFER'))
     }
+    if (_transferQueueDepth >= TRANSFER_MAX_QUEUE) {
+      logger.error('[transferTip] queue full', { depth: _transferQueueDepth })
+      return reject(new Error('QUEUE_FULL'))
+    }
+    _transferQueueDepth++
     // Queue the transfer to avoid concurrent writes and stale cache reads
     _transferQueue = _transferQueue
       .then(() => {
@@ -356,6 +358,8 @@ export function transferTip ({ fromUuid, toUuid, amount }) {
           note: `Tip from ${fromUuid}`,
           counterparty: fromUuid
         })
+        syncRoundBuyerPrestige(fromUuid)
+        syncBigTipperPrestige(fromUuid, amount)
       })
       .then(resolve)
       .catch((err) => {
@@ -363,6 +367,7 @@ export function transferTip ({ fromUuid, toUuid, amount }) {
         logger.error('[transferTip] failed', { err: err?.message || err })
         reject(err)
       })
+      .finally(() => { _transferQueueDepth-- })
   })
 }
 
@@ -388,6 +393,7 @@ export function removeFromUserWallet (userUUID, amount, meta = null) {
   invalidateNetWorthCache()
   persistWallet(userUUID, newBalance)
   if (meta) recordEconomyEvent(userUUID, -Math.abs(amount), newBalance, meta)
+  syncBrokePrestige(userUUID, newBalance)
   return true
 }
 
@@ -401,6 +407,7 @@ export async function addToUserWallet (userUUID, amount, nickname = null, meta =
   invalidateNetWorthCache()
   persistWallet(userUUID, newBalance)
   if (meta) recordEconomyEvent(userUUID, Math.abs(amount), newBalance, meta)
+  syncHighRollerPrestige(userUUID, newBalance)
   return true
 }
 

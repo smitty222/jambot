@@ -6,6 +6,7 @@ import { getUserNickname } from '../../utils/nickname.js'
 import { getTeamByOwner } from '../../database/dbteams.js'
 import { recordCarRaceFinancials } from '../../database/dbcars.js'
 import { logF1RaceResults } from '../../database/dbf1results.js'
+import { syncF1LegendaryPrestige, formatPrestigeUnlockLines } from '../../database/dbprestige.js'
 import { safeCall } from './service.js'
 import { runRace } from './simulation.js'
 import {
@@ -310,6 +311,14 @@ export async function runGrandPrix ({
           category: 'race_prize',
           note: `${tierKey} grand prix P${row.finishPosition}`
         }]).catch(() => null)
+      }
+
+      if (tierKey === 'legendary' && row.finishPosition === 1 && row.userId && !row.isBot) {
+        const prestige = syncF1LegendaryPrestige(row.userId)
+        if (prestige.badges.length) {
+          const lines = formatPrestigeUnlockLines(prestige)
+          if (lines.length) await safeCall(postMessage, [{ room: roomId, message: lines.join('\n') }]).catch(() => null)
+        }
       }
 
       if (row.carId != null) {

@@ -11,7 +11,7 @@ import { logger } from '../utils/logging.js'
 // Manage the persistent album list.  When an album is played during an album
 // theme, we'll remove it from the saved list if present.
 import { removeAlbum } from '../utils/albumlistManager.js'
-import { decoratedMention } from '../database/dbprestige.js'
+import { decoratedMention, syncAlbumPlaysPrestige, formatPrestigeUnlockLines } from '../database/dbprestige.js'
 
 
 const queueManager = new QueueManager(getUserNickname)
@@ -94,6 +94,12 @@ const handleAlbumTheme = async (_payload) => {
     if (isFirst) {
       roomBot.currentAlbum = { albumId: albumID, albumName, artistName, trackCount, albumArt }
       roomBot.currentAlbumTrackNumber = reliableTrackNumber
+
+      const albumPrestige = syncAlbumPlaysPrestige(currentDJUuid)
+      if (albumPrestige.badges.length) {
+        const lines = formatPrestigeUnlockLines(albumPrestige)
+        if (lines.length) await postMessage({ room, message: lines.join('\n') })
+      }
 
       await postMessage({ room, message: '', images: [albumArt] })
       await postMessage({

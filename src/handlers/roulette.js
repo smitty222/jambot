@@ -78,17 +78,32 @@ async function closeBets () {
   if (!Object.keys(bets).length) {
     await postMessage({ room, message: 'No bets were placed. Spinning anyway for fun 🎡' })
   } else {
-    let betsMessage = '📋 Bets placed:\n'
+    const betTypeEmoji = {
+      red: '🔴', black: '⚫', green: '🟢',
+      odd: '🔢', even: '🔣', high: '⬆️', low: '⬇️',
+      number: '🎯', dozen: '🗂️'
+    }
+    const betTypeLabel = {
+      red: 'Red', black: 'Black', green: 'Green',
+      odd: 'Odd', even: 'Even', high: 'High (19–36)', low: 'Low (1–18)',
+      number: 'Number', dozen: 'Dozen'
+    }
+    const dozenLabel = { 1: '1st (1–12)', 2: '2nd (13–24)', 3: '3rd (25–36)' }
+
+    const lines = ['📋 Bets placed:']
     for (const [user, userBets] of Object.entries(bets)) {
       const nickname = await getUserNickname(user)
-      betsMessage += `${nickname}:\n`
-      betsMessage += userBets.map(bet => {
-        if (bet.type === 'number') return `  - Number ${bet.number} ($${bet.amount})`
-        if (bet.type === 'dozen') return `  - Dozen ${bet.dozen} ($${bet.amount})`
-        return `  - ${bet.type} ($${bet.amount})`
-      }).join('\n') + '\n'
+      const total = userBets.reduce((sum, b) => sum + b.amount, 0)
+      lines.push(`\n👤 ${nickname} — $${total} total`)
+      for (const bet of userBets) {
+        const emoji = betTypeEmoji[bet.type] ?? '•'
+        let label = betTypeLabel[bet.type] ?? bet.type
+        if (bet.type === 'number') label += ` ${bet.number}`
+        if (bet.type === 'dozen') label += ` ${dozenLabel[bet.dozen] ?? bet.dozen}`
+        lines.push(`  ${emoji} ${label}  →  $${bet.amount}`)
+      }
     }
-    await postMessage({ room, message: betsMessage })
+    await postMessage({ room, message: lines.join('\n') })
   }
 
   await new Promise((resolve) => setTimeout(resolve, 5000))
@@ -183,6 +198,10 @@ export async function handleRouletteBet (payload) {
 
   const user = payload.sender
   const nickname = await getUserNickname(user)
+
+  // Re-check after async call – bets may have closed while fetching nickname
+  if (!rouletteGameActive || !betsOpen) return
+
   const raw = String(payload.message || '').trim()
 
   if (!raw.startsWith('/')) return
@@ -261,6 +280,16 @@ export async function handleRouletteBet (payload) {
   })
   if (!ok) {
     return postMessage({ room, message: `${nickname}, failed to place bet (wallet issue).` })
+  }
+
+  // Guard: bets may have closed while processing prior awaits
+  if (!betsOpen) {
+    await creditGameWin(user, amt, null, {
+      source: 'roulette',
+      category: 'refund',
+      note: 'Bet arrived after close'
+    })
+    return postMessage({ room, message: `${nickname}, bets closed just before your bet was processed. $${amt} refunded.` })
   }
 
   if (!bets[user]) bets[user] = []
