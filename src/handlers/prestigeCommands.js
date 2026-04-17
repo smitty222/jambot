@@ -10,9 +10,11 @@ import {
   getUserBadges,
   getUserTitles,
   equipTitle,
-  getCompactEquippedTitleTag
+  getCompactEquippedTitleTag,
+  decoratedMention
 } from '../database/dbprestige.js'
 import { getNetWorthForUser, getLifetimeNet } from '../database/dbwalletmanager.js'
+import { getDisplayName } from '../utils/names.js'
 
 function formatWholeDollars (value) {
   return Math.round(Number(value) || 0).toLocaleString('en-US')
@@ -66,14 +68,14 @@ export function createPrestigeHandlers () {
         await postMessage({
           room,
           message: [
-            'No badges yet. Here\'s how to earn them:',
-            '🎚️ DJ a song with 3+ likes (streak badges at 3, 5, 8, 12 songs)',
-            '💸 Finish #1 on a monthly leaderboard',
-            '💎 Trigger a jackpot bonus in slots',
-            '🏇 Own a winning racehorse',
-            '🂡 Hit a natural blackjack',
-            '🎱 Win the lottery',
-            'Use `/badges` to check your collection anytime.'
+            'You have not earned any badges yet. Here\'s how to get them:',
+            '🎚️ **DJ streaks** — play songs that get 3+ likes back-to-back (milestones at 3, 5, 8, and 12 songs)',
+            '💸 **Monthly leaderboards** — finish #1 in net gain, DJ earnings, F1, or gambling for the month',
+            '💎 **Slots** — trigger a bonus round, free spins, or jackpot',
+            '🏇 **Horse racing** — own a horse that wins a race or hits a big payout',
+            '🂡 **Blackjack** — hit a natural blackjack or win a doubled-down hand',
+            '🎱 **Lottery** — win the lottery',
+            'Badges show on your `/profile`.'
           ].join('\n')
         })
         return
@@ -81,9 +83,9 @@ export function createPrestigeHandlers () {
       await postMessage({
         room,
         message: [
-          '\uD83C\uDFC5 **Your Badges**',
+          `🏅 **Your Badges** (${badges.length})`,
           '',
-          ...badges.map((badge) => `${badge.emoji || '\u2022'} ${badge.label} \`${badge.key}\``)
+          ...badges.map((badge) => `${badge.emoji || '•'} **${badge.label}** — ${badge.description}`)
         ].join('\n')
       })
     },
@@ -111,35 +113,64 @@ export function createPrestigeHandlers () {
       const userUUID = payload?.sender
       const trimmed = String(args || '').trim()
       if (!trimmed) {
-        await postMessage({ room, message: 'Usage: `/title equip <key>` or `/title clear`' })
+        await postMessage({
+          room,
+          message: [
+            'To equip a title: `/title equip <key>`',
+            'To remove your title: `/title clear`',
+            'The key is the `code` shown next to each title in `/titles`.'
+          ].join('\n')
+        })
         return
       }
 
       if (/^clear$/i.test(trimmed)) {
         equipTitle(userUUID, null)
-        await postMessage({ room, message: 'Title cleared.' })
+        await postMessage({ room, message: 'Title cleared. Your name will appear without a title tag.' })
         return
       }
 
       const match = trimmed.match(/^equip\s+([a-z0-9_]+)$/i)
       if (!match) {
-        await postMessage({ room, message: 'Usage: `/title equip <key>` or `/title clear`' })
+        await postMessage({
+          room,
+          message: [
+            'Usage: `/title equip <key>` or `/title clear`',
+            'The key is the `code` shown next to each title in `/titles`.'
+          ].join('\n')
+        })
         return
       }
 
       const key = match[1]
       const ok = equipTitle(userUUID, key)
       if (!ok) {
-        await postMessage({ room, message: `You do not own the title \`${key}\` or it has expired.` })
+        const titles = getUserTitles(userUUID)
+        if (!titles.length) {
+          await postMessage({ room, message: `You have not earned any titles yet. Win a monthly leaderboard or hit a DJ streak milestone to unlock your first one.` })
+        } else {
+          await postMessage({
+            room,
+            message: [
+              `\`${key}\` is not in your collection or has expired.`,
+              'Your available titles:',
+              ...titles.map((t) => `${t.emoji || '•'} ${t.label} \`${t.key}\``)
+            ].join('\n')
+          })
+        }
         return
       }
 
       const equipped = getEquippedTitle(userUUID)
-      await postMessage({ room, message: `Equipped title: ${equipped?.emoji || ''} ${equipped?.label || key}`.trim() })
+      await postMessage({
+        room,
+        message: `${equipped?.emoji || ''} **${equipped?.label || key}** equipped — your title will now show on leaderboards.`.trim()
+      })
     },
 
     profile: async ({ payload, room }) => {
       const userUUID = payload?.sender
+      const username = getDisplayName(userUUID)
       const title = titlePrefixForUser(userUUID)
       const badges = getUserBadges(userUUID)
       const netWorth = await getNetWorthForUser(userUUID)
@@ -154,7 +185,7 @@ export function createPrestigeHandlers () {
       await postMessage({
         room,
         message: [
-          '\uD83E\uDEAA **Profile**',
+          `\uD83E\uDEAA **${username}'s Profile**`,
           title ? `Title: ${title}` : 'Title: none',
           `Cash: ${formatMoneyLine(balance)} \u00B7 Net Worth: ${formatMoneyLine(netWorth?.totalNetWorth || 0)}`,
           `Lifetime Net: ${formatMoneyLine(lifetimeNet)}`,

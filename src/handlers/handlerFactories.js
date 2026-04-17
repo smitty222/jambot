@@ -1,4 +1,5 @@
 import { logger } from '../utils/logging.js'
+import { decoratedMention } from '../database/dbprestige.js'
 
 export function createSlotsRegistryHandler (deps = {}) {
   const {
@@ -122,7 +123,7 @@ export function createTipCommandHandler (deps = {}) {
 
       const currentDJUUIDs = getCurrentDJUUIDs(state)
       if (!currentDJUUIDs || currentDJUUIDs.length === 0) {
-        await postMessage({ room, message: `<@uid:${senderUUID}>, there is no DJ currently playing.` })
+        await postMessage({ room, message: `${decoratedMention(senderUUID)}, there is no DJ currently playing.` })
         return
       }
 
@@ -152,8 +153,8 @@ export function createTipCommandHandler (deps = {}) {
         return
       }
 
-      const fromName = await getSenderNickname(senderUUID).catch(() => `<@uid:${senderUUID}>`)
-      const toMention = `<@uid:${recipientUUID}>`
+      const fromName = await getSenderNickname(senderUUID).catch(() => decoratedMention(senderUUID))
+      const toMention = decoratedMention(recipientUUID)
       const gif = randomTipGif()
 
       await postMessage({

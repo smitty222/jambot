@@ -11,6 +11,7 @@ import { logger } from '../utils/logging.js'
 // Manage the persistent album list.  When an album is played during an album
 // theme, we'll remove it from the saved list if present.
 import { removeAlbum } from '../utils/albumlistManager.js'
+import { decoratedMention } from '../database/dbprestige.js'
 
 
 const queueManager = new QueueManager(getUserNickname)
@@ -100,7 +101,7 @@ const handleAlbumTheme = async (_payload) => {
         message:
 `🎧 *Album Session Started*  
 ───────────────────────── 
-👤 DJ: <@uid:${currentDJUuid}>  
+👤 DJ: ${decoratedMention(currentDJUuid)}
 📀 Album: *${albumName}*
 🎤 Artist: *${artistName}*  
 📅 Released: ${formattedReleaseDate}  
@@ -147,7 +148,7 @@ const handleAlbumTheme = async (_payload) => {
 🖼️ Album: *${albumName}*  
 🎤 Artist: *${artistName}*  
 📀 Track: *${trackName}* (${reliableTrackNumber}/${trackCount})  
-👤 Thanks for the vibes, <@uid:${currentDJUuid}>  
+👤 Thanks for the vibes, ${decoratedMention(currentDJUuid)}
 💬 Time to leave your review: \`/albumreview\`  
 📊 Progress: ${progressBar}`
       })
@@ -163,7 +164,7 @@ const handleAlbumTheme = async (_payload) => {
             room,
             message:
 `⏳ *Album ending soon!*  
-🎧 <@uid:${nextUser.userId}> you're next in the queue.  
+🎧 ${decoratedMention(nextUser.userId)} you're next in the queue.
 Please be ready to press *Play Music* when the stage opens.`
           })
         } else {
@@ -194,7 +195,7 @@ Want to go next? Type \`/q+\` to claim your spot and play an album!`
 
             await postMessage({
               room,
-              message: `<@uid:${nextUser.userId}> you're up next! Please press the 'Play Music' button to get on stage within 30 seconds.`
+              message: `${decoratedMention(nextUser.userId)} you're up next! Please press the 'Play Music' button to get on stage within 30 seconds.`
             })
 
             stageLock.timeout = setTimeout(async () => {
@@ -202,7 +203,7 @@ Want to go next? Type \`/q+\` to claim your spot and play an album!`
               for (const djUuid of currentDJs) {
                 if (djUuid !== nextUser.userId) {
                   await roomBot.removeDJ(djUuid)
-                  await postMessage({ room, message: `<@uid:${djUuid}> you're not next in the queue. Please wait for your turn.` })
+                  await postMessage({ room, message: `${decoratedMention(djUuid)} you're not next in the queue. Please wait for your turn.` })
                 }
               }
 
@@ -212,7 +213,7 @@ Want to go next? Type \`/q+\` to claim your spot and play an album!`
                 await queueManager.leaveQueue(nextUser.userId)
                 const nextNextUser = await queueManager.getCurrentUser()
                 if (nextNextUser?.userId) {
-                  await postMessage({ room, message: `<@uid:${nextNextUser.userId}> you're next up! Please press 'Play Music' within 30 seconds.` })
+                  await postMessage({ room, message: `${decoratedMention(nextNextUser.userId)} you're next up! Please press 'Play Music' within 30 seconds.` })
                   stageLock.userUuid = nextNextUser.userId
                   stageLock.timeout = null
                 } else {
@@ -229,7 +230,7 @@ Want to go next? Type \`/q+\` to claim your spot and play an album!`
               for (const djUuid of liveDJs) {
                 if (djUuid !== nextUser.userId) {
                   await roomBot.removeDJ(djUuid)
-                  await postMessage({ room, message: `<@uid:${djUuid}> you're not next up. Please wait for your turn.` })
+                  await postMessage({ room, message: `${decoratedMention(djUuid)} you're not next up. Please wait for your turn.` })
                 }
               }
             }, 1000)

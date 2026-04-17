@@ -165,6 +165,12 @@ function compactLabel (label, maxLen = 8) {
   return text.slice(0, Math.max(1, maxLen - 1)).trim() + '.'
 }
 
+export function decoratedMention (uuid) {
+  const equipped = getEquippedTitle(uuid)
+  const prefix = equipped?.emoji ? `${equipped.emoji} ` : ''
+  return `${prefix}<@uid:${uuid}>`
+}
+
 export function getCompactEquippedTitleTag (userUUID, maxLen = 8) {
   const equipped = getEquippedTitle(userUUID)
   if (!equipped) return ''

@@ -4,6 +4,7 @@ import { markUser, getMarkedUser } from '../utils/removalQueue.js'
 import { startPaidSpotlight } from './spotlight.js'
 import { getUserWallet, removeFromUserWallet } from '../database/dbwalletmanager.js'
 import { isUserAuthorized } from '../utils/API.js'
+import { decoratedMention } from '../database/dbprestige.js'
 
 export function createRoomFunHandlers (deps = {}) {
   const {
@@ -27,15 +28,15 @@ export function createRoomFunHandlers (deps = {}) {
       if (!currentDJUUIDs || currentDJUUIDs.length === 0) {
         await post({
           room,
-          message: `<@uid:${senderUUID}>, there is no DJ currently playing.`
+          message: `${decoratedMention(senderUUID)}, there is no DJ currently playing.`
         })
         return
       }
 
-      const mentionText = currentDJUUIDs.map(uuid => `<@uid:${uuid}>`).join(' and ')
+      const mentionText = currentDJUUIDs.map(uuid => decoratedMention(uuid)).join(' and ')
       await post({
         room,
-        message: `<@uid:${senderUUID}> gives ${mentionText} two ice cold beers!! 🍺🍺`
+        message: `${decoratedMention(senderUUID)} gives ${mentionText} two ice cold beers!! 🍺🍺`
       })
     },
 
@@ -46,14 +47,14 @@ export function createRoomFunHandlers (deps = {}) {
       if (!currentDJUUIDs || currentDJUUIDs.length === 0) {
         await post({
           room,
-          message: `<@uid:${senderUUID}>, there is no DJ currently playing.`
+          message: `${decoratedMention(senderUUID)}, there is no DJ currently playing.`
         })
         return
       }
 
       await post({
         room,
-        message: `<@uid:${senderUUID}> gives <@uid:${currentDJUUIDs[0]}> an ice cold beer! 🍺`
+        message: `${decoratedMention(senderUUID)} gives ${decoratedMention(currentDJUUIDs[0])} an ice cold beer! 🍺`
       })
     },
 
@@ -64,14 +65,14 @@ export function createRoomFunHandlers (deps = {}) {
       if (!currentDJUUIDs || currentDJUUIDs.length === 0) {
         await post({
           room,
-          message: `<@uid:${senderUUID}>, there is no DJ currently playing.`
+          message: `${decoratedMention(senderUUID)}, there is no DJ currently playing.`
         })
         return
       }
 
       await post({
         room,
-        message: `<@uid:${senderUUID}> gives <@uid:${currentDJUUIDs[0]}> a million ice cold beers!!! 🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺`
+        message: `${decoratedMention(senderUUID)} gives ${decoratedMention(currentDJUUIDs[0])} a million ice cold beers!!! 🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺`
       })
     },
 

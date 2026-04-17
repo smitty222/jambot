@@ -6,14 +6,11 @@ import {
   hasUserWallet
 } from '../database/dbwalletmanager.js'
 import { formatBalance } from './slots.js'
-
-async function mentionForUser (userUUID) {
-  return `<@uid:${userUUID}>`
-}
+import { decoratedMention } from '../database/dbprestige.js'
 
 export async function handleBalanceCommand ({ payload, room }) {
   const userUUID = payload?.sender
-  const nickname = await mentionForUser(userUUID)
+  const nickname = decoratedMention(userUUID)
   const balance = getUserWallet(userUUID)
 
   await postMessage({
@@ -24,7 +21,7 @@ export async function handleBalanceCommand ({ payload, room }) {
 
 export async function handleCareerCommand ({ payload, room }) {
   const userUUID = payload?.sender
-  const nickname = await mentionForUser(userUUID)
+  const nickname = decoratedMention(userUUID)
   const rounded = Math.round(getLifetimeNet(userUUID))
   const absNet = Math.abs(rounded).toLocaleString('en-US')
   const sign = rounded >= 0 ? '+' : '-'
@@ -37,7 +34,7 @@ export async function handleCareerCommand ({ payload, room }) {
 
 export async function handleGetWalletCommand ({ payload, room }) {
   const userUUID = payload?.sender
-  const nickname = await mentionForUser(userUUID)
+  const nickname = decoratedMention(userUUID)
 
   if (hasUserWallet(userUUID)) {
     const balance = getUserWallet(userUUID)

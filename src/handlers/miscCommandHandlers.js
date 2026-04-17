@@ -6,7 +6,7 @@ import { getUserWallet, removeFromUserWallet } from '../database/dbwalletmanager
 import { getLotteryWinners } from '../database/dblotterymanager.js'
 import { getJackpotValue } from './slots.js'
 import { handleThemeCommand } from '../database/dbtheme.js'
-import { formatMention } from '../utils/names.js'
+import { decoratedMention } from '../database/dbprestige.js'
 
 function parseTriviaRounds(args) {
   const value = Number.parseInt(String(args || '').trim(), 10)
@@ -89,7 +89,7 @@ export function createMiscCommandHandlers(deps = {}) {
 
         winners.sort((a, b) => new Date(a.date) - new Date(b.date))
         const formattedWinners = winners.map((winner, index) => {
-          const name = winner.userId ? formatMention(winner.userId) : (winner.nickname || 'Unknown user')
+          const name = winner.userId ? decoratedMention(winner.userId) : (winner.nickname || 'Unknown user')
           const amount = Math.round(Number(winner.amountWon) || 0).toLocaleString()
           const num = winner.winningNumber ?? '?'
           const dateStr = winner.date || 'unknown date'
