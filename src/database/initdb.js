@@ -295,6 +295,7 @@ db.exec(`
 `)
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_prestige_badges_user ON prestige_badges(userUUID)') } catch (e) { console.warn('⚠️ Could not create idx_prestige_badges_user:', e.message) }
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_prestige_titles_user ON prestige_titles(userUUID)') } catch (e) { console.warn('⚠️ Could not create idx_prestige_titles_user:', e.message) }
+try { db.exec('ALTER TABLE prestige_profiles ADD COLUMN equippedBadgeKey TEXT') } catch (e) { /* column already exists */ }
 
 // Horses
 db.exec(`

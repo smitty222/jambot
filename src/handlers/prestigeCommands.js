@@ -7,9 +7,11 @@ import { postMessage } from '../libs/cometchat.js'
 import { getDjStreakStatus, getUserWallet } from '../database/dbwalletmanager.js'
 import {
   getEquippedTitle,
+  getEquippedBadge,
   getUserBadges,
   getUserTitles,
   equipTitle,
+  equipBadge,
   getCompactEquippedTitleTag,
   decoratedMention
 } from '../database/dbprestige.js'
@@ -64,6 +66,7 @@ export function createPrestigeHandlers () {
     badges: async ({ payload, room }) => {
       const userUUID = payload?.sender
       const badges = getUserBadges(userUUID)
+      const equippedBadge = getEquippedBadge(userUUID)
       if (!badges.length) {
         await postMessage({
           room,
@@ -84,8 +87,9 @@ export function createPrestigeHandlers () {
         room,
         message: [
           `🏅 **Your Badges** (${badges.length})`,
+          equippedBadge ? `Equipped: ${equippedBadge.emoji || ''} ${equippedBadge.label}`.trim() : 'Equipped: none',
           '',
-          ...badges.map((badge) => `${badge.emoji || '•'} **${badge.label}** — ${badge.description}`)
+          ...badges.map((badge) => `${badge.emoji || '•'} **${badge.label}** — ${badge.description}${equippedBadge?.key === badge.key ? ' [equipped]' : ''}`)
         ].join('\n')
       })
     },
@@ -106,6 +110,65 @@ export function createPrestigeHandlers () {
           '',
           ...titles.map((title) => `${title.emoji || '\u2022'} ${title.label} \`${title.key}\`${equipped?.key === title.key ? ' [equipped]' : ''}`)
         ].join('\n')
+      })
+    },
+
+    badge: async ({ payload, room, args }) => {
+      const userUUID = payload?.sender
+      const trimmed = String(args || '').trim()
+      if (!trimmed) {
+        await postMessage({
+          room,
+          message: [
+            'To equip a badge: `/badge equip <key>`',
+            'To remove your badge: `/badge clear`',
+            'The key is the `code` shown next to each badge in `/badges`.'
+          ].join('\n')
+        })
+        return
+      }
+
+      if (/^clear$/i.test(trimmed)) {
+        equipBadge(userUUID, null)
+        await postMessage({ room, message: 'Badge cleared. Your icon will no longer show next to your name.' })
+        return
+      }
+
+      const match = trimmed.match(/^equip\s+([a-z0-9_]+)$/i)
+      if (!match) {
+        await postMessage({
+          room,
+          message: [
+            'Usage: `/badge equip <key>` or `/badge clear`',
+            'The key is the `code` shown next to each badge in `/badges`.'
+          ].join('\n')
+        })
+        return
+      }
+
+      const key = match[1]
+      const ok = equipBadge(userUUID, key)
+      if (!ok) {
+        const badges = getUserBadges(userUUID)
+        if (!badges.length) {
+          await postMessage({ room, message: 'You have not earned any badges yet. Earn one first, then equip it.' })
+        } else {
+          await postMessage({
+            room,
+            message: [
+              `\`${key}\` is not in your collection or has expired.`,
+              'Your available badges:',
+              ...badges.map((b) => `${b.emoji || '•'} ${b.label} \`${b.key}\``)
+            ].join('\n')
+          })
+        }
+        return
+      }
+
+      const equipped = getEquippedBadge(userUUID)
+      await postMessage({
+        room,
+        message: `${equipped?.emoji || ''} **${equipped?.label || key}** equipped — your icon will now show next to your name.`.trim()
       })
     },
 
@@ -178,6 +241,7 @@ export function createPrestigeHandlers () {
       const balance = getUserWallet(userUUID)
       const lifetimeNet = getLifetimeNet(userUUID)
 
+      const equippedBadge = getEquippedBadge(userUUID)
       const badgeDisplay = badges.length
         ? `${badges.map(b => b.emoji || '•').join(' ')} (${badges.length})`
         : 'none'
@@ -187,6 +251,7 @@ export function createPrestigeHandlers () {
         message: [
           `\uD83E\uDEAA **${username}'s Profile**`,
           title ? `Title: ${title}` : 'Title: none',
+          equippedBadge ? `Badge: ${equippedBadge.emoji || ''} ${equippedBadge.label}`.trim() : 'Badge: none',
           `Cash: ${formatMoneyLine(balance)} \u00B7 Net Worth: ${formatMoneyLine(netWorth?.totalNetWorth || 0)}`,
           `Lifetime Net: ${formatMoneyLine(lifetimeNet)}`,
           `DJ Streak: ${streak.streakCount} current / ${streak.bestStreak} best`,

@@ -150,6 +150,8 @@
       "/profile",
       "/djstreak",
       "/badges",
+      "/badge equip <key>",
+      "/badge clear",
       "/titles",
       "/title equip <key>",
       "/title clear",
@@ -162,6 +164,8 @@
     "items": [
       "/djstreak",
       "/badges",
+      "/badge equip <key>",
+      "/badge clear",
       "/titles",
       "/title equip <key>",
       "/title clear",

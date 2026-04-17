@@ -165,8 +165,47 @@ function compactLabel (label, maxLen = 8) {
   return text.slice(0, Math.max(1, maxLen - 1)).trim() + '.'
 }
 
+export function getEquippedBadge (userUUID) {
+  const row = db.prepare(`
+    SELECT equippedBadgeKey
+    FROM prestige_profiles
+    WHERE userUUID = ?
+  `).get(String(userUUID))
+
+  if (!row?.equippedBadgeKey) return null
+  const def = getBadgeDefinition(row.equippedBadgeKey)
+  return def ? { key: row.equippedBadgeKey, ...def } : null
+}
+
+export function equipBadge (userUUID, badgeKey) {
+  if (badgeKey === null) {
+    db.prepare(`
+      INSERT INTO prestige_profiles (userUUID, equippedBadgeKey, updatedAt)
+      VALUES (?, NULL, CURRENT_TIMESTAMP)
+      ON CONFLICT (userUUID) DO UPDATE SET equippedBadgeKey = NULL, updatedAt = CURRENT_TIMESTAMP
+    `).run(String(userUUID))
+    return true
+  }
+
+  const owned = db.prepare(`
+    SELECT 1 FROM prestige_badges
+    WHERE userUUID = ? AND badgeKey = ?
+    AND (expiresAt IS NULL OR expiresAt > CURRENT_TIMESTAMP)
+  `).get(String(userUUID), String(badgeKey))
+
+  if (!owned) return false
+
+  db.prepare(`
+    INSERT INTO prestige_profiles (userUUID, equippedBadgeKey, updatedAt)
+    VALUES (?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT (userUUID) DO UPDATE SET equippedBadgeKey = ?, updatedAt = CURRENT_TIMESTAMP
+  `).run(String(userUUID), String(badgeKey), String(badgeKey))
+
+  return true
+}
+
 export function decoratedMention (uuid) {
-  const equipped = getEquippedTitle(uuid)
+  const equipped = getEquippedBadge(uuid)
   const prefix = equipped?.emoji ? `${equipped.emoji} ` : ''
   return `${prefix}<@uid:${uuid}>`
 }
