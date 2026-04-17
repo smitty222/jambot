@@ -4,7 +4,7 @@
 // User prestige and progression display commands.
 
 import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
-import { getDjStreakStatus, getUserWallet } from '../database/dbwalletmanager.js'
+import { getDjStreakStatus, getUserWallet, getNetWorthForUser, getLifetimeNet } from '../database/dbwalletmanager.js'
 import {
   getEquippedTitle,
   getEquippedBadge,
@@ -16,7 +16,6 @@ import {
   decoratedMention,
   getAllBadgeDefinitions
 } from '../database/dbprestige.js'
-import { getNetWorthForUser, getLifetimeNet } from '../database/dbwalletmanager.js'
 
 function formatWholeDollars (value) {
   return Math.round(Number(value) || 0).toLocaleString('en-US')
@@ -46,7 +45,12 @@ export function formatCompactLeaderboardLine ({ rank, uuid, name, amount }) {
   return `${rank}. ${titleTag ? `${titleTag} ` : ''}${compactName} ${money}`
 }
 
-export function createPrestigeHandlers () {
+export function createPrestigeHandlers (deps = {}) {
+  const {
+    postMessage: post = postMessage,
+    sendDirectMessage: sendDm = sendDirectMessage
+  } = deps
+
   return {
     djstreak: async ({ payload, room }) => {
       const userUUID = payload?.sender
@@ -150,9 +154,10 @@ export function createPrestigeHandlers () {
 
       const userUUID = payload?.sender
       if (userUUID) {
-        await sendDirectMessage(userUUID, lines.join('\n'))
+        await sendDm(userUUID, lines.join('\n'))
+        await post({ room, message: 'All Badges sent via DM' })
       } else {
-        await postMessage({ room, message: lines.join('\n') })
+        await post({ room, message: lines.join('\n') })
       }
     },
 
@@ -292,7 +297,7 @@ export function createPrestigeHandlers () {
       if (!ok) {
         const titles = getUserTitles(userUUID)
         if (!titles.length) {
-          await postMessage({ room, message: `You have not earned any titles yet. Win a monthly leaderboard or hit a DJ streak milestone to unlock your first one.` })
+          await postMessage({ room, message: 'You have not earned any titles yet. Win a monthly leaderboard or hit a DJ streak milestone to unlock your first one.' })
         } else {
           await postMessage({
             room,
