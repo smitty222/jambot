@@ -4,7 +4,7 @@ import { markUser, getMarkedUser } from '../utils/removalQueue.js'
 import { startPaidSpotlight } from './spotlight.js'
 import { getUserWallet, removeFromUserWallet } from '../database/dbwalletmanager.js'
 import { isUserAuthorized } from '../utils/API.js'
-import { decoratedMention } from '../database/dbprestige.js'
+import { decoratedMention, syncWhiskeyPrestige } from '../database/dbprestige.js'
 
 export function createRoomFunHandlers (deps = {}) {
   const {
@@ -74,6 +74,7 @@ export function createRoomFunHandlers (deps = {}) {
         room,
         message: `${decoratedMention(senderUUID)} gives ${decoratedMention(currentDJUUIDs[0])} a million ice cold beers!!! 🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺🍺`
       })
+      syncWhiskeyPrestige(senderUUID)
     },
 
     jump: async ({ roomBot }) => {

@@ -8,11 +8,13 @@ import {
 } from '../database/dbwalletmanager.js'
 import { getUserNickname } from '../utils/nickname.js' // <- avoid circular import
 import { env } from '../config.js'
+import { syncRoulettePrestige, formatPrestigeUnlockLines } from '../database/dbprestige.js'
 
 // Game state
 let rouletteGameActive = false
 let betsOpen = false
 const bets = {}
+const colorStreaks = {} // tracks consecutive color-bet wins per user across games
 const room = env.roomUuid
 
 // ──────────────────────────────────────────────
@@ -122,6 +124,9 @@ async function drawWinningNumber () {
 
   for (const [user, userBets] of Object.entries(bets)) {
     let totalWinnings = 0
+    let hasColorWin = false
+    let hasStraightWin = false
+    const placedColorBet = userBets.some(b => ['red', 'black'].includes(b.type))
 
     for (const bet of userBets) {
       const amt = bet.amount
@@ -130,7 +135,10 @@ async function drawWinningNumber () {
         case 'red':
         case 'black':
         case 'green':
-          if (bet.type === color) totalWinnings += amt * 2
+          if (bet.type === color) {
+            totalWinnings += amt * 2
+            if (bet.type === 'red' || bet.type === 'black') hasColorWin = true
+          }
           break
 
         case 'odd':
@@ -154,9 +162,9 @@ async function drawWinningNumber () {
           // - if bet.number is '00', it only wins when value === '00'
           // - if bet.number is numeric 0..36, it only wins when number matches
           if (bet.number === '00') {
-            if (value === '00') totalWinnings += amt * 36
+            if (value === '00') { totalWinnings += amt * 36; hasStraightWin = true }
           } else {
-            if (bet.number === number) totalWinnings += amt * 36
+            if (bet.number === number) { totalWinnings += amt * 36; hasStraightWin = true }
           }
           break
         }
@@ -168,6 +176,11 @@ async function drawWinningNumber () {
       }
     }
 
+    // Update color streak (only if they placed a color bet)
+    if (placedColorBet) {
+      colorStreaks[user] = hasColorWin ? (colorStreaks[user] || 0) + 1 : 0
+    }
+
     const nickname = await getUserNickname(user)
 
     if (totalWinnings > 0) {
@@ -177,6 +190,18 @@ async function drawWinningNumber () {
         note: 'Roulette payout'
       })
       await postMessage({ room, message: `💰 ${nickname} won $${totalWinnings}!` })
+
+      const prestige = syncRoulettePrestige({
+        userUUID: user,
+        isColorWin: hasColorWin,
+        isStraightWin: hasStraightWin,
+        colorStreak: colorStreaks[user] || 0,
+        winAmount: totalWinnings
+      })
+      const prestigeLines = formatPrestigeUnlockLines(prestige)
+      if (prestigeLines.length) {
+        await postMessage({ room, message: `<@uid:${user}>\n${prestigeLines.join('\n')}` })
+      }
     } else if (userBets.length) {
       await postMessage({ room, message: `😢 ${nickname} did not win this round.` })
     }

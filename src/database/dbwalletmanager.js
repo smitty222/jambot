@@ -16,7 +16,7 @@ export { getCurrentMonthKey } from '../utils/monthKey.js'
 import { sanitizeNickname } from '../utils/names.js'
 import { fetchRecentSongs } from '../utils/API.js'
 import { getCryptoPrice } from '../utils/cryptoPrice.js'
-import { maybeAwardDjPrestige, syncMonthlyPrestigeAwards, syncHighRollerPrestige, syncRoundBuyerPrestige, syncBrokePrestige, syncBigTipperPrestige } from './dbprestige.js'
+import { maybeAwardDjPrestige, syncMonthlyPrestigeAwards, syncHighRollerPrestige, syncRoundBuyerPrestige, syncBrokePrestige, syncBigTipperPrestige, syncChampagnePrestige, syncBottlePopPrestige } from './dbprestige.js'
 
 // ───────────────────────────────────────────────────────────
 // Structured logging
@@ -408,6 +408,7 @@ export async function addToUserWallet (userUUID, amount, nickname = null, meta =
   persistWallet(userUUID, newBalance)
   if (meta) recordEconomyEvent(userUUID, Math.abs(amount), newBalance, meta)
   syncHighRollerPrestige(userUUID, newBalance)
+  syncChampagnePrestige(userUUID, newBalance)
   return true
 }
 
@@ -724,6 +725,7 @@ export async function creditGameWin (userUUID, amount, nickname = null, meta = n
       ...(meta && typeof meta === 'object' ? meta : {})
     }
   })
+  if (result.ok) syncBottlePopPrestige(userUUID, amount)
   return result.ok
 }
 

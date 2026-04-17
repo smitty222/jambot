@@ -342,12 +342,12 @@ export function createRoomUtilityHandlers (deps = {}) {
         '- `/games` — Lottery, slots, roulette, blackjack & more',
         '- `/music` — Reviews, stats, now playing info',
         '- `/wallet` — Wallet, leaderboards, prestige & titles',
+        '- `/queue` — Queue & playlist tools',
+        '- `/gifs` or `/fun` — GIF reactions & fun commands',
+        '- `/avatars` — Change your avatar',
         '- `/commands sports` — Scores, odds & betting',
         '- `/commands crypto` — Crypto portfolio game',
-        '- `/gifs` — GIF reactions & fun commands',
-        '- `/avatars` — Change your avatar',
-        '- `/commands trivia` — Trivia game',
-        '- `/commands queue` — Queue & playlist tools'
+        '- `/commands trivia` — Trivia game'
       ].join('\n'))
 
       sections.push([
@@ -390,6 +390,18 @@ export function createRoomUtilityHandlers (deps = {}) {
 
     avatars: async ({ room }) => {
       await post({ room, message: COMMAND_GUIDES.avatars })
+    },
+
+    queue: async ({ room }) => {
+      await post({ room, message: COMMAND_GUIDES.queue })
+    },
+
+    playlist: async ({ room }) => {
+      await post({ room, message: COMMAND_GUIDES.queue })
+    },
+
+    fun: async ({ room }) => {
+      await post({ room, message: COMMAND_GUIDES.fun })
     },
 
     room: async ({ payload, room, ttlUserToken }) => {

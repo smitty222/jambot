@@ -1,4 +1,5 @@
 import { postMessage } from '../libs/cometchat.js'
+import { syncBegonePrestige, syncCocktailPrestige, formatPrestigeUnlockLines } from '../database/dbprestige.js'
 import { getCurrentDJ } from '../libs/bot.js'
 import { getUserWallet, removeFromUserWallet } from '../database/dbwalletmanager.js'
 import { getRandomDogImage } from '../utils/API.js'
@@ -152,7 +153,10 @@ export function createReactionHandlers(deps = {}) {
 
     dance: async ({ room }) => postRandomReaction({ post, room, options: RANDOM_GIF_COMMANDS.dance, choose }),
     fart: async ({ room }) => postRandomReaction({ post, room, options: RANDOM_GIF_COMMANDS.fart, choose }),
-    party: async ({ room }) => postRandomReaction({ post, room, options: RANDOM_GIF_COMMANDS.party, choose }),
+    party: async ({ payload, room }) => {
+      await postRandomReaction({ post, room, options: RANDOM_GIF_COMMANDS.party, choose })
+      syncCocktailPrestige(payload?.sender)
+    },
     beer: async ({ room }) => postRandomReaction({ post, room, options: RANDOM_GIF_COMMANDS.beer, choose }),
     cheers: async ({ room }) => postRandomReaction({ post, room, options: RANDOM_GIF_COMMANDS.cheers, choose }),
     tomatoes: async ({ room }) => postRandomReaction({ post, room, options: RANDOM_GIF_COMMANDS.tomatoes, choose }),
@@ -223,6 +227,12 @@ export function createReactionHandlers(deps = {}) {
       await post({ room, message: '👋 BEGONE.' })
       await delay(450)
       await roomBot.removeDJ(currentDJ)
+
+      const prestige = syncBegonePrestige(callerUuid)
+      if (prestige.badges.length) {
+        const lines = formatPrestigeUnlockLines(prestige)
+        if (lines.length) await post({ room, message: lines.join('\n') })
+      }
     }
   }
 }

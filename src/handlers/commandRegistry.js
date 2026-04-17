@@ -442,6 +442,9 @@ extendCommandRegistry({
   music: async ({ room }) => { await roomUtilityHandlers.music({ room }) },
   wallet: async ({ room }) => { await roomUtilityHandlers.wallet({ room }) },
   avatars: async ({ room }) => { await roomUtilityHandlers.avatars({ room }) },
+  queue: async ({ room }) => { await roomUtilityHandlers.queue({ room }) },
+  playlist: async ({ room }) => { await roomUtilityHandlers.playlist({ room }) },
+  fun: async ({ room }) => { await roomUtilityHandlers.fun({ room }) },
   room: async ({ payload, room, ttlUserToken }) => {
     await roomUtilityHandlers.room({ payload, room, ttlUserToken })
   },

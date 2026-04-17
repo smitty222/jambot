@@ -1202,7 +1202,8 @@ async function settleRound (ctx) {
       userUUID: turn.uuid,
       isNaturalBlackjack: outcome === 'BLACKJACK',
       doubledWin: Boolean(h.doubled && outcome === 'WIN'),
-      profit
+      profit,
+      lossStreak: p.lossStreak
     })
     const bjPrestigeLines = formatPrestigeUnlockLines(bjPrestige)
     if (bjPrestigeLines.length) {

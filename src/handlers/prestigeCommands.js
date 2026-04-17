@@ -3,7 +3,7 @@
 // Handlers for /profile, /djstreak, /badges, /titles, /title
 // User prestige and progression display commands.
 
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
 import { getDjStreakStatus, getUserWallet } from '../database/dbwalletmanager.js'
 import {
   getEquippedTitle,
@@ -87,14 +87,14 @@ export function createPrestigeHandlers () {
         room,
         message: [
           `🏅 **Your Badges** (${badges.length})`,
-          equippedBadge ? `Equipped: ${equippedBadge.emoji || ''} ${equippedBadge.label}`.trim() : 'Equipped: none',
+          'To equip a badge next to your name: `/badge equip <#>`',
           '',
-          ...badges.map((badge, i) => `${i + 1}. ${badge.emoji || '•'} **${badge.label}** \`${badge.key}\` — ${badge.description}${equippedBadge?.key === badge.key ? ' [equipped]' : ''}`)
+          ...badges.map((badge, i) => `${i + 1}. ${badge.emoji || '•'} ${badge.label}${equippedBadge?.key === badge.key ? ' [equipped]' : ''}`)
         ].join('\n')
       })
     },
 
-    allbadges: async ({ room }) => {
+    allbadges: async ({ payload, room }) => {
       const all = getAllBadgeDefinitions()
 
       const groups = [
@@ -103,7 +103,7 @@ export function createPrestigeHandlers () {
           keys: ['dj_streak_3', 'dj_streak_5', 'dj_streak_8', 'dj_streak_12']
         },
         {
-          label: '🏆 Monthly Leaderboards *(resets monthly)*',
+          label: '🏆 Monthly Leaderboards',
           keys: ['monthly_earner_1', 'monthly_dj_1', 'monthly_f1_1', 'monthly_gambler_1']
         },
         {
@@ -116,7 +116,7 @@ export function createPrestigeHandlers () {
         },
         {
           label: '🂡 Blackjack',
-          keys: ['bj_first_blackjack', 'bj_double_down', 'bj_big_hand']
+          keys: ['bj_first_blackjack', 'bj_double_down', 'bj_big_hand', 'bj_clown']
         },
         {
           label: '🎱 Lottery',
@@ -124,7 +124,7 @@ export function createPrestigeHandlers () {
         },
         {
           label: '💰 Wallet & Social',
-          keys: ['high_roller', 'broke', 'round_buyer', 'big_tipper', 'pride']
+          keys: ['champagne', 'high_roller', 'bottle_pop', 'broke', 'round_buyer', 'big_tipper', 'whiskey', 'cocktail', 'pride', 'begone']
         },
         {
           label: '🏎️ F1 Racing',
@@ -137,18 +137,23 @@ export function createPrestigeHandlers () {
       ]
 
       const byKey = Object.fromEntries(all.map(b => [b.key, b]))
-      const lines = ['🏅 **All Badges**', '']
+      const lines = ['🏅 All Badges', '']
 
       for (const group of groups) {
-        lines.push(`**${group.label}**`)
+        lines.push(group.label)
         for (const key of group.keys) {
           const b = byKey[key]
-          if (b) lines.push(`${b.emoji || '•'} **${b.label}** — ${b.description}`)
+          if (b) lines.push(`${b.emoji || '•'} ${b.label} — ${b.description}`)
         }
         lines.push('')
       }
 
-      await postMessage({ room, message: lines.join('\n') })
+      const userUUID = payload?.sender
+      if (userUUID) {
+        await sendDirectMessage(userUUID, lines.join('\n'))
+      } else {
+        await postMessage({ room, message: lines.join('\n') })
+      }
     },
 
     titles: async ({ payload, room }) => {
