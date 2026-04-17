@@ -312,8 +312,10 @@ async function main () {
   ;(async () => {
     try {
       await import('./database/initdb.js')
+      const { backfillHistoricalPrestigeBadges } = await import('./database/dbprestige.js')
+      const prestigeBackfill = backfillHistoricalPrestigeBadges()
       await import('./database/seedavatars.js')
-      logger.info('[db-init] completed')
+      logger.info('[db-init] completed', { prestigeBackfill })
     } catch (e) {
       logger.error('[db-init] failed (non-fatal):', e?.message || e)
     }

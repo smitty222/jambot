@@ -114,6 +114,153 @@ export function awardBadge (userUUID, badgeKey, { source = null, meta = null, ex
   return result.changes > 0 ? 'new' : 'existing'
 }
 
+function tableOrViewExists (name) {
+  const row = db.prepare(`
+    SELECT name
+    FROM sqlite_master
+    WHERE name = ? AND type IN ('table', 'view')
+  `).get(String(name))
+  return Boolean(row)
+}
+
+function tableColumnExists (table, column) {
+  if (!tableOrViewExists(table)) return false
+  return db.prepare(`PRAGMA table_info(${table})`).all().some(row => row.name === column)
+}
+
+function runHistoricalBackfillInsert (sql) {
+  if (!db.available) return 0
+  return db.prepare(sql).run().changes || 0
+}
+
+function backfillLotteryPrestigeBadges () {
+  if (!tableOrViewExists('lottery_winners') || !tableOrViewExists('prestige_badges')) {
+    return { lottery_first_hit: 0, lottery_repeat_winner: 0 }
+  }
+
+  const firstHit = runHistoricalBackfillInsert(`
+    INSERT OR IGNORE INTO prestige_badges (userUUID, badgeKey, source, meta)
+    SELECT
+      userId,
+      'lottery_first_hit',
+      'lottery',
+      '{"totalWins":' || COUNT(*) || ',"historicalBackfill":true}'
+    FROM lottery_winners
+    WHERE userId IS NOT NULL AND userId <> ''
+    GROUP BY userId
+    HAVING COUNT(*) >= 1
+  `)
+
+  const repeatWinner = runHistoricalBackfillInsert(`
+    INSERT OR IGNORE INTO prestige_badges (userUUID, badgeKey, source, meta)
+    SELECT
+      userId,
+      'lottery_repeat_winner',
+      'lottery',
+      '{"totalWins":' || COUNT(*) || ',"historicalBackfill":true}'
+    FROM lottery_winners
+    WHERE userId IS NOT NULL AND userId <> ''
+    GROUP BY userId
+    HAVING COUNT(*) >= 3
+  `)
+
+  return {
+    lottery_first_hit: firstHit,
+    lottery_repeat_winner: repeatWinner
+  }
+}
+
+function backfillHorsePrestigeBadges () {
+  if (!tableOrViewExists('horses') || !tableOrViewExists('prestige_badges')) {
+    return { horse_first_winner: 0, horse_stable_star: 0 }
+  }
+
+  const firstWinner = runHistoricalBackfillInsert(`
+    INSERT OR IGNORE INTO prestige_badges (userUUID, badgeKey, source, meta)
+    SELECT
+      ownerId,
+      'horse_first_winner',
+      'horse_race',
+      '{"totalWins":' || COALESCE(SUM(wins), 0) || ',"historicalBackfill":true}'
+    FROM horses
+    WHERE ownerId IS NOT NULL AND ownerId <> ''
+    GROUP BY ownerId
+    HAVING COALESCE(SUM(wins), 0) >= 1
+  `)
+
+  const stableStar = runHistoricalBackfillInsert(`
+    INSERT OR IGNORE INTO prestige_badges (userUUID, badgeKey, source, meta)
+    SELECT
+      ownerId,
+      'horse_stable_star',
+      'horse_race',
+      '{"totalWins":' || COALESCE(SUM(wins), 0) || ',"historicalBackfill":true}'
+    FROM horses
+    WHERE ownerId IS NOT NULL AND ownerId <> ''
+    GROUP BY ownerId
+    HAVING COALESCE(SUM(wins), 0) >= 5
+  `)
+
+  return {
+    horse_first_winner: firstWinner,
+    horse_stable_star: stableStar
+  }
+}
+
+function backfillChampagnePrestigeBadge () {
+  if (!tableOrViewExists('prestige_badges')) return { champagne: 0 }
+  const walletSources = []
+
+  if (tableColumnExists('users', 'uuid') && tableColumnExists('users', 'balance')) {
+    walletSources.push('SELECT uuid AS userUUID, balance AS balance FROM users')
+  }
+
+  if (tableColumnExists('wallets', 'uuid') && tableColumnExists('wallets', 'balance')) {
+    walletSources.push('SELECT uuid AS userUUID, balance AS balance FROM wallets')
+  }
+
+  if (tableColumnExists('economy_events', 'userUUID') && tableColumnExists('economy_events', 'balanceAfter')) {
+    walletSources.push('SELECT userUUID, balanceAfter AS balance FROM economy_events')
+  }
+
+  if (!walletSources.length) return { champagne: 0 }
+
+  const champagne = runHistoricalBackfillInsert(`
+    WITH wallet_history AS (
+      ${walletSources.join('\n      UNION ALL\n      ')}
+    ),
+    max_wallets AS (
+      SELECT userUUID, MAX(balance) AS maxBalance
+      FROM wallet_history
+      WHERE userUUID IS NOT NULL AND userUUID <> '' AND balance IS NOT NULL
+      GROUP BY userUUID
+    )
+    INSERT OR IGNORE INTO prestige_badges (userUUID, badgeKey, source, meta)
+    SELECT
+      userUUID,
+      'champagne',
+      'wallet',
+      '{"balance":' || ROUND(maxBalance, 2) || ',"historicalBackfill":true}'
+    FROM max_wallets
+    WHERE maxBalance >= 100000
+  `)
+
+  return { champagne }
+}
+
+export function backfillHistoricalPrestigeBadges () {
+  const results = {
+    ...backfillLotteryPrestigeBadges(),
+    ...backfillHorsePrestigeBadges(),
+    ...backfillChampagnePrestigeBadge()
+  }
+
+  return {
+    ...results,
+    total: Object.values(results).reduce((sum, count) => sum + Number(count || 0), 0)
+  }
+}
+
 export function awardTitle (userUUID, titleKey, { source = null, meta = null, expiresAt = null } = {}) {
   const def = getTitleDefinition(titleKey)
   if (!userUUID || !def) return false
