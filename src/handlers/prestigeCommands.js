@@ -89,7 +89,7 @@ export function createPrestigeHandlers () {
           `🏅 **Your Badges** (${badges.length})`,
           equippedBadge ? `Equipped: ${equippedBadge.emoji || ''} ${equippedBadge.label}`.trim() : 'Equipped: none',
           '',
-          ...badges.map((badge) => `${badge.emoji || '•'} **${badge.label}** — ${badge.description}${equippedBadge?.key === badge.key ? ' [equipped]' : ''}`)
+          ...badges.map((badge) => `${badge.emoji || '•'} **${badge.label}** \`${badge.key}\` — ${badge.description}${equippedBadge?.key === badge.key ? ' [equipped]' : ''}`)
         ].join('\n')
       })
     },
