@@ -92,6 +92,10 @@ export function getAllBadgeDefinitions () {
   return Object.entries(BADGE_DEFS).map(([key, def]) => ({ key, ...def }))
 }
 
+export function getAllTitleDefinitions () {
+  return Object.entries(TITLE_DEFS).map(([key, def]) => ({ key, ...def }))
+}
+
 export function getTitleDefinition (titleKey) {
   return TITLE_DEFS[String(titleKey || '').trim()] || null
 }
@@ -1057,6 +1061,35 @@ export function getBadgeProgress (userUUID) {
       const reviewRow = db.prepare('SELECT COUNT(*) AS cnt FROM song_reviews WHERE userId = ?').get(String(userUUID))
       check('music_critic', Number(reviewRow?.cnt || 0), 25, 'songs reviewed')
     } catch {}
+  }
+
+  // Trivia scholar title (tracked as badge progress even though it awards a title)
+  const triviaCorrect = getCommandCount('trivia_correct')
+  if (!earned.has('trivia_scholar_title_proxy')) {
+    const triviaScholarDef = BADGE_DEFS.trivia_know_it_all // reuse for display shape only
+    if (triviaCorrect > 0 && triviaCorrect < 10 && triviaScholarDef) {
+      progress.push({
+        key: 'trivia_scholar_title',
+        emoji: '🧠',
+        label: 'The Scholar (title)',
+        current: triviaCorrect,
+        target: 10,
+        display: `${triviaCorrect}/10 correct answers`
+      })
+    }
+  }
+
+  // Roulette Royale title
+  const straightWins = getCommandCount('roulette_straight_win')
+  if (straightWins === 1) {
+    progress.push({
+      key: 'roulette_royale_title',
+      emoji: '🔴',
+      label: 'Roulette Royale (title)',
+      current: 1,
+      target: 2,
+      display: '1/2 straight-number wins'
+    })
   }
 
   // Wallet milestones

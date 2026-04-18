@@ -3,7 +3,7 @@
 import { postMessage } from '../libs/cometchat.js'
 import { askQuestion, setCurrentSong } from '../libs/ai.js'
 import { logger as defaultLogger } from '../utils/logging.js'
-import { getMLBScores, getMLBStandings } from '../utils/API.js'
+import { getMLBScores, getMLBStandings, getNBAScores, getNBAStandings, getNBAPlayoffSeries, getNHLScores, getNHLStandings, getNHLPlayoffSeries } from '../utils/API.js'
 
 import {
   isMentioned,
@@ -12,9 +12,11 @@ import {
   isSongQuery,
   isAlbumQuery,
   isMlbSportsQuery,
+  isNbaSportsQuery,
+  isNhlSportsQuery,
   expandSongQuestion,
   expandAlbumQuestion,
-  buildMlbSportsPrompt,
+  buildSportsPrompt,
   safeAskQuestion,
   checkCooldown
 } from '../utils/aiHelpers.js'
@@ -313,7 +315,33 @@ export async function handleAIMention ({
       getMLBScores().catch(() => null),
       getMLBStandings().catch(() => null)
     ])
-    const prompt = buildMlbSportsPrompt(question, scores, standings)
+    const prompt = buildSportsPrompt('MLB', question, scores, standings)
+    const aiReplyText = await safeAskQuestion(prompt, askQuestion, logger)
+    await postMessage({ room, message: aiReplyText })
+    return true
+  }
+
+  // --- NBA sports intent --------------------------------------------------
+  if (isNbaSportsQuery(question)) {
+    const [scores, standings, playoffs] = await Promise.all([
+      getNBAScores().catch(() => null),
+      getNBAStandings().catch(() => null),
+      getNBAPlayoffSeries().catch(() => null)
+    ])
+    const prompt = buildSportsPrompt('NBA', question, scores, standings, playoffs)
+    const aiReplyText = await safeAskQuestion(prompt, askQuestion, logger)
+    await postMessage({ room, message: aiReplyText })
+    return true
+  }
+
+  // --- NHL sports intent --------------------------------------------------
+  if (isNhlSportsQuery(question)) {
+    const [scores, standings, playoffs] = await Promise.all([
+      getNHLScores().catch(() => null),
+      getNHLStandings().catch(() => null),
+      getNHLPlayoffSeries().catch(() => null)
+    ])
+    const prompt = buildSportsPrompt('NHL', question, scores, standings, playoffs)
     const aiReplyText = await safeAskQuestion(prompt, askQuestion, logger)
     await postMessage({ room, message: aiReplyText })
     return true

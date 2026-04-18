@@ -3,7 +3,11 @@ import {
   getMLBScores,
   getMLBStandings,
   getNHLScores,
+  getNHLStandings,
+  getNHLPlayoffSeries,
   getNBAScores,
+  getNBAStandings,
+  getNBAPlayoffSeries,
   getNFLScores,
   getNCAABScores
 } from '../utils/API.js'
@@ -308,6 +312,28 @@ export function createMlbScoresCommandHandler (deps = {}) {
 }
 
 export async function handleNhlScoresCommand ({ payload, room }) {
+  const parts = String(payload?.message || '').trim().split(/\s+/)
+  const subcommand = String(parts[1] || '').toLowerCase()
+  if (subcommand === 'standings') {
+    try {
+      const message = await getNHLStandings()
+      await postMessage({ room, message })
+    } catch (err) {
+      console.error('[nhl] Error fetching standings:', err?.message || err)
+      await postMessage({ room, message: 'There was an error fetching NHL standings. Please try again later.' })
+    }
+    return
+  }
+  if (subcommand === 'playoffs') {
+    try {
+      const message = await getNHLPlayoffSeries()
+      await postMessage({ room, message })
+    } catch (err) {
+      console.error('[nhl] Error fetching playoffs:', err?.message || err)
+      await postMessage({ room, message: 'There was an error fetching NHL playoff data. Please try again later.' })
+    }
+    return
+  }
   return createNhlScoresCommandHandler()({ payload, room })
 }
 
@@ -322,6 +348,28 @@ export function createNhlScoresCommandHandler (deps = {}) {
 }
 
 export async function handleNbaScoresCommand ({ payload, room }) {
+  const parts = String(payload?.message || '').trim().split(/\s+/)
+  const subcommand = String(parts[1] || '').toLowerCase()
+  if (subcommand === 'standings') {
+    try {
+      const message = await getNBAStandings()
+      await postMessage({ room, message })
+    } catch (err) {
+      console.error('[nba] Error fetching standings:', err?.message || err)
+      await postMessage({ room, message: 'There was an error fetching NBA standings. Please try again later.' })
+    }
+    return
+  }
+  if (subcommand === 'playoffs') {
+    try {
+      const message = await getNBAPlayoffSeries()
+      await postMessage({ room, message })
+    } catch (err) {
+      console.error('[nba] Error fetching playoffs:', err?.message || err)
+      await postMessage({ room, message: 'There was an error fetching NBA playoff data. Please try again later.' })
+    }
+    return
+  }
   return createNbaScoresCommandHandler()({ payload, room })
 }
 

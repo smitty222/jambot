@@ -1373,45 +1373,116 @@ export async function getNCAABLiveScores (requestedDate) { return espnScoreboard
 export async function getMarchMadnessScores (requestedDate) { return espnScoreboard('basketball/mens-college-basketball', requestedDate, { tournamentOnly: true }) }
 export async function getMarchMadnessLiveScores (requestedDate) { return espnScoreboard('basketball/mens-college-basketball', requestedDate, { liveOnly: true, tournamentOnly: true }) }
 
-function formatMLBStandings (data) {
-  const leagues = Array.isArray(data?.children) ? data.children : []
-  if (!leagues.length) return 'No standings data available.\n'
+function collectStandingGroups (node, groups = []) {
+  if (Array.isArray(node?.standings?.entries) && node.standings.entries.length) {
+    groups.push(node)
+  }
+  if (Array.isArray(node?.children)) {
+    for (const child of node.children) collectStandingGroups(child, groups)
+  }
+  return groups
+}
 
-  const lines = ['📊 MLB Standings\n']
+function formatEspnStandings (data, sportLabel) {
+  const groups = collectStandingGroups(data)
+  if (!groups.length) return 'No standings data available.\n'
 
-  for (const league of leagues) {
-    const divisions = Array.isArray(league?.children) ? league.children : []
-    for (const division of divisions) {
-      const entries = Array.isArray(division?.standings?.entries) ? division.standings.entries : []
-      if (!entries.length) continue
+  const lines = [`📊 ${sportLabel} Standings\n`]
 
-      lines.push(division.name)
-
-      for (const entry of entries) {
-        const abbr = String(entry.team?.abbreviation || '???').padEnd(4)
-        const getStat = name => entry.stats?.find(s => s.name === name)
-        const wins = getStat('wins')?.value ?? 0
-        const losses = getStat('losses')?.value ?? 0
-        const gbDisplay = getStat('gamesBehind')?.displayValue ?? '-'
-        const gb = gbDisplay === '-' || gbDisplay === '0' ? ' —' : gbDisplay
-        const streak = getStat('streak')?.displayValue ?? ''
-        lines.push(`• ${abbr} ${wins}-${losses}  ${gb}  ${streak}`)
-      }
-      lines.push('')
+  for (const group of groups) {
+    lines.push(group.name || '')
+    for (const entry of group.standings.entries) {
+      const abbr = String(entry.team?.abbreviation || '???').padEnd(4)
+      const getStat = name => entry.stats?.find(s => s.name === name)
+      const wins = getStat('wins')?.value ?? 0
+      const losses = getStat('losses')?.value ?? 0
+      const gbDisplay = getStat('gamesBehind')?.displayValue ?? '-'
+      const gb = gbDisplay === '-' || gbDisplay === '0' ? ' —' : gbDisplay
+      const streak = getStat('streak')?.displayValue ?? ''
+      lines.push(`• ${abbr} ${wins}-${losses}  ${gb}  ${streak}`)
     }
+    lines.push('')
   }
 
   return lines.join('\n')
 }
 
-export async function getMLBStandings () {
-  return getCachedScoreboard('baseball/mlb:standings', async () => {
-    const url = 'https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/standings'
+async function fetchEspnStandings (sportPath, sportLabel) {
+  return getCachedScoreboard(`${sportPath}:standings`, async () => {
+    const url = `https://site.api.espn.com/apis/site/v2/sports/${sportPath}/standings`
     const { ok, data } = await makeRequest(url)
-    if (!ok) return 'Unable to fetch MLB standings right now.\n'
-    return formatMLBStandings(data)
+    if (!ok) return `Unable to fetch ${sportLabel} standings right now.\n`
+    return formatEspnStandings(data, sportLabel)
   })
 }
+
+export async function getMLBStandings () { return fetchEspnStandings('baseball/mlb', 'MLB') }
+export async function getNBAStandings () { return fetchEspnStandings('basketball/nba', 'NBA') }
+export async function getNHLStandings () { return fetchEspnStandings('hockey/nhl', 'NHL') }
+
+function extractPlayoffRounds (data) {
+  // ESPN returns brackets[].rounds[] or rounds[] at top level
+  const sources = [
+    ...(Array.isArray(data?.brackets) ? data.brackets : []),
+    ...(data?.bracket ? [data.bracket] : []),
+    data
+  ]
+  const rounds = []
+  for (const src of sources) {
+    if (!Array.isArray(src?.rounds)) continue
+    for (const round of src.rounds) {
+      const series = Array.isArray(round?.series) ? round.series : []
+      if (series.length) rounds.push({ name: round.displayName || round.name || 'Round', series })
+    }
+    if (rounds.length) break
+  }
+  return rounds
+}
+
+function formatSeriesLine (s) {
+  const comps = Array.isArray(s.competitors) ? s.competitors : []
+  if (comps.length < 2) return null
+  const [a, b] = comps
+  const aAbbr = a.team?.abbreviation || '???'
+  const bAbbr = b.team?.abbreviation || '???'
+  const aWins = Number(a.wins ?? 0)
+  const bWins = Number(b.wins ?? 0)
+  let status = ''
+  if (aWins === 4) status = `  ${aAbbr} wins`
+  else if (bWins === 4) status = `  ${bAbbr} wins`
+  else if (aWins === bWins && aWins > 0) status = '  tied'
+  else if (aWins > bWins) status = `  ${aAbbr} leads`
+  else if (bWins > aWins) status = `  ${bAbbr} leads`
+  return `• ${aAbbr} ${aWins}–${bWins} ${bAbbr}${status}`
+}
+
+function formatPlayoffSeries (data, sportLabel) {
+  const emoji = sportLabel === 'NHL' ? '🏒' : '🏀'
+  const rounds = extractPlayoffRounds(data)
+  if (!rounds.length) return `No ${sportLabel} playoff data available right now.\n`
+  const lines = [`${emoji} ${sportLabel} Playoffs\n`]
+  for (const round of rounds) {
+    lines.push(round.name)
+    for (const s of round.series) {
+      const line = formatSeriesLine(s)
+      if (line) lines.push(line)
+    }
+    lines.push('')
+  }
+  return lines.join('\n')
+}
+
+async function fetchEspnPlayoffs (sportPath, sportLabel) {
+  return getCachedScoreboard(`${sportPath}:playoffs`, async () => {
+    const url = `https://site.api.espn.com/apis/v2/sports/${sportPath}/playoffs`
+    const { ok, data } = await makeRequest(url)
+    if (!ok) return `Unable to fetch ${sportLabel} playoff data right now.\n`
+    return formatPlayoffSeries(data, sportLabel)
+  })
+}
+
+export async function getNBAPlayoffSeries () { return fetchEspnPlayoffs('basketball/nba', 'NBA') }
+export async function getNHLPlayoffSeries () { return fetchEspnPlayoffs('hockey/nhl', 'NHL') }
 
 /* ────────────────────────────────────────────────────────────────
  * Last.fm helpers

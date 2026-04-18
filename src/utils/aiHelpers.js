@@ -52,7 +52,7 @@ export function expandAlbumQuestion (rawQ, albumName, artistName) {
   )
 }
 
-// --- MLB sports intent detection ------------------------------------------
+// --- Sports intent detection ----------------------------------------------
 
 const MLB_TEAM_NAMES = [
   'mets', 'yankees', 'red sox', 'dodgers', 'astros', 'cubs', 'cardinals',
@@ -61,35 +61,86 @@ const MLB_TEAM_NAMES = [
   'twins', 'white sox', 'tigers', 'royals', 'guardians', 'orioles',
   'blue jays', 'rays', 'rockies', 'diamondbacks'
 ]
-
 const MLB_ABBRS = [
-  'NYY', 'NYM', 'BOS', 'LAD', 'HOU', 'CHC', 'STL', 'ATL', 'PHI', 'SF',
-  'SD', 'MIL', 'CIN', 'PIT', 'WSH', 'MIA', 'LAA', 'TEX', 'OAK', 'SEA',
-  'MIN', 'CWS', 'DET', 'KC', 'CLE', 'BAL', 'TOR', 'TBR', 'COL', 'ARI'
+  'NYY', 'NYM', 'BOS', 'LAD', 'HOU', 'CHC', 'STL', 'ATL', 'PHI', 'SFG',
+  'SDP', 'MIL', 'CIN', 'PIT', 'WSH', 'MIA', 'LAA', 'TEX', 'OAK', 'SEA',
+  'MIN', 'CWS', 'DET', 'KCR', 'CLE', 'BAL', 'TOR', 'TBR', 'COL', 'ARI'
 ]
 
-export function isMlbSportsQuery (q) {
+const NBA_TEAM_NAMES = [
+  'celtics', 'nets', 'knicks', '76ers', 'sixers', 'raptors',
+  'bulls', 'cavaliers', 'cavs', 'pistons', 'pacers', 'bucks',
+  'hawks', 'hornets', 'heat', 'magic', 'wizards',
+  'nuggets', 'timberwolves', 'wolves', 'thunder', 'trail blazers', 'blazers', 'jazz',
+  'warriors', 'clippers', 'lakers', 'suns', 'kings',
+  'mavericks', 'mavs', 'rockets', 'grizzlies', 'pelicans', 'spurs'
+]
+const NBA_ABBRS = [
+  'BOS', 'BKN', 'NYK', 'PHI', 'TOR', 'CHI', 'CLE', 'DET', 'IND', 'MIL',
+  'ATL', 'CHA', 'MIA', 'ORL', 'WAS', 'DEN', 'MIN', 'OKC', 'POR', 'UTA',
+  'GSW', 'LAC', 'LAL', 'PHX', 'SAC', 'DAL', 'HOU', 'MEM', 'NOP', 'SAS'
+]
+
+const NHL_TEAM_NAMES = [
+  'bruins', 'sabres', 'red wings', 'panthers', 'canadiens', 'habs', 'senators',
+  'lightning', 'maple leafs', 'leafs', 'hurricanes', 'blue jackets', 'islanders',
+  'rangers', 'flyers', 'penguins', 'pens', 'capitals', 'caps',
+  'coyotes', 'blackhawks', 'hawks', 'avalanche', 'avs', 'stars', 'wild',
+  'predators', 'preds', 'blues', 'jets', 'ducks', 'flames', 'oilers',
+  'kings', 'sharks', 'canucks', 'kraken', 'golden knights', 'knights', 'utah hockey'
+]
+const NHL_ABBRS = [
+  'BOS', 'BUF', 'DET', 'FLA', 'MTL', 'OTT', 'TBL', 'TOR', 'CAR', 'CBJ',
+  'NYI', 'NYR', 'PHI', 'PIT', 'WSH', 'ARI', 'CHI', 'COL', 'DAL', 'MIN',
+  'NSH', 'STL', 'WPG', 'ANA', 'CGY', 'EDM', 'LAK', 'SJS', 'VAN', 'SEA', 'VGK'
+]
+
+function matchesTeamList (q, names, abbrs) {
   const s = String(q || '').toLowerCase()
-  if (MLB_TEAM_NAMES.some(name => s.includes(name))) return true
-  if (MLB_ABBRS.some(abbr => new RegExp(`\\b${abbr}\\b`).test(String(q || '')))) return true
-  if (/\b(mlb|baseball|standings?|pennant|playoff|world series)\b/.test(s)) return true
+  if (names.some(name => s.includes(name))) return true
+  if (abbrs.some(abbr => new RegExp(`\\b${abbr}\\b`).test(String(q || '')))) return true
   return false
 }
 
-export function buildMlbSportsPrompt (question, scoresData, standingsData) {
-  return [
+export function isMlbSportsQuery (q) {
+  const s = String(q || '').toLowerCase()
+  if (matchesTeamList(q, MLB_TEAM_NAMES, MLB_ABBRS)) return true
+  if (/\b(mlb|baseball|pennant|world series)\b/.test(s)) return true
+  return false
+}
+
+export function isNbaSportsQuery (q) {
+  const s = String(q || '').toLowerCase()
+  if (matchesTeamList(q, NBA_TEAM_NAMES, NBA_ABBRS)) return true
+  if (/\b(nba|basketball|finals|eastern conference|western conference)\b/.test(s)) return true
+  return false
+}
+
+export function isNhlSportsQuery (q) {
+  const s = String(q || '').toLowerCase()
+  if (matchesTeamList(q, NHL_TEAM_NAMES, NHL_ABBRS)) return true
+  if (/\b(nhl|hockey|stanley cup|power play|overtime)\b/.test(s)) return true
+  return false
+}
+
+export function buildSportsPrompt (sportLabel, question, scoresData, standingsData, playoffData) {
+  const lines = [
     'You are a friendly sports assistant in a music listening room.',
-    'Answer the user\'s MLB question conversationally in 1-2 short sentences using the data below.',
+    `Answer the user's ${sportLabel} question conversationally in 1-2 short sentences using the data below.`,
     'Be direct and casual — no markdown, no bullet points, just plain text.',
     '',
     `User: ${question}`,
     '',
-    '--- Current MLB Scores ---',
+    `--- Current ${sportLabel} Scores ---`,
     scoresData || 'No scores available right now.',
     '',
-    '--- MLB Standings ---',
+    `--- ${sportLabel} Standings ---`,
     standingsData || 'No standings available right now.'
-  ].join('\n')
+  ]
+  if (playoffData) {
+    lines.push('', `--- ${sportLabel} Playoff Series ---`, playoffData)
+  }
+  return lines.join('\n')
 }
 
 // --- Intent detection -----------------------------------------------------

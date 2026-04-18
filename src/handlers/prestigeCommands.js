@@ -15,6 +15,7 @@ import {
   getCompactEquippedTitleTag,
   decoratedMention,
   getAllBadgeDefinitions,
+  getAllTitleDefinitions,
   getBadgeProgress,
   getUserReviewStats,
   getUserTipStats,
@@ -94,14 +95,21 @@ export function createPrestigeHandlers (deps = {}) {
           await postMessage({
             room,
             message: [
-              'You have not earned any badges yet. Here\'s how to get them:',
-              '🎚️ **DJ streaks** — play songs that get 3+ likes back-to-back (milestones at 3, 5, 8, and 12 songs)',
-              '💸 **Monthly leaderboards** — finish #1 in net gain, DJ earnings, F1, or gambling for the month',
-              '💎 **Slots** — trigger a bonus round, free spins, or jackpot',
-              '🏇 **Horse racing** — own a horse that wins a race or hits a big payout',
-              '🂡 **Blackjack** — hit a natural blackjack or win a doubled-down hand',
-              '🎱 **Lottery** — win the lottery',
-              'Badges show on your `/profile`.'
+              'No badges yet. Here\'s how to earn them:',
+              '🎚️ **DJ streaks** — 3, 5, 8, or 12-song streaks',
+              '💸 **Monthly boards** — finish #1 in any category',
+              '💎 **Slots** — bonus round, free spins, or jackpot',
+              '🏇 **Horse racing** — win a race or hit a big payout',
+              '🂡 **Blackjack** — natural 21 or double down win',
+              '🎱 **Lottery** — win once or three times',
+              '🔴 **Roulette** — straight-number win or 3-in-a-row color calls',
+              '🎲 **Craps** — roll a natural or make your point',
+              '🧠 **Trivia** — answer correctly or be first',
+              '⭐ **Reviews** — review 25 songs',
+              '🎙️ **DJ Debut** — play your first song as DJ',
+              '👋 **Regular** — join on 10 separate days',
+              '🎉 **Party Starter** — be here when 10+ users are in the room',
+              'See `/allbadges` for the full list.'
             ].join('\n')
           })
         }
@@ -194,6 +202,41 @@ export function createPrestigeHandlers (deps = {}) {
       if (userUUID) {
         await sendDm(userUUID, lines.join('\n'))
         await post({ room, message: 'All Badges sent via DM' })
+      } else {
+        await post({ room, message: lines.join('\n') })
+      }
+    },
+
+    alltitles: async ({ payload, room }) => {
+      const all = getAllTitleDefinitions()
+
+      const monthly = ['room_favorite', 'high_roller', 'grid_king', 'money_machine']
+      const achievement = ['crate_legend', 'trivia_scholar', 'gambling_house', 'roulette_royale', 'vocal_minority', 'decorated']
+
+      const byKey = Object.fromEntries(all.map(t => [t.key, t]))
+
+      const lines = ['🎖️ All Titles', '']
+
+      lines.push('Monthly (expire end of month)')
+      for (const key of monthly) {
+        const t = byKey[key]
+        if (t) lines.push(`${t.emoji} ${t.label} — ${t.description}`)
+      }
+
+      lines.push('')
+      lines.push('Achievement (permanent)')
+      for (const key of achievement) {
+        const t = byKey[key]
+        if (t) lines.push(`${t.emoji} ${t.label} — ${t.description}`)
+      }
+
+      lines.push('')
+      lines.push('Equip with `/title equip <key>`')
+
+      const userUUID = payload?.sender
+      if (userUUID) {
+        await sendDm(userUUID, lines.join('\n'))
+        await post({ room, message: 'All Titles sent via DM' })
       } else {
         await post({ room, message: lines.join('\n') })
       }
