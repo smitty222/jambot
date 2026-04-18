@@ -1,5 +1,5 @@
 import { logger } from '../utils/logging.js'
-import { decoratedMention } from '../database/dbprestige.js'
+import { decoratedMention, syncMusicCriticPrestige, formatPrestigeUnlockLines } from '../database/dbprestige.js'
 
 export function createSlotsRegistryHandler (deps = {}) {
   const {
@@ -227,6 +227,11 @@ export function createSongReviewCommandHandler (deps = {}) {
           room,
           message: `${nick} thanks! Your ${rating.toFixed(1)}/10 song review has been saved.`
         })
+        const criticPrestige = syncMusicCriticPrestige({ userUUID: sender })
+        const criticLines = formatPrestigeUnlockLines(criticPrestige)
+        if (criticLines.length) {
+          await postMessage({ room, message: `<@uid:${sender}>\n${criticLines.join('\n')}` })
+        }
         return
       }
 

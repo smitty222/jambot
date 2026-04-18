@@ -1,6 +1,6 @@
 import { postMessage } from '../libs/cometchat.js'
 import { getTriviaQuestions, decodeHtml } from '../utils/API.js'
-import { getCompactEquippedTitleTag } from '../database/dbprestige.js'
+import { getCompactEquippedTitleTag, syncTriviaPrestige, formatPrestigeUnlockLines } from '../database/dbprestige.js'
 import { logger } from '../utils/logging.js'
 
 let currentQuestion = null
@@ -143,6 +143,14 @@ async function resolveAnswers (room) {
   }
 
   await postMessage({ room, message: resultMessage })
+
+  for (let i = 0; i < correctUsers.length; i++) {
+    const triviaPrestige = syncTriviaPrestige({ userUUID: correctUsers[i], isFirst: i === 0 })
+    const triviaLines = formatPrestigeUnlockLines(triviaPrestige)
+    if (triviaLines.length) {
+      await postMessage({ room, message: `<@uid:${correctUsers[i]}>\n${triviaLines.join('\n')}` })
+    }
+  }
 
   currentQuestionIndex++
 

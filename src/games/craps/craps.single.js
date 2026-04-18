@@ -18,6 +18,7 @@ import { sanitizeNickname } from '../../utils/names.js'
 import { getUserNicknameByUuid } from '../../utils/API.js'
 import { env } from '../../config.js'
 import { logger } from '../../utils/logging.js'
+import { syncCrapsPrestige, formatPrestigeUnlockLines } from '../../database/dbprestige.js'
 
 /* ───────────────────────── Records (DB) ───────────────────────── */
 
@@ -1302,6 +1303,14 @@ async function shooterRoll (user, room) {
       if (board) await sayCode(room, '', board)
 
       st.point = null
+
+      const shooterUid = shooterUuid(st)
+      if (shooterUid) {
+        const naturalPrestige = syncCrapsPrestige({ userUUID: shooterUid, isNatural: true })
+        const naturalLines = formatPrestigeUnlockLines(naturalPrestige)
+        if (naturalLines.length) await say(room, `<@uid:${shooterUid}>\n${naturalLines.join('\n')}`)
+      }
+
       await openComeOutBetting(room, `✅ Come-out **${total}** (natural). Same shooter — new come-out.`)
       return
     }
@@ -1371,6 +1380,14 @@ async function shooterRoll (user, room) {
     }
 
     st.point = null
+
+    const shooterUid = shooterUuid(st)
+    if (shooterUid) {
+      const pointPrestige = syncCrapsPrestige({ userUUID: shooterUid, isPointMade: true })
+      const pointLines = formatPrestigeUnlockLines(pointPrestige)
+      if (pointLines.length) await say(room, `<@uid:${shooterUid}>\n${pointLines.join('\n')}`)
+    }
+
     await openComeOutBetting(room, '✅ Point made! **Same shooter** — come-out is next.')
     return
   }

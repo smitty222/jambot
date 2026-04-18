@@ -4,7 +4,7 @@
 // User prestige and progression display commands.
 
 import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
-import { getDjStreakStatus, getUserWallet, getNetWorthForUser, getLifetimeNet } from '../database/dbwalletmanager.js'
+import { getDjStreakStatus, getUserWallet, getNetWorthForUser, getLifetimeNet, resolveUserByArg } from '../database/dbwalletmanager.js'
 import {
   getEquippedTitle,
   getEquippedBadge,
@@ -14,7 +14,11 @@ import {
   equipBadge,
   getCompactEquippedTitleTag,
   decoratedMention,
-  getAllBadgeDefinitions
+  getAllBadgeDefinitions,
+  getBadgeProgress,
+  getUserReviewStats,
+  getUserTipStats,
+  getUserFavoriteGame
 } from '../database/dbprestige.js'
 
 function formatWholeDollars (value) {
@@ -71,29 +75,47 @@ export function createPrestigeHandlers (deps = {}) {
       const userUUID = payload?.sender
       const badges = getUserBadges(userUUID)
       const equippedBadge = getEquippedBadge(userUUID)
+      const inProgress = getBadgeProgress(userUUID)
+
+      const progressLines = inProgress.length
+        ? ['', '📈 **In Progress**', ...inProgress.map(p => `${p.emoji} ${p.label} — ${p.display}`)]
+        : []
+
       if (!badges.length) {
-        await postMessage({
-          room,
-          message: [
-            'You have not earned any badges yet. Here\'s how to get them:',
-            '🎚️ **DJ streaks** — play songs that get 3+ likes back-to-back (milestones at 3, 5, 8, and 12 songs)',
-            '💸 **Monthly leaderboards** — finish #1 in net gain, DJ earnings, F1, or gambling for the month',
-            '💎 **Slots** — trigger a bonus round, free spins, or jackpot',
-            '🏇 **Horse racing** — own a horse that wins a race or hits a big payout',
-            '🂡 **Blackjack** — hit a natural blackjack or win a doubled-down hand',
-            '🎱 **Lottery** — win the lottery',
-            'Badges show on your `/profile`.'
-          ].join('\n')
-        })
+        if (inProgress.length) {
+          await postMessage({
+            room,
+            message: [
+              'No badges yet — here\'s what you\'re working toward:',
+              ...progressLines
+            ].join('\n')
+          })
+        } else {
+          await postMessage({
+            room,
+            message: [
+              'You have not earned any badges yet. Here\'s how to get them:',
+              '🎚️ **DJ streaks** — play songs that get 3+ likes back-to-back (milestones at 3, 5, 8, and 12 songs)',
+              '💸 **Monthly leaderboards** — finish #1 in net gain, DJ earnings, F1, or gambling for the month',
+              '💎 **Slots** — trigger a bonus round, free spins, or jackpot',
+              '🏇 **Horse racing** — own a horse that wins a race or hits a big payout',
+              '🂡 **Blackjack** — hit a natural blackjack or win a doubled-down hand',
+              '🎱 **Lottery** — win the lottery',
+              'Badges show on your `/profile`.'
+            ].join('\n')
+          })
+        }
         return
       }
+
       await postMessage({
         room,
         message: [
           `🏅 **Your Badges** (${badges.length})`,
           'To equip a badge next to your name: `/badge equip <#>`',
           '',
-          ...badges.map((badge, i) => `${i + 1}. ${badge.emoji || '•'} ${badge.label}${equippedBadge?.key === badge.key ? ' [equipped]' : ''}`)
+          ...badges.map((badge, i) => `${i + 1}. ${badge.emoji || '•'} ${badge.label}${equippedBadge?.key === badge.key ? ' [equipped]' : ''}`),
+          ...progressLines
         ].join('\n')
       })
     },
@@ -127,6 +149,18 @@ export function createPrestigeHandlers (deps = {}) {
           keys: ['lottery_first_hit', 'lottery_repeat_winner']
         },
         {
+          label: '🔴 Roulette',
+          keys: ['roulette_color_caller', 'roulette_house_beater']
+        },
+        {
+          label: '🎲 Craps',
+          keys: ['craps_natural', 'craps_point_made']
+        },
+        {
+          label: '🧠 Trivia',
+          keys: ['trivia_know_it_all', 'trivia_quick_draw']
+        },
+        {
           label: '💰 Wallet & Social',
           keys: ['champagne', 'high_roller', 'bottle_pop', 'broke', 'round_buyer', 'big_tipper', 'whiskey', 'cocktail', 'pride', 'begone']
         },
@@ -136,7 +170,11 @@ export function createPrestigeHandlers (deps = {}) {
         },
         {
           label: '🎵 Music',
-          keys: ['room_favorite_badge', 'album_10']
+          keys: ['room_favorite_badge', 'album_10', 'music_critic', 'dj_debut']
+        },
+        {
+          label: '🏠 Room',
+          keys: ['regular', 'party_starter']
         }
       ]
 
@@ -318,19 +356,46 @@ export function createPrestigeHandlers (deps = {}) {
       })
     },
 
-    profile: async ({ payload, room }) => {
-      const userUUID = payload?.sender
+    profile: async ({ payload, room, args }) => {
+      const senderUUID = payload?.sender
+      let userUUID = senderUUID
+
+      const trimmedArgs = String(args || '').trim()
+      if (trimmedArgs) {
+        const resolved = resolveUserByArg(trimmedArgs)
+        if (!resolved) {
+          await postMessage({ room, message: `Couldn't find a user matching "${trimmedArgs}". Try using their @mention or exact username.` })
+          return
+        }
+        userUUID = resolved.uuid
+      }
+
       const title = titlePrefixForUser(userUUID)
       const badges = getUserBadges(userUUID)
       const netWorth = await getNetWorthForUser(userUUID)
       const streak = getDjStreakStatus(userUUID)
       const balance = getUserWallet(userUUID)
       const lifetimeNet = getLifetimeNet(userUUID)
+      const reviewStats = getUserReviewStats(userUUID)
+      const tipStats = getUserTipStats(userUUID)
+      const favoriteGame = getUserFavoriteGame(userUUID)
 
       const equippedBadge = getEquippedBadge(userUUID)
       const badgeDisplay = badges.length
         ? `${badges.map(b => b.emoji || '•').join(' ')} (${badges.length})`
         : 'none'
+
+      const reviewLine = reviewStats.count > 0
+        ? `Reviews: ${reviewStats.count} (avg ${reviewStats.avgRating}/10)`
+        : 'Reviews: none'
+
+      const tipLine = tipStats.count > 0
+        ? `Tips sent: ${tipStats.count} (${formatMoneyLine(tipStats.total)} total)`
+        : 'Tips sent: none'
+
+      const gameLine = favoriteGame
+        ? `Fav game: ${favoriteGame}`
+        : null
 
       await postMessage({
         room,
@@ -341,8 +406,11 @@ export function createPrestigeHandlers (deps = {}) {
           `Cash: ${formatMoneyLine(balance)} \u00B7 Net Worth: ${formatMoneyLine(netWorth?.totalNetWorth || 0)}`,
           `Lifetime Net: ${formatMoneyLine(lifetimeNet)}`,
           `DJ Streak: ${streak.streakCount} current / ${streak.bestStreak} best`,
+          reviewLine,
+          tipLine,
+          gameLine,
           `Badges: ${badgeDisplay}`
-        ].join('\n')
+        ].filter(Boolean).join('\n')
       })
     }
   }

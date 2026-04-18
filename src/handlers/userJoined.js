@@ -10,6 +10,7 @@ import { env } from '../config.js'
 // contains a human‑friendly name and the current balance. See
 // dbwalletmanager.js for implementation details.
 import { addOrUpdateUser } from '../database/dbwalletmanager.js'
+import { syncUserJoinPrestige, formatPrestigeUnlockLines, decoratedMention } from '../database/dbprestige.js'
 
 /** ───────────────────────────────────────────────────────────────
  * TOGGLES
@@ -63,7 +64,7 @@ function extractAIText (res) {
 }
 
 function mentionOrName (uuid, nickname) {
-  return uuid ? `<@uid:${uuid}>` : String(nickname || 'friend').replace(/^@/, '')
+  return uuid ? decoratedMention(uuid) : String(nickname || 'friend').replace(/^@/, '')
 }
 
 // Replace <NAME> with a proper mention; gracefully fall back to plain name if uuid missing
@@ -225,6 +226,18 @@ const handleUserJoinedWithStatePatch = async (payload) => {
       addOrUpdateUser(uuid, nickname)
     } catch (e) {
       logger.error('[userJoined] Failed to add/update user', { err: e?.message || e, uuid, nickname })
+    }
+
+    if (uuid) {
+      try {
+        const joinPrestige = syncUserJoinPrestige({ userUUID: uuid })
+        const joinLines = formatPrestigeUnlockLines(joinPrestige)
+        if (joinLines.length) {
+          await postMessage({ room: ROOM, message: `<@uid:${uuid}>\n${joinLines.join('\n')}` })
+        }
+      } catch (e) {
+        logger.error('[userJoined] prestige sync failed', { err: e?.message || e, uuid })
+      }
     }
 
     const welcomeMessage = await generateWelcomeMessage(uuid, nickname, ROOM)

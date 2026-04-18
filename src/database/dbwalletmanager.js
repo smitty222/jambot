@@ -528,6 +528,26 @@ export function getBalanceByNickname (nickname) {
   return row ? roundToTenth(row.balance) : null
 }
 
+export function resolveUserByArg (arg) {
+  const trimmed = String(arg || '').trim()
+  if (!trimmed) return null
+
+  // Handle <@uid:UUID> mention format
+  const mentionMatch = trimmed.match(/^<@uid:([^>]+)>$/)
+  if (mentionMatch) {
+    const uuid = mentionMatch[1]
+    const row = db.prepare('SELECT uuid, nickname FROM users WHERE uuid = ?').get(uuid)
+    return row ? { uuid: row.uuid, nickname: row.nickname || uuid } : { uuid, nickname: uuid }
+  }
+
+  // Plain name (strip leading @)
+  const name = trimmed.replace(/^@/, '').trim()
+  if (!name) return null
+
+  const row = db.prepare('SELECT uuid, nickname FROM users WHERE LOWER(nickname) = ?').get(name.toLowerCase())
+  return row ? { uuid: row.uuid, nickname: row.nickname || row.uuid } : null
+}
+
 export async function songPayment () {
   try {
     const songPlays = await fetchRecentSongs()

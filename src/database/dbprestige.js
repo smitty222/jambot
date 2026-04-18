@@ -971,6 +971,97 @@ export function getUserFavoriteGame (userUUID) {
   return row?.source || null
 }
 
+export function getBadgeProgress (userUUID) {
+  if (!userUUID) return []
+
+  const earnedRows = db.prepare(`
+    SELECT badgeKey FROM prestige_badges
+    WHERE userUUID = ? AND (expiresAt IS NULL OR expiresAt > CURRENT_TIMESTAMP)
+  `).all(String(userUUID))
+  const earned = new Set(earnedRows.map(r => r.badgeKey))
+
+  const progress = []
+
+  function check (key, currentNum, targetNum, hint, formatFn = null) {
+    if (earned.has(key) || currentNum <= 0) return
+    const def = BADGE_DEFS[key]
+    if (!def) return
+    const clamped = Math.min(currentNum, targetNum)
+    const currentStr = formatFn ? formatFn(clamped) : String(clamped)
+    const targetStr = formatFn ? formatFn(targetNum) : String(targetNum)
+    progress.push({ key, emoji: def.emoji, label: def.label, current: clamped, target: targetNum, display: `${currentStr}/${targetStr} ${hint}` })
+  }
+
+  const fmtMoney = n => '$' + Math.round(n).toLocaleString('en-US')
+
+  // DJ streak
+  const streakRow = db.prepare('SELECT bestStreak FROM dj_streaks WHERE userUUID = ?').get(String(userUUID))
+  const bestStreak = Number(streakRow?.bestStreak || 0)
+  check('dj_streak_3', bestStreak, 3, 'DJ streak songs')
+  check('dj_streak_5', bestStreak, 5, 'DJ streak songs')
+  check('dj_streak_8', bestStreak, 8, 'DJ streak songs')
+  check('dj_streak_12', bestStreak, 12, 'DJ streak songs')
+
+  // Album plays
+  const albumRow = db.prepare('SELECT count FROM prestige_album_plays WHERE userUUID = ?').get(String(userUUID))
+  check('album_10', Number(albumRow?.count || 0), 10, 'albums played')
+
+  // Command counts
+  const getCommandCount = (key) => {
+    const row = db.prepare('SELECT count FROM prestige_command_counts WHERE userUUID = ? AND commandKey = ?').get(String(userUUID), key)
+    return Number(row?.count || 0)
+  }
+  check('whiskey', getCommandCount('getdjdrunk'), 5, '/getdjdrunk uses')
+  check('cocktail', getCommandCount('party'), 2, '/party uses')
+
+  // Tips
+  const tipRow = db.prepare(`
+    SELECT COUNT(*) AS cnt FROM economy_events
+    WHERE userUUID = ? AND source = 'tip' AND category = 'transfer_out'
+  `).get(String(userUUID))
+  check('round_buyer', Number(tipRow?.cnt || 0), 5, 'tips sent')
+
+  // Lottery repeat winner
+  if (tableOrViewExists('lottery_winners')) {
+    try {
+      const lotteryRow = db.prepare('SELECT COUNT(*) AS cnt FROM lottery_winners WHERE userId = ?').get(String(userUUID))
+      check('lottery_repeat_winner', Number(lotteryRow?.cnt || 0), 3, 'lottery wins')
+    } catch {}
+  }
+
+  // Horse stable star
+  if (tableOrViewExists('horses')) {
+    try {
+      const horseRow = db.prepare('SELECT COALESCE(SUM(wins), 0) AS totalWins FROM horses WHERE ownerId = ?').get(String(userUUID))
+      check('horse_stable_star', Number(horseRow?.totalWins || 0), 5, 'horse race wins')
+    } catch {}
+  }
+
+  // Unique visit days
+  const visitRow = db.prepare(`
+    SELECT COUNT(*) AS cnt FROM prestige_command_counts
+    WHERE userUUID = ? AND commandKey LIKE 'visit_%'
+  `).get(String(userUUID))
+  check('regular', Number(visitRow?.cnt || 0), 10, 'days visited')
+
+  // Music critic
+  if (tableOrViewExists('song_reviews')) {
+    try {
+      const reviewRow = db.prepare('SELECT COUNT(*) AS cnt FROM song_reviews WHERE userId = ?').get(String(userUUID))
+      check('music_critic', Number(reviewRow?.cnt || 0), 25, 'songs reviewed')
+    } catch {}
+  }
+
+  // Wallet milestones
+  const walletRow = db.prepare('SELECT balance FROM users WHERE uuid = ?').get(String(userUUID))
+  const balance = Number(walletRow?.balance || 0)
+  check('champagne', balance, 100_000, 'balance', fmtMoney)
+  check('high_roller', balance, 1_000_000, 'balance', fmtMoney)
+
+  // Sort by % completion descending (closest to done first)
+  return progress.sort((a, b) => (b.current / b.target) - (a.current / a.target))
+}
+
 export function formatPrestigeUnlockLines ({ badges = [], titles = [] } = {}) {
   const lines = []
   for (const key of badges) {
