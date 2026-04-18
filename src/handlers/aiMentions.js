@@ -3,6 +3,7 @@
 import { postMessage } from '../libs/cometchat.js'
 import { askQuestion, setCurrentSong } from '../libs/ai.js'
 import { logger as defaultLogger } from '../utils/logging.js'
+import { getMLBScores, getMLBStandings } from '../utils/API.js'
 
 import {
   isMentioned,
@@ -10,8 +11,10 @@ import {
   normalizeQuestion,
   isSongQuery,
   isAlbumQuery,
+  isMlbSportsQuery,
   expandSongQuestion,
   expandAlbumQuestion,
+  buildMlbSportsPrompt,
   safeAskQuestion,
   checkCooldown
 } from '../utils/aiHelpers.js'
@@ -300,6 +303,18 @@ export async function handleAIMention ({
     const prompt = expandAlbumQuestion(question, currentAlbumName, currentArtistName)
     const aiReplyText = await safeAskQuestion(prompt, askQuestion, logger)
 
+    await postMessage({ room, message: aiReplyText })
+    return true
+  }
+
+  // --- MLB sports intent --------------------------------------------------
+  if (isMlbSportsQuery(question)) {
+    const [scores, standings] = await Promise.all([
+      getMLBScores().catch(() => null),
+      getMLBStandings().catch(() => null)
+    ])
+    const prompt = buildMlbSportsPrompt(question, scores, standings)
+    const aiReplyText = await safeAskQuestion(prompt, askQuestion, logger)
     await postMessage({ room, message: aiReplyText })
     return true
   }

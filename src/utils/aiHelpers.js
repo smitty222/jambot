@@ -52,6 +52,46 @@ export function expandAlbumQuestion (rawQ, albumName, artistName) {
   )
 }
 
+// --- MLB sports intent detection ------------------------------------------
+
+const MLB_TEAM_NAMES = [
+  'mets', 'yankees', 'red sox', 'dodgers', 'astros', 'cubs', 'cardinals',
+  'braves', 'phillies', 'giants', 'padres', 'brewers', 'reds', 'pirates',
+  'nationals', 'marlins', 'angels', 'rangers', 'athletics', 'mariners',
+  'twins', 'white sox', 'tigers', 'royals', 'guardians', 'orioles',
+  'blue jays', 'rays', 'rockies', 'diamondbacks'
+]
+
+const MLB_ABBRS = [
+  'NYY', 'NYM', 'BOS', 'LAD', 'HOU', 'CHC', 'STL', 'ATL', 'PHI', 'SF',
+  'SD', 'MIL', 'CIN', 'PIT', 'WSH', 'MIA', 'LAA', 'TEX', 'OAK', 'SEA',
+  'MIN', 'CWS', 'DET', 'KC', 'CLE', 'BAL', 'TOR', 'TBR', 'COL', 'ARI'
+]
+
+export function isMlbSportsQuery (q) {
+  const s = String(q || '').toLowerCase()
+  if (MLB_TEAM_NAMES.some(name => s.includes(name))) return true
+  if (MLB_ABBRS.some(abbr => new RegExp(`\\b${abbr}\\b`).test(String(q || '')))) return true
+  if (/\b(mlb|baseball|standings?|pennant|playoff|world series)\b/.test(s)) return true
+  return false
+}
+
+export function buildMlbSportsPrompt (question, scoresData, standingsData) {
+  return [
+    'You are a friendly sports assistant in a music listening room.',
+    'Answer the user\'s MLB question conversationally in 1-2 short sentences using the data below.',
+    'Be direct and casual — no markdown, no bullet points, just plain text.',
+    '',
+    `User: ${question}`,
+    '',
+    '--- Current MLB Scores ---',
+    scoresData || 'No scores available right now.',
+    '',
+    '--- MLB Standings ---',
+    standingsData || 'No standings available right now.'
+  ].join('\n')
+}
+
 // --- Intent detection -----------------------------------------------------
 
 export function isAlbumQuery (q) {

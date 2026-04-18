@@ -1373,6 +1373,46 @@ export async function getNCAABLiveScores (requestedDate) { return espnScoreboard
 export async function getMarchMadnessScores (requestedDate) { return espnScoreboard('basketball/mens-college-basketball', requestedDate, { tournamentOnly: true }) }
 export async function getMarchMadnessLiveScores (requestedDate) { return espnScoreboard('basketball/mens-college-basketball', requestedDate, { liveOnly: true, tournamentOnly: true }) }
 
+function formatMLBStandings (data) {
+  const leagues = Array.isArray(data?.children) ? data.children : []
+  if (!leagues.length) return 'No standings data available.\n'
+
+  const lines = ['📊 MLB Standings\n']
+
+  for (const league of leagues) {
+    const divisions = Array.isArray(league?.children) ? league.children : []
+    for (const division of divisions) {
+      const entries = Array.isArray(division?.standings?.entries) ? division.standings.entries : []
+      if (!entries.length) continue
+
+      lines.push(division.name)
+
+      for (const entry of entries) {
+        const abbr = String(entry.team?.abbreviation || '???').padEnd(4)
+        const getStat = name => entry.stats?.find(s => s.name === name)
+        const wins = getStat('wins')?.value ?? 0
+        const losses = getStat('losses')?.value ?? 0
+        const gbDisplay = getStat('gamesBehind')?.displayValue ?? '-'
+        const gb = gbDisplay === '-' || gbDisplay === '0' ? ' —' : gbDisplay
+        const streak = getStat('streak')?.displayValue ?? ''
+        lines.push(`• ${abbr} ${wins}-${losses}  ${gb}  ${streak}`)
+      }
+      lines.push('')
+    }
+  }
+
+  return lines.join('\n')
+}
+
+export async function getMLBStandings () {
+  return getCachedScoreboard('baseball/mlb:standings', async () => {
+    const url = 'https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/standings'
+    const { ok, data } = await makeRequest(url)
+    if (!ok) return 'Unable to fetch MLB standings right now.\n'
+    return formatMLBStandings(data)
+  })
+}
+
 /* ────────────────────────────────────────────────────────────────
  * Last.fm helpers
  * ──────────────────────────────────────────────────────────────── */

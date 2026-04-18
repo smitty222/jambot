@@ -1,6 +1,7 @@
 import { postMessage } from '../libs/cometchat.js'
 import {
   getMLBScores,
+  getMLBStandings,
   getNHLScores,
   getNBAScores,
   getNFLScores,
@@ -194,6 +195,18 @@ function formatOpenBetLine (bet, game) {
 }
 
 export async function handleMlbScoresCommand ({ payload, room }) {
+  const parts = String(payload?.message || '').trim().split(/\s+/)
+  const subcommand = String(parts[1] || '').toLowerCase()
+  if (subcommand === 'standings') {
+    try {
+      const message = await getMLBStandings()
+      await postMessage({ room, message })
+    } catch (err) {
+      console.error('[mlb] Error fetching standings:', err?.message || err)
+      await postMessage({ room, message: 'There was an error fetching MLB standings. Please try again later.' })
+    }
+    return
+  }
   return createMlbScoresCommandHandler()({ payload, room })
 }
 

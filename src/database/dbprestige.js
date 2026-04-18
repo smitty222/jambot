@@ -983,7 +983,14 @@ export function getBadgeProgress (userUUID) {
   const progress = []
 
   function check (key, currentNum, targetNum, hint, formatFn = null) {
-    if (earned.has(key) || currentNum <= 0) return
+    if (currentNum <= 0) return
+    // Threshold already met but badge missing — award it now as a catch-up
+    if (currentNum >= targetNum && !earned.has(key)) {
+      if (awardBadge(userUUID, key, { source: 'backfill' }) === 'new') {
+        earned.add(key)
+      }
+    }
+    if (earned.has(key)) return
     const def = BADGE_DEFS[key]
     if (!def) return
     const clamped = Math.min(currentNum, targetNum)
