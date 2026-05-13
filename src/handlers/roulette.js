@@ -9,6 +9,7 @@ import {
 import { getUserNickname } from '../utils/nickname.js' // <- avoid circular import
 import { env } from '../config.js'
 import { syncRoulettePrestige, formatPrestigeUnlockLines } from '../database/dbprestige.js'
+import { formatBalance } from './slots.js'
 
 // Game state
 let rouletteGameActive = false
@@ -96,13 +97,13 @@ async function closeBets () {
     for (const [user, userBets] of Object.entries(bets)) {
       const nickname = await getUserNickname(user)
       const total = userBets.reduce((sum, b) => sum + b.amount, 0)
-      lines.push(`\n👤 ${nickname} — $${total} total`)
+      lines.push(`\n👤 ${nickname} — $${formatBalance(total)} total`)
       for (const bet of userBets) {
         const emoji = betTypeEmoji[bet.type] ?? '•'
         let label = betTypeLabel[bet.type] ?? bet.type
         if (bet.type === 'number') label += ` ${bet.number}`
         if (bet.type === 'dozen') label += ` ${dozenLabel[bet.dozen] ?? bet.dozen}`
-        lines.push(`  ${emoji} ${label}  →  $${bet.amount}`)
+        lines.push(`  ${emoji} ${label}  →  $${formatBalance(bet.amount)}`)
       }
     }
     await postMessage({ room, message: lines.join('\n') })
@@ -189,7 +190,7 @@ async function drawWinningNumber () {
         category: 'bet_win',
         note: 'Roulette payout'
       })
-      await postMessage({ room, message: `💰 ${nickname} won $${totalWinnings}!` })
+      await postMessage({ room, message: `💰 ${nickname} won $${formatBalance(totalWinnings)}!` })
 
       const prestige = syncRoulettePrestige({
         userUUID: user,
@@ -295,7 +296,7 @@ export async function handleRouletteBet (payload) {
   // Check & debit balance from real wallet
   const balance = await getUserWallet(user)
   if (balance < amt) {
-    return postMessage({ room, message: `${nickname}, insufficient funds. Balance: $${balance}.` })
+    return postMessage({ room, message: `${nickname}, insufficient funds. Balance: $${formatBalance(balance)}.` })
   }
 
   const ok = await debitGameBet(user, amt, {
@@ -314,7 +315,7 @@ export async function handleRouletteBet (payload) {
       category: 'refund',
       note: 'Bet arrived after close'
     })
-    return postMessage({ room, message: `${nickname}, bets closed just before your bet was processed. $${amt} refunded.` })
+    return postMessage({ room, message: `${nickname}, bets closed just before your bet was processed. $${formatBalance(amt)} refunded.` })
   }
 
   if (!bets[user]) bets[user] = []
@@ -329,7 +330,7 @@ export async function handleRouletteBet (payload) {
 
   await postMessage({
     room,
-    message: `${nickname} placed $${amt} on ${betLabel}.`
+    message: `${nickname} placed $${formatBalance(amt)} on ${betLabel}.`
   })
 }
 

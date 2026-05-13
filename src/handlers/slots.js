@@ -159,7 +159,7 @@ const COLLECTION_REWARDS = {
 
 // Bets
 const MIN_BET = 1
-const MAX_BET = 25000
+const MAX_BET = 200000
 const DEFAULT_BET = 1
 
 const slotStmts = createSlotsPersistence(db, JACKPOT_SEED)

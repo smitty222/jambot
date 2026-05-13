@@ -310,6 +310,11 @@ export async function handleAIMention ({
   }
 
   // --- MLB sports intent --------------------------------------------------
+  if (/\b(yankees?|yanks?|NYY)\b/i.test(question)) {
+    await postMessage({ room, message: 'who cares? 🙄' })
+    return true
+  }
+
   if (isMlbSportsQuery(question)) {
     const [scores, standings] = await Promise.all([
       getMLBScores().catch(() => null),

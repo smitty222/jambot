@@ -501,7 +501,10 @@ try { db.exec('CREATE INDEX IF NOT EXISTS idx_room_stats_lastPlayed ON room_stat
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_song_reviews_song_user ON song_reviews(songId, userId)') } catch (e) { console.warn('⚠️ Could not create idx_song_reviews_song_user:', e.message) }
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_album_reviews_album ON album_reviews(albumId)') } catch (e) { console.warn('⚠️ Could not create idx_album_reviews_album:', e.message) }
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_themes_room ON themes(roomId)') } catch (e) { console.warn('⚠️ Could not create idx_themes_room:', e.message) }
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_wallets_uuid ON wallets(uuid)') } catch (e) { console.warn('⚠️ Could not create idx_wallets_uuid:', e.message) }
+const _walletsIsTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='wallets'").get()
+if (_walletsIsTable) {
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_wallets_uuid ON wallets(uuid)') } catch (e) { console.warn('⚠️ Could not create idx_wallets_uuid:', e.message) }
+}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_room_stats_canon ON room_stats(canonSongKey)') } catch (e) { console.warn('⚠️ Could not create idx_room_stats_canon:', e.message) }
 
 // Create indexes on the new normalisation fields. These indexes

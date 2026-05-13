@@ -19,7 +19,6 @@ const PRETTY = process.env.PUBLISH_JSON_PRETTY === '1'
 // Comma-separated list of tables to mirror. Keep this tight to avoid memory spikes.
 const RAW_TABLE_ALLOWLIST = (process.env.RAW_TABLE_ALLOWLIST || [
   'users',
-  'wallets',
   'lottery_winners',
   'lottery_stats',
   'dj_queue',
