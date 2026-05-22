@@ -1,6 +1,8 @@
 import { logger } from '../utils/logging.js'
 import { decoratedMention, syncMusicCriticPrestige, formatPrestigeUnlockLines } from '../database/dbprestige.js'
 
+const WATERMELON_TRIPLE_GIF = 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExbHBoanV1dGg1MW5pa3ViYmJxd2pqeDUzaTB6aDczamQwbHFiMHM0ciZlcD12MV9naWZzX3NlYXJjaCZjdD1n/jIITRmFUDaTDJXi7is/giphy.gif'
+
 export function createSlotsRegistryHandler (deps = {}) {
   const {
     postMessage,
@@ -49,6 +51,9 @@ export function createSlotsRegistryHandler (deps = {}) {
 
     const response = await handleSlotsCommand(userUUID, betAmount)
     await postMessage({ room, message: response })
+    if (response.includes('🍉 ┃ 🍉 ┃ 🍉')) {
+      await postMessage({ room, gifs: [WATERMELON_TRIPLE_GIF] })
+    }
   }
 }
 

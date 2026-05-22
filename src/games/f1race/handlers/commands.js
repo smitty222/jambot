@@ -1060,39 +1060,37 @@ export async function handleGarageCommand (ctx) {
     : nick
 
   const totalBlown = cars.reduce((n, c) => n + getBlownComponents(c).length, 0)
-  const blownAlert = totalBlown > 0 ? `\n⛔ **${totalBlown} blown component${totalBlown > 1 ? 's' : ''} across your garage** — affected cars cannot race. Use \`/parts <car>\` to check.` : ''
+  const teamLine = teamName ? ` · ${teamBadge ? `${teamBadge} ` : ''}${teamName}` : ''
+  const blownLine = totalBlown > 0 ? `\n⛔ **${totalBlown} blown component${totalBlown > 1 ? 's' : ''}** — use \`/parts <car>\` to check` : ''
 
-  const headerLines = [
-    `🏎️ **${garageOwnerLabel}'s Garage** (${cars.length})`,
-    `Team: ${teamName ? `**${teamBadge ? `${teamBadge} ` : ''}${teamName}**` : '**No team set**'}`,
-    `Useful commands: \`/car <name>\` · \`/parts <name>\` · \`/repair <name>\` · \`/replacepart <name> <part>\` · \`/sellcar <name>\`${blownAlert}`
-  ]
-  await postMessage({ room, message: headerLines.join('\n') })
+  await postMessage({ room, message: `🏎️ **${garageOwnerLabel}'s Garage** (${cars.length})${teamLine}${blownLine}` })
 
   for (const car of cars.slice(0, 12)) {
     const wear = Number(car.wear || 0)
     const wearTag = wear >= 80 ? '⚠️' : (wear >= 60 ? '🟡' : '🟢')
-    const trackDetails = getTrackPreferenceDetails(car)
     const blown = getBlownComponents(car)
-    const compNote = blown.length
-      ? `⛔ BLOWN: ${blown.map(c => c.emoji + c.label).join(', ')}`
-      : formatComponentsShort(car)
-    const lines = [
-      `**${carLabel(car)}**`,
-      `Tier: ${String(car.tier || '—').toUpperCase()} · ${trackDetails.fitSummary} · Wear ${wear}% ${wearTag}`,
-      `Stats: ${formatCarStatLine(car)}`,
-      `Parts: ${compNote}`
-    ]
+    const low = getLowComponents(car)
+    const record = `${car.wins || 0}W · ${car.races || 0}R`
+
+    let partsLine = ''
+    if (blown.length) {
+      partsLine = `⛔ ${blown.map(c => `${c.emoji} ${c.label} blown`).join(' · ')} · \`/replacepart ${car.name} <part>\``
+    } else if (low.length) {
+      partsLine = `🟡 Low: ${low.map(c => `${c.emoji} ${c.label} ${c.durability}%`).join(' · ')} · \`/parts ${car.name}\``
+    }
+
+    const line1 = `**${carLabel(car)}** · ${String(car.tier || '').toUpperCase()} · Wear ${wear}% ${wearTag} · ${record}`
+    const message = partsLine ? `${line1}\n${partsLine}` : line1
 
     await postMessage({
       room,
-      message: lines.join('\n'),
+      message,
       images: car.imageUrl ? [car.imageUrl] : undefined
     })
   }
 
   if (cars.length > 12) {
-    await postMessage({ room, message: `…and ${cars.length - 12} more cars. Use \`/car <name>\` for a specific car.` })
+    await postMessage({ room, message: `…and ${cars.length - 12} more. \`/car <name>\` for full details.` })
   }
 }
 

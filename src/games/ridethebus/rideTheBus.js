@@ -11,7 +11,6 @@ const MAX_BET = env.rtbMaxBet
 const ANSWER_MS = env.rtbAnswerSecs * 1000
 const DECIDE_MS = env.rtbDecideSecs * 1000
 
-// Payout multipliers at each stage
 const MULT = { q1: 1.5, q2: 2.0, q3: 3.5, q4: 10.0 }
 
 // ─────────────────────────────────────────────────────────────
@@ -44,16 +43,22 @@ function fmtMoney (n) {
   return `$${Math.abs(num).toLocaleString()}`
 }
 
-const divider = () => '━━━━━━━━━━━━━━━━━━━━━━'
+// Shows dealt cards with face-down slots for undealt ones
+function track (cards, revealCount = cards.length) {
+  return [0, 1, 2, 3].map(i => {
+    if (i < revealCount && cards[i]) return `[${cardLabel(cards[i])}]`
+    return `[ ? ]`
+  }).join('  ')
+}
 
 // ─────────────────────────────────────────────────────────────
 // State  (per-player, keyed by `${room}:${uuid}`)
 // ─────────────────────────────────────────────────────────────
 const GAMES = new Map()
 
-const gameKey  = (room, uuid) => `${room}:${uuid}`
-const getGame  = (room, uuid) => GAMES.get(gameKey(room, uuid))
-const setGame  = (room, uuid, g) => GAMES.set(gameKey(room, uuid), g)
+const gameKey = (room, uuid) => `${room}:${uuid}`
+const getGame = (room, uuid) => GAMES.get(gameKey(room, uuid))
+const setGame = (room, uuid, g) => GAMES.set(gameKey(room, uuid), g)
 
 function deleteGame (room, uuid) {
   const g = getGame(room, uuid)
@@ -73,7 +78,7 @@ export async function startGame (uuid, nickname, room, betStr, deps = {}) {
   const post = deps.postMessage ?? postMessage
 
   if (getGame(room, uuid)) {
-    await post({ room, message: `<@uid:${uuid}> You already have a game in progress! Answer the current question or wait for it to time out.` })
+    await post({ room, message: `<@uid:${uuid}> You already have a ride in progress! Answer the current question or wait for it to time out.` })
     return
   }
 
@@ -93,7 +98,7 @@ export async function startGame (uuid, nickname, room, betStr, deps = {}) {
 
   const balance = await getUserWallet(uuid)
   if (Number(balance) < amount) {
-    await post({ room, message: `<@uid:${uuid}> Not enough coins! You have ${fmtMoney(balance)}.` })
+    await post({ room, message: `<@uid:${uuid}> Not enough coins! Balance: ${fmtMoney(balance)}.` })
     return
   }
 
@@ -114,14 +119,17 @@ export async function startGame (uuid, nickname, room, betStr, deps = {}) {
   await post({
     room,
     message: [
-      '🚌 **RIDE THE BUS**',
-      divider(),
-      `Bet: **${fmtMoney(amount)}**`,
-      '',
-      `Card 1: \`${cardLabel(firstCard)}\``,
-      '',
-      '**Q1 — Red or Black?**',
-      `\`/rtb red\`  or  \`/rtb black\`  *(${env.rtbAnswerSecs}s)*`,
+      `🚌  **RIDE THE BUS**  —  all aboard!`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `💵  Bet: **${fmtMoney(amount)}**`,
+      ``,
+      `\`${track([], 0)}\``,
+      ``,
+      `🎴  **Stop 1 of 4  —  RED or BLACK?**`,
+      `A card is face down... what do you think?`,
+      ``,
+      `\`/rtb red\`  ·  \`/rtb black\``,
+      `⏱ ${env.rtbAnswerSecs} seconds`,
     ].join('\n')
   })
 }
@@ -131,7 +139,7 @@ export async function handleAnswer (uuid, nickname, room, answer, deps = {}) {
   const g = getGame(room, uuid)
 
   if (!g) {
-    await post({ room, message: `<@uid:${uuid}> No game in progress. Type \`/rtb <amount>\` to start one!` })
+    await post({ room, message: `<@uid:${uuid}> No ride in progress. Type \`/rtb <amount>\` to start one!` })
     return
   }
 
@@ -154,12 +162,12 @@ export async function handleDecision (uuid, nickname, room, decision, deps = {})
   const g = getGame(room, uuid)
 
   if (!g) {
-    await post({ room, message: `<@uid:${uuid}> No game in progress. Type \`/rtb <amount>\` to start one!` })
+    await post({ room, message: `<@uid:${uuid}> No ride in progress. Type \`/rtb <amount>\` to start one!` })
     return
   }
 
   if (!g.phase.endsWith('_decide')) {
-    await post({ room, message: `<@uid:${uuid}> Answer the current question first before cashing out or continuing.` })
+    await post({ room, message: `<@uid:${uuid}> Answer the current question first!` })
     return
   }
 
@@ -170,7 +178,7 @@ export async function handleDecision (uuid, nickname, room, decision, deps = {})
 }
 
 // ─────────────────────────────────────────────────────────────
-// Question handlers (private)
+// Question handlers
 // ─────────────────────────────────────────────────────────────
 
 async function _q1 (g, answer, deps) {
@@ -183,11 +191,13 @@ async function _q1 (g, answer, deps) {
   }
 
   const card = g.cards[0]
-  const colorLabel = card.isRed ? 'Red ♥♦' : 'Black ♠♣'
-  const correct = (answer === 'red') === card.isRed
+  const isRed = card.isRed
+  const colorWord = isRed ? 'Red' : 'Black'
+  const colorSuits = isRed ? '♥♦' : '♠♣'
+  const correct = (answer === 'red') === isRed
 
   if (!correct) {
-    return _doLoss(g, `\`${cardLabel(card)}\` is ${colorLabel} — you guessed **${answer}**.`, deps)
+    return _doLoss(g, `It was **${cardLabel(card)}** — ${colorWord} ${colorSuits}`, deps)
   }
 
   const cashout = Math.floor(g.bet * MULT.q1)
@@ -197,12 +207,15 @@ async function _q1 (g, answer, deps) {
   await post({
     room: g.room,
     message: [
-      `✅ **${answer === 'red' ? 'Red' : 'Black'}!** — \`${cardLabel(card)}\` is ${colorLabel}.`,
-      divider(),
-      `💰 Cash out: **${fmtMoney(cashout)}** (1.5×)`,
-      `Or keep riding for **2×** or more...`,
-      '',
-      `\`/rtb cashout\`  or  \`/rtb continue\`  *(${env.rtbDecideSecs}s — auto-cashout on timeout)*`,
+      `✅  **${colorWord}!**  ${cardLabel(card)} — nailed it!`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `\`${track(g.cards)}\``,
+      ``,
+      `💰  Cash out: **${fmtMoney(cashout)}**  *(1.5×)*`,
+      `🚀  Keep riding for **2×** or more...`,
+      ``,
+      `\`/rtb cashout\`  ·  \`/rtb continue\``,
+      `⏱ ${env.rtbDecideSecs}s — auto-cashout if you ghost us`,
     ].join('\n')
   })
 }
@@ -223,9 +236,9 @@ async function _q2 (g, answer, deps) {
 
   if (result === 'tie' || result !== answer) {
     const note = result === 'tie'
-      ? `\`${cardLabel(newCard)}\` ties \`${base.rank}\` — house wins ties`
-      : `\`${cardLabel(newCard)}\` is ${result} than \`${base.rank}\``
-    return _doLoss(g, `${note} — you guessed **${answer}**.`, deps)
+      ? `**${cardLabel(newCard)}** matched the ${base.rank} — house wins ties`
+      : `**${cardLabel(newCard)}** is ${result} than ${base.rank}`
+    return _doLoss(g, note, deps)
   }
 
   const cashout = Math.floor(g.bet * MULT.q2)
@@ -235,14 +248,15 @@ async function _q2 (g, answer, deps) {
   await post({
     room: g.room,
     message: [
-      `✅ **${answer === 'higher' ? 'Higher' : 'Lower'}!** — \`${cardLabel(newCard)}\` is ${answer} than \`${base.rank}\`.`,
-      divider(),
-      `Cards: \`${g.cards.map(cardLabel).join('  ')}\``,
-      '',
-      `💰 Cash out: **${fmtMoney(cashout)}** (2×)`,
-      `Or keep riding for **3.5×** or more...`,
-      '',
-      `\`/rtb cashout\`  or  \`/rtb continue\`  *(${env.rtbDecideSecs}s — auto-cashout on timeout)*`,
+      `✅  **${answer === 'higher' ? 'Higher' : 'Lower'}!**  ${cardLabel(newCard)} vs ${base.rank} — yes!`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `\`${track(g.cards)}\``,
+      ``,
+      `💰  Cash out: **${fmtMoney(cashout)}**  *(2×)*`,
+      `🔥  Keep riding for **3.5×** or more...`,
+      ``,
+      `\`/rtb cashout\`  ·  \`/rtb continue\``,
+      `⏱ ${env.rtbDecideSecs}s — auto-cashout if you ghost us`,
     ].join('\n')
   })
 }
@@ -269,9 +283,9 @@ async function _q3 (g, answer, deps) {
 
   if (result === 'tie' || result !== answer) {
     const note = result === 'tie'
-      ? `\`${cardLabel(newCard)}\` landed on the boundary — house wins ties`
-      : `\`${cardLabel(newCard)}\` is ${result}`
-    return _doLoss(g, `${note} — you guessed **${answer}**.`, deps)
+      ? `**${cardLabel(newCard)}** hit the boundary — house wins ties`
+      : `**${cardLabel(newCard)}** is ${result}`
+    return _doLoss(g, note, deps)
   }
 
   const cashout = Math.floor(g.bet * MULT.q3)
@@ -281,14 +295,15 @@ async function _q3 (g, answer, deps) {
   await post({
     room: g.room,
     message: [
-      `✅ **${answer === 'inside' ? 'Inside' : 'Outside'}!** — \`${cardLabel(newCard)}\` is ${answer} the range.`,
-      divider(),
-      `Cards: \`${g.cards.map(cardLabel).join('  ')}\``,
-      '',
-      `💰 Cash out: **${fmtMoney(cashout)}** (3.5×)`,
-      `🔥 One more card for **10×!**`,
-      '',
-      `\`/rtb cashout\`  or  \`/rtb continue\`  *(${env.rtbDecideSecs}s — auto-cashout on timeout)*`,
+      `✅  **${answer === 'inside' ? 'Inside' : 'Outside'}!**  ${cardLabel(newCard)} — you're on fire!`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `\`${track(g.cards)}\``,
+      ``,
+      `💰  Cash out: **${fmtMoney(cashout)}**  *(3.5×)*`,
+      `💎  ONE card away from **10×** — do you dare?`,
+      ``,
+      `\`/rtb cashout\`  ·  \`/rtb continue\``,
+      `⏱ ${env.rtbDecideSecs}s — auto-cashout if you ghost us`,
     ].join('\n')
   })
 }
@@ -308,25 +323,30 @@ async function _q4 (g, answer, deps) {
   const guessed = suitMap[answer]
 
   if (newCard.suit !== guessed) {
-    return _doLoss(g, `\`${cardLabel(newCard)}\` — it was **${newCard.suit}**, you guessed **${guessed}**.`, deps)
+    return _doLoss(g, `It was **${cardLabel(newCard)}** — you guessed ${guessed}`, deps)
   }
 
   // SWEEP!
   const payout = Math.floor(g.bet * MULT.q4)
   const nick = g.nickname
   const uuid = g.uuid
-  deleteGame(g.room, g.uuid)
+  const bet = g.bet
+  const cards = g.cards
+  const room = g.room
+  deleteGame(room, uuid)
 
   await creditGameWin(uuid, payout, nick, { source: 'ridethebus', category: 'win_sweep' })
 
   await post({
-    room: g.room,
+    room,
     message: [
-      `🎉 **SWEPT THE BUS!** 🎉`,
-      divider(),
-      `\`${g.cards.map(cardLabel).join('  ')}\``,
-      '',
-      `${fmtMoney(g.bet)} × 10 = **${fmtMoney(payout)}!** 💰`,
+      `🎉🚌🎉  **SWEPT THE BUS!**  🎉🚌🎉`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `\`${track(cards, 4)}\``,
+      ``,
+      `**${fmtMoney(bet)} × 10 = ${fmtMoney(payout)}** 💰`,
+      ``,
+      `legendary ride. type \`/rtb <amount>\` to go again!`,
     ].join('\n')
   })
 }
@@ -344,12 +364,14 @@ async function _advance (g, deps) {
     await post({
       room: g.room,
       message: [
-        '🚌 **RIDE THE BUS — Q2**',
-        divider(),
-        `Cards: \`${g.cards.map(cardLabel).join('  ')}\` → \`[???]\``,
-        '',
-        `**Higher or Lower than \`${g.cards[0].rank}\`?**`,
-        `\`/rtb higher\`  or  \`/rtb lower\`  *(${env.rtbAnswerSecs}s)*`,
+        `🚌  **Stop 2 of 4  —  HIGHER or LOWER?**`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `\`${track(g.cards)}\``,
+        ``,
+        `Will the next card be higher or lower than a **${g.cards[0].rank}**?`,
+        ``,
+        `\`/rtb higher\`  ·  \`/rtb lower\``,
+        `⏱ ${env.rtbAnswerSecs} seconds`,
       ].join('\n')
     })
     return
@@ -364,12 +386,15 @@ async function _advance (g, deps) {
     await post({
       room: g.room,
       message: [
-        '🚌 **RIDE THE BUS — Q3**',
-        divider(),
-        `Cards: \`${g.cards.map(cardLabel).join('  ')}\` → \`[???]\``,
-        '',
-        `**Inside or Outside \`${loRank}\`–\`${hiRank}\`?**  *(inside = strictly between)*`,
-        `\`/rtb inside\`  or  \`/rtb outside\`  *(${env.rtbAnswerSecs}s)*`,
+        `🚌  **Stop 3 of 4  —  INSIDE or OUTSIDE?**`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `\`${track(g.cards)}\``,
+        ``,
+        `Will the next card fall between **${loRank}** and **${hiRank}**?`,
+        `*(inside = strictly between, ties go to the house)*`,
+        ``,
+        `\`/rtb inside\`  ·  \`/rtb outside\``,
+        `⏱ ${env.rtbAnswerSecs} seconds`,
       ].join('\n')
     })
     return
@@ -381,13 +406,15 @@ async function _advance (g, deps) {
     await post({
       room: g.room,
       message: [
-        '🚌 **RIDE THE BUS — Q4 (FINAL)**',
-        divider(),
-        `Cards: \`${g.cards.map(cardLabel).join('  ')}\` → \`[???]\``,
-        '',
-        `**What suit?**  *(25% chance — 10× payout!)*`,
-        `\`/rtb hearts\`  \`/rtb diamonds\`  \`/rtb clubs\`  \`/rtb spades\``,
-        `*(${env.rtbAnswerSecs}s)*`,
+        `🚌  **FINAL STOP  —  GUESS THE SUIT!**`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `\`${track(g.cards)}\``,
+        ``,
+        `25% shot at **10×** your bet. what suit is it?`,
+        ``,
+        `\`/rtb hearts\` ♥   \`/rtb diamonds\` ♦`,
+        `\`/rtb clubs\` ♣    \`/rtb spades\` ♠`,
+        `⏱ ${env.rtbAnswerSecs} seconds`,
       ].join('\n')
     })
   }
@@ -400,41 +427,50 @@ async function _advance (g, deps) {
 async function _doCashout (g, deps) {
   const post = deps.postMessage ?? postMessage
   const multMap = { q1_decide: MULT.q1, q2_decide: MULT.q2, q3_decide: MULT.q3 }
-  const payout = Math.floor(g.bet * multMap[g.phase])
+  const mult = multMap[g.phase]
+  const payout = Math.floor(g.bet * mult)
   const profit = payout - g.bet
   const nick = g.nickname
   const uuid = g.uuid
-  deleteGame(g.room, g.uuid)
+  const bet = g.bet
+  const cards = g.cards
+  const room = g.room
+  deleteGame(room, uuid)
 
   await creditGameWin(uuid, payout, nick, { source: 'ridethebus', category: 'win_cashout' })
 
   await post({
-    room: g.room,
+    room,
     message: [
-      `💰 **Cashed out!**`,
-      divider(),
-      `\`${g.cards.map(cardLabel).join('  ')}\``,
-      '',
-      `Won: **${fmtMoney(payout)}** (+${fmtMoney(profit)})`,
+      `💰  **CASHED OUT!**`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `\`${track(cards)}\``,
+      ``,
+      `**${fmtMoney(bet)} → ${fmtMoney(payout)}**  *(+${fmtMoney(profit)})*`,
+      ``,
+      `smart move. type \`/rtb <amount>\` to ride again!`,
     ].join('\n')
   })
 }
 
 async function _doLoss (g, reason, deps) {
   const post = deps.postMessage ?? postMessage
-  const cards = g.cards.map(cardLabel).join('  ')
+  const cards = g.cards
   const mention = `<@uid:${g.uuid}>`
-  deleteGame(g.room, g.uuid)
+  const bet = g.bet
+  const room = g.room
+  deleteGame(room, g.uuid)
 
   await post({
-    room: g.room,
+    room,
     message: [
-      `❌ **Wrong!** — ${reason}`,
-      divider(),
-      `\`${cards}\``,
-      '',
-      `${mention} Lost: **${fmtMoney(g.bet)}**`,
-      `Type \`/rtb <amount>\` to try again.`,
+      `💀  **WRONG!**  ${reason}`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `\`${track(cards)}\``,
+      ``,
+      `${mention} lost **${fmtMoney(bet)}**`,
+      ``,
+      `tough luck. type \`/rtb <amount>\` to try again!`,
     ].join('\n')
   })
 }
@@ -454,10 +490,12 @@ async function _onAnswerTimeout (uuid, room, phase, deps) {
   await post({
     room,
     message: [
-      `⏱ **Time's up!**`,
-      divider(),
-      `<@uid:${uuid}> Took too long — lost **${fmtMoney(bet)}**.`,
-      `Type \`/rtb <amount>\` to try again.`,
+      `⏱  **TIME'S UP!**`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `<@uid:${uuid}> fell asleep at the wheel 🚌💨`,
+      ``,
+      `Lost: **${fmtMoney(bet)}**`,
+      `type \`/rtb <amount>\` to try again!`,
     ].join('\n')
   })
 }

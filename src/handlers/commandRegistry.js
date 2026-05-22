@@ -364,6 +364,18 @@ extendCommandRegistry({
     const h = await getRideTheBusHandlers()
     await h.ridthebus({ payload, room, args })
   },
+  ridethebus: async ({ payload, room, args }) => {
+    const h = await getRideTheBusHandlers()
+    await h.ridethebus({ payload, room, args })
+  },
+  ride: async ({ payload, room, args }) => {
+    const h = await getRideTheBusHandlers()
+    await h.ride({ payload, room, args })
+  },
+  bus: async ({ payload, room, args }) => {
+    const h = await getRideTheBusHandlers()
+    await h.bus({ payload, room, args })
+  },
   rtb: async ({ payload, room, args }) => {
     const h = await getRideTheBusHandlers()
     await h.rtb({ payload, room, args })

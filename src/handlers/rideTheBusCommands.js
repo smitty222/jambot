@@ -26,14 +26,18 @@ export function createRideTheBusHandlers (deps = {}) {
       await post({
         room,
         message: [
-          '🚌 **Ride the Bus** — Card guessing game with a cash-out mechanic!',
-          '',
-          'Answer 4 questions correctly to win **10×** your bet.',
-          'Cash out after any correct answer to lock in a smaller win.',
-          '',
-          '**Payouts:** Q1 correct = 1.5×  •  Q2 = 2×  •  Q3 = 3.5×  •  Sweep = 10×',
-          '',
-          '`/rtb <amount>` to start  •  Min $5  •  Max $10,000',
+          `🚌  **RIDE THE BUS**`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `Answer 4 card questions in a row to win big.`,
+          `Cash out after any correct answer — or risk it all for **10×**.`,
+          ``,
+          `**Payouts**`,
+          `🎴  Q1 — Red or Black?       → **1.5×**`,
+          `🎴  Q2 — Higher or Lower?    → **2×**`,
+          `🎴  Q3 — Inside or Outside?  → **3.5×**`,
+          `🎴  Q4 — Guess the Suit?     → **10×**`,
+          ``,
+          `\`/rtb <amount>\` to start  ·  min $5  ·  max $10,000`,
         ].join('\n')
       })
       return
@@ -55,6 +59,9 @@ export function createRideTheBusHandlers (deps = {}) {
 
   return {
     ridthebus: handlePrimary,
+    ridethebus: handlePrimary,
+    ride: handlePrimary,
+    bus: handlePrimary,
     rtb: handlePrimary,
   }
 }

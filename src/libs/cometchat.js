@@ -13,6 +13,9 @@ const DM_PAGE_LIMIT = Number(process.env.CHAT_DM_PAGE_LIMIT ?? 100)
 const CONV_CACHE_TTL_MS = Number(process.env.CHAT_CONV_CACHE_TTL_MS ?? 10 * 60 * 1000) // 10m
 const CONV_NULL_TTL_MS = Number(process.env.CHAT_CONV_NULL_TTL_MS ?? 60 * 1000) // 60s
 const DEFAULT_COLOR = process.env.CHAT_COLOUR || process.env.CHAT_COLOR || '#FF4D97'
+// Max characters per outbound message. Tune via CHAT_MSG_CHAR_LIMIT if the
+// platform enforces a different cap. Split happens at newline boundaries.
+const CHAT_MSG_CHAR_LIMIT = Number(process.env.CHAT_MSG_CHAR_LIMIT || 1000)
 
 // ────────────────────────────────────────────────────────────────
 /* Headers / Auth */
@@ -119,9 +122,69 @@ export function getChatIdentity () {
 }
 
 // ────────────────────────────────────────────────────────────────
+/* Message chunking */
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * Split text into chunks no longer than `limit` characters, preferring
+ * splits at newline boundaries, falling back to word boundaries.
+ */
+function chunkText (text, limit) {
+  if (!text || text.length <= limit) return [text || '']
+
+  const chunks = []
+  const lines = text.split('\n')
+  let current = ''
+
+  for (const line of lines) {
+    const proposed = current ? current + '\n' + line : line
+
+    if (proposed.length <= limit) {
+      current = proposed
+      continue
+    }
+
+    // Flush what we have
+    if (current) {
+      chunks.push(current)
+      current = ''
+    }
+
+    // Line itself fits
+    if (line.length <= limit) {
+      current = line
+      continue
+    }
+
+    // Line is over the limit — split at word boundaries
+    const words = line.split(' ')
+    for (const word of words) {
+      const attempt = current ? current + ' ' + word : word
+      if (attempt.length <= limit) {
+        current = attempt
+      } else {
+        if (current) chunks.push(current)
+        // Single word longer than limit — hard-cut across chunks
+        if (word.length > limit) {
+          let rem = word
+          while (rem.length > limit) { chunks.push(rem.slice(0, limit)); rem = rem.slice(limit) }
+          current = rem
+        } else {
+          current = word
+        }
+      }
+    }
+  }
+
+  if (current) chunks.push(current)
+  return chunks.length ? chunks : ['']
+}
+
+// ────────────────────────────────────────────────────────────────
 /* Send message (group or user) */
 // ────────────────────────────────────────────────────────────────
-export const postMessage = async (options) => {
+
+async function _sendSingle (options) {
   // Compute headers fresh for each call to ensure the latest token is used.
   const headers = baseHeaders()
 
@@ -191,6 +254,33 @@ export const postMessage = async (options) => {
 
   // Use the pre-built MESSAGE_URL to avoid reconstructing the URL each time.
   return makeRequest(MESSAGE_URL, { method: 'POST', body: JSON.stringify(payload) }, headers)
+}
+
+/**
+ * Public send function. Automatically splits messages that exceed
+ * CHAT_MSG_CHAR_LIMIT into multiple sequential sends at newline/word
+ * boundaries. Images are attached to the first chunk only.
+ */
+export const postMessage = async (options) => {
+  const text = typeof options.message === 'string' ? options.message : ''
+  const hasMedia = !!(options.images?.length || options.gifs?.length)
+
+  if (text.length <= CHAT_MSG_CHAR_LIMIT) {
+    return _sendSingle(options)
+  }
+
+  const chunks = chunkText(text, CHAT_MSG_CHAR_LIMIT)
+  let result
+  for (let i = 0; i < chunks.length; i++) {
+    result = await _sendSingle({
+      ...options,
+      message: chunks[i],
+      // Only include media on the first chunk
+      images: i === 0 && hasMedia ? options.images : undefined,
+      gifs: i === 0 && hasMedia ? options.gifs : undefined
+    })
+  }
+  return result
 }
 
 export const sendDirectMessage = async (receiverUUID, message, options = {}) => {
