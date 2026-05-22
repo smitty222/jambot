@@ -20,6 +20,8 @@ export async function routeF1Message ({
     handleCarPics,
     handleCarShow,
     handleRepairCar,
+    handleCarParts,
+    handleReplacePart,
     handleRenameCar,
     handleSellCar,
     handleTeamCommand,
@@ -94,6 +96,16 @@ export async function routeF1Message ({
 
   if (/^\/repair\s+/i.test(txt)) {
     await handleRepairCar(payload)
+    return true
+  }
+
+  if (/^\/replacepart\b/i.test(txt)) {
+    await handleReplacePart(payload)
+    return true
+  }
+
+  if (/^\/parts\b/i.test(txt)) {
+    await handleCarParts(payload)
     return true
   }
 

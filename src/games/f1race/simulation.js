@@ -1,8 +1,9 @@
 // src/games/f1race/simulation.js
 
 import { bus, safeCall } from './service.js'
-import { updateCarAfterRaceResult } from '../../database/dbcars.js'
+import { updateCarAfterRaceResult, drainCarComponents } from '../../database/dbcars.js'
 import { stat01, getBestTrackForCar } from './utils/track.js'
+import { getComponentDrainForRace } from './config.js'
 
 export const LEGS = 6
 const DRAG_LEGS = 4
@@ -84,6 +85,15 @@ function computePaceScalar (car, track, legIndex) {
   return Math.max(0.90, Math.min(1.12, (mapped * (STANDARD_TIRE_START - tireDrop) * (1 - wearPenalty) * STANDARD_MODE_MULT)))
 }
 
+function worstComponentDurability (car) {
+  return Math.min(
+    Number(car.engineDurability ?? 100),
+    Number(car.gearboxDurability ?? 100),
+    Number(car.aeroDurability ?? 100),
+    Number(car.tiresDurability ?? 100)
+  )
+}
+
 function dnfChanceRace (car, track) {
   const reliability = stat01(car.reliability)
   const wear = Math.max(0, Math.min(100, Number(car.wear || 0)))
@@ -91,8 +101,12 @@ function dnfChanceRace (car, track) {
 
   const relReduce = (1 - reliability) * 0.015
 
+  // Worn-out components raise mechanical failure risk
+  const minDur = Math.max(0, Math.min(100, worstComponentDurability(car)))
+  const componentRisk = minDur < 25 ? ((25 - minDur) / 100) * 0.030 : 0
+
   const base = Number(track.dnfBase || 0.01)
-  const pRace = base + wearRisk + 0.0065 + STANDARD_MODE_DNF + relReduce
+  const pRace = base + wearRisk + 0.0065 + STANDARD_MODE_DNF + relReduce + componentRisk
   return Math.max(0.02, Math.min(0.18, pRace))
 }
 
@@ -383,6 +397,8 @@ export async function runRace ({
         finishPosition: finishPosByIndex.get(i) ?? null,
         dnf: state[i]?.dnf === true
       }])
+      const drain = getComponentDrainForRace(c.tier)
+      await safeCall(drainCarComponents, [c.id, drain]).catch(() => null)
     }
   } catch (e) {
     console.warn('[f1race] updateCarAfterRaceResult failed:', e?.message)

@@ -61,7 +61,12 @@ function ensureCarsTable () {
     ['lastFinish', 'INTEGER'],
     ['lastRaceAt', 'TEXT'],
     ['finishSum', 'INTEGER DEFAULT 0'],
-    ['finishCount', 'INTEGER DEFAULT 0']
+    ['finishCount', 'INTEGER DEFAULT 0'],
+    ['engineDurability', 'INTEGER DEFAULT 100'],
+    ['gearboxDurability', 'INTEGER DEFAULT 100'],
+    ['aeroDurability', 'INTEGER DEFAULT 100'],
+    ['tiresDurability', 'INTEGER DEFAULT 100'],
+    ['componentRepairSpend', 'INTEGER DEFAULT 0']
   ]
 
   for (const [column, definition] of statColumns) {
@@ -374,4 +379,54 @@ export function setCarImageUrl (id, imageUrl) {
   ensureCarsTable()
   return db.prepare('UPDATE cars SET imageUrl = ? WHERE id = ?')
     .run(imageUrl ? String(imageUrl) : null, Number(id))
+}
+
+// ── Component durability ───────────────────────────────────────────────
+
+export function drainCarComponents (id, { engine = 0, gearbox = 0, aero = 0, tires = 0 } = {}) {
+  ensureCarsTable()
+  const car = getCarById(id)
+  if (!car) return false
+
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
+  const newEngine = clamp(Number(car.engineDurability ?? 100) - Math.max(0, Math.floor(engine)), 0, 100)
+  const newGearbox = clamp(Number(car.gearboxDurability ?? 100) - Math.max(0, Math.floor(gearbox)), 0, 100)
+  const newAero = clamp(Number(car.aeroDurability ?? 100) - Math.max(0, Math.floor(aero)), 0, 100)
+  const newTires = clamp(Number(car.tiresDurability ?? 100) - Math.max(0, Math.floor(tires)), 0, 100)
+
+  db.prepare(`
+    UPDATE cars
+    SET engineDurability = ?, gearboxDurability = ?, aeroDurability = ?, tiresDurability = ?
+    WHERE id = ?
+  `).run(newEngine, newGearbox, newAero, newTires, Number(id))
+
+  return true
+}
+
+export function replaceCarComponent (id, componentKey) {
+  ensureCarsTable()
+  const colMap = {
+    engine: 'engineDurability',
+    gearbox: 'gearboxDurability',
+    aero: 'aeroDurability',
+    tires: 'tiresDurability'
+  }
+  const col = colMap[String(componentKey || '').toLowerCase()]
+  if (!col) return false
+
+  db.prepare(`UPDATE cars SET ${col} = 100 WHERE id = ?`).run(Number(id))
+  return true
+}
+
+export function recordComponentRepairSpend (id, amount) {
+  ensureCarsTable()
+  const inc = Math.max(0, Math.floor(Number(amount || 0)))
+  if (!Number.isFinite(inc) || inc <= 0) return false
+
+  db.prepare(`
+    UPDATE cars
+    SET componentRepairSpend = COALESCE(componentRepairSpend, 0) + ?
+    WHERE id = ?
+  `).run(inc, Number(id))
+  return true
 }

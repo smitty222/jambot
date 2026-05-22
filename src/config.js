@@ -148,6 +148,12 @@ export const env = {
   gabUserToken: getEnv('GAB_USER_TOKEN'),
   alexUserToken: getEnv('ALEX_USER_TOKEN'),
 
+  // Ride the Bus tuning
+  rtbMinBet: getNumberEnv('RTB_MIN_BET', 5),
+  rtbMaxBet: getNumberEnv('RTB_MAX_BET', 10_000),
+  rtbAnswerSecs: getNumberEnv('RTB_ANSWER_SECS', 30),
+  rtbDecideSecs: getNumberEnv('RTB_DECIDE_SECS', 30),
+
   // Craps tuning
   crapsMinBet: getNumberEnv('CRAPS_MIN_BET', 5),
   crapsMaxBet: getNumberEnv('CRAPS_MAX_BET', 10000),

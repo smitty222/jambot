@@ -117,6 +117,11 @@ const getBlackjackHandlers = createLazyHandlerLoader(async () => {
   return createBlackjackHandlers()
 })
 
+const getRideTheBusHandlers = createLazyHandlerLoader(async () => {
+  const { createRideTheBusHandlers } = await import('./rideTheBusCommands.js')
+  return createRideTheBusHandlers()
+})
+
 // ---------------------------------------------------------------------------
 // Command registry
 // ---------------------------------------------------------------------------
@@ -297,6 +302,9 @@ extendCommandRegistry({
   // Spotify search & queue
   ...createSpotifyQueueHandlers(),
 
+  // /searchalbums — alias for /searchalbum
+  searchalbums: async (ctx) => commandRegistry.searchalbum(ctx),
+
   // /spotify link — alias for /spotifylink
   spotify: async ({ payload, room, args, ttlUserToken }) => {
     const sub = (args || '').trim().toLowerCase()
@@ -349,6 +357,16 @@ extendCommandRegistry({
   split: async ({ payload, room }) => {
     const blackjackHandlers = await getBlackjackHandlers()
     await blackjackHandlers.split({ payload, room })
+  },
+
+  // Ride the Bus (lazy-loaded)
+  ridthebus: async ({ payload, room, args }) => {
+    const h = await getRideTheBusHandlers()
+    await h.ridthebus({ payload, room, args })
+  },
+  rtb: async ({ payload, room, args }) => {
+    const h = await getRideTheBusHandlers()
+    await h.rtb({ payload, room, args })
   },
 
   // Misc commands (lazy-loaded)

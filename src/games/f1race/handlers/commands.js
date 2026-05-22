@@ -27,7 +27,9 @@ import {
   getTopCarsByEarnings,
   getTopOwnersByCarReturn,
   renameCarOwnedByUser,
-  deleteCarOwnedByUser
+  deleteCarOwnedByUser,
+  replaceCarComponent,
+  recordComponentRepairSpend
 } from '../../../database/dbcars.js'
 
 import { bus, safeCall } from '../service.js'
@@ -40,10 +42,16 @@ import {
   F1_CAR_TIERS,
   F1_RACE_SETTINGS,
   F1_TIER_ORDER,
+  F1_COMPONENTS,
+  F1_COMPONENT_ORDER,
   getF1EntryFee,
   getF1RaceLabel,
   getF1TierLabel,
-  normalizeF1Tier
+  normalizeF1Tier,
+  getCarComponentStatus,
+  getBlownComponents,
+  getLowComponents,
+  getComponentReplaceCost
 } from '../config.js'
 import {
   calculateRacePayouts,
@@ -370,6 +378,47 @@ function getEntryWearWarning (car) {
 
   const severity = wear >= ENTRY_WEAR_DANGER_THRESHOLD ? '⚠️' : '🟡'
   return `${severity} ${carLabel(car)} is entering at **${wear}% wear**. Full repair: **${fmtMoney(estimateFullRepairCost(car))}**. Use \`/repair ${car.name}\` if you want to clean it up before race lock.`
+}
+
+function formatComponentBar (durability) {
+  const pct = Math.max(0, Math.min(100, durability))
+  const filled = Math.round(pct / 10)
+  const bar = '█'.repeat(filled) + '░'.repeat(10 - filled)
+  return bar
+}
+
+function formatComponentStatusLine (comp) {
+  const pct = comp.durability
+  const bar = formatComponentBar(pct)
+  let tag = ''
+  if (comp.isBlown) tag = ' 💀 BLOWN'
+  else if (comp.isCrit) tag = ' 🔴'
+  else if (comp.isLow) tag = ' 🟡'
+  return `${comp.emoji} ${comp.label.padEnd(10)} [${bar}] ${String(pct).padStart(3)}%${tag}`
+}
+
+function formatComponentsShort (car) {
+  const comps = getCarComponentStatus(car)
+  return comps.map(c => {
+    if (c.isBlown) return `${c.emoji}💀`
+    if (c.isCrit) return `${c.emoji}🔴${c.durability}%`
+    if (c.isLow) return `${c.emoji}🟡${c.durability}%`
+    return `${c.emoji}${c.durability}%`
+  }).join(' ')
+}
+
+function getTotalComponentReplaceCost (car) {
+  const tierKey = normalizeTierKey(car?.tier)
+  return F1_COMPONENT_ORDER.reduce((sum, key) => sum + getComponentReplaceCost(key, tierKey), 0)
+}
+
+function getEntryComponentBlock (car) {
+  const blown = getBlownComponents(car)
+  if (!blown.length) return null
+  const names = blown.map(c => `${c.emoji} ${c.label}`).join(', ')
+  const tierKey = normalizeTierKey(car?.tier)
+  const costs = blown.map(c => `${c.label}: ${fmtMoney(getComponentReplaceCost(c.key, tierKey))}`).join(' · ')
+  return `🚫 ${carLabel(car)} has blown components and **cannot race**: ${names}\nReplace with \`/replacepart ${car.name} <part>\` — ${costs}`
 }
 
 function parseArg (txt, re) {
@@ -1010,10 +1059,13 @@ export async function handleGarageCommand (ctx) {
     ? `${teamBadge ? `${teamBadge} ` : ''}${teamName}`
     : nick
 
+  const totalBlown = cars.reduce((n, c) => n + getBlownComponents(c).length, 0)
+  const blownAlert = totalBlown > 0 ? `\n⛔ **${totalBlown} blown component${totalBlown > 1 ? 's' : ''} across your garage** — affected cars cannot race. Use \`/parts <car>\` to check.` : ''
+
   const headerLines = [
     `🏎️ **${garageOwnerLabel}'s Garage** (${cars.length})`,
     `Team: ${teamName ? `**${teamBadge ? `${teamBadge} ` : ''}${teamName}**` : '**No team set**'}`,
-    'Useful commands: `/car <name>` · `/carstats <name>` · `/wear <name>` · `/repair <name>` · `/sellcar <name>`'
+    `Useful commands: \`/car <name>\` · \`/parts <name>\` · \`/repair <name>\` · \`/replacepart <name> <part>\` · \`/sellcar <name>\`${blownAlert}`
   ]
   await postMessage({ room, message: headerLines.join('\n') })
 
@@ -1021,10 +1073,15 @@ export async function handleGarageCommand (ctx) {
     const wear = Number(car.wear || 0)
     const wearTag = wear >= 80 ? '⚠️' : (wear >= 60 ? '🟡' : '🟢')
     const trackDetails = getTrackPreferenceDetails(car)
+    const blown = getBlownComponents(car)
+    const compNote = blown.length
+      ? `⛔ BLOWN: ${blown.map(c => c.emoji + c.label).join(', ')}`
+      : formatComponentsShort(car)
     const lines = [
       `**${carLabel(car)}**`,
       `Tier: ${String(car.tier || '—').toUpperCase()} · ${trackDetails.fitSummary} · Wear ${wear}% ${wearTag}`,
-      `Stats: ${formatCarStatLine(car)}`
+      `Stats: ${formatCarStatLine(car)}`,
+      `Parts: ${compNote}`
     ]
 
     await postMessage({
@@ -1126,6 +1183,15 @@ export async function handleCarShow (ctx) {
     : '—'
   const trackDetails = getTrackPreferenceDetails(car)
 
+  const blown = getBlownComponents(car)
+  const low = getLowComponents(car)
+  const compShort = formatComponentsShort(car)
+  const compStatusNote = blown.length
+    ? `⛔ **${blown.map(c => c.label).join(', ')} BLOWN** — cannot race · \`/replacepart ${car.name} <part>\``
+    : low.length
+      ? `🟡 Parts running low · \`/parts ${car.name}\` for details`
+      : '✅ All components healthy'
+
   await postMessage({
     room,
     message:
@@ -1133,6 +1199,8 @@ export async function handleCarShow (ctx) {
       `Team: **${car.teamId ? 'Assigned' : '—'}** · Tier: **${tierKey.toUpperCase()}** · Wear: **${wear}%** · W ${car.wins || 0} / R ${car.races || 0}\n` +
       `Identity: **${trackDetails.fitSummary}**\n` +
       `Stats: **${formatCarStatLine(car)}**\n` +
+      `Components: ${compShort}\n` +
+      `${compStatusNote}\n` +
       `Return (earnings only): **${fmtMoney(earnings)}** · Net career: **${fmtMoney(net)}**\n` +
       `Spent: buy ${fmtMoney(car.price || 0)} · entry ${fmtMoney(entryFees)} · repair ${fmtMoney(repairSpend)}\n` +
       `Best finish: **${bestFinish}** · Avg finish: **${avgFinish}** · Podiums: **${toInt(car.podiums)}** · DNFs: **${toInt(car.dnfs)}**\n` +
@@ -1198,6 +1266,119 @@ export async function handleRepairCar (ctx) {
   await postMessage({
     room,
     message: `🔧 ${nick} repaired ${carLabel(car)}: **-${wearToRemove}% wear** for **${fmtMoney(cost)}**${repairCost.fee > 0 ? ` + ${fmtMoney(repairCost.fee)} wealth fee` : ''}. Wear is now **0%**.\n💰 Balance: **${fmtMoney(updated)}**`
+  })
+}
+
+export async function handleCarParts (ctx) {
+  const room = ctx?.room || ROOM
+  const userId = ctx?.sender
+  const text = String(ctx?.message || '').trim()
+  const nameArg = parseArg(text, /^\/parts\s+(.+)$/i)
+  const nick = await safeCall(getUserNickname, [userId]).catch(() => '@user')
+
+  const cars = await safeCall(getUserCars, [userId]).catch(() => [])
+
+  if (!nameArg) {
+    if (!cars.length) {
+      await postMessage({ room, message: `${nick}, you don't own any cars. Try **/buycar**.` })
+      return
+    }
+    const lines = [`${nick}'s COMPONENT STATUS`, '']
+    for (const c of cars.slice(0, 8)) {
+      const blown = getBlownComponents(c)
+      const low = getLowComponents(c)
+      const tag = blown.length ? ' 💀 NEEDS REPAIR' : low.length ? ' 🟡 RUNNING LOW' : ' ✅'
+      lines.push(`${carLabel(c)}${tag}`)
+      lines.push(formatComponentsShort(c))
+      lines.push('')
+    }
+    lines.push('Check a car: `/parts <car name>`')
+    await postMessage({ room, message: lines.join('\n') })
+    return
+  }
+
+  const car = findUserCar(cars, nameArg)
+  if (!car) {
+    await postMessage({ room, message: `❗ ${nick}, couldn't find that car in your garage.` })
+    return
+  }
+
+  const tierKey = normalizeTierKey(car.tier)
+  const comps = getCarComponentStatus(car)
+  const lines = []
+  lines.push(`${carLabel(car)} — COMPONENTS`)
+  lines.push(`Tier: ${tierKey.toUpperCase()} · Wear: ${toInt(car.wear)}%`)
+  lines.push('')
+  for (const comp of comps) {
+    const cost = fmtMoney(getComponentReplaceCost(comp.key, tierKey))
+    lines.push(`${formatComponentStatusLine(comp)}   Replace: ${cost}`)
+  }
+  lines.push('')
+  const blown = comps.filter(c => c.isBlown)
+  if (blown.length) {
+    lines.push(`⛔ **${blown.map(c => c.label).join(', ')} blown** — car cannot race until replaced.`)
+    lines.push(`Replace: \`/replacepart ${car.name} <engine|gearbox|aero|tires>\``)
+  } else {
+    lines.push(`Replace a part: \`/replacepart ${car.name} <engine|gearbox|aero|tires>\``)
+  }
+  await postMessage({ room, message: lines.join('\n') })
+}
+
+export async function handleReplacePart (ctx) {
+  const room = ctx?.room || ROOM
+  const userId = ctx?.sender
+  const text = String(ctx?.message || '').trim()
+  const nick = await safeCall(getUserNickname, [userId]).catch(() => '@user')
+
+  const match = text.match(/^\/replacepart\s+(.+?)\s+(engine|gearbox|aero|tires)\s*$/i)
+  if (!match) {
+    await postMessage({ room, message: 'Usage: **/replacepart <car name> <engine|gearbox|aero|tires>**' })
+    return
+  }
+  const nameArg = match[1].trim()
+  const partKey = match[2].toLowerCase()
+
+  const cars = await safeCall(getUserCars, [userId]).catch(() => [])
+  const car = findUserCar(cars, nameArg)
+  if (!car) {
+    await postMessage({ room, message: `❗ ${nick}, couldn't find that car in your garage.` })
+    return
+  }
+
+  const tierKey = normalizeTierKey(car.tier)
+  const comp = F1_COMPONENTS[partKey]
+  const currentDurability = Math.max(0, Math.min(100, Number(car[comp.dbCol] ?? 100)))
+
+  if (currentDurability >= 100) {
+    await postMessage({ room, message: `✅ ${carLabel(car)}'s ${comp.emoji} ${comp.label} is already at 100% — no replacement needed.` })
+    return
+  }
+
+  const cost = getComponentReplaceCost(partKey, tierKey)
+  const bal = await safeCall(getUserWallet, [userId]).catch(() => null)
+  const charged = getProgressiveWealthFee({ balance: bal, baseAmount: cost, source: 'f1' })
+
+  if (typeof bal !== 'number' || bal < charged.total) {
+    await postMessage({
+      room,
+      message: `❗ ${nick}, replacing ${comp.emoji} ${comp.label} on ${carLabel(car)} costs **${fmtMoney(charged.total)}**${charged.fee > 0 ? ` (${fmtMoney(cost)} + ${fmtMoney(charged.fee)} wealth fee)` : ''}. Balance: **${fmtMoney(bal)}**.`
+    })
+    return
+  }
+
+  const chargeResult = await chargeF1Cost(userId, cost, 'component_replace', `Replace ${comp.label} on ${car.name}`.trim(), bal)
+  if (!chargeResult.ok) {
+    await postMessage({ room, message: `⚠️ ${nick}, couldn't process payment for part replacement.` })
+    return
+  }
+
+  await safeCall(replaceCarComponent, [car.id, partKey]).catch(() => null)
+  await safeCall(recordComponentRepairSpend, [car.id, cost]).catch(() => null)
+  const updated = await safeCall(getUserWallet, [userId]).catch(() => null)
+
+  await postMessage({
+    room,
+    message: `🔧 ${nick} replaced ${comp.emoji} **${comp.label}** on ${carLabel(car)}: **${currentDurability}% → 100%** for **${fmtMoney(cost)}**${charged.fee > 0 ? ` + ${fmtMoney(charged.fee)} wealth fee` : ''}.\n💰 Balance: **${fmtMoney(updated)}**`
   })
 }
 
@@ -1908,12 +2089,25 @@ export async function handleCarEntryAttempt (ctx) {
     return
   }
 
-  entered.add(car.id)
   const nick = await safeCall(getUserNickname, [sender]).catch(() => '@user')
+
+  const componentBlock = getEntryComponentBlock(car)
+  if (componentBlock) {
+    await safeCall(postMessage, [{ room: ROOM, message: componentBlock }])
+    return
+  }
+
+  entered.add(car.id)
   await safeCall(postMessage, [{ room: ROOM, message: `✅ ${nick?.replace(/^@/, '')} entered ${carLabel(car)}!` }])
   const wearWarning = getEntryWearWarning(car)
   if (wearWarning) {
     await safeCall(postMessage, [{ room: ROOM, message: wearWarning }])
+  }
+
+  const lowComps = getLowComponents(car)
+  if (lowComps.length) {
+    const names = lowComps.map(c => `${c.emoji} ${c.label} (${c.durability}%)`).join(', ')
+    await safeCall(postMessage, [{ room: ROOM, message: `🟡 ${carLabel(car)} has components running low: ${names}. Use \`/parts ${car.name}\` to check and \`/replacepart\` to replace.` }])
   }
 
   if (
@@ -2223,8 +2417,10 @@ export async function handleF1Help (ctx) {
     '/racehistory [count]   - alias for /myresults',
     '/f1leaderboard [count] - top owners by total car return',
     '/wear [name]           - show wear for all cars or one car',
-    '/car <name>            - show your car (image + stats)',
+    '/car <name>            - show your car (image + stats + component status)',
     '/repair <name>         - fully repair wear on one car',
+    '/parts [name]          - check component durability (engine/gearbox/aero/tires)',
+    '/replacepart <name> <part> - replace a component (engine|gearbox|aero|tires)',
     `/renamecar <name>      - reroll car name randomly (costs ${fmtMoney(CAR_RENAME_FEE)})`,
     '/sellcar <name>        - sell a car back for cash',
     '/carpics               - show photos of your cars',
