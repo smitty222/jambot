@@ -1788,6 +1788,10 @@ export async function handleF1Leaderboard (ctx) {
     return
   }
 
+  const nicknames = await Promise.all(
+    rows.map(r => r?.ownerId ? safeCall(getUserNickname, [r.ownerId]).catch(() => null) : Promise.resolve(null))
+  )
+
   const lines = []
   lines.push(`F1 LEADERBOARD — TOP OWNERS BY CAR RETURN (Top ${limit})`)
   lines.push('')
@@ -1795,7 +1799,8 @@ export async function handleF1Leaderboard (ctx) {
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i]
     const titleTag = row?.ownerId ? getCompactEquippedTitleTag(row.ownerId, 7) : ''
-    const ownerName = compactLeaderboardName(row?.ownerName || row?.ownerId || 'Unknown', row?.ownerId, titleTag ? 10 : 14)
+    const resolvedName = nicknames[i] || row?.ownerName || row?.ownerId || 'Unknown'
+    const ownerName = compactLeaderboardName(resolvedName, row?.ownerId, titleTag ? 10 : 14)
     lines.push(
       `${i + 1}. ${titleTag ? `${titleTag} ` : ''}${ownerName} ${fmtMoney(toInt(row.totalCarReturn))}`
     )

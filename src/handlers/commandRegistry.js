@@ -170,8 +170,20 @@ const commandRegistry = {
     }
   },
 
-  red: async ({ payload }) => { if (rouletteGameActive) await handleRouletteBet(payload) },
-  black: async ({ payload }) => { if (rouletteGameActive) await handleRouletteBet(payload) },
+  red: async ({ payload, room }) => {
+    const h = await getRideTheBusHandlers()
+    if (h.getActivePhase(room, payload.sender) === 'q1') {
+      await h.rtb({ payload, room, args: 'red' }); return
+    }
+    if (rouletteGameActive) await handleRouletteBet(payload)
+  },
+  black: async ({ payload, room }) => {
+    const h = await getRideTheBusHandlers()
+    if (h.getActivePhase(room, payload.sender) === 'q1') {
+      await h.rtb({ payload, room, args: 'black' }); return
+    }
+    if (rouletteGameActive) await handleRouletteBet(payload)
+  },
   green: async ({ payload }) => { if (rouletteGameActive) await handleRouletteBet(payload) },
   odd: async ({ payload }) => { if (rouletteGameActive) await handleRouletteBet(payload) },
   even: async ({ payload }) => { if (rouletteGameActive) await handleRouletteBet(payload) },
@@ -380,6 +392,17 @@ extendCommandRegistry({
     const h = await getRideTheBusHandlers()
     await h.rtb({ payload, room, args })
   },
+
+  // Ride the Bus — standalone answer/action commands
+  higher:   async ({ payload, room }) => { const h = await getRideTheBusHandlers(); await h.higher({ payload, room }) },
+  lower:    async ({ payload, room }) => { const h = await getRideTheBusHandlers(); await h.lower({ payload, room }) },
+  inside:   async ({ payload, room }) => { const h = await getRideTheBusHandlers(); await h.inside({ payload, room }) },
+  outside:  async ({ payload, room }) => { const h = await getRideTheBusHandlers(); await h.outside({ payload, room }) },
+  hearts:   async ({ payload, room }) => { const h = await getRideTheBusHandlers(); await h.hearts({ payload, room }) },
+  diamonds: async ({ payload, room }) => { const h = await getRideTheBusHandlers(); await h.diamonds({ payload, room }) },
+  clubs:    async ({ payload, room }) => { const h = await getRideTheBusHandlers(); await h.clubs({ payload, room }) },
+  spades:   async ({ payload, room }) => { const h = await getRideTheBusHandlers(); await h.spades({ payload, room }) },
+  cashout:  async ({ payload, room }) => { const h = await getRideTheBusHandlers(); await h.cashout({ payload, room }) },
 
   // Misc commands (lazy-loaded)
   theme: async ({ payload, room }) => {
