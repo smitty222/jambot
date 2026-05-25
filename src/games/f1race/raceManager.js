@@ -8,6 +8,7 @@ import { recordCarRaceFinancials } from '../../database/dbcars.js'
 import { logF1RaceResults } from '../../database/dbf1results.js'
 import { syncF1LegendaryPrestige, formatPrestigeUnlockLines } from '../../database/dbprestige.js'
 import { safeCall } from './service.js'
+import { startPunishmentGame } from '../ridethebus/rideTheBus.js'
 import { runRace } from './simulation.js'
 import {
   F1_CAR_TIERS,
@@ -350,6 +351,14 @@ export async function runGrandPrix ({
       purse: payoutSummary.purse,
       placements
     })
+
+    // Punishment bus for last-place non-bot finisher
+    const lastPlace = [...placements].sort((a, b) => b.finishPosition - a.finishPosition)[0]
+    if (lastPlace && !lastPlace.isBot && lastPlace.userId) {
+      const loserNick = await safeCall(getUserNickname, [lastPlace.userId]).catch(() => null)
+      await postMessage({ room: roomId, message: `🚌 <@uid:${lastPlace.userId}> finished P${lastPlace.finishPosition} — dead last. Straight to the punishment bus!` })
+      await startPunishmentGame(lastPlace.userId, loserNick, roomId)
+    }
 
     return {
       raceResult,

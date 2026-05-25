@@ -13,6 +13,11 @@ const ANSWER_MS = env.rtbAnswerSecs * 1000
 // Cash-out multipliers per phase (based on # of correct answers so far)
 const CASHOUT_MULT = { q2: 1.5, q3: 2.0, q4: 3.5 }
 
+// Punishment mode: fraction of stake returned per correct answer (Q1–Q4)
+// All 4 correct = 0.25+0.25+0.25+0.50 = 1.25× stake returned (net +25% profit)
+const PUNISH_RECOVERY = [0.25, 0.25, 0.25, 0.50]
+const PUNISH_PHASE_IDX = { q1: 0, q2: 1, q3: 2, q4: 3 }
+
 // ─────────────────────────────────────────────────────────────
 // Deck
 // ─────────────────────────────────────────────────────────────
@@ -75,11 +80,66 @@ export function getActivePhase (room, uuid) {
   return getGame(room, uuid)?.phase ?? null
 }
 
+export async function startPunishmentGame (uuid, nickname, room, deps = {}) {
+  const post = deps.postMessage ?? postMessage
+
+  if (getGame(room, uuid)) {
+    await post({ room, message: `<@uid:${uuid}> 🚌 You already have a ride in progress! Finish it first.` })
+    return
+  }
+
+  const balance = Number(await getUserWallet(uuid))
+  const raw = Math.floor(balance * (env.rtbPunishPct / 100))
+  const stake = Math.max(env.rtbPunishMin, raw)
+
+  if (balance < env.rtbPunishMin) {
+    await post({ room, message: `<@uid:${uuid}> 🚌 Not enough coins to ride the punishment bus (need at least ${fmtMoney(env.rtbPunishMin)}).` })
+    return
+  }
+
+  const ok = await debitGameBet(uuid, stake, { source: 'ridethebus', category: 'punishment_stake' })
+  if (!ok) {
+    await post({ room, message: `<@uid:${uuid}> Couldn't stake the punishment bet. Try again.` })
+    return
+  }
+
+  const deck = buildDeck()
+  const firstCard = deck.pop()
+  const nick = String(nickname ?? '').replace(/<@uid:[^>]+>/g, '').replace(/^@+/, '').trim()
+
+  const g = { uuid, nickname: nick, room, bet: stake, phase: 'q1', cards: [firstCard], deck, timer: null, mode: 'punishment', stakeRecovered: 0 }
+  setGame(room, uuid, g)
+  g.timer = setTimeout(() => _onTimeout(uuid, room, 'q1', deps), ANSWER_MS)
+
+  await post({
+    room,
+    message: [
+      `🚌💀  **PUNISHMENT BUS**  —  you're going for a ride!`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `💸  **${fmtMoney(stake)}** on the line  *(${env.rtbPunishPct}% of your bankroll)*`,
+      ``,
+      `Answer all 4 and you'll get **125%** back  (+${fmtMoney(Math.floor(stake * 0.25))} profit)`,
+      `Each correct answer returns part of your stake — miss one and lose the rest`,
+      ``,
+      `🃏  \`${track([])}\``,
+      ``,
+      `🔴🖤  **Stop 1 of 4  —  RED or BLACK?**`,
+      `\`/red\`  ·  \`/black\``,
+      `⏱ ${env.rtbAnswerSecs}s`,
+    ].join('\n')
+  })
+}
+
 export async function startGame (uuid, nickname, room, betStr, deps = {}) {
   const post = deps.postMessage ?? postMessage
 
   if (getGame(room, uuid)) {
-    await post({ room, message: `<@uid:${uuid}> 🚌 You already have a ride in progress! Answer the current question or type \`/cashout\` to bail.` })
+    const g = getGame(room, uuid)
+    if (g.mode === 'punishment') {
+      await post({ room, message: `<@uid:${uuid}> 🚌 You're on the punishment bus! Finish your ride first.` })
+    } else {
+      await post({ room, message: `<@uid:${uuid}> 🚌 You already have a ride in progress! Answer the current question or type \`/cashout\` to bail.` })
+    }
     return
   }
 
@@ -160,6 +220,11 @@ export async function handleCashout (uuid, nickname, room, deps = {}) {
     return
   }
 
+  if (g.mode === 'punishment') {
+    await post({ room, message: `<@uid:${uuid}> 🚌 No bailing on the punishment bus. Ride it out!` })
+    return
+  }
+
   const mult = CASHOUT_MULT[g.phase]
   if (!mult) {
     await post({ room, message: `<@uid:${uuid}> 🚌 Answer the first question before you can cash out!` })
@@ -197,8 +262,29 @@ async function _q1 (g, answer, deps) {
   // ✅ Correct — auto-advance to Q2
   g.phase = 'q2'
   g.timer = setTimeout(() => _onTimeout(g.uuid, g.room, 'q2', deps), ANSWER_MS)
-  const cashout = Math.floor(g.bet * CASHOUT_MULT.q2)
 
+  if (g.mode === 'punishment') {
+    const recovered = Math.floor(g.bet * PUNISH_RECOVERY[0])
+    g.stakeRecovered += recovered
+    await creditGameWin(g.uuid, recovered, g.nickname, { source: 'ridethebus', category: 'punishment_recovery' })
+    const remaining = g.bet - g.stakeRecovered
+    await post({
+      room: g.room,
+      message: [
+        `${colorEmoji} **${colorWord}!**  The card was \`${cardLabel(card)}\`  ✅`,
+        `💰 +${fmtMoney(recovered)} returned  ·  ${fmtMoney(remaining)} still on the line`,
+        ``,
+        `🃏  \`${track(g.cards)}\``,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `📈  **Stop 2 of 4  —  HIGHER or LOWER than ${g.cards[0].rank}?**`,
+        `\`/higher\`  ·  \`/lower\``,
+        `⏱ ${env.rtbAnswerSecs}s`,
+      ].join('\n')
+    })
+    return
+  }
+
+  const cashout = Math.floor(g.bet * CASHOUT_MULT.q2)
   await post({
     room: g.room,
     message: [
@@ -241,8 +327,30 @@ async function _q2 (g, answer, deps) {
   const [c1, c2] = g.cards
   const loRank = c1.value <= c2.value ? c1.rank : c2.rank
   const hiRank = c1.value >= c2.value ? c1.rank : c2.rank
-  const cashout = Math.floor(g.bet * CASHOUT_MULT.q3)
 
+  if (g.mode === 'punishment') {
+    const recovered = Math.floor(g.bet * PUNISH_RECOVERY[1])
+    g.stakeRecovered += recovered
+    await creditGameWin(g.uuid, recovered, g.nickname, { source: 'ridethebus', category: 'punishment_recovery' })
+    const remaining = g.bet - g.stakeRecovered
+    await post({
+      room: g.room,
+      message: [
+        `${dirEmoji} **${answer.toUpperCase()}!**  \`${cardLabel(newCard)}\` vs ${base.rank}  ✅`,
+        `💰 +${fmtMoney(recovered)} returned  ·  ${fmtMoney(remaining)} still on the line`,
+        ``,
+        `🃏  \`${track(g.cards)}\``,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `📊  **Stop 3 of 4  —  INSIDE or OUTSIDE?**`,
+        `Between **${loRank}** and **${hiRank}**  *(ties go to the house)*`,
+        `\`/inside\`  ·  \`/outside\``,
+        `⏱ ${env.rtbAnswerSecs}s`,
+      ].join('\n')
+    })
+    return
+  }
+
+  const cashout = Math.floor(g.bet * CASHOUT_MULT.q3)
   await post({
     room: g.room,
     message: [
@@ -288,8 +396,31 @@ async function _q3 (g, answer, deps) {
   // ✅ Correct — auto-advance to Q4
   g.phase = 'q4'
   g.timer = setTimeout(() => _onTimeout(g.uuid, g.room, 'q4', deps), ANSWER_MS)
-  const cashout = Math.floor(g.bet * CASHOUT_MULT.q4)
 
+  if (g.mode === 'punishment') {
+    const recovered = Math.floor(g.bet * PUNISH_RECOVERY[2])
+    g.stakeRecovered += recovered
+    await creditGameWin(g.uuid, recovered, g.nickname, { source: 'ridethebus', category: 'punishment_recovery' })
+    const remaining = g.bet - g.stakeRecovered
+    const winAmount = Math.floor(g.bet * PUNISH_RECOVERY[3])
+    await post({
+      room: g.room,
+      message: [
+        `✅  **${answer.toUpperCase()}!**  \`${cardLabel(newCard)}\`  —  one stop left! 🔥`,
+        `💰 +${fmtMoney(recovered)} returned  ·  ${fmtMoney(remaining)} still on the line`,
+        ``,
+        `🃏  \`${track(g.cards)}\``,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `🎯  **FINAL STOP  —  GUESS THE SUIT!**`,
+        `Nail it and get the last ${fmtMoney(remaining)} back  **+${fmtMoney(winAmount - remaining)} profit** 🤑`,
+        `♥ \`/hearts\`   ♦ \`/diamonds\`   ♣ \`/clubs\`   ♠ \`/spades\``,
+        `⏱ ${env.rtbAnswerSecs}s`,
+      ].join('\n')
+    })
+    return
+  }
+
+  const cashout = Math.floor(g.bet * CASHOUT_MULT.q4)
   await post({
     room: g.room,
     message: [
@@ -323,13 +454,34 @@ async function _q4 (g, answer, deps) {
     return _doLoss(g, `**${cardLabel(newCard)}**  —  you guessed ${guessed}`, deps)
   }
 
-  // 🎉 SWEEP!
-  const payout = Math.floor(g.bet * 10)
   const uuid = g.uuid
   const nick = g.nickname
   const bet = g.bet
   const cards = [...g.cards]
   const room = g.room
+
+  if (g.mode === 'punishment') {
+    const finalRecovery = Math.floor(bet * PUNISH_RECOVERY[3])
+    const totalReturned = g.stakeRecovered + finalRecovery
+    const profit = totalReturned - bet
+    deleteGame(room, uuid)
+    await creditGameWin(uuid, finalRecovery, nick, { source: 'ridethebus', category: 'punishment_recovery' })
+    await post({
+      room,
+      message: [
+        `🎉🚌🎉  **SURVIVED THE PUNISHMENT BUS!**  🎉🚌🎉`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `🃏  \`${track(cards)}\``,
+        ``,
+        `💰  Got **${fmtMoney(totalReturned)}** back on a **${fmtMoney(bet)}** stake`,
+        `📈  Net: **+${fmtMoney(profit)}**  —  punishment paid off! 😤`,
+      ].join('\n')
+    })
+    return
+  }
+
+  // 🎉 SWEEP!
+  const payout = Math.floor(bet * 10)
   deleteGame(room, uuid)
 
   await creditGameWin(uuid, payout, nick, { source: 'ridethebus', category: 'win_sweep' })
@@ -386,7 +538,24 @@ async function _doLoss (g, reason, deps) {
   const mention = `<@uid:${g.uuid}>`
   const bet = g.bet
   const room = g.room
+  const isPunishment = g.mode === 'punishment'
+  const netLoss = isPunishment ? bet - g.stakeRecovered : bet
   deleteGame(room, g.uuid)
+
+  if (isPunishment) {
+    await post({
+      room,
+      message: [
+        `💀  **WRONG!**  ${reason}`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `🃏  \`${track(cards)}\``,
+        ``,
+        `${mention}  forfeited the remaining **${fmtMoney(netLoss)}**  😬`,
+        g.stakeRecovered > 0 ? `*(recovered ${fmtMoney(g.stakeRecovered)} before failing)*` : ``,
+      ].filter(Boolean).join('\n')
+    })
+    return
+  }
 
   await post({
     room,
@@ -412,7 +581,24 @@ async function _onTimeout (uuid, room, phase, deps) {
   if (!g || g.phase !== phase) return
 
   const bet = g.bet
+  const isPunishment = g.mode === 'punishment'
+  const netLoss = isPunishment ? bet - g.stakeRecovered : bet
   deleteGame(room, uuid)
+
+  if (isPunishment) {
+    await post({
+      room,
+      message: [
+        `⏱💨  **TIME'S UP!**`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `<@uid:${uuid}> fell asleep on the punishment bus 🚌😴`,
+        ``,
+        `Forfeited: **${fmtMoney(netLoss)}**`,
+        g.stakeRecovered > 0 ? `*(recovered ${fmtMoney(g.stakeRecovered)} before timing out)*` : ``,
+      ].filter(Boolean).join('\n')
+    })
+    return
+  }
 
   await post({
     room,

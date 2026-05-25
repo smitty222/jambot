@@ -9,6 +9,7 @@ import { fetchCurrentUsers } from '../../../utils/API.js'
 import { pickHorseImageUrl } from '../utils/images.js'
 
 import { bus, safeCall } from '../service.js'
+import { startPunishmentGame } from '../../ridethebus/rideTheBus.js'
 import { runRace, LEGS } from '../simulation.js'
 import { getCurrentOdds, lockToteBoardOdds } from '../utils/odds.js'
 import { renderProgress, renderRacecard } from '../utils/progress.js'
@@ -683,7 +684,7 @@ if (!globalThis[LISTENER_GUARD_KEY]) {
     }
   })
 
-  bus.on('raceFinished', async ({ winnerIdx, raceState, payouts, payoutDetails, ownerBonus, finishDistance }) => {
+  bus.on('raceFinished', async ({ winnerIdx, officialOrder, horses: raceHorses, raceState, payouts, payoutDetails, ownerBonus, finishDistance }) => {
     try {
       await postGif('finish')
 
@@ -803,6 +804,17 @@ if (!globalThis[LISTENER_GUARD_KEY]) {
           room: ROOM,
           message: `🎉 ${name} receives an owner bonus of **$${ownerBonus.amount}**`
         }])
+      }
+      // Punishment bus for last-place horse owner
+      if (Array.isArray(officialOrder) && officialOrder.length > 1 && Array.isArray(raceHorses)) {
+        const lastIdx = officialOrder[officialOrder.length - 1]
+        const lastHorse = raceHorses[lastIdx]
+        const loserUUID = lastHorse?.ownerId
+        if (loserUUID) {
+          const loserNick = await safeCall(getUserNickname, [loserUUID]).catch(() => null)
+          await safeCall(postMessage, [{ room: ROOM, message: `🚌 <@uid:${loserUUID}> **${lastHorse.name}** finished dead last — straight to the punishment bus!` }])
+          await startPunishmentGame(loserUUID, loserNick, ROOM)
+        }
       }
     } catch (err) {
       console.error('[raceFinished] error:', err)

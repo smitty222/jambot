@@ -4,6 +4,8 @@ import { postMessage } from '../../libs/cometchat.js'
 import { getCurrentDJUUIDs } from '../../libs/bot.js'
 import { getTheme } from '../../utils/themeManager.js'
 import { getCompactEquippedTitleTag } from '../../database/dbprestige.js'
+import { getUserNickname } from '../../utils/nickname.js'
+import { startPunishmentGame } from '../ridethebus/rideTheBus.js'
 
 // ───────────────────────────────────────────────────────────
 // In-memory state (swap to DB later if you want persistence)
@@ -188,6 +190,9 @@ export async function handleSongChainPlay (bot) {
           `<@uid:${djUUID}> played *${trackName}* by *${artistName}* — no shared words with the previous song.\n` +
           '🧱 A new chain starts from here!'
       })
+
+      const breakerNick = await getUserNickname(djUUID).catch(() => null)
+      await startPunishmentGame(djUUID, breakerNick, bot.roomUUID)
 
       lastSong = curr
       return

@@ -153,6 +153,8 @@ export const env = {
   rtbMaxBet: getNumberEnv('RTB_MAX_BET', 10_000),
   rtbAnswerSecs: getNumberEnv('RTB_ANSWER_SECS', 30),
   rtbDecideSecs: getNumberEnv('RTB_DECIDE_SECS', 30),
+  rtbPunishPct: getNumberEnv('RTB_PUNISH_PCT', 5),
+  rtbPunishMin: getNumberEnv('RTB_PUNISH_MIN', 50),
 
   // Craps tuning
   crapsMinBet: getNumberEnv('CRAPS_MIN_BET', 5),

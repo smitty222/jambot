@@ -324,6 +324,8 @@ export async function runRace ({ horses, horseBets }) {
 
   bus.emit('raceFinished', {
     winnerIdx,
+    officialOrder,
+    horses,
     raceState: state.map(x => ({ index: x.index, name: x.name, progress: x.progress })),
     payouts,
     payoutDetails,
