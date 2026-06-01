@@ -23,7 +23,6 @@ const CHAT_MSG_CHAR_LIMIT = Number(process.env.CHAT_MSG_CHAR_LIMIT || 1000)
 const baseHeaders = () => ({
   appid: process.env.CHAT_API_KEY,
   authtoken: process.env.CHAT_TOKEN,
-  apikey: process.env.CHAT_TOKEN,
   dnt: 1,
   origin: 'https://tt.live',
   referer: 'https://tt.live/',

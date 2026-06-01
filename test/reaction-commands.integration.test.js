@@ -74,4 +74,5 @@ test('dispatchWithRegistry routes /begonebitch through the reaction handlers', a
     { room: 'room-1', message: '@dj… nobody likes you.' },
     { room: 'room-1', message: '👋 BEGONE.' }
   ])
+  assert.ok(posted.length === 4 || (posted.length === 5 && posted[4].message.includes('Badge Unlocked')), 'unexpected extra messages')
 })

@@ -38,7 +38,8 @@ test('createMarchMadnessUpdateRunner posts live updates and suppresses duplicate
     },
     postMessage: async (msg) => posted.push(msg),
     getMarchMadnessLiveScores: async () => responses.shift(),
-    loadUpcomingMarchMadnessGames: async () => []
+    loadUpcomingMarchMadnessGames: async () => [],
+    isMarchMadnessUpdatesEnabled: () => true
   })
 
   await run()
@@ -169,7 +170,8 @@ test('createMarchMadnessUpdateRunner posts picks reminders before tipoff', async
       { id: 'g1', awayTeam: 'VCU', homeTeam: 'BYU', commenceTime: '2026-03-20T18:20:00-04:00' }
     ],
     leadMinutes: 30,
-    now: () => now
+    now: () => now,
+    isMarchMadnessUpdatesEnabled: () => true
   })
 
   await run()
@@ -195,7 +197,8 @@ test('createMarchMadnessUpdateRunner scopes pick reminder dedupe by room', async
     getMarchMadnessLiveScores: async () => 'No live NCAAB games right now.',
     loadUpcomingMarchMadnessGames: async () => games,
     leadMinutes: 30,
-    now: () => now
+    now: () => now,
+    isMarchMadnessUpdatesEnabled: () => true
   })
 
   const runRoomTwo = createMarchMadnessUpdateRunner({
@@ -205,7 +208,8 @@ test('createMarchMadnessUpdateRunner scopes pick reminder dedupe by room', async
     getMarchMadnessLiveScores: async () => 'No live NCAAB games right now.',
     loadUpcomingMarchMadnessGames: async () => games,
     leadMinutes: 30,
-    now: () => now
+    now: () => now,
+    isMarchMadnessUpdatesEnabled: () => true
   })
 
   await runRoomOne()

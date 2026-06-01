@@ -12,7 +12,8 @@ test('dispatchWithRegistry routes /status through the mod control handler', asyn
     isSongStatsEnabled: () => true,
     getGreetingState: () => ({ standardEnabled: false, aiEnabled: true }),
     isNowPlayingInfoBlurbEnabled: () => true,
-    getNowPlayingInfoBlurbTone: () => 'vibe'
+    getNowPlayingInfoBlurbTone: () => 'vibe',
+    isMarchMadnessUpdatesEnabled: () => true
   })
 
   const handled = await dispatchWithRegistry({

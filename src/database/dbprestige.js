@@ -1,6 +1,8 @@
 import db from './db.js'
 import { getCurrentMonthKey } from '../utils/monthKey.js'
 
+try { db.exec('ALTER TABLE prestige_profiles ADD COLUMN equippedBadgeKey TEXT') } catch { /* already exists */ }
+
 const BADGE_DEFS = {
   dj_streak_3: { label: 'Needle Drop', description: '3-song DJ streak', emoji: '🎚️' },
   dj_streak_5: { label: 'Crowd Mover', description: '5-song DJ streak', emoji: '🎧' },

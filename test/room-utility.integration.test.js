@@ -127,7 +127,7 @@ test('default /commands response exposes all major command hubs', async () => {
   assert.equal(posted.length, 1)
   assert.match(posted[0].message, /\/games/)
   assert.match(posted[0].message, /\/music/)
-  assert.match(posted[0].message, /\/commands queue/)
+  assert.match(posted[0].message, /\/queue/)
   assert.match(posted[0].message, /\/wallet/)
   assert.match(posted[0].message, /\/commands sports/)
   assert.match(posted[0].message, /\/commands crypto/)
