@@ -7,7 +7,7 @@ const startTimeStamp = Math.floor(Date.now() / 1000)
 // ────────────────────────────────────────────────────────────────
 // Tunables
 // ────────────────────────────────────────────────────────────────
-const HOST = `${process.env.CHAT_API_KEY}.apiclient-us.cometchat.io`
+const HOST = new URL(process.env.OPENCHAT_BASE_URL || 'https://openchat.prod.tt.fm').hostname
 const GROUP_PAGE_LIMIT = Number(process.env.CHAT_GROUP_PAGE_LIMIT ?? 50)
 const DM_PAGE_LIMIT = Number(process.env.CHAT_DM_PAGE_LIMIT ?? 100)
 const CONV_CACHE_TTL_MS = Number(process.env.CHAT_CONV_CACHE_TTL_MS ?? 10 * 60 * 1000) // 10m
@@ -33,7 +33,7 @@ const baseHeaders = () => ({
 // Pre-build the target URL for posting messages once.  Building a new URL
 // object on every call to postMessage incurs a small cost.  Since the
 // endpoint path is constant (v3.0/messages), we construct it up front.
-const MESSAGE_URL = buildUrl(`${process.env.CHAT_API_KEY}.apiclient-us.cometchat.io`, ['v3.0', 'messages'])
+const MESSAGE_URL = buildUrl(HOST, ['v3.0', 'messages'])
 
 // Reuse the default badge list across calls to avoid re-allocating arrays.
 const DEFAULT_BADGES = ['VERIFIED', 'STAFF']
