@@ -1,6 +1,7 @@
 // src/libs/openchat.js
 import { v4 as uuidv4 } from 'uuid'
 import { buildUrl, makeRequest } from '../utils/networking.js'
+import { toMessageArray } from '../utils/messageNormalizer.js'
 
 const startTimeStamp = Math.floor(Date.now() / 1000)
 
@@ -55,17 +56,6 @@ const normalizeHex = (v) => {
   return `#${s.toUpperCase()}`
 }
 
-function normalizeMessagesArray (res) {
-  const body = res?.data ?? res
-  if (Array.isArray(body)) return body
-  if (Array.isArray(body?.data?.data)) return body.data.data
-  if (Array.isArray(body?.data)) return body.data
-  if (Array.isArray(body?.messages)) return body.messages
-  if (Array.isArray(body?.items)) return body.items
-  if (Array.isArray(body?.results)) return body.results
-  if (body && typeof body === 'object' && (body.id || body.text || body.message)) return [body]
-  return []
-}
 
 const uniq = (arr) => Array.from(new Set(arr.filter(Boolean)))
 
@@ -312,10 +302,12 @@ export const joinChat = async (roomId) => {
 // ────────────────────────────────────────────────────────────────
 /* Conversations (DM) helpers */
 // ────────────────────────────────────────────────────────────────
-/**
- * TTL conversation cache: peerUid -> { cid, exp }
- */
+
+// Per-peer TTL cache: peerUid -> { cid, exp }
 const _convCache = new Map()
+// Bulk conversation map: peerUid -> conversationId, plus a fetch timestamp
+let _bulkConvMap = null
+let _bulkConvFetchedAt = 0
 
 function _getCachedConv (peerUid) {
   const rec = _convCache.get(peerUid)
@@ -326,15 +318,18 @@ function _getCachedConv (peerUid) {
   }
   return rec.cid ?? null
 }
+
 function _setCachedConv (peerUid, cid, ttlMs) {
   _convCache.set(peerUid, { cid: cid ?? null, exp: Date.now() + Math.max(1, ttlMs) })
 }
 
-function extractConversationId (items, botUid, peerUid) {
+function _buildConvMap (items, botUid) {
+  const map = new Map()
   for (const c of items) {
     const cid = c?.conversationId || c?.conversation_id || c?.id
     if (!cid) continue
-
+    const type = c?.conversationType || c?.type
+    if (type && String(type).toLowerCase() !== 'user') continue
     const peer =
       c?.conversationWith?.uid ||
       c?.withUser?.uid ||
@@ -342,71 +337,58 @@ function extractConversationId (items, botUid, peerUid) {
       (Array.isArray(c?.participants)
         ? c.participants.find(p => p?.uid && p.uid !== botUid)?.uid
         : null)
-
-    const type = c?.conversationType || c?.type
-    if (type && String(type).toLowerCase() !== 'user') continue
-
-    if (!peerUid || peer === peerUid) return cid
-    if (String(cid).includes(peerUid) && String(cid).includes(botUid)) return cid
+    if (peer && peer !== botUid) map.set(peer, cid)
+    // Also index by conversationId components as fallback
+    const cidStr = String(cid)
+    if (cidStr.includes('_user_')) {
+      const parts = cidStr.split('_user_')
+      const other = parts[0] === botUid ? parts[1] : parts[0]
+      if (other && !map.has(other)) map.set(other, cid)
+    }
   }
-  return null
+  return map
+}
+
+async function _fetchBulkConversations (botUid, headers) {
+  const now = Date.now()
+  if (_bulkConvMap && (now - _bulkConvFetchedAt) < CONV_CACHE_TTL_MS) return _bulkConvMap
+
+  try {
+    const url = buildUrl(HOST, ['v3.0', 'users', botUid, 'conversations'], [
+      ['conversationType', 'user'],
+      ['limit', 200]
+    ])
+    const res = await makeRequest(url, { timeout: 5000 }, headers)
+    const items = toMessageArray(res)
+    _bulkConvMap = _buildConvMap(items, botUid)
+    _bulkConvFetchedAt = now
+  } catch (e) {
+    console.error('[openchat] bulk conversation fetch failed', e?.message || e)
+    if (!_bulkConvMap) _bulkConvMap = new Map()
+  }
+
+  return _bulkConvMap
 }
 
 async function lookupConversationId (peerUid) {
   if (!peerUid) return null
 
-  // Check TTL cache first
+  // 1. Per-peer TTL cache (fast path)
   const cached = _getCachedConv(peerUid)
   if (cached !== null) return cached
 
-  const headers = baseHeaders()
   const botUid = process.env.CHAT_USER_ID
+  const headers = baseHeaders()
   headers.onBehalfOf = botUid
 
-  const attempts = []
-  const add = (label, path, params) => attempts.push({
-    label, url: buildUrl(HOST, path, params)
-  })
+  // 2. Bulk fetch all conversations once, then look up in the resulting map.
+  //    This replaces the previous 4-attempt waterfall with a single API call
+  //    that is shared across all peer lookups.
+  const map = await _fetchBulkConversations(botUid, headers)
+  const cid = map.get(peerUid) ?? null
 
-  // Tight filters first
-  add('users/{bot}/conversations?withUser',
-    ['v3.0', 'users', botUid, 'conversations'],
-    [['conversationType', 'user'], ['withUser', peerUid], ['limit', 50]]
-  )
-  add('conversations?uid&withUser',
-    ['v3.0', 'conversations'],
-    [['conversationType', 'user'], ['uid', botUid], ['withUser', peerUid], ['limit', 50]]
-  )
-
-  // Opposite direction
-  add('users/{peer}/conversations?withUser',
-    ['v3.0', 'users', peerUid, 'conversations'],
-    [['conversationType', 'user'], ['withUser', botUid], ['limit', 50]]
-  )
-
-  // Broad list then filter client-side
-  add('users/{bot}/conversations (broad)',
-    ['v3.0', 'users', botUid, 'conversations'],
-    [['conversationType', 'user'], ['limit', 100]]
-  )
-
-  for (const a of attempts) {
-    try {
-      const res = await makeRequest(a.url, {}, headers)
-      const items = normalizeMessagesArray(res)
-      const cid = extractConversationId(items, botUid, peerUid)
-      if (cid) {
-        _setCachedConv(peerUid, cid, CONV_CACHE_TTL_MS)
-        return cid
-      }
-    } catch (e) {
-      console.error(`[CometChat] GET error (${a.label})`, e)
-    }
-  }
-
-  // Cache negative result briefly to avoid hammering
-  _setCachedConv(peerUid, null, CONV_NULL_TTL_MS)
-  return null
+  _setCachedConv(peerUid, cid, cid ? CONV_CACHE_TTL_MS : CONV_NULL_TTL_MS)
+  return cid
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -433,7 +415,7 @@ export const getMessages = async (
       ['category', 'message']
     ])
     const res = await makeRequest(url, { retries: 0 }, headers)
-    return normalizeMessagesArray(res)
+    return toMessageArray(res)
   }
 
   if (receiverType === 'user') {
@@ -471,7 +453,7 @@ export const getMessages = async (
           for (const a of phase1) {
             try {
               const res = await makeRequest(a.url, {}, headers)
-              const out = normalizeMessagesArray(res)
+              const out = toMessageArray(res)
               merged = mergeUniqueById(merged, out)
             } catch (e) {
               console.error(`[CometChat] GET error (${a.label})`, e)
@@ -496,7 +478,7 @@ export const getMessages = async (
           for (const a of phase2) {
             try {
               const res = await makeRequest(a.url, {}, headers)
-              const out = normalizeMessagesArray(res)
+              const out = toMessageArray(res)
               merged = mergeUniqueById(merged, out)
             } catch (e) {
               console.error(`[CometChat] GET error (${a.label})`, e)
@@ -567,7 +549,7 @@ export const getMessages = async (
     for (const a of attempts) {
       try {
         const res = await makeRequest(a.url, {}, headers)
-        const out = normalizeMessagesArray(res)
+        const out = toMessageArray(res)
         if (out.length) return out
       } catch (e) {
         console.error(`[CometChat] GET error (${a.label})`, e)
@@ -639,4 +621,26 @@ export async function getDirectMessagesForPeers (peers = [], sinceByPeer = {}, d
   }
 
   return { byPeer, maxTsByPeer, flat }
+}
+
+// ────────────────────────────────────────────────────────────────
+/* Reactions */
+// ────────────────────────────────────────────────────────────────
+
+export async function addReaction (messageId, reaction) {
+  if (!messageId || !reaction) throw new Error('addReaction: messageId and reaction are required')
+  const url = buildUrl(HOST, ['v3.0', 'messages', String(messageId), 'reactions', String(reaction)])
+  return makeRequest(url, { method: 'POST' }, baseHeaders())
+}
+
+export async function removeReaction (messageId, reaction) {
+  if (!messageId || !reaction) throw new Error('removeReaction: messageId and reaction are required')
+  const url = buildUrl(HOST, ['v3.0', 'messages', String(messageId), 'reactions', String(reaction)])
+  return makeRequest(url, { method: 'DELETE' }, baseHeaders())
+}
+
+export async function getReactions (messageId) {
+  if (!messageId) throw new Error('getReactions: messageId is required')
+  const url = buildUrl(HOST, ['v3.0', 'messages', String(messageId), 'reactions'])
+  return makeRequest(url, {}, baseHeaders())
 }

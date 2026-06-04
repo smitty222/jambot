@@ -9,6 +9,7 @@ import {
   getDirectMessagesForPeers,
   getConfiguredDMPeers
 } from '../libs/openchat.js'
+import { normalizeMessages, getUid } from '../utils/messageNormalizer.js'
 import { logger } from '../utils/logging.js'
 import messageHandler from '../handlers/message.js'
 import {
@@ -114,69 +115,9 @@ function toSec (ts) {
   return n > 2e10 ? Math.floor(n / 1000) : Math.floor(n)
 }
 
-function normalizeMessages (raw) {
-  if (!raw) return []
-  const body = (raw && typeof raw === 'object' && 'data' in raw && !Array.isArray(raw.data))
-    ? raw.data
-    : raw
-  if (Array.isArray(body)) return body
-  if (Array.isArray(body.data)) return body.data
-  if (Array.isArray(body.messages)) return body.messages
-  if (Array.isArray(body.items)) return body.items
-  if (Array.isArray(body.results)) return body.results
-  if (Array.isArray(body?.data?.messages)) return body.data.messages
-  if (Array.isArray(body?.data?.items)) return body.data.items
-  if (Array.isArray(body?.result?.messages)) return body.result.messages
-  if (Array.isArray(body?.data?.data)) return body.data.data
-  if (typeof body === 'object' && (body.id || body.message || body.text)) return [body]
-  return []
-}
-
-// ───────────────────────────────────────────────────────────
-// Safe normaliser
-// ───────────────────────────────────────────────────────────
-function isMsg (m) {
-  return !!(m && (m.id || m._id || m.guid || m.messageId))
-}
-
-const getUid = (x) => {
-  if (!x) return null
-  if (typeof x === 'string') return x
-  return x.uid || x.id || x.user?.uid || x.user || null
-}
-
-const getSentAt = (m) => {
-  const c =
-    m?.sentAt ??
-    m?.sent_at ??
-    m?.timestamp ??
-    m?.sent_at_ms ??
-    m?.data?.sentAt ??
-    m?.data?.sent_at ??
-    0
-  return toSec(c)
-}
-
-export function safeNormalize (raw) {
-  const arr = Array.isArray(raw) ? raw : normalizeMessages(raw)
-  const filtered = arr.filter(isMsg)
-  return filtered.map((m) => {
-    const rawId = m.id ?? m._id ?? m.guid ?? m.messageId
-    const id = rawId != null ? String(rawId) : null
-    const senderUid = getUid(m.sender) ?? getUid(m.sender?.uid) ?? m.sender ?? null
-    const receiverUid = getUid(m.receiver) ?? m.receiver ?? null
-    const textRaw = m?.data?.text ?? m?.text ?? m?.message ?? ''
-    const text = typeof textRaw === 'string' ? textRaw.trim() : ''
-    return {
-      id,
-      sender: senderUid,
-      receiver: receiverUid,
-      text,
-      sentAtSec: getSentAt(m) || 0,
-      conversationId: m.conversationId || m.conversation_id || null
-    }
-  })
-}
+// safeNormalize is kept as a re-export for backward compatibility with any
+// external callers; internally bot.js now uses normalizeMessages directly.
+export { normalizeMessages as safeNormalize }
 
 // ───────────────────────────────────────────────────────────
 // In-memory TTL de-dupe
@@ -679,7 +620,7 @@ export class Bot {
         logger.error('Group message fetch timeout or error', { err })
         raw = []
       }
-      const msgs = safeNormalize(raw)
+      const msgs = normalizeMessages(raw)
       let maxSec = sinceSec
       let processed = 0
       const batchSize = msgs.length
@@ -757,24 +698,17 @@ export class Bot {
       }
       const { maxTsByPeer, flat } = dmFetchResult
 
-      rawMessages = Array.isArray(flat) ? flat : []
-      if (rawMessages.length > 1) {
-        rawMessages.sort((a, b) => getSentAt(a) - getSentAt(b))
-      }
-      if (rawMessages.length > DM_MAX_MERGED) {
-        rawMessages = rawMessages.slice(rawMessages.length - DM_MAX_MERGED)
-      }
-
       for (const p of Object.keys(maxTsByPeer || {})) {
         const next = Math.max(globalSince, toSec(maxTsByPeer[p] || 0) + 1)
         this._dmSinceByPeer[p] = next
         if (next > maxGlobal) maxGlobal = next
       }
 
-      const msgs = safeNormalize(rawMessages)
-      if (msgs.length > 1) {
-        msgs.sort((a, b) => a.sentAtSec - b.sentAtSec)
-      }
+      rawMessages = Array.isArray(flat) ? flat : []
+      // Normalize first, then sort and cap — avoids a redundant pre-sort on raw objects
+      let msgs = normalizeMessages(rawMessages)
+      if (msgs.length > 1) msgs.sort((a, b) => a.sentAtSec - b.sentAtSec)
+      if (msgs.length > DM_MAX_MERGED) msgs = msgs.slice(msgs.length - DM_MAX_MERGED)
 
       let processed = 0
       const batchSize = msgs.length
