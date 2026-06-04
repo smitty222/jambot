@@ -1,5 +1,5 @@
 // src/handlers/horse/horsemanager.js
-import { postMessage } from '../../libs/cometchat.js'
+import { postMessage } from '../../libs/openchat.js'
 import { getUserNickname } from '../../utils/nickname.js'
 import { getUserWallet, debitGameBet, creditGameWin, getProgressiveWealthFee } from '../../database/dbwalletmanager.js'
 import { getAllHorses, getUserHorses, insertHorse, deleteHorseOwnedByUser } from '../../database/dbhorses.js'

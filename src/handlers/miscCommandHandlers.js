@@ -1,4 +1,4 @@
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 import { handleTriviaStart, handleTriviaEnd, handleTriviaSubmit, displayTriviaInfo } from '../handlers/triviaCommands.js'
 import { storeItems } from '../libs/jamflowStore.js'
 import { askMagic8Ball } from './magic8Ball.js'

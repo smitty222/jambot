@@ -1,5 +1,5 @@
 // src/handlers/rideTheBusCommands.js
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 import { getSenderNickname } from '../utils/helpers.js'
 import {
   startGame,

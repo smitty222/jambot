@@ -1,5 +1,5 @@
 // src/database/dbtheme.js
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 import { isUserAuthorized, updateRoomInfo } from '../utils/API.js'
 import { getTheme, setTheme, removeTheme, normalizeTheme } from '../utils/themeManager.js'
 

@@ -2,7 +2,7 @@
 //
 // Handlers for economy overview, net worth display, and monthly/career leaderboards.
 
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 import { logger } from '../utils/logging.js'
 import { getUserNicknameByUuid } from '../utils/API.js'
 import {

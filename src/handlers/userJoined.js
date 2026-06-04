@@ -1,5 +1,5 @@
 // userJoined.js
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 import { logger } from '../utils/logging.js'
 import * as themeManager from '../utils/themeManager.js'
 import { askQuestion } from '../libs/ai.js'
@@ -231,7 +231,13 @@ const handleUserJoinedWithStatePatch = async (payload) => {
     if (uuid) {
       try {
         const joinPrestige = syncUserJoinPrestige({ userUUID: uuid })
-        const joinLines = formatPrestigeUnlockLines(joinPrestige)
+        // party_starter is awarded to every user who joins when there are 10+ daily visitors,
+        // so announcing it per-user spams chat. Award it silently instead.
+        const announcePrestige = {
+          badges: joinPrestige.badges.filter(b => b !== 'party_starter'),
+          titles: joinPrestige.titles
+        }
+        const joinLines = formatPrestigeUnlockLines(announcePrestige)
         if (joinLines.length) {
           await postMessage({ room: ROOM, message: `<@uid:${uuid}>\n${joinLines.join('\n')}` })
         }

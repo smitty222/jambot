@@ -1,6 +1,6 @@
 // src/games/f1race/raceManager.js
 
-import { postMessage } from '../../libs/cometchat.js'
+import { postMessage } from '../../libs/openchat.js'
 import { getUserWallet, creditGameWin, applyGameDeltaInTransaction } from '../../database/dbwalletmanager.js'
 import { getUserNickname } from '../../utils/nickname.js'
 import { getTeamByOwner } from '../../database/dbteams.js'

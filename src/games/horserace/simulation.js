@@ -6,7 +6,7 @@ import { bus, safeCall } from './service.js'
 import { creditGameWin } from '../../database/dbwalletmanager.js'
 import { updateHorseStats } from '../../database/dbhorses.js'
 import { maybeInductHorse } from '../../database/dbhorsehof.js'
-import { postMessage } from '../../libs/cometchat.js'
+import { postMessage } from '../../libs/openchat.js'
 import { getUserNickname } from '../../utils/nickname.js'
 
 const ROOM = process.env.ROOM_UUID

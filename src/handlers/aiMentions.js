@@ -1,6 +1,6 @@
 // src/handlers/aiMentionHandler.js
 
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 import { askQuestion, setCurrentSong } from '../libs/ai.js'
 import { logger as defaultLogger } from '../utils/logging.js'
 import { getMLBScores, getMLBStandings, getNBAScores, getNBAStandings, getNBAPlayoffSeries, getNHLScores, getNHLStandings, getNHLPlayoffSeries } from '../utils/API.js'

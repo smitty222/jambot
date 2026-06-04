@@ -1,4 +1,4 @@
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 import { handleSlotsCommand } from './slots.js'
 import { createSlotsRegistryHandler as createSlotsRegistryHandlerBase } from './handlerFactories.js'
 

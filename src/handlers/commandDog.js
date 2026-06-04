@@ -1,5 +1,5 @@
 // src/handlers/commandDog.js
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 import { getRandomDogImage } from '../utils/API.js'
 import { env } from '../config.js'
 import { logger } from '../utils/logging.js'

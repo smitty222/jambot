@@ -3,7 +3,7 @@
 // Handlers for /albumadd, /albumremove, /albumlist
 // These manage the "albums to queue on album Monday" list stored in SQLite.
 
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 import { logger } from '../utils/logging.js'
 import { getSpotifyAlbumInfo, getUserNicknameByUuid } from '../utils/API.js'
 import { addQueuedAlbum, removeQueuedAlbum, listQueuedAlbums } from '../database/dbalbumqueue.js'

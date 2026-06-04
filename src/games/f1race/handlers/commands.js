@@ -1,6 +1,6 @@
 // src/games/f1race/handlers/commands.js
 
-import { postMessage } from '../../../libs/cometchat.js'
+import { postMessage } from '../../../libs/openchat.js'
 import { readdirSync } from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'

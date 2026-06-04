@@ -1,6 +1,6 @@
 // src/games/horserace/handlers/commands.js
 
-import { postMessage } from '../../../libs/cometchat.js'
+import { postMessage } from '../../../libs/openchat.js'
 import { getUserWallet, debitGameBet } from '../../../database/dbwalletmanager.js'
 import { syncHorsePrestige, getBadgeDefinition } from '../../../database/dbprestige.js'
 import { getUserNickname } from '../../../utils/nickname.js'

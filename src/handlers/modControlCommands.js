@@ -1,4 +1,4 @@
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 import { isUserAuthorized } from '../utils/API.js'
 import { enableSongStats, disableSongStats, isSongStatsEnabled } from '../utils/voteCounts.js'
 import {

@@ -1,4 +1,4 @@
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 import { syncBegonePrestige, syncCocktailPrestige, formatPrestigeUnlockLines } from '../database/dbprestige.js'
 import { getCurrentDJ } from '../libs/bot.js'
 import { getUserWallet, removeFromUserWallet } from '../database/dbwalletmanager.js'

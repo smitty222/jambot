@@ -4,7 +4,7 @@
 // command registry. Each command group lives in its own focused file; this
 // file is purely responsible for connecting them to the dispatcher.
 
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 import { env } from '../config.js'
 import { logger } from '../utils/logging.js'
 import { resolveDispatchCommand as resolveDispatchCommandBase } from './commandRouting.js'

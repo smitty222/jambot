@@ -3,7 +3,7 @@
 // Handlers for /profile, /djstreak, /badges, /titles, /title
 // User prestige and progression display commands.
 
-import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
+import { postMessage, sendDirectMessage } from '../libs/openchat.js'
 import { getDjStreakStatus, getUserWallet, getNetWorthForUser, getLifetimeNet, resolveUserByArg } from '../database/dbwalletmanager.js'
 import {
   getEquippedTitle,

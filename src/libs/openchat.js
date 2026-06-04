@@ -1,4 +1,4 @@
-// src/libs/cometchat.js
+// src/libs/openchat.js
 import { v4 as uuidv4 } from 'uuid'
 import { buildUrl, makeRequest } from '../utils/networking.js'
 
@@ -252,7 +252,8 @@ async function _sendSingle (options) {
   }
 
   // Use the pre-built MESSAGE_URL to avoid reconstructing the URL each time.
-  return makeRequest(MESSAGE_URL, { method: 'POST', body: JSON.stringify(payload) }, headers)
+  // 5 s timeout: a stalled send fails fast rather than blocking the handler for 10 s.
+  return makeRequest(MESSAGE_URL, { method: 'POST', body: JSON.stringify(payload), timeout: 5000 }, headers)
 }
 
 /**
@@ -431,7 +432,7 @@ export const getMessages = async (
       ['fromTimestamp', since],
       ['category', 'message']
     ])
-    const res = await makeRequest(url, {}, headers)
+    const res = await makeRequest(url, { retries: 0 }, headers)
     return normalizeMessagesArray(res)
   }
 
@@ -586,14 +587,16 @@ export const getMessages = async (
 /**
  * Return the configured DM peers from env.
  * CHAT_DM_PEERS takes precedence, then CHAT_OWNER_ID / CHAT_TEST_USER_ID / CHAT_REPLY_ID.
+ * Result is memoized — env vars don't change at runtime.
  */
+let _configuredDMPeers = null
 export function getConfiguredDMPeers () {
+  if (_configuredDMPeers) return _configuredDMPeers
   const envList = parseEnvList(process.env.CHAT_DM_PEERS)
-  if (envList.length) return envList
-  return uniq(
-    [process.env.CHAT_OWNER_ID, process.env.CHAT_TEST_USER_ID, process.env.CHAT_REPLY_ID]
-      .filter(Boolean)
-  )
+  _configuredDMPeers = envList.length
+    ? envList
+    : uniq([process.env.CHAT_OWNER_ID, process.env.CHAT_TEST_USER_ID, process.env.CHAT_REPLY_ID].filter(Boolean))
+  return _configuredDMPeers
 }
 
 /**

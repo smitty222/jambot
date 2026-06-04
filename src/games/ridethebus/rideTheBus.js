@@ -1,5 +1,5 @@
 // src/games/ridethebus/rideTheBus.js
-import { postMessage } from '../../libs/cometchat.js'
+import { postMessage } from '../../libs/openchat.js'
 import { getUserWallet, debitGameBet, creditGameWin } from '../../database/dbwalletmanager.js'
 import { env } from '../../config.js'
 

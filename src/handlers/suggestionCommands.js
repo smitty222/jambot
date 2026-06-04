@@ -1,4 +1,4 @@
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 import { fetchSongData, getSimilarTracks, searchSpotify } from '../utils/API.js'
 import { readRecentSongs } from '../database/dbrecentsongsmanager.js'
 

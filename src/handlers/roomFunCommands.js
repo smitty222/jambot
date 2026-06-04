@@ -1,4 +1,4 @@
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 import { getCurrentDJ, getCurrentDJUUIDs } from '../libs/bot.js'
 import { markUser, getMarkedUser } from '../utils/removalQueue.js'
 import { startPaidSpotlight } from './spotlight.js'

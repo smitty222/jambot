@@ -1,6 +1,6 @@
 // src/database/dblotterymanager.js
 import db from './db.js'
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 // Use the standalone nickname util instead of importing from the
 // message handler. Avoids circular dependencies and simplifies testing.
 import { getUserNickname } from '../utils/nickname.js'

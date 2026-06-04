@@ -1,5 +1,5 @@
 // src/handlers/addMoneyHandler.js
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 import { addDollarsByUUID } from '../database/dbwalletmanager.js'
 
 const ROOM = process.env.ROOM_UUID

@@ -1,4 +1,4 @@
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 import { getTriviaQuestions, decodeHtml } from '../utils/API.js'
 import { getCompactEquippedTitleTag, syncTriviaPrestige, formatPrestigeUnlockLines } from '../database/dbprestige.js'
 import { logger } from '../utils/logging.js'

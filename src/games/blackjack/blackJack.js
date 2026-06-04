@@ -1,7 +1,7 @@
 // src/games/blackjack/blackJack.js
 import { getUserWallet, debitGameBet, creditGameWin } from '../../database/dbwalletmanager.js'
 import { syncBlackjackPrestige, formatPrestigeUnlockLines } from '../../database/dbprestige.js'
-import { postMessage } from '../../libs/cometchat.js'
+import { postMessage } from '../../libs/openchat.js'
 import { getUserNickname } from '../../utils/nickname.js'
 
 // ─────────────────────────────────────────────────────────────

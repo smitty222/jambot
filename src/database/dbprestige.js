@@ -3,6 +3,49 @@ import { getCurrentMonthKey } from '../utils/monthKey.js'
 
 try { db.exec('ALTER TABLE prestige_profiles ADD COLUMN equippedBadgeKey TEXT') } catch { /* already exists */ }
 
+// ── Prepared statements (compiled once at module load, reused on every call) ─
+const stmtInsertBadge = db.prepare(`
+  INSERT OR IGNORE INTO prestige_badges (userUUID, badgeKey, source, meta, expiresAt)
+  VALUES (?, ?, ?, ?, ?)
+`)
+const stmtInsertTitle = db.prepare(`
+  INSERT OR IGNORE INTO prestige_titles (userUUID, titleKey, source, meta, expiresAt)
+  VALUES (?, ?, ?, ?, ?)
+`)
+const stmtGetEquippedTitleKey = db.prepare(
+  'SELECT equippedTitleKey FROM prestige_profiles WHERE userUUID = ?'
+)
+const stmtCheckTitleOwned = db.prepare(`
+  SELECT 1 FROM prestige_titles
+  WHERE userUUID = ? AND titleKey = ?
+  AND (expiresAt IS NULL OR expiresAt > CURRENT_TIMESTAMP)
+`)
+const stmtUpsertEquippedTitle = db.prepare(`
+  INSERT INTO prestige_profiles (userUUID, equippedTitleKey, updatedAt)
+  VALUES (?, ?, CURRENT_TIMESTAMP)
+  ON CONFLICT(userUUID) DO UPDATE SET
+    equippedTitleKey = excluded.equippedTitleKey,
+    updatedAt = CURRENT_TIMESTAMP
+`)
+const stmtGetEquippedBadgeKey = db.prepare(
+  'SELECT equippedBadgeKey FROM prestige_profiles WHERE userUUID = ?'
+)
+const stmtCheckBadgeOwned = db.prepare(`
+  SELECT 1 FROM prestige_badges
+  WHERE userUUID = ? AND badgeKey = ?
+  AND (expiresAt IS NULL OR expiresAt > CURRENT_TIMESTAMP)
+`)
+const stmtUpsertEquippedBadgeNull = db.prepare(`
+  INSERT INTO prestige_profiles (userUUID, equippedBadgeKey, updatedAt)
+  VALUES (?, NULL, CURRENT_TIMESTAMP)
+  ON CONFLICT (userUUID) DO UPDATE SET equippedBadgeKey = NULL, updatedAt = CURRENT_TIMESTAMP
+`)
+const stmtUpsertEquippedBadge = db.prepare(`
+  INSERT INTO prestige_profiles (userUUID, equippedBadgeKey, updatedAt)
+  VALUES (?, ?, CURRENT_TIMESTAMP)
+  ON CONFLICT (userUUID) DO UPDATE SET equippedBadgeKey = ?, updatedAt = CURRENT_TIMESTAMP
+`)
+
 const BADGE_DEFS = {
   dj_streak_3: { label: 'Needle Drop', description: '3-song DJ streak', emoji: '🎚️' },
   dj_streak_5: { label: 'Crowd Mover', description: '5-song DJ streak', emoji: '🎧' },
@@ -106,10 +149,7 @@ export function awardBadge (userUUID, badgeKey, { source = null, meta = null, ex
   const def = getBadgeDefinition(badgeKey)
   if (!userUUID || !def) return false
 
-  const result = db.prepare(`
-    INSERT OR IGNORE INTO prestige_badges (userUUID, badgeKey, source, meta, expiresAt)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(
+  const result = stmtInsertBadge.run(
     String(userUUID),
     String(badgeKey),
     source,
@@ -271,10 +311,7 @@ export function awardTitle (userUUID, titleKey, { source = null, meta = null, ex
   const def = getTitleDefinition(titleKey)
   if (!userUUID || !def) return false
 
-  const result = db.prepare(`
-    INSERT OR IGNORE INTO prestige_titles (userUUID, titleKey, source, meta, expiresAt)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(
+  const result = stmtInsertTitle.run(
     String(userUUID),
     String(titleKey),
     source,
@@ -283,7 +320,7 @@ export function awardTitle (userUUID, titleKey, { source = null, meta = null, ex
   )
 
   if (result.changes > 0) {
-    const profile = db.prepare('SELECT equippedTitleKey FROM prestige_profiles WHERE userUUID = ?').get(String(userUUID))
+    const profile = stmtGetEquippedTitleKey.get(String(userUUID))
     if (!profile?.equippedTitleKey) {
       equipTitle(String(userUUID), String(titleKey))
     }
@@ -296,33 +333,17 @@ export function equipTitle (userUUID, titleKey = null) {
   if (!userUUID) return false
 
   if (titleKey) {
-    const row = db.prepare(`
-      SELECT 1
-      FROM prestige_titles
-      WHERE userUUID = ?
-        AND titleKey = ?
-        AND (expiresAt IS NULL OR expiresAt > CURRENT_TIMESTAMP)
-    `).get(String(userUUID), String(titleKey))
+    const row = stmtCheckTitleOwned.get(String(userUUID), String(titleKey))
     if (!row) return false
   }
 
-  db.prepare(`
-    INSERT INTO prestige_profiles (userUUID, equippedTitleKey, updatedAt)
-    VALUES (?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(userUUID) DO UPDATE SET
-      equippedTitleKey = excluded.equippedTitleKey,
-      updatedAt = CURRENT_TIMESTAMP
-  `).run(String(userUUID), titleKey ? String(titleKey) : null)
+  stmtUpsertEquippedTitle.run(String(userUUID), titleKey ? String(titleKey) : null)
 
   return true
 }
 
 export function getEquippedTitle (userUUID) {
-  const row = db.prepare(`
-    SELECT equippedTitleKey
-    FROM prestige_profiles
-    WHERE userUUID = ?
-  `).get(String(userUUID))
+  const row = stmtGetEquippedTitleKey.get(String(userUUID))
 
   if (!row?.equippedTitleKey) return null
   const def = getTitleDefinition(row.equippedTitleKey)
@@ -346,11 +367,7 @@ function compactLabel (label, maxLen = 8) {
 }
 
 export function getEquippedBadge (userUUID) {
-  const row = db.prepare(`
-    SELECT equippedBadgeKey
-    FROM prestige_profiles
-    WHERE userUUID = ?
-  `).get(String(userUUID))
+  const row = stmtGetEquippedBadgeKey.get(String(userUUID))
 
   if (!row?.equippedBadgeKey) return null
   const def = getBadgeDefinition(row.equippedBadgeKey)
@@ -359,27 +376,14 @@ export function getEquippedBadge (userUUID) {
 
 export function equipBadge (userUUID, badgeKey) {
   if (badgeKey === null) {
-    db.prepare(`
-      INSERT INTO prestige_profiles (userUUID, equippedBadgeKey, updatedAt)
-      VALUES (?, NULL, CURRENT_TIMESTAMP)
-      ON CONFLICT (userUUID) DO UPDATE SET equippedBadgeKey = NULL, updatedAt = CURRENT_TIMESTAMP
-    `).run(String(userUUID))
+    stmtUpsertEquippedBadgeNull.run(String(userUUID))
     return true
   }
 
-  const owned = db.prepare(`
-    SELECT 1 FROM prestige_badges
-    WHERE userUUID = ? AND badgeKey = ?
-    AND (expiresAt IS NULL OR expiresAt > CURRENT_TIMESTAMP)
-  `).get(String(userUUID), String(badgeKey))
-
+  const owned = stmtCheckBadgeOwned.get(String(userUUID), String(badgeKey))
   if (!owned) return false
 
-  db.prepare(`
-    INSERT INTO prestige_profiles (userUUID, equippedBadgeKey, updatedAt)
-    VALUES (?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT (userUUID) DO UPDATE SET equippedBadgeKey = ?, updatedAt = CURRENT_TIMESTAMP
-  `).run(String(userUUID), String(badgeKey), String(badgeKey))
+  stmtUpsertEquippedBadge.run(String(userUUID), String(badgeKey), String(badgeKey))
 
   return true
 }

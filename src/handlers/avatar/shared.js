@@ -2,7 +2,7 @@ import { env } from '../../config.js'
 import { getAvatarsBySlugs } from '../../database/dbavatars.js'
 import { updateUserAvatar } from '../../utils/API.js'
 import { logger } from '../../utils/logging.js'
-import { setChatIdentity } from '../../libs/cometchat.js'
+import { setChatIdentity } from '../../libs/openchat.js'
 
 export const userTokenMap = {
   '072b0bb3-518e-4422-97fd-13dc53e8ae7e': env.ianUserToken,

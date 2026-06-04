@@ -6,7 +6,7 @@
 // isolating DM handling in its own file, we reduce the size of
 // `message.js` and make the codebase easier to maintain.
 
-import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
+import { postMessage, sendDirectMessage } from '../libs/openchat.js'
 import { env } from '../config.js'
 import { logger } from '../utils/logging.js'
 import { isUserAuthorized } from '../utils/API.js'

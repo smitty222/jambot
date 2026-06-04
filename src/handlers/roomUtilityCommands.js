@@ -1,4 +1,4 @@
-import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
+import { postMessage, sendDirectMessage } from '../libs/openchat.js'
 import { isUserAuthorized, updateRoomInfo } from '../utils/API.js'
 import { env } from '../config.js'
 import { buildSportsInfoMessage } from './sportsCommands.js'

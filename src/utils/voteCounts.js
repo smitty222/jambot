@@ -1,6 +1,6 @@
 // votecounts.js
 
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 import { fetchRecentSongs, fetchUserData, fetchCurrentUsers } from './API.js'
 import db from '../database/db.js'
 import { syncRoomFavoritePrestige, formatPrestigeUnlockLines } from '../database/dbprestige.js'

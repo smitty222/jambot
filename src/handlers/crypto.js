@@ -6,7 +6,7 @@
 // described in the help text below. This module relies on the dbcrypto and
 // cryptoPrice helpers for persistence and external API access respectively.
 
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 import {
   addPosition,
   reducePosition,

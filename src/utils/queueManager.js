@@ -1,6 +1,17 @@
 // src/libs/queueManager.js
 import db from '../database/db.js'
 
+// ── Prepared statements (compiled once at module load) ────────────────────────
+const stmtGetNickname = db.prepare('SELECT nickname FROM users WHERE uuid = ?')
+const stmtGetQueue = db.prepare('SELECT userId, username, joinedAt FROM dj_queue ORDER BY id ASC')
+const stmtGetFirst = db.prepare('SELECT userId, username, joinedAt FROM dj_queue ORDER BY id ASC LIMIT 1')
+const stmtGetFirstFull = db.prepare('SELECT id, userId, username, joinedAt FROM dj_queue ORDER BY id ASC LIMIT 1')
+const stmtInsertQueue = db.prepare('INSERT OR IGNORE INTO dj_queue (userId, username, joinedAt) VALUES (?, ?, ?)')
+const stmtGetQueueUser = db.prepare('SELECT username FROM dj_queue WHERE userId = ? LIMIT 1')
+const stmtDeleteUser = db.prepare('DELETE FROM dj_queue WHERE userId = ?')
+const stmtDeleteById = db.prepare('DELETE FROM dj_queue WHERE id = ?')
+const stmtClearQueue = db.prepare('DELETE FROM dj_queue')
+
 // QueueManager manages the DJ queue stored in the dj_queue table.
 // It exposes helpers to inspect, join, advance, and leave.
 
@@ -21,7 +32,7 @@ export class QueueManager {
 
     // Fallback to DB users table
     try {
-      const row = db.prepare('SELECT nickname FROM users WHERE uuid = ?').get(userId)
+      const row = stmtGetNickname.get(userId)
       if (row?.nickname) return row.nickname
     } catch (_) {}
 
@@ -31,37 +42,20 @@ export class QueueManager {
 
   // Entire queue, oldest first
   async getQueue () {
-    const rows = db.prepare(`
-      SELECT userId, username, joinedAt
-      FROM dj_queue
-      ORDER BY id ASC
-    `).all()
-    return rows
+    return stmtGetQueue.all()
   }
 
   // Peek at who's first in line (but do NOT remove)
   async getCurrentUser () {
-    const user = db.prepare(`
-      SELECT userId, username, joinedAt
-      FROM dj_queue
-      ORDER BY id ASC
-      LIMIT 1
-    `).get()
-    return user || null
+    return stmtGetFirst.get() || null
   }
 
   // Add a user if they're not already queued
   async joinQueue (userId) {
     const username = await this.resolveUsername(userId)
 
-    const info = db.prepare(`
-      INSERT OR IGNORE INTO dj_queue (userId, username, joinedAt)
-      VALUES (?, ?, ?)
-    `).run(userId, username, new Date().toISOString())
-
-    const inserted = db.prepare(
-      'SELECT username FROM dj_queue WHERE userId = ? LIMIT 1'
-    ).get(userId)
+    const info = stmtInsertQueue.run(userId, username, new Date().toISOString())
+    const inserted = stmtGetQueueUser.get(userId)
 
     if (info.changes === 0) {
       return {
@@ -78,9 +72,7 @@ export class QueueManager {
 
   // Remove ALL rows for a given userId
   async leaveQueue (userId) {
-    const info = db.prepare(
-      'DELETE FROM dj_queue WHERE userId = ?'
-    ).run(userId)
+    const info = stmtDeleteUser.run(userId)
     return info.changes > 0
   }
 
@@ -89,12 +81,7 @@ export class QueueManager {
   // - Remove them from dj_queue
   // - RETURN THAT USER (this is the one we are promoting)
   async advanceQueue () {
-    const first = db.prepare(`
-      SELECT id, userId, username, joinedAt
-      FROM dj_queue
-      ORDER BY id ASC
-      LIMIT 1
-    `).get()
+    const first = stmtGetFirstFull.get()
 
     if (!first) {
       return null
@@ -102,9 +89,7 @@ export class QueueManager {
 
     // delete just that row (id-based delete so we don't accidentally
     // wipe duplicate entries if they somehow exist)
-    db.prepare(
-      'DELETE FROM dj_queue WHERE id = ?'
-    ).run(first.id)
+    stmtDeleteById.run(first.id)
 
     return {
       userId: first.userId,
@@ -115,7 +100,7 @@ export class QueueManager {
 
   // Utility: clear queue
   async clearQueue () {
-    db.prepare('DELETE FROM dj_queue').run()
+    stmtClearQueue.run()
   }
 
   // Is this user currently first?

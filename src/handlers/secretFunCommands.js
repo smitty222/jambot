@@ -1,4 +1,4 @@
-import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
+import { postMessage, sendDirectMessage } from '../libs/openchat.js'
 import { isUserAuthorized } from '../utils/API.js'
 
 const SECRET_MESSAGE = 'Sssshhhhhh be very quiet. These are top secret\n- /bark\n- /barkbark\n- /djbeers\n- /getdjdrunk\n- /jam\n- /ass\n- /azz\n- /cam\n- /shirley\n- /berad\n- /ello\n- /art\n- /ello\n- /allen\n- /art'

@@ -8,7 +8,7 @@ import {
   sendDirectMessage,
   getDirectMessagesForPeers,
   getConfiguredDMPeers
-} from '../libs/cometchat.js'
+} from '../libs/openchat.js'
 import { logger } from '../utils/logging.js'
 import messageHandler from '../handlers/message.js'
 import {
@@ -50,6 +50,7 @@ const SEEN_MAX = env.botSeenMax
 const DM_MAX_MERGED = env.botDmMaxMerged
 const POLL_YIELD_EVERY = env.botPollYieldEvery
 const STARTUP_BACKLOG_GRACE_S = env.botStartupGraceS
+const GROUP_FETCH_TIMEOUT_MS = env.groupFetchTimeoutMs
 
 // ───────────────────────────────────────────────────────────
 // Ephemeral baseline & identity
@@ -160,7 +161,8 @@ export function safeNormalize (raw) {
   const arr = Array.isArray(raw) ? raw : normalizeMessages(raw)
   const filtered = arr.filter(isMsg)
   return filtered.map((m) => {
-    const id = m.id ?? m._id ?? m.guid ?? m.messageId
+    const rawId = m.id ?? m._id ?? m.guid ?? m.messageId
+    const id = rawId != null ? String(rawId) : null
     const senderUid = getUid(m.sender) ?? getUid(m.sender?.uid) ?? m.sender ?? null
     const receiverUid = getUid(m.receiver) ?? m.receiver ?? null
     const textRaw = m?.data?.text ?? m?.text ?? m?.message ?? ''
@@ -189,12 +191,15 @@ class TTLSeenSet {
   }
 
   has (id) {
-    const v = id && this.map.get(id)
+    if (!id) return false
+    const key = String(id)
+    const v = this.map.get(key)
     return !!v && v > Date.now()
   }
 
   add (id) {
     if (!id) return
+    const key = String(id)
     if (this.map.size >= this.max) {
       const drop = Math.ceil(this.max * 0.1)
       for (const k of this.map.keys()) {
@@ -202,7 +207,7 @@ class TTLSeenSet {
         if (this.map.size <= this.max - drop) break
       }
     }
-    this.map.set(id, Date.now() + this.ttl)
+    this.map.set(key, Date.now() + this.ttl)
   }
 
   prune () {
@@ -295,11 +300,13 @@ function saveLastMessageIDs (ids) {
  * @returns {Promise}
  */
 function withTimeout (promise, ms) {
+  let timer
+  const timeout = new Promise((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error('timeout after ' + ms + 'ms')), ms)
+  })
   return Promise.race([
-    promise,
-    new Promise((_resolve, reject) =>
-      setTimeout(() => reject(new Error('timeout after ' + ms + 'ms')), ms)
-    )
+    promise.finally(() => clearTimeout(timer)),
+    timeout
   ])
 }
 function loadDmCursors () {
@@ -460,6 +467,8 @@ export class Bot {
     this._maxBackoffMs = 30_000
 
     this._processingMessages = false
+    this._processingGroupMessages = false
+    this._processingDMMessages = false
     this._emptyPolls = 0
     this._dmCandidates = new Set()
     this._dmPeers = new Set(getConfiguredDMPeers())
@@ -654,212 +663,194 @@ export class Bot {
   }
 
   // ───────────────────────────────────────────────────────────
-  // Poller: group + DM inbox
+  // Poller: group messages (runs on its own fast loop)
   // ───────────────────────────────────────────────────────────
-  async processNewMessages () {
-    if (this._processingMessages) return
-    this._processingMessages = true
+  async processGroupMessages () {
+    if (this._processingGroupMessages) return
+    this._processingGroupMessages = true
+
+    try {
+      let handledCount = 0
+      const sinceSec = toSec(this.lastMessageIDs.room)
+      let raw
+      try {
+        raw = await withTimeout(getMessages(this.roomUUID, sinceSec, 'group'), GROUP_FETCH_TIMEOUT_MS)
+      } catch (err) {
+        logger.error('Group message fetch timeout or error', { err })
+        raw = []
+      }
+      const msgs = safeNormalize(raw)
+      let maxSec = sinceSec
+      let processed = 0
+      const batchSize = msgs.length
+
+      for (const m of msgs) {
+        try {
+          const { id, sentAtSec, text, sender } = m
+          if (!id || !sentAtSec || !text) continue
+          if (this._seen.has(id)) continue
+          this._seen.add(id)
+          if (this._isStale(sentAtSec, sinceSec)) continue
+          maxSec = Math.max(maxSec, sentAtSec + 1)
+          if (!sender || sender === COMETCHAT_BOT_UID) continue
+
+          messageHandler(
+            { message: text, sender, receiverType: 'group' },
+            this.roomUUID,
+            this.state,
+            this
+          ).catch((err) => {
+            logger.error('processGroupMessages handler error', { err })
+          })
+          processed++
+          handledCount++
+          await this._cooperativeYieldIfNeeded(processed, batchSize)
+        } catch (err) {
+          logger.error('processGroupMessages per-message error', { err })
+        }
+      }
+      if (maxSec !== sinceSec) {
+        this.lastMessageIDs.room = maxSec
+        saveLastMessageIDs(this.lastMessageIDs)
+      }
+      this._emptyPolls = handledCount > 0 ? 0 : ((this._emptyPolls || 0) + 1)
+    } catch (err) {
+      logger.error('Error in processGroupMessages:', err)
+    } finally {
+      this._processingGroupMessages = false
+    }
+  }
+
+  // ───────────────────────────────────────────────────────────
+  // Poller: DM inbox (runs on its own slower loop)
+  // ───────────────────────────────────────────────────────────
+  async processDMMessages () {
+    if (this._processingDMMessages) return
+    this._processingDMMessages = true
 
     for (const u of getConfiguredDMPeers()) this.addDMPeer(u)
 
     try {
-      let handledCount = 0
-      // GROUP
-      {
-        // Fetch new group messages with a timeout.  If the fetch times out
-        // or errors, treat it as returning no messages so the poll loop can
-        // continue without stalling.
-        const sinceSec = toSec(this.lastMessageIDs.room)
-        let raw
+      const globalSince = toSec(this.lastMessageIDs.dm)
+
+      const peers = new Set([...this._dmPeers, ...this._dmCandidates])
+      if (this.lastDmUser) peers.add(this.lastDmUser)
+
+      if (peers.size === 0) return
+
+      let rawMessages = []
+      let maxGlobal = globalSince
+
+      const sinceByPeer = {}
+      for (const p of peers) {
+        sinceByPeer[p] = toSec(this._dmSinceByPeer[p] ?? globalSince)
+      }
+      let dmFetchResult = { maxTsByPeer: {}, flat: [] }
+      try {
+        dmFetchResult = await withTimeout(
+          getDirectMessagesForPeers([...peers], sinceByPeer, globalSince),
+          5000
+        )
+      } catch (err) {
+        logger.error('DM fetch timeout or error', { err })
+        dmFetchResult = { maxTsByPeer: {}, flat: [] }
+      }
+      const { maxTsByPeer, flat } = dmFetchResult
+
+      rawMessages = Array.isArray(flat) ? flat : []
+      if (rawMessages.length > 1) {
+        rawMessages.sort((a, b) => getSentAt(a) - getSentAt(b))
+      }
+      if (rawMessages.length > DM_MAX_MERGED) {
+        rawMessages = rawMessages.slice(rawMessages.length - DM_MAX_MERGED)
+      }
+
+      for (const p of Object.keys(maxTsByPeer || {})) {
+        const next = Math.max(globalSince, toSec(maxTsByPeer[p] || 0) + 1)
+        this._dmSinceByPeer[p] = next
+        if (next > maxGlobal) maxGlobal = next
+      }
+
+      const msgs = safeNormalize(rawMessages)
+      if (msgs.length > 1) {
+        msgs.sort((a, b) => a.sentAtSec - b.sentAtSec)
+      }
+
+      let processed = 0
+      const batchSize = msgs.length
+
+      for (const m of msgs) {
         try {
-          raw = await withTimeout(getMessages(this.roomUUID, sinceSec, 'group'), 900)
-        } catch (err) {
-          logger.error('Group message fetch timeout or error', { err })
-          raw = []
-        }
-        const msgs = safeNormalize(raw)
-        let maxSec = sinceSec
-        let processed = 0
-        const batchSize = msgs.length
+          const { id, sentAtSec, text, sender } = m
+          if (!id || !sentAtSec || !text) continue
+          if (this._seen.has(id)) continue
+          this._seen.add(id)
+          if (this._isStale(sentAtSec, globalSince)) continue
 
-        for (const m of msgs) {
-          try {
-            const { id, sentAtSec, text, sender } = m
-            if (!id || !sentAtSec || !text) continue
-            if (this._seen.has(id)) continue
-            this._seen.add(id)
-            if (this._isStale(sentAtSec, sinceSec)) continue
-            maxSec = Math.max(maxSec, sentAtSec + 1)
-            if (!sender || sender === COMETCHAT_BOT_UID) continue
+          const channel = guessReceiverType(m)
+          if (channel !== 'user') continue
+          if (sender === COMETCHAT_BOT_UID) continue
 
-            this.addDMPeer(sender)
+          const peerUid = deriveDmPeer(
+            m,
+            sender && sender !== COMETCHAT_BOT_UID ? sender : null
+          )
+          if (!peerUid) continue
 
-            // Schedule message handling asynchronously so that long-running commands
-            // do not block the poll loop.
-            messageHandler(
-              { message: text, sender, receiverType: 'group' },
-              this.roomUUID,
-              this.state,
-              this
-            ).catch((err) => {
-              logger.error('processNewMessages[group] handler error', { err })
-            })
-            processed++
-            handledCount++
-            await this._cooperativeYieldIfNeeded(processed, batchSize)
-          } catch (err) {
-            logger.error('processNewMessages[group] per-message error', { err })
-          }
-        }
-        if (maxSec !== sinceSec) {
-          this.lastMessageIDs.room = maxSec
-          // Persist updated room cursor to disk
-          saveLastMessageIDs(this.lastMessageIDs)
-        }
-      }
-
-      // DMs
-      {
-        const globalSince = toSec(this.lastMessageIDs.dm)
-
-        const peers = new Set([...this._dmPeers, ...this._dmCandidates])
-        if (this.lastDmUser) peers.add(this.lastDmUser)
-
-        let rawMessages = []
-        let maxGlobal = globalSince
-
-        if (peers.size > 0) {
-          const sinceByPeer = {}
-          for (const p of peers) {
-            sinceByPeer[p] = toSec(this._dmSinceByPeer[p] ?? globalSince)
-          }
-          // Fetch new direct messages for peers with a timeout.  If the fetch
-          // times out or errors, treat as no messages.
-          let dmFetchResult = { maxTsByPeer: {}, flat: [] }
-          try {
-            dmFetchResult = await withTimeout(
-              getDirectMessagesForPeers([...peers], sinceByPeer, globalSince),
-              5000
-            )
-          } catch (err) {
-            logger.error('DM fetch timeout or error', { err })
-            dmFetchResult = { maxTsByPeer: {}, flat: [] }
-          }
-          const { maxTsByPeer, flat } = dmFetchResult
-
-          rawMessages = Array.isArray(flat) ? flat : []
-          if (rawMessages.length > 1) {
-            rawMessages.sort((a, b) => getSentAt(a) - getSentAt(b))
-          }
-          if (rawMessages.length > DM_MAX_MERGED) {
-            rawMessages = rawMessages.slice(rawMessages.length - DM_MAX_MERGED)
+          this.addDMPeer(peerUid)
+          this.lastDmUser = peerUid
+          this._dmSinceByPeer[peerUid] = Math.max(
+            this._dmSinceByPeer[peerUid] ?? globalSince,
+            sentAtSec + 1
+          )
+          if (this._dmSinceByPeer[peerUid] > maxGlobal) {
+            maxGlobal = this._dmSinceByPeer[peerUid]
           }
 
-          for (const p of Object.keys(maxTsByPeer || {})) {
-            const next = Math.max(
-              globalSince,
-              toSec(maxTsByPeer[p] || 0) + 1
-            )
-            this._dmSinceByPeer[p] = next
-            if (next > maxGlobal) maxGlobal = next
-          }
-        } else {
-          try {
-            const arr = await withTimeout(getMessages(undefined, globalSince, 'user'), 5000)
-            rawMessages = Array.isArray(arr) ? arr : normalizeMessages(arr)
-          } catch (e) {
-            logger.error('DM poll (broad inbox) error', { e })
-          }
-        }
-
-        const msgs = safeNormalize(rawMessages)
-        if (msgs.length > 1) {
-          msgs.sort((a, b) => a.sentAtSec - b.sentAtSec)
-        }
-
-        let processed = 0
-        const batchSize = msgs.length
-
-        for (const m of msgs) {
-          try {
-            const {
-              id,
-              sentAtSec,
-              text,
-              sender
-            } = m
-            if (!id || !sentAtSec || !text) continue
-            if (this._seen.has(id)) continue
-            this._seen.add(id)
-            if (this._isStale(sentAtSec, globalSince)) continue
-
-            const channel = guessReceiverType(m)
-            if (channel !== 'user') continue
-            if (sender === COMETCHAT_BOT_UID) continue
-
-            const peerUid = deriveDmPeer(
-              m,
-              sender && sender !== COMETCHAT_BOT_UID ? sender : null
-            )
-            if (!peerUid) continue
-
-            this.addDMPeer(peerUid)
-            this.lastDmUser = peerUid
-            this._dmSinceByPeer[peerUid] = Math.max(
-              this._dmSinceByPeer[peerUid] ?? globalSince,
-              sentAtSec + 1
-            )
-            if (this._dmSinceByPeer[peerUid] > maxGlobal) {
-              maxGlobal = this._dmSinceByPeer[peerUid]
-            }
-
-            if (text.length <= 5) {
-              const lc = text.toLowerCase()
-              if (lc === '/ping' || lc === 'ping') {
-                try {
-                  await sendDirectMessage(peerUid, 'pong 🏓')
-                } catch (e) {
-                  logger.error('Failed to send pong DM:', e)
-                }
-                processed++
-                await this._cooperativeYieldIfNeeded(processed, batchSize)
-                continue
+          if (text.length <= 5) {
+            const lc = text.toLowerCase()
+            if (lc === '/ping' || lc === 'ping') {
+              try {
+                await sendDirectMessage(peerUid, 'pong 🏓')
+              } catch (e) {
+                logger.error('Failed to send pong DM:', e)
               }
+              processed++
+              await this._cooperativeYieldIfNeeded(processed, batchSize)
+              continue
             }
-
-            const senderName = 'Unknown'
-            // Schedule DM handling asynchronously to avoid blocking on slow commands.
-            messageHandler(
-              { message: text, sender: peerUid, senderName, receiverType: 'user' },
-              peerUid,
-              this.state
-            ).catch((err) => {
-              logger.error('processNewMessages[user] handler error', { err })
-            })
-
-            processed++
-            handledCount++
-            await this._cooperativeYieldIfNeeded(processed, batchSize)
-          } catch (err) {
-            logger.error('processNewMessages[user] per-message error', { err })
           }
-        }
 
-        if (maxGlobal !== globalSince) {
-          this.lastMessageIDs.dm = maxGlobal
-          // Persist updated DM cursor to disk
-          saveLastMessageIDs(this.lastMessageIDs)
-        }
+          messageHandler(
+            { message: text, sender: peerUid, senderName: 'Unknown', receiverType: 'user' },
+            peerUid,
+            this.state
+          ).catch((err) => {
+            logger.error('processDMMessages handler error', { err })
+          })
 
-        saveDmCursors(this._dmSinceByPeer)
+          processed++
+          await this._cooperativeYieldIfNeeded(processed, batchSize)
+        } catch (err) {
+          logger.error('processDMMessages per-message error', { err })
+        }
       }
 
-      this._emptyPolls = handledCount > 0 ? 0 : ((this._emptyPolls || 0) + 1)
+      if (maxGlobal !== globalSince) {
+        this.lastMessageIDs.dm = maxGlobal
+        saveLastMessageIDs(this.lastMessageIDs)
+      }
+      saveDmCursors(this._dmSinceByPeer)
     } catch (err) {
-      logger.error('Error in processNewMessages:', err)
+      logger.error('Error in processDMMessages:', err)
     } finally {
-      this._processingMessages = false
+      this._processingDMMessages = false
     }
+  }
+
+  // Backward-compatible wrapper (used by tests)
+  async processNewMessages () {
+    await Promise.all([this.processGroupMessages(), this.processDMMessages()])
   }
 
   // ───────────────────────────────────────────────────────────

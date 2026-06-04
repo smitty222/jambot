@@ -1,4 +1,4 @@
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 import { roomBot } from '../runtime/roomBot.js'
 import { getAlbumTracks, spotifyTrackInfo } from '../utils/API.js'
 import * as themeManager from '../utils/themeManager.js'

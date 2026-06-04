@@ -166,12 +166,14 @@ async function main () {
   const BASE_MS = env.pollBaseMs
   const STEP_MS = env.pollBackoffStepMs
   const MAX_BACKOFF_STEPS = env.pollMaxBackoffSteps
+  const DM_POLL_INTERVAL_MS = env.dmPollIntervalMs
 
   function jitter (ms) {
     const delta = Math.floor(ms * 0.15)
     return ms + (Math.floor(Math.random() * (2 * delta + 1)) - delta)
   }
 
+  // Group poll — fast, backoff-aware loop
   async function pollLoop () {
     try {
       if (!botConnected) {
@@ -182,7 +184,7 @@ async function main () {
         return
       }
 
-      await roomBot.processNewMessages()
+      await roomBot.processGroupMessages()
     } catch (e) {
       logger.error('[bot] pollLoop error:', e)
       captureException(e, { context: 'pollLoop' })
@@ -195,6 +197,21 @@ async function main () {
     }
   }
   pollLoop()
+
+  // DM poll — slower independent loop, doesn't affect group backoff
+  async function dmPollLoop () {
+    try {
+      if (botConnected) {
+        await roomBot.processDMMessages()
+      }
+    } catch (e) {
+      logger.error('[bot] dmPollLoop error:', e)
+      captureException(e, { context: 'dmPollLoop' })
+    } finally {
+      setTimeout(dmPollLoop, DM_POLL_INTERVAL_MS)
+    }
+  }
+  dmPollLoop()
 
   setInterval(() => {
     logger.info('[heartbeat]', {

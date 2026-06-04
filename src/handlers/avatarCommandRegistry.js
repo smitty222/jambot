@@ -1,6 +1,6 @@
 import { env } from '../config.js'
 import { syncPridePrestige, formatPrestigeUnlockLines } from '../database/dbprestige.js'
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 import { isUserAuthorized } from '../utils/API.js'
 import { logger } from '../utils/logging.js'
 import {

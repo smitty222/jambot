@@ -5,7 +5,7 @@
 //  - Shooter turn prompt (mention + banner + status)
 //  - Table status board at key transitions
 
-import { postMessage } from '../../libs/cometchat.js'
+import { postMessage } from '../../libs/openchat.js'
 import {
   getUserWallet,
   addOrUpdateUser,

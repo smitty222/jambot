@@ -3,7 +3,7 @@
 // Handlers for /searchalbum, /searchplaylist, /qplaylist, /qalbum, /newalbums
 // All Spotify-backed search and queue-population commands live here.
 
-import { postMessage, sendDirectMessage } from '../libs/cometchat.js'
+import { postMessage, sendDirectMessage } from '../libs/openchat.js'
 import { logger } from '../utils/logging.js'
 import { env } from '../config.js'
 import { createSpotifyPlaylist, createSpotifyPlaylistForRefreshToken, saveToSpotifyLikedSongs, refreshSpotifyAccessTokenWithRefreshToken } from '../utils/playlistUpdate.js'

@@ -30,6 +30,33 @@ import { logger } from '../utils/logging.js'
 // The cache is a Map keyed by user UUID → balance (number). When
 // wallets are created or updated, the cache is updated immediately
 // and persisted to the DB synchronously.
+// ── Prepared statements (compiled once at module load, reused on every call) ─
+const stmtPersistWallet = db.prepare(`
+  INSERT INTO users (uuid, nickname, balance)
+  VALUES (?, ?, ?)
+  ON CONFLICT(uuid) DO UPDATE SET balance = excluded.balance
+`)
+const stmtGetDjStreak = db.prepare(`
+  SELECT userUUID, streakCount, bestStreak, lastPlayedAt, lastQualifiedAt
+  FROM dj_streaks WHERE userUUID = ?
+`)
+const stmtSaveDjStreak = db.prepare(`
+  INSERT INTO dj_streaks (userUUID, streakCount, bestStreak, lastPlayedAt, lastQualifiedAt, updatedAt)
+  VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+  ON CONFLICT(userUUID) DO UPDATE SET
+    streakCount = excluded.streakCount,
+    bestStreak = excluded.bestStreak,
+    lastPlayedAt = excluded.lastPlayedAt,
+    lastQualifiedAt = excluded.lastQualifiedAt,
+    updatedAt = CURRENT_TIMESTAMP
+`)
+const stmtGetNickname = db.prepare('SELECT nickname FROM users WHERE uuid = ?')
+const stmtUpsertUser = db.prepare(`
+  INSERT INTO users (uuid, nickname, balance, nicknameUpdatedAt)
+  VALUES (?, ?, COALESCE((SELECT balance FROM users WHERE uuid = ?), 0), CURRENT_TIMESTAMP)
+  ON CONFLICT(uuid) DO UPDATE SET nickname = excluded.nickname, nicknameUpdatedAt = CURRENT_TIMESTAMP
+`)
+
 const walletCache = new Map()
 const NET_WORTH_TTL_MS = Number(process.env.NET_WORTH_TTL_MS ?? 30_000)
 const netWorthCache = {
@@ -74,11 +101,7 @@ function persistWallet (uuid, balance) {
     // the NOT NULL constraint on users.nickname. A later call to
     // addOrUpdateUser() can update the nickname when a human name is
     // known. We intentionally avoid updating nickname here.
-    db.prepare(
-      `INSERT INTO users (uuid, nickname, balance)
-       VALUES (?, ?, ?)
-       ON CONFLICT(uuid) DO UPDATE SET balance = excluded.balance`
-    ).run(uuid, uuid, balance)
+    stmtPersistWallet.run(uuid, uuid, balance)
   } catch (err) {
     logger.error('[WalletCache] Failed to persist wallet', { err: err?.message || err })
   }
@@ -168,26 +191,11 @@ function getMonthBounds (monthKey = getCurrentMonthKey()) {
 }
 
 function getDjStreakRow (userUUID) {
-  return db.prepare(`
-    SELECT userUUID, streakCount, bestStreak, lastPlayedAt, lastQualifiedAt
-    FROM dj_streaks
-    WHERE userUUID = ?
-  `).get(String(userUUID)) || null
+  return stmtGetDjStreak.get(String(userUUID)) || null
 }
 
 function saveDjStreakRow (userUUID, row = {}) {
-  db.prepare(`
-    INSERT INTO dj_streaks (
-      userUUID, streakCount, bestStreak, lastPlayedAt, lastQualifiedAt, updatedAt
-    )
-    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(userUUID) DO UPDATE SET
-      streakCount = excluded.streakCount,
-      bestStreak = excluded.bestStreak,
-      lastPlayedAt = excluded.lastPlayedAt,
-      lastQualifiedAt = excluded.lastQualifiedAt,
-      updatedAt = CURRENT_TIMESTAMP
-  `).run(
+  stmtSaveDjStreak.run(
     String(userUUID),
     Math.max(0, Math.floor(Number(row.streakCount || 0))),
     Math.max(0, Math.floor(Number(row.bestStreak || 0))),
@@ -257,7 +265,7 @@ export function addOrUpdateUser (userUUID, nickname = null) {
   const clean = sanitizeNickname(nickname)
 
   // Pull existing nickname so we don't overwrite a good one with junk
-  const existingRow = db.prepare('SELECT nickname FROM users WHERE uuid = ?').get(userUUID)
+  const existingRow = stmtGetNickname.get(userUUID)
   let existing = existingRow?.nickname
 
   // Treat stored mention tokens as empty
@@ -266,18 +274,7 @@ export function addOrUpdateUser (userUUID, nickname = null) {
   const finalNickname = clean || existing || userUUID
 
   try {
-    db.prepare(`
-      INSERT INTO users (uuid, nickname, balance, nicknameUpdatedAt)
-      VALUES (
-        ?,
-        ?,
-        COALESCE((SELECT balance FROM users WHERE uuid = ?), 0),
-        CURRENT_TIMESTAMP
-      )
-      ON CONFLICT(uuid) DO UPDATE SET
-        nickname = excluded.nickname,
-        nicknameUpdatedAt = CURRENT_TIMESTAMP
-    `).run(userUUID, finalNickname, userUUID)
+    stmtUpsertUser.run(userUUID, finalNickname, userUUID)
   } catch (err) {
     logger.error('[addOrUpdateUser] Failed to upsert user', { err: err?.message || err })
   }

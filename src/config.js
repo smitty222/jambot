@@ -96,8 +96,10 @@ export const env = {
   botPollYieldEvery: getNumberEnv('BOT_POLL_YIELD_EVERY', 50),
   botStartupGraceS: getNumberEnv('BOT_STARTUP_GRACE_S', 60),
   pollBaseMs: getNumberEnv('POLL_BASE_MS', 450),
-  pollBackoffStepMs: getNumberEnv('POLL_BACKOFF_STEP_MS', 250),
-  pollMaxBackoffSteps: getNumberEnv('POLL_MAX_BACKOFF_STEPS', 8),
+  pollBackoffStepMs: getNumberEnv('POLL_BACKOFF_STEP_MS', 150),
+  pollMaxBackoffSteps: getNumberEnv('POLL_MAX_BACKOFF_STEPS', 4),
+  groupFetchTimeoutMs: getNumberEnv('GROUP_FETCH_TIMEOUT_MS', 4000),
+  dmPollIntervalMs: getNumberEnv('DM_POLL_INTERVAL_MS', 3000),
 
   // API keys / third party services
   geminiApiKey: getEnv('GEMINI_API_KEY'),

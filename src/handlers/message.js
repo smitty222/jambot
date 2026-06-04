@@ -1,5 +1,5 @@
 // message.js
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 import { logger } from '../utils/logging.js'
 import { LotteryGameActive } from '../database/dblotterymanager.js'
 import { routeCrapsMessage } from '../games/craps/craps.single.js'

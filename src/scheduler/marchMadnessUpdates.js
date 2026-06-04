@@ -1,7 +1,7 @@
 import cron from 'node-cron'
 import { env } from '../config.js'
 import { logger as defaultLogger } from '../utils/logging.js'
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 import {
   getMarchMadnessLiveScores,
   getMarchMadnessTournamentGames

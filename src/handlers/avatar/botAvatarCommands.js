@@ -1,5 +1,5 @@
 import { getRandomAvatarSlug } from '../../database/dbavatars.js'
-import { setChatIdentity } from '../../libs/cometchat.js'
+import { setChatIdentity } from '../../libs/openchat.js'
 import { updateUserAvatar } from '../../utils/API.js'
 import {
   randomColors,

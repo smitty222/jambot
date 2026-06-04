@@ -1,4 +1,4 @@
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 import { getCurrentMonthKey, getUserWallet } from '../database/dbwalletmanager.js'
 import { getCompactEquippedTitleTag } from '../database/dbprestige.js'
 import {

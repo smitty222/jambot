@@ -1,5 +1,5 @@
 import { roomBot } from '../runtime/roomBot.js'
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 import { env } from '../config.js'
 import { logger } from './logging.js'
 // Use the standalone nickname util instead of importing from the monolithic

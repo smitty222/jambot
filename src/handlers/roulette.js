@@ -1,6 +1,6 @@
 // src/games/roulette.js
 
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 import {
   getUserWallet,
   creditGameWin,

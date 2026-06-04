@@ -1,4 +1,4 @@
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 import db from '../database/db.js'
 import { fetchSongData } from '../utils/API.js'
 import { getSenderNickname } from '../utils/helpers.js'

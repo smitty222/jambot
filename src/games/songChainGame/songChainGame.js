@@ -1,6 +1,6 @@
 // src/handlers/songChainGame.js
 
-import { postMessage } from '../../libs/cometchat.js'
+import { postMessage } from '../../libs/openchat.js'
 import { getCurrentDJUUIDs } from '../../libs/bot.js'
 import { getTheme } from '../../utils/themeManager.js'
 import { getCompactEquippedTitleTag } from '../../database/dbprestige.js'

@@ -2,7 +2,7 @@
 
 import { formatDistanceToNow } from 'date-fns'
 import { getAverageRating } from './voteCounts.js'
-import { postMessage } from '../libs/cometchat.js'
+import { postMessage } from '../libs/openchat.js'
 import { getTheme } from '../utils/themeManager.js'
 // Import normalisation helper to compute canonical song keys. Using the same
 // normalisation logic as dbroomstatsmanager ensures we search the same keys
